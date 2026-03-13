@@ -273,6 +273,138 @@
        diffs))
 
 ;; ══════════════════════════════════════════════════════════
+;; Template construction (anti-unification)
+;;
+;; Walks both ASTs in lockstep. At each leaf:
+;;   - Root type substitution → named variable (?T0, ?T1, ...)
+;;   - Derived type diff → apply variable names to string
+;;   - Literal/operator diff → flag for human review
+;;   - Identifier diff → keep side-A value (cosmetic)
+;; ══════════════════════════════════════════════════════════
+
+;; Root variable index: list of (val-a val-b var-name).
+(define (make-root-var-index roots)
+  (let loop ((rs roots) (i 0) (acc '()))
+    (if (null? rs) (reverse acc)
+      (loop (cdr rs) (+ i 1)
+            (cons (list (caar rs) (cdar rs)
+                        (string-append "?T" (number->string i)))
+                  acc)))))
+
+;; Look up (node-a, node-b) in root var index. Returns var-name or #f.
+(define (find-root-var node-a node-b rvi)
+  (let loop ((idx rvi))
+    (cond
+      ((null? idx) #f)
+      ((and (equal? (car (car idx)) node-a)
+            (equal? (cadr (car idx)) node-b))
+       (caddr (car idx)))
+      (else (loop (cdr idx))))))
+
+;; Replace root a-values with variable names in a string.
+(define (templatize-string str rvi)
+  (let loop ((s str) (rs rvi))
+    (if (null? rs) s
+      (loop (string-replace-all s (car (car rs)) (caddr (car rs)))
+            (cdr rs)))))
+
+;; Convert rvi to roots format for derivable? checks.
+(define (rvi->roots rvi)
+  (map (lambda (e) (cons (car e) (cadr e))) rvi))
+
+;; Flags accumulated during template construction.
+;; Each entry: (category path val-a val-b)
+(define template-flags '())
+
+(define (reset-template-flags!)
+  (set! template-flags '()))
+
+(define (add-flag! category path val-a val-b)
+  (set! template-flags
+        (cons (list category path val-a val-b) template-flags)))
+
+;; Top-level: build template from two ASTs and root variable index.
+;; Returns the template s-expression. Populates template-flags as
+;; a side effect (call reset-template-flags! before).
+(define (build-template node-a node-b rvi)
+  (bt node-a node-b rvi (rvi->roots rvi) '()))
+
+(define (bt node-a node-b rvi roots path)
+  (cond
+    ((and (tagged-node? node-a) (tagged-node? node-b))
+     (if (eq? (car node-a) (car node-b))
+       (cons (car node-a)
+             (bt-fields (cdr node-a) (cdr node-b) rvi roots path))
+       (begin (add-flag! 'structural path node-a node-b)
+              node-a)))
+
+    ((and (list? node-a) (list? node-b))
+     (bt-list node-a node-b rvi roots path 0))
+
+    ((and (eq? node-a #f) (eq? node-b #f)) #f)
+
+    ((equal? node-a node-b) node-a)
+
+    ((and (string? node-a) (string? node-b))
+     (let ((var (find-root-var node-a node-b rvi)))
+       (if var
+         var
+         (if (derivable? node-a node-b roots)
+           (templatize-string node-a rvi)
+           (let ((cat (classify-string-diff node-a node-b path)))
+             (if (memq cat '(type-name literal-value))
+               (begin (add-flag! cat path node-a node-b) node-a)
+               node-a))))))
+
+    ((and (symbol? node-a) (symbol? node-b))
+     (begin (add-flag! 'operator path node-a node-b) node-a))
+
+    ((and (boolean? node-a) (boolean? node-b))
+     (begin (add-flag! 'literal-value path node-a node-b) node-a))
+
+    ((and (number? node-a) (number? node-b))
+     (begin (add-flag! 'literal-value path node-a node-b) node-a))
+
+    (else
+      (begin (add-flag! 'structural path node-a node-b) node-a))))
+
+(define (bt-fields fields-a fields-b rvi roots path)
+  (let ((result
+          (filter-map
+            (lambda (pair-a)
+              (if (not (pair? pair-a)) #f
+                (let* ((key (car pair-a))
+                       (val-a (cdr pair-a))
+                       (entry-b (assoc key fields-b)))
+                  (if entry-b
+                    (cons key (bt val-a (cdr entry-b) rvi roots
+                                 (append path (list key))))
+                    (begin
+                      (add-flag! 'missing-field
+                                 (append path (list key)) val-a #f)
+                      pair-a)))))
+            fields-a)))
+    (for-each
+      (lambda (pair-b)
+        (if (and (pair? pair-b)
+                 (not (assoc (car pair-b) fields-a)))
+          (add-flag! 'extra-field
+                     (append path (list (car pair-b))) #f (cdr pair-b))))
+      fields-b)
+    result))
+
+(define (bt-list lst-a lst-b rvi roots path idx)
+  (cond
+    ((and (null? lst-a) (null? lst-b)) '())
+    ((null? lst-b) lst-a)
+    ((null? lst-a) '())
+    (else
+      (cons (bt (car lst-a) (car lst-b) rvi roots
+                (append path (list idx)))
+            (bt-list (cdr lst-a) (cdr lst-b) rvi roots
+                     path (+ idx 1))))))
+
+;; ══════════════════════════════════════════════════════════
 ;; Scoring
 ;; ══════════════════════════════════════════════════════════
 
@@ -400,59 +532,75 @@
 
 (define similarity-threshold 0.60)
 
-(define (display-comparison label-a label-b result)
+(define (display-comparison label-a label-b func-a func-b result)
   (let* ((shared-count (car result))
          (diff-count (cadr result))
          (diffs (caddr result))
          (score (score-diffs shared-count diff-count diffs))
-         (raw-sim (list-ref score 0))
          (eff-sim (list-ref score 1))
-         (param-count (list-ref score 2))
-         (weighted-cost (list-ref score 3))
          (roots (list-ref score 4))
-         (value-params (list-ref score 5))
          (collapsed (list-ref score 6))
          (derived-count (list-ref score 7)))
     (if (>= eff-sim similarity-threshold)
-      (begin
-        (newline)
-        (display "  ") (display label-a)
-        (display "  <->  ") (display label-b) (newline)
-        (display "    raw similarity:       ")
-        (display raw-sim) (newline)
-        (display "    effective similarity:  ")
-        (display eff-sim)
-        (display "  (") (display derived-count)
-        (display " derived type diffs collapsed)") (newline)
-        (display "    root type params:     ")
-        (display (length roots)) (newline)
-        (for-each
-          (lambda (r)
-            (display "      ") (display (car r))
-            (display "  ->  ") (display (cdr r)) (newline))
-          roots)
-        (display "    weighted cost:        ")
-        (display weighted-cost) (newline)
-        (if (pair? value-params)
-          (begin
-            (display "    value params:         ")
-            (display value-params) (newline)))
-        ;; Show non-derived diffs grouped by category.
-        (let* ((non-derived (filter (lambda (d)
-                                      (not (eq? (car d) 'derived-type)))
-                                    collapsed))
-               (categories (unique (map car non-derived))))
+      (let ((rvi (make-root-var-index roots)))
+        (reset-template-flags!)
+        (let* ((template (build-template func-a func-b rvi))
+               (flags (reverse template-flags))
+               (flag-literals
+                 (filter (lambda (f) (eq? (car f) 'literal-value)) flags))
+               (flag-operators
+                 (filter (lambda (f) (eq? (car f) 'operator)) flags))
+               (flag-types
+                 (filter (lambda (f) (eq? (car f) 'type-name)) flags))
+               (flag-structural
+                 (filter (lambda (f)
+                           (memq (car f) '(structural missing-field
+                                           extra-field)))
+                         flags))
+               (cosmetic-count
+                 (+ derived-count
+                    (length (filter (lambda (d)
+                                     (eq? (car d) 'identifier))
+                                   collapsed)))))
+          (newline)
+          (display "  ") (display label-a)
+          (display "  <->  ") (display label-b) (newline)
+          ;; Score vector.
+          (display "    ── Score ──") (newline)
+          (display "      similarity:      ")
+          (display eff-sim) (newline)
+          (display "      type params:     ")
+          (display (length roots)) (newline)
           (for-each
-            (lambda (cat)
-              (let ((cat-diffs (filter (lambda (d) (eq? (car d) cat))
-                                       non-derived)))
-                (display "    [") (display cat)
-                (display "] x") (display (length cat-diffs))
-                (display ":") (newline)
-                (for-each display-diff-entry cat-diffs)))
-            categories))
-        (newline)
-        #t)
+            (lambda (e)
+              (display "        ") (display (caddr e))
+              (display ": ") (display (car e))
+              (display " -> ") (display (cadr e)) (newline))
+            rvi)
+          (display "      literals:        ")
+          (display (length flag-literals))
+          (if (> (length flag-literals) 0)
+            (display "  (review)"))
+          (newline)
+          (display "      operators:       ")
+          (display (length flag-operators))
+          (if (> (length flag-operators) 0)
+            (display "  (review)"))
+          (newline)
+          (display "      cosmetic:        ")
+          (display cosmetic-count) (newline)
+          (display "      structural:      ")
+          (display (length flag-structural)) (newline)
+          ;; Flagged positions for human review.
+          (let ((reviewable (append flag-types flag-literals flag-operators)))
+            (if (pair? reviewable)
+              (begin
+                (display "    ── Flagged ──") (newline)
+                (for-each display-diff-entry reviewable))))
+          (newline)
+          ;; template s-expression is built but not printed;
+          ;; uncomment to dump: (write template) (newline)
+          #t))
       #f)))
 
 ;; ══════════════════════════════════════════════════════════
@@ -541,7 +689,8 @@
                                              (string-append
                                                (car entry-a) "/"
                                                (car entry-b)))))))
-                      (if (display-comparison label-a label-b result)
+                      (if (display-comparison label-a label-b
+                                              func-a func-b result)
                         (set! candidate-count
                               (+ candidate-count 1))))))
                 (inner (+ j 1))))))
