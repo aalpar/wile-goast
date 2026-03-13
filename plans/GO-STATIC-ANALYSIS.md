@@ -1,7 +1,7 @@
 # Go Static Analysis Extensions
 
 **Status**: Phases 1-4 complete
-**Foundation**: `extensions/goast/` (see `plans/GO-AST.md`)
+**Foundation**: `goast/` (see `plans/GO-AST.md`)
 **Dependencies**: `golang.org/x/tools v0.42.0` (already vendored) — `go/ssa`, `go/callgraph`, `go/cfg`, `go/analysis`
 
 ## Vision
@@ -23,7 +23,7 @@ Combined, these let you write custom static analyses in Scheme that span syntax,
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
 | Extension split | Separate Scheme libraries, separate Go packages | Pay for what you use; no forced SSA cost when you only need AST |
-| Shared helpers | Exported from base `goast` package | `Node()`, `Field()`, `Str()`, `Sym()`, `ValueList()` exported from `extensions/goast/`; downstream extensions import `goast` for alist construction. Reflects real dependency: SSA needs typed ASTs, callgraph needs SSA. Survives extraction to separate modules. |
+| Shared helpers | Exported from base `goast` package | `Node()`, `Field()`, `Str()`, `Sym()`, `ValueList()` exported from `goast/`; downstream extensions import `goast` for alist construction. Reflects real dependency: SSA needs typed ASTs, callgraph needs SSA. Survives extraction to separate modules. |
 | Node format | Same tagged-alist `(tag (field . val) ...)` as goast | One query vocabulary for all layers; `walk`, `nf`, `tag?` work everywhere |
 | Loading | Each primitive loads independently via `go/packages` | No opaque handles, no shared state between extensions, simple mental model |
 | Cross-referencing | Position strings (`file:line:col`) | AST and SSA share the same `token.FileSet` coordinate system; correlation is string equality |
@@ -34,12 +34,11 @@ Combined, these let you write custom static analyses in Scheme that span syntax,
 ### Package Layout
 
 ```
-extensions/
-  goast/              ← existing: (wile goast) — also exports alist helpers
-  goastssa/           ← new: (wile goast ssa) — imports goast for helpers
-  goastcg/            ← new: (wile goast callgraph) — imports goastssa for SSA build
-  goastcfg/           ← new: (wile goast cfg) — imports goastssa for SSA functions
-  goastlint/          ← new: (wile goast lint) — standalone, uses go/analysis directly
+goast/              ← existing: (wile goast) — also exports alist helpers
+goastssa/           ← new: (wile goast ssa) — imports goast for helpers
+goastcg/            ← new: (wile goast callgraph) — imports goastssa for SSA build
+goastcfg/           ← new: (wile goast cfg) — imports goastssa for SSA functions
+goastlint/          ← new: (wile goast lint) — standalone, uses go/analysis directly
 ```
 
 Dependency chain (reflects computational reality):
@@ -58,15 +57,15 @@ Each extension implements `LibraryNamer` to produce hierarchical Scheme library 
 
 | Go package | Library name | Import |
 |---|---|---|
-| `extensions/goast` | `(wile goast)` | `(import (wile goast))` |
-| `extensions/goastssa` | `(wile goast ssa)` | `(import (wile goast ssa))` |
-| `extensions/goastcg` | `(wile goast callgraph)` | `(import (wile goast callgraph))` |
-| `extensions/goastcfg` | `(wile goast cfg)` | `(import (wile goast cfg))` |
-| `extensions/goastlint` | `(wile goast lint)` | `(import (wile goast lint))` |
+| `goast` | `(wile goast)` | `(import (wile goast))` |
+| `goastssa` | `(wile goast ssa)` | `(import (wile goast ssa))` |
+| `goastcg` | `(wile goast callgraph)` | `(import (wile goast callgraph))` |
+| `goastcfg` | `(wile goast cfg)` | `(import (wile goast cfg))` |
+| `goastlint` | `(wile goast lint)` | `(import (wile goast lint))` |
 
 ### Shared Alist Helpers (exported from `goast`)
 
-The existing unexported helpers in `extensions/goast/helpers.go` are promoted to exported:
+The existing unexported helpers in `goast/helpers.go` are promoted to exported:
 
 ```go
 package goast
@@ -85,8 +84,8 @@ func RequireField(fields values.Value, nodeType, key string) (values.Value, erro
 The goast mapper itself calls these directly (no wrappers — the unexported names are replaced). Downstream extensions import them:
 
 ```go
-// extensions/goastssa/mapper.go
-import "github.com/aalpar/wile/extensions/goast"
+// goastssa/mapper.go
+import "github.com/aalpar/wile-goast/goast"
 
 goast.Node("ssa-binop",
     goast.Field("name", goast.Str(instr.Name())),
@@ -369,7 +368,7 @@ These have no `name` field — they don't produce values.
 #### Go-side structure
 
 ```go
-// extensions/goastssa/mapper.go
+// goastssa/mapper.go
 
 type ssaMapper struct {
     fset      *token.FileSet
@@ -391,7 +390,7 @@ func (p *ssaMapper) mapValue(v ssa.Value) values.Value  // for operand reference
 #### Package structure
 
 ```
-extensions/goastssa/
+goastssa/
   doc.go              # Package documentation
   register.go         # Extension registration, LibraryNamer → (wile goast ssa)
   prim_ssa.go         # Primitive implementations
@@ -540,7 +539,7 @@ None. `golang.org/x/tools v0.42.0` already vendored — all required packages (`
 
 ### Impact on existing code
 
-- `extensions/goast/helpers.go`: unexported helpers (`tag`, `field`, `node`, `str`, `sym`, `valueList`) renamed to exported forms (`Tag`, `Field`, `Node`, `Str`, `Sym`, `ValueList`). Internal callers updated.
-- `extensions/goast/mapper.go`: calls updated to exported names. No behavioral change.
-- `extensions/goast/unmapper*.go`: calls to `getField`/`requireField` updated to `GetField`/`RequireField`.
+- `goast/helpers.go`: unexported helpers (`tag`, `field`, `node`, `str`, `sym`, `valueList`) renamed to exported forms (`Tag`, `Field`, `Node`, `Str`, `Sym`, `ValueList`). Internal callers updated.
+- `goast/mapper.go`: calls updated to exported names. No behavioral change.
+- `goast/unmapper*.go`: calls to `getField`/`requireField` updated to `GetField`/`RequireField`.
 - Public API surface grows by ~8 exported functions in the `goast` package. These are stable — the alist encoding is a foundational design decision.

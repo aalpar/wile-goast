@@ -4,13 +4,13 @@
 
 **Goal:** Complete the `(wile goast ssa)` instruction mapper by adding 24 remaining SSA types from Phase 1B (collections, channels, goroutines, iteration) and Phase 1C (type ops, interfaces, closures).
 
-**Architecture:** All changes are in `extensions/goastssa/mapper.go`. The pattern is identical to Phase 1A: add a `case *ssa.Foo:` to `mapInstruction`, implement a `mapFoo` method, write a test in `mapper_test.go`. No new files, no new packages.
+**Architecture:** All changes are in `goastssa/mapper.go`. The pattern is identical to Phase 1A: add a `case *ssa.Foo:` to `mapInstruction`, implement a `mapFoo` method, write a test in `mapper_test.go`. No new files, no new packages.
 
 **Tech Stack:** `golang.org/x/tools/go/ssa` (already vendored via `golang.org/x/tools v0.42.0`)
 
 **Design doc:** `plans/GO-STATIC-ANALYSIS.md` (Phase 1B/1C sub-phase status → "Complete" when done)
 
-**Reference:** `plans/GO-SSA-PHASE-1A.md` — established patterns. `extensions/goastssa/mapper.go` — current type switch and mapper methods.
+**Reference:** `plans/GO-SSA-PHASE-1A.md` — established patterns. `goastssa/mapper.go` — current type switch and mapper methods.
 
 ---
 
@@ -19,8 +19,8 @@
 `Extract` is included here because it is produced alongside `Lookup` when `commaok=true` splits a tuple result.
 
 **Files:**
-- Modify: `extensions/goastssa/mapper.go`
-- Modify: `extensions/goastssa/mapper_test.go`
+- Modify: `goastssa/mapper.go`
+- Modify: `goastssa/mapper_test.go`
 
 **Step 1: Write the failing test**
 
@@ -68,7 +68,7 @@ func UseMap() (int, bool) {
 
 **Step 2: Run test to verify it fails**
 
-Run: `go test -v ./extensions/goastssa/... -run TestMapMakeMapAndLookup`
+Run: `go test -v ./goastssa/... -run TestMapMakeMapAndLookup`
 Expected: FAIL — `ssa-make-map` not found (falls through to `ssa-unknown`).
 
 **Step 3: Add cases to mapInstruction and implement mappers**
@@ -133,12 +133,12 @@ func (p *ssaMapper) mapExtract(v *ssa.Extract) values.Value {
 
 **Step 4: Run test to verify it passes**
 
-Run: `go test -v ./extensions/goastssa/... -run TestMapMakeMapAndLookup`
+Run: `go test -v ./goastssa/... -run TestMapMakeMapAndLookup`
 Expected: PASS.
 
 **Step 5: Run full test suite**
 
-Run: `go test -v ./extensions/goastssa/...`
+Run: `go test -v ./goastssa/...`
 Expected: PASS.
 
 **Step 6: Run lint**
@@ -161,8 +161,8 @@ Extract is the tuple-element projection produced by commaok returns.
 ### Task 2: Slice operations (MakeSlice, Slice)
 
 **Files:**
-- Modify: `extensions/goastssa/mapper.go`
-- Modify: `extensions/goastssa/mapper_test.go`
+- Modify: `goastssa/mapper.go`
+- Modify: `goastssa/mapper_test.go`
 
 **Step 1: Write the failing test**
 
@@ -196,7 +196,7 @@ func UseSlice() []int {
 
 **Step 2: Run test to verify it fails**
 
-Run: `go test -v ./extensions/goastssa/... -run TestMapMakeSliceAndSlice`
+Run: `go test -v ./goastssa/... -run TestMapMakeSliceAndSlice`
 
 **Step 3: Add cases and implement mappers**
 
@@ -239,7 +239,7 @@ Note: `Low`, `High`, `Max` are nil when absent; `valName(nil)` returns `#f`.
 
 **Step 4: Run test to verify it passes**
 
-Run: `go test -v ./extensions/goastssa/... -run TestMapMakeSliceAndSlice`
+Run: `go test -v ./goastssa/... -run TestMapMakeSliceAndSlice`
 Expected: PASS.
 
 **Step 5: Commit**
@@ -256,8 +256,8 @@ Slice includes low/high/max fields (#f when absent) for both
 ### Task 3: Channel operations (MakeChan, Send, Select)
 
 **Files:**
-- Modify: `extensions/goastssa/mapper.go`
-- Modify: `extensions/goastssa/mapper_test.go`
+- Modify: `goastssa/mapper.go`
+- Modify: `goastssa/mapper_test.go`
 
 **Step 1: Write the failing test**
 
@@ -316,7 +316,7 @@ func UseSelect(c1, c2 chan int) int {
 
 **Step 2: Run test to verify it fails**
 
-Run: `go test -v ./extensions/goastssa/... -run TestMapChannels`
+Run: `go test -v ./goastssa/... -run TestMapChannels`
 
 **Step 3: Add cases and implement mappers**
 
@@ -390,7 +390,7 @@ func chanDirStr(dir types.ChanDir) string {
 
 **Step 4: Run tests**
 
-Run: `go test -v ./extensions/goastssa/... -run TestMapChannels`
+Run: `go test -v ./goastssa/... -run TestMapChannels`
 Expected: PASS.
 
 **Step 5: Commit**
@@ -408,8 +408,8 @@ whether the select has a default case.
 ### Task 4: Goroutines, defers, iteration, panic (Go, Defer, RunDefers, Range, Next, Panic)
 
 **Files:**
-- Modify: `extensions/goastssa/mapper.go`
-- Modify: `extensions/goastssa/mapper_test.go`
+- Modify: `goastssa/mapper.go`
+- Modify: `goastssa/mapper_test.go`
 
 **Step 1: Write the failing tests**
 
@@ -492,7 +492,7 @@ func UsePanic(x int) int {
 
 **Step 2: Run tests to verify they fail**
 
-Run: `go test -v ./extensions/goastssa/... -run 'TestMapGoroutineAndDefer|TestMapRangeAndNext|TestMapPanic'`
+Run: `go test -v ./goastssa/... -run 'TestMapGoroutineAndDefer|TestMapRangeAndNext|TestMapPanic'`
 
 **Step 3: Add cases and implement mappers**
 
@@ -561,7 +561,7 @@ func (p *ssaMapper) mapPanic(v *ssa.Panic) values.Value {
 
 **Step 4: Run tests**
 
-Run: `go test -v ./extensions/goastssa/... -run 'TestMapGoroutineAndDefer|TestMapRangeAndNext|TestMapPanic'`
+Run: `go test -v ./goastssa/... -run 'TestMapGoroutineAndDefer|TestMapRangeAndNext|TestMapPanic'`
 Expected: PASS.
 
 **Step 5: Run lint**
@@ -583,8 +583,8 @@ Next consumes it with an is-string flag for string ranging.
 ### Task 5: Type conversions (ChangeType, Convert, ChangeInterface, SliceToArrayPointer)
 
 **Files:**
-- Modify: `extensions/goastssa/mapper.go`
-- Modify: `extensions/goastssa/mapper_test.go`
+- Modify: `goastssa/mapper.go`
+- Modify: `goastssa/mapper_test.go`
 
 **Step 1: Write the failing tests**
 
@@ -675,7 +675,7 @@ func ToStringer(x ReadStringer) Stringer {
 
 **Step 2: Run tests to verify they fail**
 
-Run: `go test -v ./extensions/goastssa/... -run TestMapTypeConversions`
+Run: `go test -v ./goastssa/... -run TestMapTypeConversions`
 
 **Step 3: Add cases and implement mappers**
 
@@ -734,7 +734,7 @@ func (p *ssaMapper) mapSliceToArrayPointer(v *ssa.SliceToArrayPointer) values.Va
 
 **Step 4: Run tests**
 
-Run: `go test -v ./extensions/goastssa/... -run TestMapTypeConversions`
+Run: `go test -v ./goastssa/... -run TestMapTypeConversions`
 Expected: PASS (all 3 subtests).
 
 **Step 5: Commit**
@@ -752,8 +752,8 @@ Convert covers numeric/string/unsafe conversions.
 ### Task 6: Interfaces and closures (MakeInterface, TypeAssert, MakeClosure, MultiConvert, DebugRef)
 
 **Files:**
-- Modify: `extensions/goastssa/mapper.go`
-- Modify: `extensions/goastssa/mapper_test.go`
+- Modify: `goastssa/mapper.go`
+- Modify: `goastssa/mapper_test.go`
 
 **Step 1: Write the failing tests**
 
@@ -912,7 +912,7 @@ func UseDebug(x int) int {
 
 **Step 2: Run tests to verify they fail**
 
-Run: `go test -v ./extensions/goastssa/... -run 'TestMapMakeInterface|TestMapTypeAssert|TestMapMakeClosure|TestMapMultiConvert|TestMapDebugRef'`
+Run: `go test -v ./goastssa/... -run 'TestMapMakeInterface|TestMapTypeAssert|TestMapMakeClosure|TestMapMultiConvert|TestMapDebugRef'`
 
 **Step 3: Add cases and implement mappers**
 
@@ -993,12 +993,12 @@ func (p *ssaMapper) mapDebugRef(v *ssa.DebugRef) values.Value {
 
 **Step 4: Run tests**
 
-Run: `go test -v ./extensions/goastssa/... -run 'TestMapMakeInterface|TestMapTypeAssert|TestMapMakeClosure|TestMapMultiConvert|TestMapDebugRef'`
+Run: `go test -v ./goastssa/... -run 'TestMapMakeInterface|TestMapTypeAssert|TestMapMakeClosure|TestMapMultiConvert|TestMapDebugRef'`
 Expected: PASS.
 
 **Step 5: Run full suite + lint + covercheck**
 
-Run: `make lint && go test ./extensions/goastssa/... && make covercheck`
+Run: `make lint && go test ./goastssa/... && make covercheck`
 Expected: All pass, coverage ≥ 80%.
 
 **Step 6: Commit**
@@ -1025,7 +1025,7 @@ Expected: All packages pass.
 **Step 2: Run covercheck**
 
 Run: `make covercheck`
-Expected: `extensions/goastssa` ≥ 80%.
+Expected: `goastssa` ≥ 80%.
 
 **Step 3: Update plan status**
 

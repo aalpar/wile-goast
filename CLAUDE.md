@@ -1,6 +1,8 @@
 # CLAUDE.md
 
-Go static analysis extensions for [Wile](https://github.com/aalpar/wile). Scriptable Go code analysis via Scheme s-expressions.
+Cross-layer static analysis of Go source code, scripted in Scheme. Designed for AI agents — LLMs write Scheme fluently, and s-expressions are the natural representation for tree-structured compiler data.
+
+Built on [Wile](https://github.com/aalpar/wile), a Scheme (R7RS) interpreter with an extension API.
 
 ## Project Overview
 
@@ -68,9 +70,11 @@ All sub-extensions depend on the base `goast` package for shared mapper/helper i
 | `go-analyze` | Run named analysis passes on a package |
 | `go-analyze-list` | List available analyzer names |
 
+See [`docs/PRIMITIVES.md`](docs/PRIMITIVES.md) for complete signatures, options, and examples.
+
 ## AST Representation
 
-Go AST nodes map to tagged alists: `(tag (key . val) ...)`. Field access via `(assoc key (cdr node))`. The mapper is bidirectional — `go-parse-string` produces s-expressions, `go-format` converts them back to Go source.
+Go AST nodes map to tagged alists: `(tag (key . val) ...)`. Field access via `(assoc key (cdr node))`. The mapper is bidirectional — `go-parse-string` produces s-expressions, `go-format` converts them back to Go source. All five layers share this format.
 
 ## Build & Test
 
@@ -83,9 +87,9 @@ make ci          # Full CI: lint + build + test + covercheck + verify-mod
 
 ## Project Conventions
 
-- **Commits:** No Co-Authored-By lines. Branch + PR workflow.
+- **Commits:** No Co-Authored-By lines. Direct push to master at this stage.
 - **Dependencies:** `github.com/aalpar/wile` + `golang.org/x/tools`. Prefer standard library otherwise.
-- **Version:** v0.0.1 (see `VERSION`). Zero consumers — break freely.
+- **Version:** v0.1.0 (see `VERSION`). Zero consumers — break freely.
 - **Coverage:** 80% threshold enforced by `tools/sh/covercheck.sh`. `cmd/wile-goast` excluded.
 - **Error handling:** Follow wile's sentinel + wrap pattern (`werr.WrapForeignErrorf`).
 
@@ -104,9 +108,13 @@ make ci          # Full CI: lint + build + test + covercheck + verify-mod
 
 ## Documentation
 
-| File | Purpose |
-|------|---------|
+| Document | Purpose |
+|----------|---------|
+| [`README.md`](README.md) | Project overview, motivation, complex examples |
+| [`docs/PRIMITIVES.md`](docs/PRIMITIVES.md) | Complete primitive reference for all 5 layers |
+| [`docs/EXAMPLES.md`](docs/EXAMPLES.md) | Annotated walkthroughs of example scripts |
 | [`docs/GO-STATIC-ANALYSIS.md`](docs/GO-STATIC-ANALYSIS.md) | Full guide to multi-layer Go analysis |
+| [`BIBLIOGRAPHY.md`](BIBLIOGRAPHY.md) | Static analysis references |
 | [`plans/GO-AST.md`](plans/GO-AST.md) | AST extension design and phases |
 | [`plans/GO-STATIC-ANALYSIS.md`](plans/GO-STATIC-ANALYSIS.md) | SSA/callgraph/CFG/lint umbrella design |
 | [`plans/UNIFICATION-DETECTION.md`](plans/UNIFICATION-DETECTION.md) | Procedure unification detection |

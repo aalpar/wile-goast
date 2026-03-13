@@ -4,7 +4,7 @@
 
 **Goal:** Build the `(wile goast ssa)` extension with core SSA instruction mapping, enabling data-flow queries like mutation independence checking.
 
-**Architecture:** New Go package `extensions/goastssa/` imports alist helpers exported from `extensions/goast/`. Loads packages via `go/packages`, builds SSA via `ssautil.Packages`, maps ~18 SSA instruction types to tagged-alist s-expressions using the same `(tag (field . val) ...)` encoding as goast. Each instruction includes an `(operands . ("name" ...))` field for referrer queries in Scheme.
+**Architecture:** New Go package `goastssa/` imports alist helpers exported from `goast/`. Loads packages via `go/packages`, builds SSA via `ssautil.Packages`, maps ~18 SSA instruction types to tagged-alist s-expressions using the same `(tag (field . val) ...)` encoding as goast. Each instruction includes an `(operands . ("name" ...))` field for referrer queries in Scheme.
 
 **Tech Stack:** `golang.org/x/tools/go/ssa`, `golang.org/x/tools/go/ssa/ssautil`, `golang.org/x/tools/go/packages` (all already vendored via `golang.org/x/tools v0.42.0`)
 
@@ -14,34 +14,34 @@
 
 ### Task 1: Export goast alist helpers
 
-Rename unexported helpers in `extensions/goast/helpers.go` to exported forms so downstream extensions (`goastssa`, etc.) can import them. ~229 call sites across mapper, unmapper, and primitive files.
+Rename unexported helpers in `goast/helpers.go` to exported forms so downstream extensions (`goastssa`, etc.) can import them. ~229 call sites across mapper, unmapper, and primitive files.
 
 **Files:**
-- Modify: `extensions/goast/helpers.go`
-- Modify: `extensions/goast/mapper.go`
-- Modify: `extensions/goast/unmapper.go`
-- Modify: `extensions/goast/unmapper_decl.go`
-- Modify: `extensions/goast/unmapper_expr.go`
-- Modify: `extensions/goast/unmapper_stmt.go`
-- Modify: `extensions/goast/unmapper_types.go`
-- Modify: `extensions/goast/prim_goast.go`
+- Modify: `goast/helpers.go`
+- Modify: `goast/mapper.go`
+- Modify: `goast/unmapper.go`
+- Modify: `goast/unmapper_decl.go`
+- Modify: `goast/unmapper_expr.go`
+- Modify: `goast/unmapper_stmt.go`
+- Modify: `goast/unmapper_types.go`
+- Modify: `goast/prim_goast.go`
 
 **Step 1: Rename helpers using gopls**
 
 Use `go_rename_symbol` for each helper. This is safe — gopls resolves references symbolically, so even `str` won't match substrings. Run these in order:
 
 ```
-go_rename_symbol(file: "extensions/goast/helpers.go", symbol: "tag", newName: "Tag")
-go_rename_symbol(file: "extensions/goast/helpers.go", symbol: "field", newName: "Field")
-go_rename_symbol(file: "extensions/goast/helpers.go", symbol: "node", newName: "Node")
-go_rename_symbol(file: "extensions/goast/helpers.go", symbol: "str", newName: "Str")
-go_rename_symbol(file: "extensions/goast/helpers.go", symbol: "sym", newName: "Sym")
-go_rename_symbol(file: "extensions/goast/helpers.go", symbol: "valueList", newName: "ValueList")
-go_rename_symbol(file: "extensions/goast/helpers.go", symbol: "getField", newName: "GetField")
-go_rename_symbol(file: "extensions/goast/helpers.go", symbol: "requireField", newName: "RequireField")
-go_rename_symbol(file: "extensions/goast/helpers.go", symbol: "requireString", newName: "RequireString")
-go_rename_symbol(file: "extensions/goast/helpers.go", symbol: "requireSymbol", newName: "RequireSymbol")
-go_rename_symbol(file: "extensions/goast/helpers.go", symbol: "isFalse", newName: "IsFalse")
+go_rename_symbol(file: "goast/helpers.go", symbol: "tag", newName: "Tag")
+go_rename_symbol(file: "goast/helpers.go", symbol: "field", newName: "Field")
+go_rename_symbol(file: "goast/helpers.go", symbol: "node", newName: "Node")
+go_rename_symbol(file: "goast/helpers.go", symbol: "str", newName: "Str")
+go_rename_symbol(file: "goast/helpers.go", symbol: "sym", newName: "Sym")
+go_rename_symbol(file: "goast/helpers.go", symbol: "valueList", newName: "ValueList")
+go_rename_symbol(file: "goast/helpers.go", symbol: "getField", newName: "GetField")
+go_rename_symbol(file: "goast/helpers.go", symbol: "requireField", newName: "RequireField")
+go_rename_symbol(file: "goast/helpers.go", symbol: "requireString", newName: "RequireString")
+go_rename_symbol(file: "goast/helpers.go", symbol: "requireSymbol", newName: "RequireSymbol")
+go_rename_symbol(file: "goast/helpers.go", symbol: "isFalse", newName: "IsFalse")
 ```
 
 The sentinels (`errGoParseError`, etc.) stay unexported — they're extension-local.
@@ -52,7 +52,7 @@ gopls rename handles all call sites automatically. Spot-check a few files to con
 
 **Step 3: Run existing tests to verify no regression**
 
-Run: `go test -v ./extensions/goast/...`
+Run: `go test -v ./goast/...`
 Expected: All tests pass. No behavioral change — only names changed.
 
 **Step 4: Run lint**
@@ -77,15 +77,15 @@ SSA and callgraph extensions can import them.
 Create the package structure, extension registration with `LibraryNamer`, and a stub `go-ssa-build` primitive that loads a package and returns an empty list.
 
 **Files:**
-- Create: `extensions/goastssa/doc.go`
-- Create: `extensions/goastssa/register.go`
-- Create: `extensions/goastssa/prim_ssa.go`
-- Create: `extensions/goastssa/mapper.go`
-- Create: `extensions/goastssa/prim_ssa_test.go`
+- Create: `goastssa/doc.go`
+- Create: `goastssa/register.go`
+- Create: `goastssa/prim_ssa.go`
+- Create: `goastssa/mapper.go`
+- Create: `goastssa/prim_ssa_test.go`
 
 **Step 1: Write the failing test**
 
-`extensions/goastssa/prim_ssa_test.go` (external test package):
+`goastssa/prim_ssa_test.go` (external test package):
 
 ```go
 package goastssa_test
@@ -95,7 +95,7 @@ import (
 	"testing"
 
 	"github.com/aalpar/wile"
-	extgoastssa "github.com/aalpar/wile/extensions/goastssa"
+	extgoastssa "github.com/aalpar/wile-goast/goastssa"
 	"github.com/aalpar/wile/values"
 
 	qt "github.com/frankban/quicktest"
@@ -128,7 +128,7 @@ func TestGoSSABuild_ReturnsListOfFunctions(t *testing.T) {
 
 	// Load a known package, verify we get a list back.
 	result := runScheme(t, engine,
-		`(pair? (go-ssa-build "github.com/aalpar/wile/extensions/goast"))`)
+		`(pair? (go-ssa-build "github.com/aalpar/wile-goast/goast"))`)
 	qt.New(t).Assert(result.Internal(), qt.Equals, values.TrueValue)
 }
 
@@ -152,12 +152,12 @@ func TestGoSSABuild_Errors(t *testing.T) {
 
 **Step 2: Run test to verify it fails**
 
-Run: `go test -v ./extensions/goastssa/... 2>&1 | head -20`
+Run: `go test -v ./goastssa/... 2>&1 | head -20`
 Expected: FAIL — package doesn't exist yet.
 
 **Step 3: Write skeleton files**
 
-`extensions/goastssa/doc.go`:
+`goastssa/doc.go`:
 ```go
 // Package goastssa exposes Go's SSA (Static Single Assignment)
 // intermediate representation as Scheme s-expressions.
@@ -166,7 +166,7 @@ Expected: FAIL — package doesn't exist yet.
 package goastssa
 ```
 
-`extensions/goastssa/register.go`:
+`goastssa/register.go`:
 ```go
 package goastssa
 
@@ -207,7 +207,7 @@ func addPrimitives(r *registry.Registry) error {
 }
 ```
 
-`extensions/goastssa/mapper.go`:
+`goastssa/mapper.go`:
 ```go
 package goastssa
 
@@ -217,7 +217,7 @@ import (
 
 	"golang.org/x/tools/go/ssa"
 
-	"github.com/aalpar/wile/extensions/goast"
+	"github.com/aalpar/wile-goast/goast"
 	"github.com/aalpar/wile/values"
 )
 
@@ -235,7 +235,7 @@ func (p *ssaMapper) mapFunction(fn *ssa.Function) values.Value {
 }
 ```
 
-`extensions/goastssa/prim_ssa.go`:
+`goastssa/prim_ssa.go`:
 ```go
 package goastssa
 
@@ -248,7 +248,7 @@ import (
 	"golang.org/x/tools/go/ssa"
 	"golang.org/x/tools/go/ssa/ssautil"
 
-	"github.com/aalpar/wile/extensions/goast"
+	"github.com/aalpar/wile-goast/goast"
 	"github.com/aalpar/wile/machine"
 	"github.com/aalpar/wile/registry/helpers"
 	"github.com/aalpar/wile/security"
@@ -404,7 +404,7 @@ Expected: Updates `go.sum` with SSA package hashes. No changes to `go.mod` (x/to
 
 **Step 4: Run test to verify it passes**
 
-Run: `go test -v ./extensions/goastssa/... -run TestGoSSABuild`
+Run: `go test -v ./goastssa/... -run TestGoSSABuild`
 Expected: PASS — the primitive loads the package and returns a non-empty list.
 
 **Step 5: Commit**
@@ -424,8 +424,8 @@ returns a list of ssa-func nodes (minimal structure for now).
 Fill out `mapFunction` to include params, free vars, signature, package, and blocks. Fill out `mapBlock` with index, comment, predecessors, successors, and an empty instruction list (filled in Tasks 4-8).
 
 **Files:**
-- Modify: `extensions/goastssa/mapper.go`
-- Modify: `extensions/goastssa/prim_ssa_test.go`
+- Modify: `goastssa/mapper.go`
+- Modify: `goastssa/prim_ssa_test.go`
 
 **Step 1: Write the failing test**
 
@@ -437,7 +437,7 @@ func TestGoSSABuild_FunctionStructure(t *testing.T) {
 	engine := newEngine(t)
 
 	// Cache the SSA build result.
-	runScheme(t, engine, `(define funcs (go-ssa-build "github.com/aalpar/wile/extensions/goast"))`)
+	runScheme(t, engine, `(define funcs (go-ssa-build "github.com/aalpar/wile-goast/goast"))`)
 
 	t.Run("function has name", func(t *testing.T) {
 		// Find a known function: PrimGoParseExpr
@@ -485,7 +485,7 @@ func TestGoSSABuild_FunctionStructure(t *testing.T) {
 
 **Step 2: Run test to verify it fails**
 
-Run: `go test -v ./extensions/goastssa/... -run TestGoSSABuild_FunctionStructure`
+Run: `go test -v ./goastssa/... -run TestGoSSABuild_FunctionStructure`
 Expected: FAIL — `mapFunction` only returns name, no params/blocks.
 
 **Step 3: Implement mapFunction and mapBlock**
@@ -500,7 +500,7 @@ import (
 
 	"golang.org/x/tools/go/ssa"
 
-	"github.com/aalpar/wile/extensions/goast"
+	"github.com/aalpar/wile-goast/goast"
 	"github.com/aalpar/wile/values"
 )
 ```
@@ -605,7 +605,7 @@ func valNames(vs []ssa.Value) values.Value {
 
 **Step 4: Run test to verify it passes**
 
-Run: `go test -v ./extensions/goastssa/... -run TestGoSSABuild_FunctionStructure`
+Run: `go test -v ./goastssa/... -run TestGoSSABuild_FunctionStructure`
 Expected: PASS.
 
 **Step 5: Run lint**
@@ -629,12 +629,12 @@ instrs (as ssa-unknown stubs), and optional comment.
 Add the instruction dispatch for value-producing arithmetic instructions and structural value types. Each instruction includes an `operands` field listing its input value names.
 
 **Files:**
-- Modify: `extensions/goastssa/mapper.go`
-- Create: `extensions/goastssa/mapper_test.go`
+- Modify: `goastssa/mapper.go`
+- Create: `goastssa/mapper_test.go`
 
 **Step 1: Write the failing test**
 
-`extensions/goastssa/mapper_test.go` (internal test package):
+`goastssa/mapper_test.go` (internal test package):
 
 ```go
 package goastssa
@@ -649,7 +649,7 @@ import (
 	"golang.org/x/tools/go/ssa"
 	"golang.org/x/tools/go/ssa/ssautil"
 
-	"github.com/aalpar/wile/extensions/goast"
+	"github.com/aalpar/wile-goast/goast"
 	"github.com/aalpar/wile/values"
 
 	qt "github.com/frankban/quicktest"
@@ -808,7 +808,7 @@ func listLength(v values.Value) int {
 
 **Step 2: Run test to verify it fails**
 
-Run: `go test -v ./extensions/goastssa/... -run TestMapBinOp`
+Run: `go test -v ./goastssa/... -run TestMapBinOp`
 Expected: FAIL — `mapInstruction` returns `ssa-unknown` for all types.
 
 **Step 3: Implement mapBinOp, mapUnOp, mapConst, mapAlloc**
@@ -875,7 +875,7 @@ func (p *ssaMapper) mapUnknown(instr ssa.Instruction) values.Value {
 
 **Step 4: Run tests**
 
-Run: `go test -v ./extensions/goastssa/...`
+Run: `go test -v ./goastssa/...`
 Expected: PASS.
 
 **Step 5: Commit**
@@ -896,8 +896,8 @@ types produce ssa-unknown with go-type diagnostic.
 The Call instruction is the most complex — it wraps `CallCommon` which handles both static calls and interface invocations.
 
 **Files:**
-- Modify: `extensions/goastssa/mapper.go`
-- Modify: `extensions/goastssa/mapper_test.go`
+- Modify: `goastssa/mapper.go`
+- Modify: `goastssa/mapper_test.go`
 
 **Step 1: Write the failing test**
 
@@ -932,7 +932,7 @@ func Hello() {
 
 **Step 2: Run test to verify it fails**
 
-Run: `go test -v ./extensions/goastssa/... -run TestMapCall`
+Run: `go test -v ./goastssa/... -run TestMapCall`
 Expected: FAIL — Call not in the type switch.
 
 **Step 3: Implement mapCall**
@@ -988,7 +988,7 @@ func (p *ssaMapper) mapCallCommon(c *ssa.CallCommon) []values.Value {
 
 **Step 4: Run tests**
 
-Run: `go test -v ./extensions/goastssa/...`
+Run: `go test -v ./goastssa/...`
 Expected: PASS.
 
 **Step 5: Commit**
@@ -1007,8 +1007,8 @@ Handles both static calls (mode=call) and interface invocations
 These are the critical instructions for state-trace analysis — they show where struct fields are read and written.
 
 **Files:**
-- Modify: `extensions/goastssa/mapper.go`
-- Modify: `extensions/goastssa/mapper_test.go`
+- Modify: `goastssa/mapper.go`
+- Modify: `goastssa/mapper_test.go`
 
 **Step 1: Write the failing test**
 
@@ -1050,7 +1050,7 @@ func SetX(p *Point, v int) {
 
 **Step 2: Run test to verify it fails**
 
-Run: `go test -v ./extensions/goastssa/... -run TestMapFieldAddr`
+Run: `go test -v ./goastssa/... -run TestMapFieldAddr`
 
 **Step 3: Implement memory instruction mappers**
 
@@ -1148,7 +1148,7 @@ func fieldNameAt(t types.Type, i int) string {
 
 **Step 4: Run tests**
 
-Run: `go test -v ./extensions/goastssa/...`
+Run: `go test -v ./goastssa/...`
 Expected: PASS.
 
 **Step 5: Commit**
@@ -1168,8 +1168,8 @@ indices. These are the key instructions for state-trace analysis.
 These complete the core instruction set — Phi nodes are the SSA mechanism for values that depend on control flow.
 
 **Files:**
-- Modify: `extensions/goastssa/mapper.go`
-- Modify: `extensions/goastssa/mapper_test.go`
+- Modify: `goastssa/mapper.go`
+- Modify: `goastssa/mapper_test.go`
 
 **Step 1: Write the failing test**
 
@@ -1211,7 +1211,7 @@ func Max(a, b int) int {
 
 **Step 2: Run test to verify it fails**
 
-Run: `go test -v ./extensions/goastssa/... -run TestMapControlFlow`
+Run: `go test -v ./goastssa/... -run TestMapControlFlow`
 
 **Step 3: Implement control flow mappers**
 
@@ -1281,12 +1281,12 @@ func (p *ssaMapper) mapReturn(v *ssa.Return) values.Value {
 
 **Step 4: Run tests**
 
-Run: `go test -v ./extensions/goastssa/...`
+Run: `go test -v ./goastssa/...`
 Expected: PASS.
 
 **Step 5: Run full lint + test**
 
-Run: `make lint && go test -v ./extensions/goastssa/...`
+Run: `make lint && go test -v ./goastssa/...`
 
 **Step 6: Commit**
 
@@ -1305,7 +1305,7 @@ the core instruction set for Phase 1A.
 Write an end-to-end test that uses `go-ssa-build` from Scheme to check whether struct fields are mutated independently — the exact query that motivated the SSA extension.
 
 **Files:**
-- Modify: `extensions/goastssa/prim_ssa_test.go`
+- Modify: `goastssa/prim_ssa_test.go`
 
 **Step 1: Write the integration test**
 
@@ -1320,7 +1320,7 @@ func TestIntegration_FieldStoreQuery(t *testing.T) {
 	// Query: find all ssa-store instructions whose addr is an ssa-field-addr.
 	// This is the Scheme-side equivalent of "find all field writes."
 	result := runScheme(t, engine, `
-		(define funcs (go-ssa-build "github.com/aalpar/wile/extensions/goast"))
+		(define funcs (go-ssa-build "github.com/aalpar/wile-goast/goast"))
 
 		;; AST utilities for walking SSA s-expressions.
 		(define (nf node key)
@@ -1360,7 +1360,7 @@ func TestIntegration_FieldStoreQuery(t *testing.T) {
 
 **Step 2: Run test**
 
-Run: `go test -v ./extensions/goastssa/... -run TestIntegration_FieldStoreQuery -timeout 60s`
+Run: `go test -v ./goastssa/... -run TestIntegration_FieldStoreQuery -timeout 60s`
 Expected: PASS.
 
 **Step 3: Run full suite**
@@ -1385,7 +1385,7 @@ mapper to Scheme-side tree walking.
 
 - [x] All 8 tasks committed
 - [x] `make lint` clean
-- [x] `make test` passes (not just `./extensions/goastssa/...`)
+- [x] `make test` passes (not just `./goastssa/...`)
 - [x] `make covercheck` passes
 - [x] `plans/GO-STATIC-ANALYSIS.md` updated: Phase 1A sub-phase status → "Complete"
 - [x] Unmapped instruction types produce `ssa-unknown` with `go-type` diagnostic (no panics)

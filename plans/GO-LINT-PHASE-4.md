@@ -4,13 +4,13 @@
 
 **Goal:** Build the `(wile goast lint)` extension that runs `go/analysis` passes on Go packages and returns diagnostics as s-expressions. Enables scripting over vet-style analyses: "what does nilness report for this package?" or "find all shadowed variables."
 
-**Architecture:** New Go package `extensions/goastlint/` loads packages via `go/packages`, runs a selected set of `go/analysis/passes` analyzers through a minimal embedded driver, and maps `analysis.Diagnostic` to tagged-alist s-expressions. The `go-analyze-list` primitive is static (no loading). The `go-analyze` primitive requires the security gate. No opaque handles — diagnostics are pure data.
+**Architecture:** New Go package `goastlint/` loads packages via `go/packages`, runs a selected set of `go/analysis/passes` analyzers through a minimal embedded driver, and maps `analysis.Diagnostic` to tagged-alist s-expressions. The `go-analyze-list` primitive is static (no loading). The `go-analyze` primitive requires the security gate. No opaque handles — diagnostics are pure data.
 
 **Tech Stack:** `golang.org/x/tools/go/analysis`, `golang.org/x/tools/go/analysis/passes/*`, `golang.org/x/tools/go/packages` (all vendored via `golang.org/x/tools v0.42.0`)
 
 **Design doc:** `plans/GO-STATIC-ANALYSIS.md` (Phase 4)
 
-**Reference:** `extensions/goastcg/` — loading pattern. `extensions/goastssa/` — security gate and error sentinel pattern.
+**Reference:** `goastcg/` — loading pattern. `goastssa/` — security gate and error sentinel pattern.
 
 ---
 
@@ -83,7 +83,7 @@ These analyzers from `golang.org/x/tools/go/analysis/passes` are supported. Prer
 ### Package Structure
 
 ```
-extensions/goastlint/
+goastlint/
   doc.go                # Package documentation
   register.go           # Extension registration, LibraryNamer -> (wile goast lint)
   analyzers.go          # Curated analyzer registry (name -> *analysis.Analyzer)
@@ -101,14 +101,14 @@ Note: no `mapper.go` — diagnostics are simple flat structs; mapping is inline 
 Create package structure, extension registration, and a stub `go-analyze` primitive.
 
 **Files:**
-- Create: `extensions/goastlint/doc.go`
-- Create: `extensions/goastlint/register.go`
-- Create: `extensions/goastlint/prim_lint.go`
-- Create: `extensions/goastlint/prim_lint_test.go`
+- Create: `goastlint/doc.go`
+- Create: `goastlint/register.go`
+- Create: `goastlint/prim_lint.go`
+- Create: `goastlint/prim_lint_test.go`
 
 **Step 1: Write the failing test**
 
-`extensions/goastlint/prim_lint_test.go` (external test package):
+`goastlint/prim_lint_test.go` (external test package):
 
 ```go
 package goastlint_test
@@ -118,7 +118,7 @@ import (
 	"testing"
 
 	"github.com/aalpar/wile"
-	extgoastlint "github.com/aalpar/wile/extensions/goastlint"
+	extgoastlint "github.com/aalpar/wile-goast/goastlint"
 	"github.com/aalpar/wile/values"
 
 	qt "github.com/frankban/quicktest"
@@ -158,12 +158,12 @@ func TestExtensionLibraryName(t *testing.T) {
 
 **Step 2: Run test to verify it fails**
 
-Run: `go test -v ./extensions/goastlint/... 2>&1 | head -20`
+Run: `go test -v ./goastlint/... 2>&1 | head -20`
 Expected: FAIL — package doesn't exist.
 
 **Step 3: Write skeleton files**
 
-`extensions/goastlint/doc.go`:
+`goastlint/doc.go`:
 ```go
 // Package goastlint exposes Go's go/analysis framework as Scheme
 // s-expressions. Run named static analysis passes on Go packages
@@ -171,7 +171,7 @@ Expected: FAIL — package doesn't exist.
 package goastlint
 ```
 
-`extensions/goastlint/register.go`:
+`goastlint/register.go`:
 ```go
 package goastlint
 
@@ -219,7 +219,7 @@ func addPrimitives(r *registry.Registry) error {
 }
 ```
 
-`extensions/goastlint/prim_lint.go` (stub):
+`goastlint/prim_lint.go` (stub):
 ```go
 package goastlint
 
@@ -251,7 +251,7 @@ func PrimGoAnalyzeList(mc *machine.MachineContext) error {
 
 **Step 4: Run test to verify it passes**
 
-Run: `go test -v ./extensions/goastlint/... -run TestExtensionLibraryName`
+Run: `go test -v ./goastlint/... -run TestExtensionLibraryName`
 Expected: PASS.
 
 **Step 5: Run lint**
@@ -275,9 +275,9 @@ stub primitives for go-analyze and go-analyze-list.
 Build the compile-time registry of analyzers, implement `go-analyze-list`.
 
 **Files:**
-- Create: `extensions/goastlint/analyzers.go`
-- Modify: `extensions/goastlint/prim_lint.go`
-- Modify: `extensions/goastlint/prim_lint_test.go`
+- Create: `goastlint/analyzers.go`
+- Modify: `goastlint/prim_lint.go`
+- Modify: `goastlint/prim_lint_test.go`
 
 **Step 1: Write the failing test**
 
@@ -311,12 +311,12 @@ func TestGoAnalyzeList_ContainsKnownAnalyzers(t *testing.T) {
 
 **Step 2: Run test to verify it fails**
 
-Run: `go test -v ./extensions/goastlint/... -run TestGoAnalyzeList`
+Run: `go test -v ./goastlint/... -run TestGoAnalyzeList`
 Expected: FAIL — returns empty list.
 
 **Step 3: Implement the analyzer registry**
 
-`extensions/goastlint/analyzers.go`:
+`goastlint/analyzers.go`:
 
 ```go
 package goastlint
@@ -407,7 +407,7 @@ Add `"sort"` to the import block in `prim_lint.go`.
 
 **Step 5: Run test to verify it passes**
 
-Run: `go test -v ./extensions/goastlint/... -run TestGoAnalyzeList`
+Run: `go test -v ./goastlint/... -run TestGoAnalyzeList`
 Expected: PASS.
 
 **Step 6: Run lint**
@@ -432,13 +432,13 @@ list of available analyzer names.
 The core infrastructure: an embedded `analysis.Pass` driver that runs the `inspect` analyzer first and feeds its result to dependent analyzers.
 
 **Files:**
-- Create: `extensions/goastlint/driver.go`
+- Create: `goastlint/driver.go`
 
 **Step 1: No test for driver directly** — driver is tested through `go-analyze` in Task 4. Implement directly.
 
 **Step 2: Implement the driver**
 
-`extensions/goastlint/driver.go`:
+`goastlint/driver.go`:
 
 ```go
 package goastlint
@@ -589,8 +589,8 @@ diagnostics from explicitly requested analyzers are reported.
 The main primitive: load packages, run analyzers, map diagnostics to s-expressions.
 
 **Files:**
-- Modify: `extensions/goastlint/prim_lint.go`
-- Modify: `extensions/goastlint/prim_lint_test.go`
+- Modify: `goastlint/prim_lint.go`
+- Modify: `goastlint/prim_lint_test.go`
 
 **Step 1: Write the failing test**
 
@@ -604,7 +604,7 @@ func TestGoAnalyze_ReturnsListForKnownPackage(t *testing.T) {
 	// Run a simple analyzer on a known package.
 	// Result may be empty (no issues) or non-empty — both are valid.
 	result := runScheme(t, engine,
-		`(list? (go-analyze "github.com/aalpar/wile/extensions/goast" "assign"))`)
+		`(list? (go-analyze "github.com/aalpar/wile-goast/goast" "assign"))`)
 	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
 }
 
@@ -614,7 +614,7 @@ func TestGoAnalyze_DiagnosticStructure(t *testing.T) {
 
 	// If any diagnostics are returned, verify they have expected fields.
 	result := runScheme(t, engine, `
-		(let ((diags (go-analyze "github.com/aalpar/wile/extensions/goast" "assign")))
+		(let ((diags (go-analyze "github.com/aalpar/wile-goast/goast" "assign")))
 			(if (null? diags) #t
 				(let ((d (car diags)))
 					(and (eq? (car d) 'diagnostic)
@@ -629,7 +629,7 @@ func TestGoAnalyze_MultipleAnalyzers(t *testing.T) {
 	engine := newEngine(t)
 
 	result := runScheme(t, engine,
-		`(list? (go-analyze "github.com/aalpar/wile/extensions/goast" "assign" "unreachable"))`)
+		`(list? (go-analyze "github.com/aalpar/wile-goast/goast" "assign" "unreachable"))`)
 	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
 }
 
@@ -640,7 +640,7 @@ func TestGoAnalyze_Errors(t *testing.T) {
 		code string
 	}{
 		{name: "wrong pattern type", code: `(go-analyze 42 "assign")`},
-		{name: "unknown analyzer name", code: `(go-analyze "github.com/aalpar/wile/extensions/goast" "no-such-analyzer")`},
+		{name: "unknown analyzer name", code: `(go-analyze "github.com/aalpar/wile-goast/goast" "no-such-analyzer")`},
 		{name: "nonexistent package", code: `(go-analyze "github.com/aalpar/wile/does-not-exist-xyz" "assign")`},
 	}
 	for _, tc := range tcs {
@@ -653,7 +653,7 @@ func TestGoAnalyze_Errors(t *testing.T) {
 
 **Step 2: Run tests to verify they fail**
 
-Run: `go test -v ./extensions/goastlint/... -run TestGoAnalyze`
+Run: `go test -v ./goastlint/... -run TestGoAnalyze`
 Expected: FAIL — stub returns empty list and no error for unknown analyzer.
 
 **Step 3: Implement go-analyze**
@@ -775,7 +775,7 @@ import (
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/packages"
 
-	"github.com/aalpar/wile/extensions/goast"
+	"github.com/aalpar/wile-goast/goast"
 	"github.com/aalpar/wile/machine"
 	"github.com/aalpar/wile/registry/helpers"
 	"github.com/aalpar/wile/security"
@@ -786,7 +786,7 @@ import (
 
 **Step 4: Run tests**
 
-Run: `go test -v ./extensions/goastlint/... -timeout 120s`
+Run: `go test -v ./goastlint/... -timeout 120s`
 Expected: PASS.
 
 **Step 5: Run lint**
@@ -812,7 +812,7 @@ s-expressions. Unknown analyzer names return an immediate error.
 End-to-end test on a real package. Validates that `go-analyze` produces correctly structured diagnostics and that analyzers can be combined.
 
 **Files:**
-- Modify: `extensions/goastlint/prim_lint_test.go`
+- Modify: `goastlint/prim_lint_test.go`
 
 **Step 1: Write the integration test**
 
@@ -827,7 +827,7 @@ func TestIntegration_AnalyzeRealPackage(t *testing.T) {
 	// Every diagnostic (if any) must have correct structure.
 	result := runScheme(t, engine, `
 		(define diags
-			(go-analyze "github.com/aalpar/wile/extensions/goastlint"
+			(go-analyze "github.com/aalpar/wile-goast/goastlint"
 			            "assign" "unreachable" "structtag"))
 
 		(define (nf node key)
@@ -860,7 +860,7 @@ func TestIntegration_AllAnalyzersRunnable(t *testing.T) {
 		(let loop ((ns names) (ok #t))
 			(if (null? ns) ok
 				(let ((diags (go-analyze
-				              "github.com/aalpar/wile/extensions/goast"
+				              "github.com/aalpar/wile-goast/goast"
 				              (car ns))))
 					(loop (cdr ns) (and ok (list? diags))))))`)
 	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
@@ -869,7 +869,7 @@ func TestIntegration_AllAnalyzersRunnable(t *testing.T) {
 
 **Step 2: Run integration tests**
 
-Run: `go test -v ./extensions/goastlint/... -run TestIntegration -timeout 180s`
+Run: `go test -v ./goastlint/... -run TestIntegration -timeout 180s`
 Expected: PASS.
 
 **Step 3: Run full test suite**
@@ -880,7 +880,7 @@ Expected: All packages pass.
 **Step 4: Run covercheck**
 
 Run: `make covercheck`
-Expected: `extensions/goastlint` >= 80%.
+Expected: `goastlint` >= 80%.
 
 **Step 5: Update plan status**
 

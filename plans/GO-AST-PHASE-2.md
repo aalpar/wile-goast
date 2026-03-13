@@ -4,9 +4,9 @@
 
 **Goal:** Add bidirectional mapping for 13 AST node types covering concurrency, switch/select statements, slice expressions, type assertions, channel types, and ellipsis.
 
-**Architecture:** All changes are in `extensions/goast/`. The pattern is identical to Phase 1: add a `case *ast.Foo:` to `mapNode`, implement `mapFoo`, add `"foo-tag"` to `unmapNode` dispatch, implement `unmapFoo`, write round-trip tests.
+**Architecture:** All changes are in `goast/`. The pattern is identical to Phase 1: add a `case *ast.Foo:` to `mapNode`, implement `mapFoo`, add `"foo-tag"` to `unmapNode` dispatch, implement `unmapFoo`, write round-trip tests.
 
-**Design doc:** `plans/GO-AST.md` (Phase 2 overview); `extensions/goast/mapper.go` — current type switch
+**Design doc:** `plans/GO-AST.md` (Phase 2 overview); `goast/mapper.go` — current type switch
 
 ---
 
@@ -286,11 +286,11 @@ body, err := unmapStmtList(bodyVal, "case-clause", "body")
 Four simple statement types. GoStmt and DeferStmt each wrap a `CallExpr`. SendStmt has `Chan` and `Value` expressions. LabeledStmt has a string label and a wrapped statement.
 
 **Files:**
-- Modify: `extensions/goast/mapper.go` — 4 cases + 4 mapper functions
-- Modify: `extensions/goast/unmapper.go` — 4 cases in `unmapNode` dispatch
-- Modify: `extensions/goast/unmapper_stmt.go` — 4 unmapper functions
-- Modify: `extensions/goast/mapper_test.go` — round-trip tests
-- Modify: `extensions/goast/prim_goast_test.go` — integration tests
+- Modify: `goast/mapper.go` — 4 cases + 4 mapper functions
+- Modify: `goast/unmapper.go` — 4 cases in `unmapNode` dispatch
+- Modify: `goast/unmapper_stmt.go` — 4 unmapper functions
+- Modify: `goast/mapper_test.go` — round-trip tests
+- Modify: `goast/prim_goast_test.go` — integration tests
 
 **Round-trip test sources** (add to `roundTripFile` table):
 
@@ -321,11 +321,11 @@ Switch statement family. `CaseClause` is shared by both `SwitchStmt` and `TypeSw
 **Key detail**: `TypeSwitchStmt.Assign` is either an `*ast.ExprStmt` wrapping `x.(type)` or an `*ast.AssignStmt` with `x := y.(type)`. The unmapper handles this as a regular `Stmt`.
 
 **Files:**
-- Modify: `extensions/goast/mapper.go` — 4 cases + 4 mapper functions
-- Modify: `extensions/goast/unmapper.go` — 4 cases in dispatch
-- Modify: `extensions/goast/unmapper_stmt.go` — 3 unmapper functions
-- Modify: `extensions/goast/unmapper_expr.go` — 1 unmapper function (TypeAssertExpr)
-- Modify: `extensions/goast/mapper_test.go` — round-trip tests
+- Modify: `goast/mapper.go` — 4 cases + 4 mapper functions
+- Modify: `goast/unmapper.go` — 4 cases in dispatch
+- Modify: `goast/unmapper_stmt.go` — 3 unmapper functions
+- Modify: `goast/unmapper_expr.go` — 1 unmapper function (TypeAssertExpr)
+- Modify: `goast/mapper_test.go` — round-trip tests
 
 **Round-trip test sources:**
 
@@ -361,10 +361,10 @@ Select statement family. `CommClause.Comm` is nil for default case, or a `SendSt
 **Dependency**: `SendStmt` must be implemented before this task (done in Task 1).
 
 **Files:**
-- Modify: `extensions/goast/mapper.go` — 2 cases + 2 mapper functions
-- Modify: `extensions/goast/unmapper.go` — 2 cases in dispatch
-- Modify: `extensions/goast/unmapper_stmt.go` — 2 unmapper functions
-- Modify: `extensions/goast/mapper_test.go` — round-trip tests
+- Modify: `goast/mapper.go` — 2 cases + 2 mapper functions
+- Modify: `goast/unmapper.go` — 2 cases in dispatch
+- Modify: `goast/unmapper_stmt.go` — 2 unmapper functions
+- Modify: `goast/mapper_test.go` — round-trip tests
 
 **Round-trip test sources:**
 ```go
@@ -390,11 +390,11 @@ Remaining expression and type nodes. `TypeAssertExpr` was pulled into Task 2.
 **Key detail**: `addTypeAnnotation` must be called on `SliceExpr` and `Ellipsis` (expression nodes) but NOT on `ChanType` (type node — consistent with `ArrayType`, `MapType`, etc.).
 
 **Files:**
-- Modify: `extensions/goast/mapper.go` — 3 cases + 3 mapper functions + `chanDirSymbol`
-- Modify: `extensions/goast/unmapper.go` — 3 cases in dispatch
-- Modify: `extensions/goast/unmapper_expr.go` — 2 unmapper functions (SliceExpr, Ellipsis)
-- Modify: `extensions/goast/unmapper_types.go` — 1 unmapper function (ChanType) + `chanDirFromSymbol`
-- Modify: `extensions/goast/mapper_test.go` — round-trip tests
+- Modify: `goast/mapper.go` — 3 cases + 3 mapper functions + `chanDirSymbol`
+- Modify: `goast/unmapper.go` — 3 cases in dispatch
+- Modify: `goast/unmapper_expr.go` — 2 unmapper functions (SliceExpr, Ellipsis)
+- Modify: `goast/unmapper_types.go` — 1 unmapper function (ChanType) + `chanDirFromSymbol`
+- Modify: `goast/mapper_test.go` — round-trip tests
 
 **Round-trip test sources (file):**
 ```go

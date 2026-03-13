@@ -9,11 +9,11 @@ custom `go/analysis` passes in Go.
 
 | Library | Go Package | What it exposes |
 |---------|------------|-----------------|
-| `(wile goast)` | `extensions/goast` | AST + type information |
-| `(wile goast ssa)` | `extensions/goastssa` | SSA intermediate representation (data flow) |
-| `(wile goast callgraph)` | `extensions/goastcg` | Call graph (static, CHA, RTA, VTA algorithms) |
-| `(wile goast cfg)` | `extensions/goastcfg` | Control flow graph + dominator tree |
-| `(wile goast lint)` | `extensions/goastlint` | `go/analysis` framework (~40 built-in analyzers) |
+| `(wile goast)` | `goast` | AST + type information |
+| `(wile goast ssa)` | `goastssa` | SSA intermediate representation (data flow) |
+| `(wile goast callgraph)` | `goastcg` | Call graph (static, CHA, RTA, VTA algorithms) |
+| `(wile goast cfg)` | `goastcfg` | Control flow graph + dominator tree |
+| `(wile goast lint)` | `goastlint` | `go/analysis` framework (~40 built-in analyzers) |
 
 All five layers share one node format — tagged alists `(tag (key . val) ...)` —
 queryable with standard Scheme list operations. Cross-referencing between layers
@@ -90,7 +90,7 @@ for LLM-generated analysis scripts.
 
 ## Example: Cross-Layer Split-State Detection
 
-The script [`examples/embedding/goast-query/state-trace-full.scm`](../examples/embedding/goast-query/state-trace-full.scm)
+The script [`examples/goast-query/state-trace-full.scm`](../examples/goast-query/state-trace-full.scm)
 demonstrates a four-layer analysis that no single existing Go tool can perform.
 It detects **split state** — conceptually atomic values scattered across multiple
 struct fields, checked piecewise in distributed conditionals.
@@ -111,7 +111,7 @@ struct fields, checked piecewise in distributed conditionals.
 make build
 
 # Run the analysis against a package
-./dist/wile -f examples/embedding/goast-query/state-trace-full.scm
+./dist/wile -f examples/goast-query/state-trace-full.scm
 ```
 
 Edit the `target` variable at the top of the script to analyze a different package.

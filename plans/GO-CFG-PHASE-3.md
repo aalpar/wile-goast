@@ -4,13 +4,13 @@
 
 **Goal:** Build the `(wile goast cfg)` extension that exposes Go's intra-procedural control flow graph and dominance tree as s-expressions, enabling path and dominance queries: "does every path from entry to return pass through this check?"
 
-**Architecture:** New Go package `extensions/goastcfg/` loads packages independently via `go/packages`, builds SSA with `ssautil.Packages`, locates a named function, and uses SSA's built-in dominator support (`.Idom()`, `DomPreorder()`). Returns `cfg-block` nodes — same tagged-alist encoding as all prior extensions. Query primitives (`go-cfg-dominators`, `go-cfg-dominates?`, `go-cfg-paths`) work on the s-expression output; no security gate.
+**Architecture:** New Go package `goastcfg/` loads packages independently via `go/packages`, builds SSA with `ssautil.Packages`, locates a named function, and uses SSA's built-in dominator support (`.Idom()`, `DomPreorder()`). Returns `cfg-block` nodes — same tagged-alist encoding as all prior extensions. Query primitives (`go-cfg-dominators`, `go-cfg-dominates?`, `go-cfg-paths`) work on the s-expression output; no security gate.
 
 **Tech Stack:** `golang.org/x/tools/go/ssa`, `golang.org/x/tools/go/ssa/ssautil`, `golang.org/x/tools/go/packages` (all already vendored via `golang.org/x/tools v0.42.0`)
 
 **Design doc:** `plans/GO-STATIC-ANALYSIS.md` (Phase 3)
 
-**Reference:** `extensions/goastcg/` — established patterns for loading, mapper, test helpers, extension registration.
+**Reference:** `goastcg/` — established patterns for loading, mapper, test helpers, extension registration.
 
 ---
 
@@ -79,7 +79,7 @@
 ### Package Structure
 
 ```
-extensions/goastcfg/
+goastcfg/
   doc.go                # Package documentation
   register.go           # Extension registration, LibraryNamer -> (wile goast cfg)
   prim_cfg.go           # Primitive implementations
@@ -95,14 +95,14 @@ extensions/goastcfg/
 Create the package structure, extension registration with `LibraryNamer`, and a stub `go-cfg` primitive that validates argument types and returns an empty list.
 
 **Files:**
-- Create: `extensions/goastcfg/doc.go`
-- Create: `extensions/goastcfg/register.go`
-- Create: `extensions/goastcfg/prim_cfg.go`
-- Create: `extensions/goastcfg/prim_cfg_test.go`
+- Create: `goastcfg/doc.go`
+- Create: `goastcfg/register.go`
+- Create: `goastcfg/prim_cfg.go`
+- Create: `goastcfg/prim_cfg_test.go`
 
 **Step 1: Write the failing test**
 
-`extensions/goastcfg/prim_cfg_test.go` (external test package):
+`goastcfg/prim_cfg_test.go` (external test package):
 
 ```go
 package goastcfg_test
@@ -112,7 +112,7 @@ import (
 	"testing"
 
 	"github.com/aalpar/wile"
-	extgoastcfg "github.com/aalpar/wile/extensions/goastcfg"
+	extgoastcfg "github.com/aalpar/wile-goast/goastcfg"
 	"github.com/aalpar/wile/values"
 
 	qt "github.com/frankban/quicktest"
@@ -152,12 +152,12 @@ func TestExtensionLibraryName(t *testing.T) {
 
 **Step 2: Run test to verify it fails**
 
-Run: `go test -v ./extensions/goastcfg/... 2>&1 | head -20`
+Run: `go test -v ./goastcfg/... 2>&1 | head -20`
 Expected: FAIL — package doesn't exist yet.
 
 **Step 3: Write skeleton files**
 
-`extensions/goastcfg/doc.go`:
+`goastcfg/doc.go`:
 ```go
 // Package goastcfg exposes Go's intra-procedural control flow graph
 // and dominator tree as Scheme s-expressions, enabling path and
@@ -165,7 +165,7 @@ Expected: FAIL — package doesn't exist yet.
 package goastcfg
 ```
 
-`extensions/goastcfg/register.go`:
+`goastcfg/register.go`:
 ```go
 package goastcfg
 
@@ -206,7 +206,7 @@ func addPrimitives(r *registry.Registry) error {
 }
 ```
 
-`extensions/goastcfg/prim_cfg.go` (stub):
+`goastcfg/prim_cfg.go` (stub):
 ```go
 package goastcfg
 
@@ -240,7 +240,7 @@ func PrimGoCFG(mc *machine.MachineContext) error {
 
 **Step 4: Run test to verify it passes**
 
-Run: `go test -v ./extensions/goastcfg/... -run TestExtensionLibraryName`
+Run: `go test -v ./goastcfg/... -run TestExtensionLibraryName`
 Expected: PASS.
 
 **Step 5: Run lint**
@@ -264,14 +264,14 @@ stub go-cfg primitive that validates argument types.
 The core primitive: load packages, build SSA, find the named function, map each `*ssa.BasicBlock` to a `cfg-block` with `idom` from SSA's built-in dominator support.
 
 **Files:**
-- Create: `extensions/goastcfg/mapper.go`
-- Create: `extensions/goastcfg/mapper_test.go`
-- Modify: `extensions/goastcfg/prim_cfg.go`
-- Modify: `extensions/goastcfg/prim_cfg_test.go`
+- Create: `goastcfg/mapper.go`
+- Create: `goastcfg/mapper_test.go`
+- Modify: `goastcfg/prim_cfg.go`
+- Modify: `goastcfg/prim_cfg_test.go`
 
 **Step 1: Write the failing mapper test**
 
-`extensions/goastcfg/mapper_test.go` (internal test package):
+`goastcfg/mapper_test.go` (internal test package):
 
 ```go
 package goastcfg
@@ -286,7 +286,7 @@ import (
 	"golang.org/x/tools/go/ssa"
 	"golang.org/x/tools/go/ssa/ssautil"
 
-	"github.com/aalpar/wile/extensions/goast"
+	"github.com/aalpar/wile-goast/goast"
 	"github.com/aalpar/wile/values"
 
 	qt "github.com/frankban/quicktest"
@@ -426,12 +426,12 @@ func Max(a, b int) int {
 
 **Step 2: Run test to verify it fails**
 
-Run: `go test -v ./extensions/goastcfg/... -run TestMapCFG`
+Run: `go test -v ./goastcfg/... -run TestMapCFG`
 Expected: FAIL — mapper.go doesn't exist.
 
 **Step 3: Implement the mapper**
 
-`extensions/goastcfg/mapper.go`:
+`goastcfg/mapper.go`:
 
 ```go
 package goastcfg
@@ -441,7 +441,7 @@ import (
 
 	"golang.org/x/tools/go/ssa"
 
-	"github.com/aalpar/wile/extensions/goast"
+	"github.com/aalpar/wile-goast/goast"
 	"github.com/aalpar/wile/values"
 )
 
@@ -664,7 +664,7 @@ func TestGoCFG_ReturnsCFGBlocks(t *testing.T) {
 	engine := newEngine(t)
 
 	result := runScheme(t, engine,
-		`(pair? (go-cfg "github.com/aalpar/wile/extensions/goast" "PrimGoParseExpr"))`)
+		`(pair? (go-cfg "github.com/aalpar/wile-goast/goast" "PrimGoParseExpr"))`)
 	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
 }
 
@@ -673,7 +673,7 @@ func TestGoCFG_EntryBlockHasNoIdom(t *testing.T) {
 	engine := newEngine(t)
 
 	result := runScheme(t, engine, `
-		(let* ((blocks (go-cfg "github.com/aalpar/wile/extensions/goast" "PrimGoParseExpr"))
+		(let* ((blocks (go-cfg "github.com/aalpar/wile-goast/goast" "PrimGoParseExpr"))
 		       (entry  (car blocks)))
 			(eq? (cdr (assoc 'idom (cdr entry))) #f))`)
 	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
@@ -688,7 +688,7 @@ func TestGoCFG_Errors(t *testing.T) {
 		{name: "wrong pattern type", code: `(go-cfg 42 "Func")`},
 		{name: "wrong func-name type", code: `(go-cfg "pkg" 42)`},
 		{name: "nonexistent package", code: `(go-cfg "github.com/aalpar/wile/does-not-exist-xyz" "Foo")`},
-		{name: "nonexistent function", code: `(go-cfg "github.com/aalpar/wile/extensions/goast" "NoSuchFunction")`},
+		{name: "nonexistent function", code: `(go-cfg "github.com/aalpar/wile-goast/goast" "NoSuchFunction")`},
 	}
 	for _, tc := range tcs {
 		t.Run(tc.name, func(t *testing.T) {
@@ -726,7 +726,7 @@ func Linear() int {
 
 **Step 7: Run tests**
 
-Run: `go test -v ./extensions/goastcfg/... -timeout 120s`
+Run: `go test -v ./goastcfg/... -timeout 120s`
 Expected: PASS.
 
 **Step 8: Run lint**
@@ -754,9 +754,9 @@ Includes positions option (first-instruction pos per block).
 Pure data primitive: takes the `cfg-block` list from `go-cfg`, inverts the per-block `idom` field into a full dominator tree (parent → children).
 
 **Files:**
-- Modify: `extensions/goastcfg/register.go`
-- Modify: `extensions/goastcfg/prim_cfg.go`
-- Modify: `extensions/goastcfg/prim_cfg_test.go`
+- Modify: `goastcfg/register.go`
+- Modify: `goastcfg/prim_cfg.go`
+- Modify: `goastcfg/prim_cfg_test.go`
 
 **Step 1: Write the failing test**
 
@@ -769,7 +769,7 @@ func TestGoCFGDominators_Structure(t *testing.T) {
 
 	// A branching function guarantees multiple blocks with non-trivial dominance.
 	runScheme(t, engine, `
-		(define cfg (go-cfg "github.com/aalpar/wile/extensions/goast" "PrimGoParseExpr"))`)
+		(define cfg (go-cfg "github.com/aalpar/wile-goast/goast" "PrimGoParseExpr"))`)
 
 	result := runScheme(t, engine, `(pair? (go-cfg-dominators cfg))`)
 	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
@@ -795,7 +795,7 @@ func TestGoCFGDominators_EntryDominatesAll(t *testing.T) {
 	// (it is the root — idom is #f).
 	// Find the entry node (idom == #f and not a recover block) without SRFI-1 filter.
 	result := runScheme(t, engine, `
-		(define cfg (go-cfg "github.com/aalpar/wile/extensions/goast" "PrimGoParseExpr"))
+		(define cfg (go-cfg "github.com/aalpar/wile-goast/goast" "PrimGoParseExpr"))
 		(define dom (go-cfg-dominators cfg))
 		(define entry
 			(let loop ((nodes dom))
@@ -811,7 +811,7 @@ func TestGoCFGDominators_EntryDominatesAll(t *testing.T) {
 
 **Step 2: Run tests to verify they fail**
 
-Run: `go test -v ./extensions/goastcfg/... -run TestGoCFGDominators`
+Run: `go test -v ./goastcfg/... -run TestGoCFGDominators`
 Expected: FAIL — primitive not registered.
 
 **Step 3: Register the primitive**
@@ -916,7 +916,7 @@ func PrimGoCFGDominators(mc *machine.MachineContext) error {
 
 **Step 5: Run tests**
 
-Run: `go test -v ./extensions/goastcfg/... -run TestGoCFGDominators -timeout 120s`
+Run: `go test -v ./goastcfg/... -run TestGoCFGDominators -timeout 120s`
 Expected: PASS.
 
 **Step 6: Commit**
@@ -936,9 +936,9 @@ gate. Each dom-node carries block index, idom, and children list.
 Boolean query: does block A dominate block B? Walks the dom-tree to check if A is an ancestor of B.
 
 **Files:**
-- Modify: `extensions/goastcfg/register.go`
-- Modify: `extensions/goastcfg/prim_cfg.go`
-- Modify: `extensions/goastcfg/prim_cfg_test.go`
+- Modify: `goastcfg/register.go`
+- Modify: `goastcfg/prim_cfg.go`
+- Modify: `goastcfg/prim_cfg_test.go`
 
 **Step 1: Write the failing test**
 
@@ -951,7 +951,7 @@ func TestGoCFGDominates(t *testing.T) {
 
 	// Use a known branching function to get non-trivial dominance.
 	runScheme(t, engine, `
-		(define cfg (go-cfg "github.com/aalpar/wile/extensions/goast" "PrimGoParseExpr"))
+		(define cfg (go-cfg "github.com/aalpar/wile-goast/goast" "PrimGoParseExpr"))
 		(define dom (go-cfg-dominators cfg))`)
 
 	// Entry block (0) dominates itself.
@@ -972,7 +972,7 @@ func TestGoCFGDominates(t *testing.T) {
 
 **Step 2: Run test to verify it fails**
 
-Run: `go test -v ./extensions/goastcfg/... -run TestGoCFGDominates`
+Run: `go test -v ./goastcfg/... -run TestGoCFGDominates`
 
 **Step 3: Register the primitive**
 
@@ -1063,7 +1063,7 @@ func PrimGoCFGDominates(mc *machine.MachineContext) error {
 
 **Step 5: Run tests**
 
-Run: `go test -v ./extensions/goastcfg/... -run TestGoCFGDominates -timeout 120s`
+Run: `go test -v ./goastcfg/... -run TestGoCFGDominates -timeout 120s`
 Expected: PASS.
 
 **Step 6: Commit**
@@ -1082,9 +1082,9 @@ appears on the ancestor path. O(depth) per call. Pure data, no load.
 DFS enumeration of simple paths (no repeated blocks) between two blocks in the CFG. Capped at 1024 paths to bound cost on dense graphs or graphs with many parallel paths.
 
 **Files:**
-- Modify: `extensions/goastcfg/register.go`
-- Modify: `extensions/goastcfg/prim_cfg.go`
-- Modify: `extensions/goastcfg/prim_cfg_test.go`
+- Modify: `goastcfg/register.go`
+- Modify: `goastcfg/prim_cfg.go`
+- Modify: `goastcfg/prim_cfg_test.go`
 
 **Step 1: Write the failing test**
 
@@ -1097,7 +1097,7 @@ func TestGoCFGPaths_LinearFunction(t *testing.T) {
 
 	// A linear function has exactly one path from block 0 to its exit block.
 	runScheme(t, engine, `
-		(define cfg (go-cfg "github.com/aalpar/wile/extensions/goast" "PrimGoFormat"))`)
+		(define cfg (go-cfg "github.com/aalpar/wile-goast/goast" "PrimGoFormat"))`)
 
 	result := runScheme(t, engine, `
 		(let* ((last-idx (- (length cfg) 1))
@@ -1112,7 +1112,7 @@ func TestGoCFGPaths_BranchingFunction(t *testing.T) {
 
 	// A branching function has multiple paths.
 	runScheme(t, engine, `
-		(define cfg (go-cfg "github.com/aalpar/wile/extensions/goast" "PrimGoParseExpr"))`)
+		(define cfg (go-cfg "github.com/aalpar/wile-goast/goast" "PrimGoParseExpr"))`)
 
 	// go-cfg-paths from entry to any block returns a list of paths.
 	// Each path is a list of block indices.
@@ -1131,7 +1131,7 @@ func TestGoCFGPaths_SameBlock(t *testing.T) {
 	engine := newEngine(t)
 
 	runScheme(t, engine, `
-		(define cfg (go-cfg "github.com/aalpar/wile/extensions/goast" "PrimGoFormat"))`)
+		(define cfg (go-cfg "github.com/aalpar/wile-goast/goast" "PrimGoFormat"))`)
 
 	// A path from block 0 to itself is a single path containing just block 0.
 	result := runScheme(t, engine, `
@@ -1144,7 +1144,7 @@ func TestGoCFGPaths_SameBlock(t *testing.T) {
 
 **Step 2: Run tests to verify they fail**
 
-Run: `go test -v ./extensions/goastcfg/... -run TestGoCFGPaths`
+Run: `go test -v ./goastcfg/... -run TestGoCFGPaths`
 
 **Step 3: Register the primitive**
 
@@ -1278,7 +1278,7 @@ func PrimGoCFGPaths(mc *machine.MachineContext) error {
 
 **Step 5: Run tests**
 
-Run: `go test -v ./extensions/goastcfg/... -timeout 120s`
+Run: `go test -v ./goastcfg/... -timeout 120s`
 Expected: PASS.
 
 **Step 6: Run lint**
@@ -1303,7 +1303,7 @@ of block indices. (go-cfg-paths cfg 0 0) => ((0)).
 End-to-end test exercising the full Phase 3 pipeline. Demonstrates the motivating use case: "does every path from entry to return pass through a check?"
 
 **Files:**
-- Modify: `extensions/goastcfg/prim_cfg_test.go`
+- Modify: `goastcfg/prim_cfg_test.go`
 
 **Step 1: Write the integration test**
 
@@ -1316,7 +1316,7 @@ func TestIntegration_DominanceQuery(t *testing.T) {
 
 	// Build CFG + dominator tree for a real function.
 	runScheme(t, engine, `
-		(define cfg (go-cfg "github.com/aalpar/wile/extensions/goast" "PrimGoParseExpr"))
+		(define cfg (go-cfg "github.com/aalpar/wile-goast/goast" "PrimGoParseExpr"))
 		(define dom (go-cfg-dominators cfg))`)
 
 	// Verify: entry block dominates every other block.
@@ -1345,7 +1345,7 @@ func TestIntegration_DominanceQuery(t *testing.T) {
 
 **Step 2: Run integration test**
 
-Run: `go test -v ./extensions/goastcfg/... -run TestIntegration -timeout 120s`
+Run: `go test -v ./goastcfg/... -run TestIntegration -timeout 120s`
 Expected: PASS.
 
 **Step 3: Run full test suite**
@@ -1356,7 +1356,7 @@ Expected: All packages pass.
 **Step 4: Run covercheck**
 
 Run: `make covercheck`
-Expected: `extensions/goastcfg` >= 80%.
+Expected: `goastcfg` >= 80%.
 
 **Step 5: Update plan status**
 

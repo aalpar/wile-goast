@@ -9,11 +9,11 @@
 **Tech Stack:** `go/ast`, `go/token`, `go/parser`, `go/printer`, `go/format` (all stdlib)
 
 **Reference code:**
-- Mapper: `extensions/goast/mapper.go` — `mapFile` (line 183), `mapCommentGroups` (line 815)
-- Unmapper: `extensions/goast/unmapper_decl.go` — `unmapFile` (line 26), `unmapDeclList` (line 49)
-- Comment attachment: `extensions/goast/unmapper_comments.go` — `attachComments` (line 61)
-- Primitives: `extensions/goast/prim_goast.go` — `PrimGoFormat` (line 137)
-- Tests: `extensions/goast/mapper_test.go` — `roundTripFileWithComments` (line 141)
+- Mapper: `goast/mapper.go` — `mapFile` (line 183), `mapCommentGroups` (line 815)
+- Unmapper: `goast/unmapper_decl.go` — `unmapFile` (line 26), `unmapDeclList` (line 49)
+- Comment attachment: `goast/unmapper_comments.go` — `attachComments` (line 61)
+- Primitives: `goast/prim_goast.go` — `PrimGoFormat` (line 137)
+- Tests: `goast/mapper_test.go` — `roundTripFileWithComments` (line 141)
 
 ---
 
@@ -75,7 +75,7 @@ for _, g := range f.Comments {
 ### Task 1: Write failing tests for standalone comment round-trip
 
 **Files:**
-- Modify: `extensions/goast/mapper_test.go`
+- Modify: `goast/mapper_test.go`
 
 **Step 1: Add test cases**
 
@@ -105,7 +105,7 @@ func TestRoundTripMultipleStandaloneComments(t *testing.T) {
 
 **Step 2: Run tests to verify they fail**
 
-Run: `go test -v ./extensions/goast/... -run TestRoundTripStandalone -timeout 30s`
+Run: `go test -v ./goast/... -run TestRoundTripStandalone -timeout 30s`
 Expected: FAIL — standalone comments are lost during round-trip.
 
 **Step 3: Commit**
@@ -125,9 +125,9 @@ document the gap.
 Add `collectAttached` to classify comment groups by pointer identity, and `mapDeclsWithStandalone` to interleave standalone groups into the decls list.
 
 **Files:**
-- Create: `extensions/goast/mapper_comments.go`
-- Modify: `extensions/goast/mapper.go` (only `mapFile`)
-- Modify: `extensions/goast/mapper_test.go`
+- Create: `goast/mapper_comments.go`
+- Modify: `goast/mapper.go` (only `mapFile`)
+- Modify: `goast/mapper_test.go`
 
 **Step 1: Write the failing test**
 
@@ -166,7 +166,7 @@ func TestMapFileEmitsCommentGroupInDecls(t *testing.T) {
 
 **Step 2: Run test to verify it fails**
 
-Run: `go test -v ./extensions/goast/... -run TestMapFileEmitsCommentGroupInDecls -timeout 30s`
+Run: `go test -v ./goast/... -run TestMapFileEmitsCommentGroupInDecls -timeout 30s`
 Expected: FAIL — no `comment-group` in decls.
 
 **Step 3: Create `mapper_comments.go`**
@@ -315,12 +315,12 @@ func mapFile(f *ast.File, opts *mapperOpts) values.Value {
 
 **Step 5: Run test to verify it passes**
 
-Run: `go test -v ./extensions/goast/... -run TestMapFileEmitsCommentGroupInDecls -timeout 30s`
+Run: `go test -v ./goast/... -run TestMapFileEmitsCommentGroupInDecls -timeout 30s`
 Expected: PASS.
 
 **Step 6: Run existing tests to verify no regression**
 
-Run: `go test -v ./extensions/goast/... -run 'TestRoundTripFiles$|TestMapComments' -timeout 30s`
+Run: `go test -v ./goast/... -run 'TestRoundTripFiles$|TestMapComments' -timeout 30s`
 Expected: PASS — existing tests don't have standalone comments.
 
 **Step 7: Run lint**
@@ -346,8 +346,8 @@ positions in the decls list. Only active in comments mode.
 Modify `unmapDeclList` to silently skip `comment-group` entries, since they are not Go declarations.
 
 **Files:**
-- Modify: `extensions/goast/unmapper_decl.go`
-- Modify: `extensions/goast/mapper_test.go`
+- Modify: `goast/unmapper_decl.go`
+- Modify: `goast/mapper_test.go`
 
 **Step 1: Write the failing test**
 
@@ -375,7 +375,7 @@ func TestUnmapFileSkipsCommentGroup(t *testing.T) {
 
 **Step 2: Run test to verify it fails**
 
-Run: `go test -v ./extensions/goast/... -run TestUnmapFileSkipsCommentGroup -timeout 30s`
+Run: `go test -v ./goast/... -run TestUnmapFileSkipsCommentGroup -timeout 30s`
 Expected: FAIL — `unmapNode` returns error on `comment-group` tag (unknown node tag).
 
 **Step 3: Modify `unmapDeclList` in `unmapper_decl.go`**
@@ -432,12 +432,12 @@ func unmapDeclList(v values.Value) ([]ast.Decl, error) {
 
 **Step 4: Run test to verify it passes**
 
-Run: `go test -v ./extensions/goast/... -run TestUnmapFileSkipsCommentGroup -timeout 30s`
+Run: `go test -v ./goast/... -run TestUnmapFileSkipsCommentGroup -timeout 30s`
 Expected: PASS.
 
 **Step 5: Run existing tests**
 
-Run: `go test -v ./extensions/goast/... -timeout 60s`
+Run: `go test -v ./goast/... -timeout 60s`
 Expected: All PASS.
 
 **Step 6: Run lint**
@@ -462,11 +462,11 @@ entries are handled by attachComments, not by the structural unmapper.
 Replace the `walkParallel` call in `attachComments` with a mixed-list walk that handles both `comment-group` entries (building standalone groups) and declaration entries (existing doc/trailing logic).
 
 **Files:**
-- Modify: `extensions/goast/unmapper_comments.go`
+- Modify: `goast/unmapper_comments.go`
 
 **Step 1: Run standalone tests to verify they still fail**
 
-Run: `go test -v ./extensions/goast/... -run TestRoundTripStandalone -timeout 30s`
+Run: `go test -v ./goast/... -run TestRoundTripStandalone -timeout 30s`
 Expected: FAIL — `attachComments` doesn't process comment-group entries yet.
 
 **Step 2: Add `forEachSexpr` helper to `unmapper_comments.go`**
@@ -558,7 +558,7 @@ func attachComments(file *ast.File, fileSexprFields values.Value, fset *token.Fi
 
 **Step 4: Run all tests**
 
-Run: `go test -v ./extensions/goast/... -timeout 120s`
+Run: `go test -v ./goast/... -timeout 120s`
 Expected: ALL PASS — including the new standalone tests from Task 1.
 
 **Step 5: Run lint**
@@ -587,8 +587,8 @@ and before the first declaration now survive the round-trip.
 Additional tests for edge cases. Remove `walkParallel` if no longer used. Update plan docs.
 
 **Files:**
-- Modify: `extensions/goast/mapper_test.go`
-- Modify: `extensions/goast/unmapper_comments.go` (cleanup)
+- Modify: `goast/mapper_test.go`
+- Modify: `goast/unmapper_comments.go` (cleanup)
 - Modify: `plans/GO-AST.md`
 - Modify: `TODO.md`
 
@@ -640,7 +640,7 @@ func TestRoundTripNoCommentGroupInDeclsWithoutCommentsFlag(t *testing.T) {
 
 **Step 2: Run all tests**
 
-Run: `go test -v ./extensions/goast/... -timeout 120s`
+Run: `go test -v ./goast/... -timeout 120s`
 Expected: ALL PASS.
 
 **Step 3: Check if `walkParallel` is still used**
@@ -655,7 +655,7 @@ Expected: Clean and all pass.
 **Step 5: Run covercheck**
 
 Run: `make covercheck`
-Expected: `extensions/goast` coverage meets threshold.
+Expected: `goast` coverage meets threshold.
 
 **Step 6: Update `TODO.md`**
 

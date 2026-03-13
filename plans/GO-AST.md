@@ -1,7 +1,7 @@
 # Go AST Extension
 
 **Status**: Phases 1, 2, 3 & 4 complete
-**Package**: `extensions/goast/`, importable as `(wile goast)`
+**Package**: `goast/`, importable as `(wile goast)`
 **Dependencies**: `go/ast`, `go/parser`, `go/token`, `go/printer`, `go/format` (all stdlib)
 
 ## Overview
@@ -22,7 +22,7 @@ Scheme extension exposing Go's AST packages as s-expressions. Parse Go source in
 ## Package Structure
 
 ```
-extensions/goast/
+goast/
 ├── doc.go                # Package documentation
 ├── register.go           # Extension registration, (wile goast) library
 ├── prim_goast.go         # Primitive implementations
@@ -212,7 +212,7 @@ their source positions.
 
 ### New Sentinels
 
-Extension-local sentinels in `extensions/goast/helpers.go` (unexported, scoped to the extension):
+Extension-local sentinels in `goast/helpers.go` (unexported, scoped to the extension):
 
 ```go
 var (

@@ -4,7 +4,7 @@
 
 **Goal:** Add error recovery nodes, generic type instantiation, and comment round-trip support to the `(wile goast)` extension.
 
-**Architecture:** All changes are in `extensions/goast/`. Error recovery and generics follow the Phase 1 pattern. Comments require a two-pass unmapper approach to avoid changing existing unmapper function signatures.
+**Architecture:** All changes are in `goast/`. Error recovery and generics follow the Phase 1 pattern. Comments require a two-pass unmapper approach to avoid changing existing unmapper function signatures.
 
 **Design doc:** `plans/GO-AST.md` (Phase 3 overview)
 
@@ -262,10 +262,10 @@ Contains:
 Three error recovery placeholder nodes. Map to tag-only s-expressions. Unmapping returns error.
 
 **Files:**
-- Modify: `extensions/goast/mapper.go` — 3 cases + 3 mapper functions
-- Modify: `extensions/goast/unmapper.go` — 3 error cases in dispatch
-- Modify: `extensions/goast/mapper_test.go` — one-way mapping tests (NOT round-trip)
-- Modify: `extensions/goast/prim_goast_test.go` — error test for `go-format` on bad nodes
+- Modify: `goast/mapper.go` — 3 cases + 3 mapper functions
+- Modify: `goast/unmapper.go` — 3 error cases in dispatch
+- Modify: `goast/mapper_test.go` — one-way mapping tests (NOT round-trip)
+- Modify: `goast/prim_goast_test.go` — error test for `go-format` on bad nodes
 
 **Test**: Parse invalid Go source with `parser.AllErrors`, verify bad node tags appear. Verify `unmapNode` returns error for bad tags.
 
@@ -311,10 +311,10 @@ Go source.
 Go 1.18+ generic type instantiation: `Map[string, int]`. Same shape as `IndexExpr` but with a list of indices.
 
 **Files:**
-- Modify: `extensions/goast/mapper.go` — 1 case + 1 mapper function
-- Modify: `extensions/goast/unmapper.go` — 1 case in dispatch
-- Modify: `extensions/goast/unmapper_expr.go` — 1 unmapper function
-- Modify: `extensions/goast/mapper_test.go` — round-trip test
+- Modify: `goast/mapper.go` — 1 case + 1 mapper function
+- Modify: `goast/unmapper.go` — 1 case in dispatch
+- Modify: `goast/unmapper_expr.go` — 1 unmapper function
+- Modify: `goast/mapper_test.go` — round-trip test
 
 **Round-trip test source:**
 ```go
@@ -336,9 +336,9 @@ multi-type-argument instantiation like Map[string, int].
 Enable the `'comments` flag by adding comment fields to existing mapper functions. This task handles the mapper direction only — unmapping with comments is Task 4.
 
 **Files:**
-- Modify: `extensions/goast/mapper.go` — add `commentGroupToStrings`, `mapCommentGroups` helpers; modify 7 existing mapper functions
-- Modify: `extensions/goast/mapper_test.go` — one-way comment mapping tests
-- Modify: `extensions/goast/prim_goast_test.go` — integration test with `'comments` flag
+- Modify: `goast/mapper.go` — add `commentGroupToStrings`, `mapCommentGroups` helpers; modify 7 existing mapper functions
+- Modify: `goast/mapper_test.go` — one-way comment mapping tests
+- Modify: `goast/prim_goast_test.go` — integration test with `'comments` flag
 
 **Mapper modifications (7 functions):**
 
@@ -408,9 +408,9 @@ File-level comments list contains all comment groups.
 Enable round-trip fidelity for comments using the two-pass approach.
 
 **Files:**
-- Create: `extensions/goast/unmapper_comments.go` — `posAllocator`, `attachComments`, helpers
-- Modify: `extensions/goast/unmapper.go` — call `attachComments` after `unmapFile` when comments present
-- Modify: `extensions/goast/mapper_test.go` — comment round-trip tests
+- Create: `goast/unmapper_comments.go` — `posAllocator`, `attachComments`, helpers
+- Modify: `goast/unmapper.go` — call `attachComments` after `unmapFile` when comments present
+- Modify: `goast/mapper_test.go` — comment round-trip tests
 
 **Two-pass integration point** (in `unmapFile` or a new wrapper):
 
