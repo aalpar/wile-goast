@@ -24,17 +24,19 @@ cost_after   = size(h) + size(param_types) + call_sites * size(param_passing)
 
 Unification reduces complexity when `cost_after < cost_before`. The shared structure cancels out — what remains is whether the **parameter overhead** is less than the **duplicated code**.
 
-## Why AST Layer, Not SSA
+## Layer Strategy: AST Primary, SSA Secondary
 
-For unification detection, **AST with type annotations** (via `go-typecheck-package`) is the right level:
+The tool serves two purposes at two layers:
 
-- **SSA normalizes too aggressively.** Two functions doing "the same thing with different types" produce completely different SSA instruction sequences because types flow through every instruction. Structural similarity is obscured.
-- **AST preserves structure.** Type differences are localized to specific nodes (the `inferred-type` annotation). This makes it easy to identify "same structure, different types" — the core signal for unification.
-- **AST retains programmer intent.** Variable names, function names, and structural choices are preserved. SSA erases these, making it harder to classify differences as semantic vs. accidental.
+1. **Refactoring advisor (AST, primary).** "These two functions share 95% structure — here are the parameterizable differences, consider unifying." This is the core use case. AST with type annotations (via `go-typecheck-package`) is the right level because:
 
-SSA would be more appropriate for detecting *semantic* equivalence (do these compute the same thing?). Unification detection needs *structural* similarity with *parameterizable* differences — that's an AST question.
+   - **AST preserves structure.** Type differences are localized to specific nodes (the `inferred-type` annotation). This makes it easy to identify "same structure, different types" — the core signal for unification.
+   - **AST retains programmer intent.** Variable names, function names, and structural choices are preserved. SSA erases these, making it harder to classify differences as semantic vs. accidental.
+   - **SSA normalizes too aggressively for structural comparison.** Two functions doing "the same thing with different types" produce completely different SSA instruction sequences because types flow through every instruction. Structural similarity is obscured.
 
-The SSA and CFG layers could enhance later versions (e.g., "do these functions have isomorphic control flow graphs?"), but they are not needed for v1.
+2. **Equivalence detector (SSA, secondary).** "These two expressions compute the same thing via different operator arrangements." SSA is the right layer here because Go's SSA builder already canonicalizes operand order, folds constants, and normalizes strength reductions. Operator algebra (commutativity, identity elimination, De Morgan's, etc.) falls out of the representation for free — there is no need to build custom rewrite rules or maintain a table of algebraic laws in Scheme.
+
+The two layers answer different questions. The refactoring advisor asks "same **shape**, different **leaves**?" — a structural question. The equivalence detector asks "same **result**, different **shape**?" — a semantic question. AST comparison is the workhorse; SSA comparison is a secondary filter that catches what AST comparison cannot.
 
 ## Detectable Signals
 
@@ -285,7 +287,7 @@ Type annotations from `go-typecheck-package` propagate root type substitutions i
 
 ### What this rule cannot detect
 
-1. **Semantic equivalence.** Two functions that compute the same result through different algorithms will not be flagged — their ASTs are structurally different.
+1. **Semantic equivalence (v1).** Two functions that compute the same result through different algorithms will not be flagged by the AST comparison — their ASTs are structurally different. The SSA-level equivalence pass (v2) partially addresses this for operator-level differences (commutativity, constant folding, strength reduction) but not for genuinely different algorithms.
 2. **Domain agreement violations.** The objective precondition (agreement on shared domain) is a semantic property that cannot be checked statically from AST structure alone.
 3. **Cross-function duplication.** A pattern repeated *within* different functions (not the entire function body) requires sub-tree matching, not whole-function comparison. This is a different problem (clone detection at the fragment level).
 4. **Macro-generated duplication.** Go doesn't have macros, but code generators (`go generate`) can produce structural clones that this rule would flag. Whether that's useful depends on whether the generator should be fixed.
@@ -302,7 +304,7 @@ These require human judgment. The rule identifies candidates; the human decides.
 
 ## Future Enhancements (v2+)
 
-- **SSA-level comparison:** For functions that pass the AST filter, compare their SSA representations to detect "same control flow, different types" at a normalized level. This catches cases where syntactic differences (variable naming, expression ordering) mask structural similarity.
+- **SSA-level equivalence detection:** For functions that pass the AST filter, compare their SSA representations to detect operator-level equivalence. Go's SSA builder already normalizes operand order, folds constants, and applies strength reductions — this gives commutativity, identity elimination, and similar algebraic properties without custom rewrite rules. The SSA comparison leverages what the compiler knows for free rather than reimplementing algebraic laws in Scheme.
 - **CFG isomorphism:** Compare control flow graphs to detect functions with identical branching structure but different computations. Combined with the AST diff, this distinguishes "same algorithm, different types" from "different algorithm, same types."
 - **Sub-tree matching:** Detect duplicated code *fragments* within different functions, not just whole-function similarity. Requires sliding-window or suffix-tree approaches on the s-expression representation.
 - **Call graph context:** Use `go-callgraph` to find functions that call the same set of dependencies — a pre-filter that narrows candidates to functions with similar "purpose signatures."
