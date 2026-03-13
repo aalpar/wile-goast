@@ -247,11 +247,39 @@ The `state-trace-full.scm` example (in [wile-goast](https://github.com/aalpar/wi
 
 The `walk` function, `nf` (node-field), `tag?`, `filter-map`, and `flat-map` utilities from that example are directly reusable. The unification rule adds a new visitor pattern (pairwise tree diff) but the traversal infrastructure is identical.
 
-## Known Concrete Example
+## Validation Results
 
-In the sibling `crdt` project, `pncounter` and `gcounter` share the find-own-dot/replace/build-delta pattern (`int64` vs `uint64`). This rule should detect them as candidates with a small number of type-name diffs. However, gcounter has a grow-only constraint (no decrement) — a semantic difference that manifests as a missing method, not an AST diff within shared methods. The rule would correctly identify the *shared* methods as unification candidates while the *absent* method would not appear in the comparison.
+The prototype (`examples/goast-query/unify-detect-pkg.scm`) was run on the full `crdt` module (17 packages, 132 functions with ≥3 statements). Of 399 cross-package pairs above the 60% effective similarity threshold, exactly **4 had zero weighted cost** — the strong unification candidates:
 
-This is a good test case: the rule should flag the similarity, and the human should decide that the grow-only constraint is a domain-agreement violation that prevents full unification. Partial unification (shared helper for the increment path) might still be valuable.
+| Eff. Sim | Cost | Root Params | Pair | Category |
+|---|---|---|---|---|
+| 99.4% | 0 | `ewflag→dwflag`, `EWFlag→DWFlag` | `ewflag.Enable` ↔ `dwflag.Disable` | Dual discovery |
+| 99.3% | 0 | `ewflag→dwflag`, `EWFlag→DWFlag` | `ewflag.Disable` ↔ `dwflag.Enable` | Dual discovery |
+| 97.9% | 0 | `pncounter→gcounter`, `CounterValue→GValue`, `int64→uint64` | `pncounter.Increment` ↔ `gcounter.Increment` | Known pattern |
+| 97.6% | 0 | same 3 roots | `pncounter.Value` ↔ `gcounter.Value` | Known pattern |
+
+The remaining 395 pairs have weighted cost ≥ 100 (structural diffs, missing elements, cross-domain mismatches). The weighted cost filter cleanly separates signal from noise.
+
+### pncounter ↔ gcounter (known, validated)
+
+`pncounter` and `gcounter` share the find-own-dot/replace/build-delta pattern (`int64` vs `uint64`). The rule detects `Increment` and `Value` as candidates with 3 root type substitutions. gcounter's grow-only constraint (no `Decrement` method) is a semantic difference — it manifests as a missing method, not an AST diff within shared methods. The rule correctly identifies the *shared* methods as candidates while the *absent* method does not appear.
+
+### ewflag ↔ dwflag (discovered by the rule)
+
+EWFlag (enable-wins) and DWFlag (disable-wins) are exact duals. The rule discovered that:
+
+- `ewflag.Enable` is structurally identical to `dwflag.Disable` — both generate a dot via `Context.Next(id)` and add it to the store. The sole diff is the function name.
+- `ewflag.Disable` is structurally identical to `dwflag.Enable` — both drain the store into a context via `Range` and return an empty store.
+
+Root substitutions: `ewflag→dwflag` (package) and `EWFlag→DWFlag` (type name). After collapsing 31 and 27 derived `inferred-type` diffs respectively, the effective similarity reaches 99.4% and 99.3%.
+
+This duality was previously documented only in prose (CLAUDE.md: "DWFlag: Exact dual of EWFlag — dots = disable events, empty DotSet = enabled"). The rule mechanically discovered a structural relationship from AST comparison alone.
+
+**Implications:** EWFlag and DWFlag could share a single implementation parameterized by the semantic interpretation of "dots present" (enabled vs. disabled). Whether this reduces complexity depends on whether the dual naming adds more confusion than the duplication — a judgment call, but the rule correctly surfaces it.
+
+### Substitution collapsing
+
+Type annotations from `go-typecheck-package` propagate root type substitutions into every sub-expression. `pncounter.Increment` has 95 raw type-name diffs — but they collapse to 3 root substitutions (`pncounter→gcounter`, `CounterValue→GValue`, `int64→uint64`). Without collapsing, similarity was 73.6%; after collapsing, 97.9%. The collapsing algorithm sorts type-name diff pairs by string length (shortest first), then iteratively checks if longer pairs are derivable from known roots via substring replacement.
 
 ## Limitations
 
@@ -278,4 +306,4 @@ These require human judgment. The rule identifies candidates; the human decides.
 - **CFG isomorphism:** Compare control flow graphs to detect functions with identical branching structure but different computations. Combined with the AST diff, this distinguishes "same algorithm, different types" from "different algorithm, same types."
 - **Sub-tree matching:** Detect duplicated code *fragments* within different functions, not just whole-function similarity. Requires sliding-window or suffix-tree approaches on the s-expression representation.
 - **Call graph context:** Use `go-callgraph` to find functions that call the same set of dependencies — a pre-filter that narrows candidates to functions with similar "purpose signatures."
-- **Cross-package analysis:** Compare functions across packages to detect library-level duplication. Requires care to avoid false positives from intentional encapsulation.
+- ~~**Cross-package analysis:**~~ Done. The `./...` module-wide scan compares all cross-package function pairs within signature-shape groups. Validated on 17 packages / 132 functions.
