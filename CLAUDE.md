@@ -4,6 +4,10 @@ Cross-layer static analysis of Go source code, scripted in Scheme. Designed for 
 
 Built on [Wile](https://github.com/aalpar/wile), a Scheme (R7RS) interpreter with an extension API.
 
+## Thesis
+
+The five layers exist to serve a single goal: **code simplification through unification**. Less code means fewer bugs, less surface area for defects, and lower maintenance cost. Each layer detects a different kind of redundancy — structural clones (AST), algebraic equivalences (SSA), isomorphic control flow (CFG), shared dependency signatures (call graph), known anti-patterns (lint). The tools surface candidates where unification reduces total complexity; they do not propose merges that merely compress code at the cost of added indirection.
+
 ## Project Overview
 
 Five extension packages exposing Go's analysis toolchain (`go/ast`, `go/types`, `golang.org/x/tools/go/ssa`, `go/callgraph`, `go/cfg`, `go/analysis`) as Scheme primitives through the Wile extension API.

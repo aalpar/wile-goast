@@ -2,6 +2,8 @@
 
 Cross-layer static analysis of Go source code, scripted in Scheme. Designed for AI agents that need to reason about Go codebases at the level of ASTs, SSA, control flow graphs, call graphs, and lint diagnostics — from a single script.
 
+The thesis behind these tools is **software maintenance through simplification**. Less code means fewer bugs, less surface area for defects, and lower maintenance cost. Each analysis layer detects a different kind of redundancy — structural clones, algebraic equivalences, isomorphic control flow, shared dependency signatures, known anti-patterns. The tools surface unification candidates only when merging actually simplifies; adding parameters that increase indirection without reducing complexity is not simplification.
+
 ## The Problem
 
 Go has mature analysis infrastructure — `go/ast`, `go/types`, `go/ssa`, `go/callgraph`, `go/cfg`, `go/analysis` — but using it requires writing hundreds of lines of Go per analyzer. Each tool in the ecosystem addresses one slice:
