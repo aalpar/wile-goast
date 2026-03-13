@@ -1,0 +1,11 @@
+private/
+dist/
+build/
+.git/
+.claude/
+.serena/
+*.local.md
+*.mcp.json
+REVIEW.md
+.idea/
+.vscode/
