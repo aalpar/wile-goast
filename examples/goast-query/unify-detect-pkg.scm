@@ -1,15 +1,14 @@
-;;; unify-detect-pkg.scm — Unification detection on real Go packages
+;;; unify-detect-pkg.scm — Unification detection across a Go module
 ;;;
-;;; Loads two packages with go-typecheck-package (type annotations),
-;;; compares all function pairs: same-name across packages, then
-;;; brute-force within signature-shape groups.
+;;; Loads all packages matching a pattern with go-typecheck-package,
+;;; compares all cross-package function pairs within signature-shape
+;;; groups. Reports candidates above the effective similarity threshold.
 ;;;
-;;; Usage: cd /path/to/crdt && /path/to/wile -f unify-detect-pkg.scm
+;;; Usage: cd /path/to/module && wile-goast -f unify-detect-pkg.scm
 ;;;   (must run from a directory where the Go module resolves)
 
-;; ── Targets ───────────────────────────────────────────────
-(define pkg-a-path "github.com/aalpar/crdt/pncounter")
-(define pkg-b-path "github.com/aalpar/crdt/gcounter")
+;; ── Target ────────────────────────────────────────────────
+(define target "./...")
 
 ;; ══════════════════════════════════════════════════════════
 ;; Utilities
@@ -460,101 +459,104 @@
 ;; Main
 ;; ══════════════════════════════════════════════════════════
 
-(display "Loading ") (display pkg-a-path) (display " ...") (newline)
-(define pkg-a (car (go-typecheck-package pkg-a-path)))
-
-(display "Loading ") (display pkg-b-path) (display " ...") (newline)
-(define pkg-b (car (go-typecheck-package pkg-b-path)))
-
-(define funcs-a (package-funcs pkg-a))
-(define funcs-b (package-funcs pkg-b))
-
-(display "Package A (") (display (nf pkg-a 'name))
-(display "): ") (display (length funcs-a)) (display " functions")
-(newline)
-(display "Package B (") (display (nf pkg-b 'name))
-(display "): ") (display (length funcs-b)) (display " functions")
+(display "Loading ") (display target) (display " ...") (newline)
+(define all-pkgs (go-typecheck-package target))
+(display "Loaded ") (display (length all-pkgs)) (display " packages")
 (newline)
 
-;; ── Phase 1: Same-name cross-package comparison ──────────
+;; Build a flat list of (qualified-name pkg-name func-decl shape) entries.
+;; Skip functions with < 3 statements (too small to be interesting).
+(define (body-size func)
+  (let ((body (nf func 'body)))
+    (if (and body (tag? body 'block))
+      (let ((stmts (nf body 'list)))
+        (if (pair? stmts) (length stmts) 0))
+      0)))
 
-(display "")
-(newline)
-(display "══════════════════════════════════════════════")
-(newline)
-(display "  Phase 1: Same-name function pairs           ")
-(newline)
-(display "══════════════════════════════════════════════")
-(newline)
+(define min-body-size 3)
 
-(define same-name-count 0)
+(define all-funcs
+  (flat-map
+    (lambda (pkg)
+      (let ((pkg-name (nf pkg 'name)))
+        (filter-map
+          (lambda (func)
+            (let ((name (nf func 'name)))
+              (and (>= (body-size func) min-body-size)
+                   (list (string-append pkg-name "." name)
+                         pkg-name
+                         func
+                         (signature-shape func)))))
+          (package-funcs pkg))))
+    all-pkgs))
 
-(for-each
-  (lambda (fa)
-    (let* ((name-a (nf fa 'name))
-           (match (filter (lambda (fb)
-                            (equal? (nf fb 'name) name-a))
-                          funcs-b)))
-      (for-each
-        (lambda (fb)
-          (let* ((name-b (nf fb 'name))
-                 (label-a (string-append (nf pkg-a 'name) "." name-a))
-                 (label-b (string-append (nf pkg-b 'name) "." name-b))
-                 (result (ast-diff fa fb
-                                   (list (string->symbol name-a)))))
-            (if (display-comparison label-a label-b result)
-              (set! same-name-count (+ same-name-count 1)))))
-        match)))
-  funcs-a)
-
-(if (= same-name-count 0)
-  (begin (display "  (no same-name pairs above threshold)") (newline)))
-
-;; ── Phase 2: Signature-shape groups (cross-package) ──────
-
-(display "══════════════════════════════════════════════")
-(newline)
-(display "  Phase 2: Signature-shape groups (cross-pkg) ")
-(newline)
-(display "══════════════════════════════════════════════")
+(display "  ") (display (length all-funcs))
+(display " functions (>= ") (display min-body-size)
+(display " statements)") (newline)
 (newline)
 
-(define shape-count 0)
+;; Show per-package counts.
+(let ((pkg-names (unique (map cadr all-funcs))))
+  (for-each
+    (lambda (pn)
+      (let ((count (length (filter (lambda (e) (equal? (cadr e) pn))
+                                   all-funcs))))
+        (display "    ") (display pn) (display ": ")
+        (display count) (newline)))
+    pkg-names))
+(newline)
 
-;; Compare every (a, b) pair where names differ but shapes match.
-(for-each
-  (lambda (fa)
-    (let* ((name-a (nf fa 'name))
-           (shape-a (signature-shape fa))
-           (candidates
-             (filter (lambda (fb)
-                       (and (not (equal? (nf fb 'name) name-a))
-                            (equal? (signature-shape fb) shape-a)))
-                     funcs-b)))
-      (for-each
-        (lambda (fb)
-          (let* ((name-b (nf fb 'name))
-                 (label-a (string-append (nf pkg-a 'name) "." name-a))
-                 (label-b (string-append (nf pkg-b 'name) "." name-b))
-                 (result (ast-diff fa fb
-                                   (list (string->symbol
-                                           (string-append
-                                             name-a "/" name-b))))))
-            (if (display-comparison label-a label-b result)
-              (set! shape-count (+ shape-count 1)))))
-        candidates)))
-  funcs-a)
+;; ── Cross-package comparison within signature-shape groups ──
 
-(if (= shape-count 0)
-  (begin (display "  (no cross-name pairs above threshold)") (newline)))
+(display "══════════════════════════════════════════════════")
+(newline)
+(display "  Cross-package unification candidates            ")
+(newline)
+(display "══════════════════════════════════════════════════")
+(newline)
+
+(define candidate-count 0)
+
+;; For each ordered pair (i, j) where i < j, different packages, same shape.
+(let ((n (length all-funcs))
+      (v (list->vector all-funcs)))
+  (let outer ((i 0))
+    (if (< i n)
+      (begin
+        (let ((entry-a (vector-ref v i)))
+          (let inner ((j (+ i 1)))
+            (if (< j n)
+              (begin
+                (let ((entry-b (vector-ref v j)))
+                  ;; Same shape, different package.
+                  (if (and (equal? (list-ref entry-a 3)
+                                   (list-ref entry-b 3))
+                           (not (equal? (cadr entry-a) (cadr entry-b))))
+                    (let* ((func-a (caddr entry-a))
+                           (func-b (caddr entry-b))
+                           (label-a (car entry-a))
+                           (label-b (car entry-b))
+                           (result (ast-diff func-a func-b
+                                     (list (string->symbol
+                                             (string-append
+                                               (car entry-a) "/"
+                                               (car entry-b)))))))
+                      (if (display-comparison label-a label-b result)
+                        (set! candidate-count
+                              (+ candidate-count 1))))))
+                (inner (+ j 1))))))
+        (outer (+ i 1))))))
+
+(if (= candidate-count 0)
+  (begin (display "  (no candidates above threshold)") (newline)))
 
 ;; ── Summary ──────────────────────────────────────────────
 
 (newline)
 (display "── Summary ──") (newline)
-(display "  Same-name pairs above ")
-(display similarity-threshold) (display ": ")
-(display same-name-count) (newline)
-(display "  Cross-name pairs above ")
-(display similarity-threshold) (display ": ")
-(display shape-count) (newline)
+(display "  Packages:    ") (display (length all-pkgs)) (newline)
+(display "  Functions:   ") (display (length all-funcs))
+(display " (>= ") (display min-body-size) (display " stmts)") (newline)
+(display "  Candidates:  ") (display candidate-count)
+(display " (effective similarity >= ")
+(display similarity-threshold) (display ")") (newline)
