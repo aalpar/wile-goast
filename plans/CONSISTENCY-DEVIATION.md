@@ -434,6 +434,176 @@ Output format matches the existing examples — structured text with pass labels
   Deviations found:     3
 ```
 
+## Belief Bootstrapping
+
+A strong belief's output has the same shape as a site enumeration input: `(pattern, sites, counts)`. The pipeline `enumerate → characterize → verify → compare` is closed under composition — Phase 3 output can feed Phase 1 input without changing the data model.
+
+### Forms
+
+Three forms, ordered by signal strength:
+
+**1. Vertical Refinement (Belief → Sites).** A discovered belief defines a new cohort for a different belief category:
+
+```
+co-mutation discovers {stepMode, stepFrame, stepFrameDepth}
+    ↓
+field group becomes an enumeration set
+    ↓
+ordering belief: "is stepMode always stored before stepFrame?"
+    ↓
+check belief: "is some condition checked before mutating this group?"
+```
+
+Co-mutation output (category 5) produces field groups. Ordering (category 4) consumes operation pairs. The adapter converts field names into store operations; the adherence sites become the enumeration.
+
+**2. Horizontal Composition (Belief + Belief → Compound Belief).** Two beliefs sharing the same sites combine:
+
+```
+pairing belief: "Lock always paired with Unlock"
+  +
+ordering belief: "Lock always dominates field access X"
+  =
+compound belief: "Lock-Unlock pairs always protect access to field X"
+```
+
+The compound belief generates its own deviations: functions that access X without a Lock-Unlock guard.
+
+**3. Deviation Clustering (Deviations → Explanatory Belief).** The deviation sites from one belief become candidates for a new analysis. If 3 deviations from a "wrap-return" handling belief all occur in background goroutines, that's a sub-convention — not a bug. Weakest form: deviation sets are small by definition, so statistical power is low.
+
+### Funnel Property
+
+Each bootstrapping step strictly shrinks the site set. Co-mutation starts with all functions that store to any field of struct S. Strong beliefs narrow to functions that store a specific pair. Ordering further narrows to functions where the pair is in different blocks. The chain terminates when the site set drops below `min-sites`.
+
+This guarantees convergence and means bootstrapping works best on large codebases with many instances of the same pattern.
+
+### Trade-offs
+
+| Gain | Cost |
+|------|------|
+| Discovers beliefs no single category finds | False positive amplification — each step inherits prior errors |
+| No pre-specification of cross-category patterns | Interpretability degrades with chain depth |
+| Self-limiting via funnel property | Computational cost is multiplicative across steps |
+
+### Concrete Adapter: Co-Mutation → Ordering
+
+The co-mutation prototype's `pair-stats` returns:
+
+```
+(field-a field-b co-count a-only-count b-only-count co-funcs a-only-funcs b-only-funcs)
+```
+
+The `co-funcs` list — functions that store both fields — is exactly the site enumeration for an ordering belief. No new enumeration pass needed.
+
+#### Step 1: Extract ordering candidates from strong co-mutation beliefs
+
+```scheme
+(define (comutation->ordering-candidates all-pair-stats)
+  (filter-map
+    (lambda (stats)
+      (let* ((field-a    (list-ref stats 0))
+             (field-b    (list-ref stats 1))
+             (co-count   (list-ref stats 2))
+             (a-only     (list-ref stats 3))
+             (b-only     (list-ref stats 4))
+             (co-funcs   (list-ref stats 5))
+             (total      (+ co-count a-only b-only)))
+        ;; Double threshold: co-mutation must be strong AND
+        ;; co-func set must be large enough for ordering signal.
+        (and (>= total min-sites)
+             (>= (/ co-count total) min-adherence)
+             (>= (length co-funcs) min-sites)
+             (list field-a field-b co-funcs))))
+    all-pair-stats))
+```
+
+The double threshold is the funnel property in action: the co-mutation belief must be strong, AND the surviving co-func set must be large enough for the ordering belief to have statistical power.
+
+#### Step 2: Locate field stores by SSA block
+
+The co-mutation script uses a flat `walk` that destroys block structure. Ordering needs to know which block each store lives in. Since `ssa-field-addr` and `ssa-store` can be in different blocks, this requires a two-pass join over all blocks — first collecting register-to-field mappings, then finding stores through those registers:
+
+```scheme
+;; Returns: ((field-name . block-index) ...)
+(define (field-stores-by-block ssa-func target-fields)
+  (let* ((blocks (nf ssa-func 'blocks)))
+    (if (not (pair? blocks)) '()
+      (let* (;; Pass A: register → field mapping (across all blocks)
+             (reg->field
+               (flat-map
+                 (lambda (block)
+                   (filter-map
+                     (lambda (instr)
+                       (and (tag? instr 'ssa-field-addr)
+                            (member? (nf instr 'field) target-fields)
+                            (cons (nf instr 'name) (nf instr 'field))))
+                     (let ((instrs (nf block 'instrs)))
+                       (if (pair? instrs) instrs '()))))
+                 blocks))
+             ;; Pass B: store → (field . block-index)
+             (stores
+               (flat-map
+                 (lambda (block)
+                   (let ((block-idx (nf block 'index)))
+                     (filter-map
+                       (lambda (instr)
+                         (and (tag? instr 'ssa-store)
+                              (let ((entry (assoc (nf instr 'addr) reg->field)))
+                                (and entry (cons (cdr entry) block-idx)))))
+                       (let ((instrs (nf block 'instrs)))
+                         (if (pair? instrs) instrs '())))))
+                 blocks)))
+        stores))))
+```
+
+#### Step 3: Check dominance via idom chain
+
+The `ssa-block` node now exposes an `idom` field — the immediate dominator's block index. The entry block (index 0) omits `idom`; it is the dominator tree root. Dominance is checked by walking the `idom` chain from the target block toward the root:
+
+```scheme
+;; Does block-a dominate block-b?
+;; Walk idom chain from b toward root; if we hit a, yes.
+(define (dominates? blocks block-a block-b)
+  (let loop ((idx block-b))
+    (cond
+      ((= idx block-a) #t)
+      ((= idx 0) #f)
+      (else
+        (let ((blk (list-ref blocks idx)))
+          (let ((idom-pair (assoc 'idom (cdr blk))))
+            (if idom-pair (loop (cdr idom-pair)) #f)))))))
+```
+
+#### Step 4: Characterize ordering
+
+```scheme
+(define (characterize-ordering ssa-func field-a field-b)
+  (let* ((stores (field-stores-by-block ssa-func (list field-a field-b)))
+         (a-blocks (filter-map
+                     (lambda (s) (and (equal? (car s) field-a) (cdr s)))
+                     stores))
+         (b-blocks (filter-map
+                     (lambda (s) (and (equal? (car s) field-b) (cdr s)))
+                     stores))
+         (blocks (cdr (assoc 'blocks (cdr ssa-func)))))
+    (cond
+      ((or (null? a-blocks) (null? b-blocks)) 'missing)
+      ((or (> (length (unique a-blocks)) 1)
+           (> (length (unique b-blocks)) 1)) 'multi-store)
+      ((= (car a-blocks) (car b-blocks)) 'same-block)
+      ((dominates? blocks (car a-blocks) (car b-blocks)) 'a-dominates-b)
+      ((dominates? blocks (car b-blocks) (car a-blocks)) 'b-dominates-a)
+      (else 'unordered))))
+```
+
+The result categories: `a-dominates-b` and `b-dominates-a` are clear orderings. `same-block` means instruction-level ordering (not yet analyzed). `multi-store` means the field is stored in multiple blocks — complex control flow that requires path-sensitive analysis. `unordered` means neither block dominates the other (e.g., stores in sibling branches).
+
+### Validation Prediction
+
+Using the co-mutation validation data (§ Validation Results):
+
+- **Debugger stepping fields:** Only 2 co-funcs per strong pair ({Continue, StepInto}). Below `min-sites` — ordering belief won't fire. The funnel property correctly prevents a low-confidence finding.
+- **VMCounters:** 10 `inline*` helpers co-mutate `{StackDrains, ForeignCalls, StackElementsDrained}`. Enough sites for ordering to ask: "Do all 10 helpers store `StackDrains` before `ForeignCalls`?" A consistent ordering is evidence of a protocol; a deviation is a potential ordering bug that co-mutation alone cannot see.
+
 ## Existing Prior Art in This Codebase
 
 ### state-trace-full.scm
@@ -519,13 +689,13 @@ Two classes of false positives were identified:
 ### Open design questions
 
 1. **Framework vs. scripts.** Should beliefs be expressed in a DSL, or should each belief be a hand-written Scheme script? A DSL enables composability and automated belief discovery. Hand-written scripts are more readable and match the existing example pattern. Given that wile-goast targets AI agents — which generate Scheme fluently — hand-written scripts per belief category may be sufficient.
-2. **Belief discovery.** Engler's system requires the analyst to choose which belief category to check. Automatic belief discovery (mining arbitrary patterns from the code) is a harder problem that overlaps with specification mining (Ammons, Bodik, Larus 2002). This is a v2 concern.
+2. **Belief discovery.** Engler's system requires the analyst to choose which belief category to check. Belief bootstrapping (§ Belief Bootstrapping) partially addresses this — discovered beliefs generate enumeration sets for other categories, so the analyst specifies starting categories but not cross-category patterns. Full automatic discovery (mining arbitrary patterns) overlaps with specification mining (Ammons, Bodik, Larus 2002).
 3. **Incremental analysis.** Running consistency analysis on every commit requires incremental updates to beliefs as code changes. The current architecture (load full module, analyze from scratch) does not support this. For CI integration, incremental analysis would be necessary.
 
 ## Future Enhancements
 
 - **Parameter essentiality integration.** Combine with SSA-based parameter usage analysis to answer: "Is this deviation because the parameter is a pass-through that shouldn't exist?" A function that ignores an error because the result is a pass-through has a different root cause than one that ignores an error by mistake.
-- **Automatic belief discovery.** Mine frequent patterns from the codebase without specifying belief categories. Extract all (operation, context) pairs, cluster by frequency, report outliers. This is specification mining — computationally expensive but eliminates the need to predefine belief categories.
+- **Automatic belief discovery.** Mine frequent patterns from the codebase without specifying belief categories. Extract all (operation, context) pairs, cluster by frequency, report outliers. Belief bootstrapping (§ Belief Bootstrapping) is a middle ground — cheaper than full mining, using belief output as enumeration input for other categories. Full specification mining eliminates even the starting category requirement but is computationally expensive.
 - **Git-aware ranking.** Weight deviations by recency: recent deviations in functions with historically consistent behavior are more likely to be regressions. Requires integration with git history, which is outside the current goast scope.
 - **Unification detector cross-reference.** When the unification detector finds two functions that are candidates for merging, check whether their callers have consistent handling patterns. If callers handle the two functions differently, unification may break caller expectations.
 - **Lint-layer meta-analysis.** Run `go-analyze` with all available analyzers, then apply consistency analysis to the *diagnostic pattern* — functions that trigger a diagnostic when peer functions don't. This is a second-order consistency check: using the lint layer's output as input to the consistency layer.
