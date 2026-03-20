@@ -151,6 +151,54 @@ func TestIntegration_FieldStoreQuery(t *testing.T) {
 	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
 }
 
+func TestGoSSABuild_BlockDominance(t *testing.T) {
+	c := qt.New(t)
+	engine := newEngine(t)
+
+	// Build SSA and find a function with multiple blocks (any function with control flow).
+	eval(t, engine, `(define funcs (go-ssa-build "github.com/aalpar/wile-goast/goast"))`)
+	eval(t, engine, `
+		(define multi-block-fn
+			(let loop ((fs funcs))
+				(if (null? fs) #f
+					(let* ((fn (car fs))
+						   (blocks (cdr (assoc 'blocks (cdr fn)))))
+						(if (> (length blocks) 2) fn (loop (cdr fs)))))))`)
+
+	t.Run("entry block has no idom", func(t *testing.T) {
+		result := eval(t, engine, `
+			(let* ((blocks (cdr (assoc 'blocks (cdr multi-block-fn))))
+				   (entry (car blocks)))
+				(assoc 'idom (cdr entry)))`)
+		c.Assert(result.Internal(), qt.Equals, values.FalseValue)
+	})
+
+	t.Run("non-entry block has idom", func(t *testing.T) {
+		result := eval(t, engine, `
+			(let* ((blocks (cdr (assoc 'blocks (cdr multi-block-fn))))
+				   (second (cadr blocks)))
+				(pair? (assoc 'idom (cdr second))))`)
+		c.Assert(result.Internal(), qt.Equals, values.TrueValue)
+	})
+
+	t.Run("idom chain reaches entry", func(t *testing.T) {
+		result := eval(t, engine, `
+			(let* ((blocks (cdr (assoc 'blocks (cdr multi-block-fn))))
+				   (last-block (car (reverse blocks)))
+				   (start-idx (cdr (assoc 'index (cdr last-block)))))
+				(let loop ((idx start-idx))
+					(cond
+						((= idx 0) #t)
+						(else
+							(let* ((blk (list-ref blocks idx))
+								   (idom-pair (assoc 'idom (cdr blk))))
+								(if idom-pair
+									(loop (cdr idom-pair))
+									#f))))))`)
+		c.Assert(result.Internal(), qt.Equals, values.TrueValue)
+	})
+}
+
 func TestGoSSABuild_Errors(t *testing.T) {
 	engine := newEngine(t)
 

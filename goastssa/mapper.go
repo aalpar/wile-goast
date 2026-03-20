@@ -90,6 +90,9 @@ func (p *ssaMapper) mapBlock(b *ssa.BasicBlock) values.Value {
 	if b.Comment != "" {
 		fields = append(fields, goast.Field("comment", goast.Str(b.Comment)))
 	}
+	if idom := b.Idom(); idom != nil {
+		fields = append(fields, goast.Field("idom", values.NewInteger(int64(idom.Index))))
+	}
 	return goast.Node("ssa-block", fields...)
 }
 
