@@ -122,3 +122,4 @@ make ci          # Full CI: lint + build + test + covercheck + verify-mod
 | [`plans/GO-AST.md`](plans/GO-AST.md) | AST extension design and phases |
 | [`plans/GO-STATIC-ANALYSIS.md`](plans/GO-STATIC-ANALYSIS.md) | SSA/callgraph/CFG/lint umbrella design |
 | [`plans/UNIFICATION-DETECTION.md`](plans/UNIFICATION-DETECTION.md) | Procedure unification detection |
+| [`plans/CONSISTENCY-DEVIATION.md`](plans/CONSISTENCY-DEVIATION.md) | Engler-style consistency-based deviation detection |

@@ -185,6 +185,100 @@ The equivalent Go implementation would require:
 The Scheme version composes all four layers using the same `walk`, `assoc`, and
 `filter-map` utilities — no boilerplate, no type switches, no driver setup.
 
+## Example: Consistency-Based Deviation Detection
+
+The script [`examples/goast-query/consistency-comutation.scm`](../examples/goast-query/consistency-comutation.scm)
+demonstrates Engler-style consistency detection -- the code is its own
+specification. A pattern followed by the majority of call sites is a convention;
+deviations are likely bugs.
+
+### What it does
+
+| Pass | Layer | Question |
+|------|-------|----------|
+| 0 | AST | Which structs have 2+ fields? |
+| 1 | SSA | For each struct, which functions store which fields? |
+| 2 | -- | Which field pairs are co-mutated? Where do functions deviate? |
+
+### Running it
+
+```bash
+./dist/wile-goast -f examples/goast-query/consistency-comutation.scm
+```
+
+Edit the `target` variable at the top of the script to analyze a different package.
+
+### Sample output
+
+```
+══════════════════════════════════════════════════
+  Co-Mutation Consistency Analysis
+══════════════════════════════════════════════════
+
+── Pass 0: Struct Field Enumeration (AST) ──
+  struct Debugger: fields (stepMode stepFrame stepFrameDepth ...)
+
+── Pass 1: Per-Function Store Sets (SSA) ──
+  struct Debugger:
+    Continue stores: (stepMode stepFrame stepFrameDepth)
+    StepInto stores: (stepMode stepFrame stepFrameDepth)
+    StepOver stores: (stepMode stepFrameDepth)
+    StepOut  stores: (stepMode stepFrame)
+
+── Pass 2: Co-Mutation Pair Analysis ──
+  struct Debugger: (stepMode, stepFrameDepth)
+    co-mutated: 3  stepMode-only: 0  stepFrameDepth-only: 1
+    DEVIATION: StepOut stores only stepMode
+
+── Summary ──
+  Structs analyzed:    53
+  Deviations found:    21
+```
+
+### What each layer contributes
+
+**AST** enumerates struct types and their field names -- the universe of possible
+co-mutation pairs.
+
+**SSA** traces `ssa-field-addr` + `ssa-store` instruction pairs to determine
+which fields each function actually stores. This cannot be done from AST alone --
+assignments through method calls, embedded struct promotion, and address-taken
+fields require SSA's data flow resolution.
+
+**Statistical comparison** finds the co-mutation norm and flags exceptions. No
+configuration or specification needed -- the signal comes from the code itself.
+
+### Related scripts
+
+[`dead-field-detect.scm`](../examples/goast-query/dead-field-detect.scm) uses
+the same AST + SSA two-layer pattern but asks a different question: not "are
+fields mutated together?" but "are fields ever read?" Dead fields (written but
+never read) are guaranteed waste. Unchecked mutations (read but never used in
+conditionals) are state that changes without influencing control flow.
+
+### SSA block dominance
+
+SSA blocks expose an `idom` field -- the immediate dominator's block index
+(absent on the entry block). This enables dominance checks directly from Scheme
+without crossing to the source-level CFG layer:
+
+```scheme
+;; Does block-a dominate block-b?
+(define (dominates? blocks block-a block-b)
+  (let loop ((idx block-b))
+    (cond
+      ((= idx block-a) #t)
+      ((= idx 0) #f)
+      (else
+        (let ((blk (list-ref blocks idx)))
+          (let ((idom-pair (assoc 'idom (cdr blk))))
+            (if idom-pair (loop (cdr idom-pair)) #f)))))))
+```
+
+This is used by the belief bootstrapping mechanism described in
+[`plans/CONSISTENCY-DEVIATION.md`](../plans/CONSISTENCY-DEVIATION.md), where
+co-mutation beliefs feed ordering beliefs via `idom` chain walks.
+
 ## More Examples
 
 ### Parse and query Go source
@@ -277,3 +371,7 @@ Pure s-expression operations (query, format) require no authorization.
 See [`plans/GO-STATIC-ANALYSIS.md`](../plans/GO-STATIC-ANALYSIS.md) for the full
 design document covering architecture decisions, s-expression encoding for each
 layer, mapper structure, and the phased implementation plan.
+
+See [`plans/CONSISTENCY-DEVIATION.md`](../plans/CONSISTENCY-DEVIATION.md) for the
+Engler-style consistency deviation detection plan, including five belief
+categories, cross-layer patterns, belief bootstrapping, and validation results.

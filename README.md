@@ -88,7 +88,7 @@ Key techniques:
 - **Substitution collapsing**: type annotations propagate root substitutions into every sub-expression; the engine finds minimal root substitutions that explain all derived diffs
 - **Weighted scoring**: structural differences cost 100x, operator changes cost 2x, identifier renames cost 0 (free parameter)
 
-Validated on the crdt project (17 packages, 132 functions): found the ewflag/dwflag duality and pncounter/gcounter pattern — both confirmed as real unification candidates.
+Validated on the [crdt](https://github.com/aalpar/crdt) project (17 packages, 132 functions): found the ewflag/dwflag duality and pncounter/gcounter pattern — both confirmed as real unification candidates.
 
 ### More Examples
 
