@@ -1,6 +1,6 @@
 # Example Walkthroughs
 
-Annotated walkthroughs of the five example scripts in `examples/goast-query/`.
+Annotated walkthroughs of the seven example scripts in `examples/goast-query/`.
 Each script demonstrates a different level of analysis complexity, from basic AST
 queries to module-wide structural comparison with type substitution collapsing.
 
@@ -12,6 +12,8 @@ everywhere.
 Primitives referenced below are documented in
 [`docs/GO-STATIC-ANALYSIS.md`](GO-STATIC-ANALYSIS.md). Design rationale for the
 unification scripts is in [`plans/UNIFICATION-DETECTION.md`](../plans/UNIFICATION-DETECTION.md).
+Design rationale for the consistency scripts is in
+[`plans/CONSISTENCY-DEVIATION.md`](../plans/CONSISTENCY-DEVIATION.md).
 
 ---
 
@@ -558,6 +560,201 @@ version is edited and re-run in seconds.
 
 ---
 
+## 6. consistency-comutation.scm -- Engler-Style Co-Mutation Consistency
+
+**File:** `examples/goast-query/consistency-comutation.scm`
+
+### Purpose
+
+Detects implicit co-mutation conventions in struct fields. If 10 functions store
+fields X and Y together, and 1 function stores only X, that deviation is either
+a bug or an intentional exception. The script finds these conventions
+statistically from the code itself -- no specification needed.
+
+This implements the co-mutation belief category from Engler et al.'s "Bugs as
+Deviant Behavior" (SOSP 2001), adapted for Go struct fields.
+
+### Layers Used
+
+- **AST** (`go-typecheck-package`) -- Pass 0: enumerate structs and their field
+  names.
+- **SSA** (`go-ssa-build`) -- Pass 1: trace `ssa-field-addr` + `ssa-store`
+  instruction pairs to determine which fields each function stores.
+
+### Key Techniques
+
+**Receiver-type disambiguation.** Two structs can share field names (e.g.,
+`Source` on both `SchemeError` and `ErrExceptionEscape`). Since `ssa-field-addr`
+carries the field name but not the struct type, cross-struct false positives
+arise. The script groups `ssa-field-addr` instructions by their receiver
+operand (`x`). If any field accessed through a receiver is NOT in the target
+struct's field set, that receiver belongs to a different struct -- all its
+field-addrs are excluded:
+
+```scheme
+(define (stored-fields-in-func ssa-func struct-fields)
+  (let* ((all-field-addrs (collect-field-addrs ssa-func))
+         (stores (collect-stores ssa-func))
+         (store-addrs (map car stores))
+         (receivers (unique (map caddr all-field-addrs)))
+         ;; A receiver is valid if ALL its fields are in struct-fields.
+         (valid-receivers
+           (filter-map
+             (lambda (recv)
+               (let* ((recv-fas (filter-map
+                                  (lambda (fa) (and (equal? (caddr fa) recv) fa))
+                                  all-field-addrs))
+                      (recv-fields (unique (map cadr recv-fas)))
+                      (all-match (let loop ((fs recv-fields))
+                                   (cond ((null? fs) #t)
+                                         ((not (member? (car fs) struct-fields)) #f)
+                                         (else (loop (cdr fs)))))))
+                 (and all-match recv)))
+             receivers))
+         ;; Only count stores through valid receivers
+         (stored (filter-map
+                   (lambda (fa)
+                     (and (member? (caddr fa) valid-receivers)
+                          (member? (car fa) store-addrs)
+                          (member? (cadr fa) struct-fields)
+                          (cadr fa)))
+                   all-field-addrs)))
+    (unique stored)))
+```
+
+**Pairwise co-mutation counting.** For each ordered pair of fields (A, B) in a
+struct, the script counts functions that store both (co-mutated), only A
+(A-only), or only B (B-only). The co-mutation belief is strong when
+`co-count / total >= min-adherence` (default 66%) and `total >= min-sites`
+(default 3).
+
+**Threshold-based filtering.** Running with no thresholds on `wile/machine`
+produces 2,164 deviations. The 66%/3 thresholds reduce this to 21 deviations
+across 11 beliefs -- capturing genuine signals like the Debugger stepping field
+inconsistency while filtering noise from focused setter functions.
+
+### How to Run
+
+```bash
+./dist/wile-goast -f examples/goast-query/consistency-comutation.scm
+```
+
+### Sample Output
+
+(From running against `github.com/aalpar/wile/machine`.)
+
+```
+══════════════════════════════════════════════════
+  Co-Mutation Consistency Analysis
+══════════════════════════════════════════════════
+
+── Pass 0: Struct Field Enumeration (AST) ──
+  struct Debugger: fields (stepMode stepFrame stepFrameDepth ...)
+
+── Pass 1: Per-Function Store Sets (SSA) ──
+  struct Debugger:
+    Continue stores: (stepMode stepFrame stepFrameDepth)
+    StepInto stores: (stepMode stepFrame stepFrameDepth)
+    StepOver stores: (stepMode stepFrameDepth)
+    StepOut  stores: (stepMode stepFrame)
+
+── Pass 2: Co-Mutation Pair Analysis ──
+  struct Debugger: (stepMode, stepFrameDepth)
+    co-mutated: 3  stepMode-only: 0  stepFrameDepth-only: 1
+    DEVIATION: StepOut stores only stepMode
+
+── Summary ──
+  Structs analyzed:    53
+  Deviations found:    21
+```
+
+### Without wile-goast
+
+No existing Go tool tracks field co-mutation patterns across functions. Building
+this requires:
+
+1. `go/packages.Load` with types for struct field enumeration
+2. `golang.org/x/tools/go/ssa` for `FieldAddr` + `Store` correlation
+3. Pairwise combinatorial analysis with threshold-based filtering
+4. Receiver-type disambiguation for cross-struct field name collisions
+
+The Scheme version is ~377 lines. The Go equivalent would be 400-600 lines plus
+test infrastructure. More importantly, tuning thresholds and adding new belief
+categories requires recompiling in Go; in Scheme, it is an edit-and-rerun cycle.
+
+---
+
+## 7. dead-field-detect.scm -- Dead and Unchecked Field Analysis
+
+**File:** `examples/goast-query/dead-field-detect.scm`
+
+### Purpose
+
+Finds two kinds of field-level waste:
+
+- **Dead fields:** Written but never read. Guaranteed waste -- the stored value
+  is never used.
+- **Unchecked mutations:** Written and read, but the reads never feed into a
+  conditional. The field changes without influencing control flow -- either
+  redundant state or a missing check.
+
+### Layers Used
+
+- **AST** (`go-typecheck-package`) -- Pass 0: struct enumeration. Pass 0.5:
+  method field reads (handles Go value-receiver methods that SSA may not include
+  due to promoted method wrappers).
+- **SSA** (`go-ssa-build`) -- Pass 1: per-function field write/read/conditional
+  classification.
+
+### Key Techniques
+
+**Two-source read collection.** Go's SSA builder synthesizes promoted method
+wrappers that may not appear in `go-ssa-build` output. A value-receiver method
+like `(p OperationBase) String()` exists in source but may only be called
+through a promoted wrapper on an embedding type. Pass 0.5 scans the AST for
+methods on each struct type and extracts field reads from the method body,
+supplementing the SSA-based read set.
+
+**Three-category field classification.** For each struct, every function's field
+usage is classified into three sets: written (field-addr as store target), read
+(field-addr as non-store operand or direct `ssa-field` read), and conditional
+(read registers that feed into `ssa-if` operands). Dead = written - read.
+Unchecked = (written ∩ read) - conditional.
+
+**Forward value tracing.** Conditional detection traces through one level of
+indirection. The pattern `t1 = s.field; t2 = t1 != nil; if t2 ...` requires
+following `t1` through the comparison instruction to see that it reaches the
+`ssa-if`. The script builds a register-to-field map from reads, then checks
+whether any instruction consuming that register produces a value that appears
+as an `ssa-if` operand.
+
+**External call analysis.** When a struct receiver is passed to an external or
+dynamic call (`fmt.Println`, `json.Marshal`, interface dispatch), the callee
+might read any field via reflection. The script conservatively marks all fields
+as read in that case. Internal same-package calls are excluded since SSA already
+covers them.
+
+### How to Run
+
+```bash
+./dist/wile-goast -f examples/goast-query/dead-field-detect.scm
+```
+
+### Without wile-goast
+
+A Go implementation requires both AST analysis (for method field reads) and SSA
+analysis (for write/read/conditional tracing). Additionally:
+
+1. Forward register tracing for conditional detection
+2. Call target classification (internal vs. external) for receiver-passed reads
+3. Handling generic types in receiver patterns (`Pool[T]`)
+
+The Scheme version is ~620 lines. The equivalent Go program would be 600-900
+lines with the SSA setup, AST method scanning, register tracing, and reporting
+infrastructure.
+
+---
+
 ## Progression Summary
 
 | Script | Lines | Layers | Complexity | What it demonstrates |
@@ -567,6 +764,8 @@ version is edited and re-run in seconds.
 | `state-trace-full.scm` | 411 | AST + SSA + CFG | Cross-layer correlation | SSA instruction matching, CFG dominance queries, same `walk` across IRs |
 | `unify-detect.scm` | 518 | AST | Recursive tree diff | s-expression structural comparison, path-based classification, weighted scoring |
 | `unify-detect-pkg.scm` | 563 | AST (typed) | Module-wide analysis | Substitution collapsing, signature-shape grouping, threshold filtering |
+| `consistency-comutation.scm` | 377 | AST + SSA | Statistical deviation detection | Receiver-type disambiguation, pairwise co-mutation, threshold tuning |
+| `dead-field-detect.scm` | 620 | AST + SSA | Cross-layer field liveness | Two-source reads (SSA + AST methods), forward value tracing, external call analysis |
 
 Each script builds on patterns from the previous one. The utility functions
 (`nf`, `tag?`, `walk`, `filter-map`, `flat-map`) are copy-pasted between

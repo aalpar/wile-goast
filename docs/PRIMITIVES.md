@@ -157,7 +157,8 @@ A list of `(ssa-func ...)` nodes. Each function contains:
 | `pkg` | string | Package path (when available) |
 
 Each `ssa-block` contains `index`, `preds`, `succs`, `instrs`, and optionally
-`comment`.
+`comment` and `idom` (immediate dominator block index; absent on the entry
+block).
 
 ### SSA instruction tags
 
