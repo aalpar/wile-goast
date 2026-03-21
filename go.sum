@@ -1,5 +1,5 @@
-github.com/aalpar/wile v1.6.1 h1:OEOmq+Yr6PRAMNVycG7G6BYwIbTdvUTXJCMob2MfFdI=
-github.com/aalpar/wile v1.6.1/go.mod h1:d0DF2cooEqi3+7529UmH9lWC+uYJ3q4A2nHRH1YrdKs=
+github.com/aalpar/wile v1.7.0 h1:qQDuP6dlzxwDy+RrZI0+tk4aH6xhrmaLfVGVSiTMlh8=
+github.com/aalpar/wile v1.7.0/go.mod h1:QGpa6ROVYbwTq7mqSrdeCS9T12DdlgI0efx61n3YsrE=
 github.com/creack/pty v1.1.9/go.mod h1:oKZEueFk5CKHvIhNR5MUki03XCEU+Q6VDXinZuGJ33E=
 github.com/frankban/quicktest v1.14.6 h1:7Xjx+VpznH+oBnejlPUj8oUpdxnVs4f8XU8WnHkI4W8=
 github.com/frankban/quicktest v1.14.6/go.mod h1:4ptaffx2x8+WTWXmUCuVU6aPUX1/Mz7zb5vbUoiM6w0=

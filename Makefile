@@ -59,6 +59,12 @@ build-linux-amd64: $(DIST_DIR)/linux/amd64/$(MY_BIN)
 .PHONY: build-all
 build-all: build-darwin-arm64 build-darwin-amd64 build-linux-arm64 build-linux-amd64
 
+# Install wile-goast to $GOPATH/bin (or $GOBIN).
+#   make install
+.PHONY: install
+install:
+	$(GO) install $(LDFLAGS) ./cmd/wile-goast
+
 # Compile tests for all packages without running them.
 #   make buildtest
 .PHONY: buildtest
