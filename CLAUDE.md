@@ -76,6 +76,80 @@ All sub-extensions depend on the base `goast` package for shared mapper/helper i
 
 See [`docs/PRIMITIVES.md`](docs/PRIMITIVES.md) for complete signatures, options, and examples.
 
+## Belief DSL — `(wile goast belief)`
+
+Declarative consistency deviation detection. Beliefs are patterns extracted statistically from code (Engler et al., "Bugs as Deviant Behavior"). The DSL lets you define beliefs in 3-5 lines instead of writing 70+ line scripts per belief.
+
+```scheme
+(import (wile goast belief))
+
+(define-belief "lock-unlock-pairing"
+  (sites (functions-matching (contains-call "Lock")))
+  (expect (paired-with "Lock" "Unlock"))
+  (threshold 0.90 5))
+
+(run-beliefs "my/package/...")
+```
+
+### Belief Definition Form
+
+```scheme
+(define-belief <name>
+  (sites <selector>)      ;; where to look
+  (expect <checker>)       ;; what to verify
+  (threshold <ratio> <n>)) ;; when to report
+```
+
+### Site Selectors
+
+| Selector | Layer | Description |
+|----------|-------|-------------|
+| `(functions-matching pred ...)` | AST | Functions matching all predicates |
+| `(callers-of "func")` | Call Graph | All callers of a function |
+| `(methods-of "Type")` | AST | All methods on a receiver type |
+| `(sites-from "belief" 'which 'adherence)` | — | Bootstrapping from another belief's results |
+
+### Selector Predicates
+
+| Predicate | Description |
+|-----------|-------------|
+| `(has-params "type" ...)` | Signature contains these param types |
+| `(has-receiver "type")` | Method receiver matches |
+| `(name-matches "pattern")` | Function name substring match |
+| `(contains-call "func" ...)` | Body calls any of these |
+| `(stores-to-fields "Struct" "field" ...)` | SSA: stores to these fields |
+| `(all-of pred ...)` | All predicates match |
+| `(any-of pred ...)` | Any predicate matches |
+| `(none-of pred ...)` | No predicate matches |
+
+### Property Checkers
+
+| Checker | Layer | Returns |
+|---------|-------|---------|
+| `(contains-call "func" ...)` | AST | `'present` / `'absent` |
+| `(paired-with "A" "B")` | AST+CFG | `'paired-defer` / `'paired-call` / `'unpaired` |
+| `(ordered "A" "B")` | CFG | `'a-dominates-b` / `'b-dominates-a` / `'same-block` / `'unordered` |
+| `(co-mutated "field" ...)` | SSA | `'co-mutated` / `'partial` |
+| `(checked-before-use "val")` | SSA+CFG | `'guarded` / `'unguarded` |
+| `(custom (lambda (site ctx) ...))` | any | user-defined symbol |
+
+### Key Files
+
+| File | Purpose |
+|------|---------|
+| `lib/wile/goast/belief.sld` | R7RS library definition |
+| `lib/wile/goast/belief.scm` | Complete DSL implementation |
+| `lib/wile/goast/utils.sld` + `utils.scm` | Shared traversal utilities (`nf`, `walk`, `tag?`, etc.) |
+| `plans/BELIEF-DSL.md` | Design: graduation model, bootstrapping, trade-offs |
+| `plans/BELIEF-DSL-IMPL.md` | Implementation plan |
+
+### Cross-Layer Notes
+
+- SSA functions use qualified names (`(*Type).Method`); AST uses short names (`Method`). The SSA index normalizes via `ssa-short-name`.
+- `stores-to-fields` disambiguates receivers against the full struct field set (from `struct-field-names`), not just the target fields.
+- `co-mutated` skips receiver disambiguation — `stores-to-fields` already filtered.
+- Analysis layers load lazily: AST always, SSA/callgraph only when a belief needs them.
+
 ## AST Representation
 
 Go AST nodes map to tagged alists: `(tag (key . val) ...)`. Field access via `(assoc key (cdr node))`. The mapper is bidirectional — `go-parse-string` produces s-expressions, `go-format` converts them back to Go source. All five layers share this format.
@@ -109,6 +183,8 @@ make ci          # Full CI: lint + build + test + covercheck + verify-mod
 | `goast/register.go` | Extension registration |
 | `goast{ssa,cfg,cg,lint}/mapper.go` | IR-specific s-expression mappers |
 | `goast{ssa,cfg,cg,lint}/register.go` | Sub-extension registration |
+| `lib/wile/goast/belief.scm` | Belief DSL implementation |
+| `lib/wile/goast/utils.scm` | Shared s-expression traversal utilities |
 
 ## Documentation
 
@@ -123,3 +199,5 @@ make ci          # Full CI: lint + build + test + covercheck + verify-mod
 | [`plans/GO-STATIC-ANALYSIS.md`](plans/GO-STATIC-ANALYSIS.md) | SSA/callgraph/CFG/lint umbrella design |
 | [`plans/UNIFICATION-DETECTION.md`](plans/UNIFICATION-DETECTION.md) | Procedure unification detection |
 | [`plans/CONSISTENCY-DEVIATION.md`](plans/CONSISTENCY-DEVIATION.md) | Engler-style consistency-based deviation detection |
+| [`plans/BELIEF-DSL.md`](plans/BELIEF-DSL.md) | Belief DSL design: combinators, graduation, bootstrapping |
+| [`plans/BELIEF-DSL-IMPL.md`](plans/BELIEF-DSL-IMPL.md) | Belief DSL implementation plan |
