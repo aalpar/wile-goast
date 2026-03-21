@@ -44,6 +44,33 @@ For human developers, the examples are readable. The language is a natural fit f
 
 See [`docs/PRIMITIVES.md`](docs/PRIMITIVES.md) for the complete reference.
 
+## Belief DSL — `(wile goast belief)`
+
+A declarative DSL for Engler-style consistency deviation detection. Instead of writing 70+ line scripts per belief, define beliefs in 3-5 lines:
+
+```scheme
+(import (wile goast belief))
+
+(define-belief "lock-unlock-pairing"
+  (sites (functions-matching (contains-call "Lock")))
+  (expect (paired-with "Lock" "Unlock"))
+  (threshold 0.90 5))
+
+(define-belief "stepping-mode-frame"
+  (sites (functions-matching
+           (stores-to-fields "Debugger" "stepMode" "stepFrame")))
+  (expect (co-mutated "stepMode" "stepFrame"))
+  (threshold 0.66 3))
+
+(run-beliefs "my/package/...")
+```
+
+The DSL provides site selectors (`functions-matching`, `callers-of`, `methods-of`, `sites-from`), composable predicates (`has-params`, `has-receiver`, `name-matches`, `contains-call`, `stores-to-fields`, `all-of`/`any-of`/`none-of`), and property checkers (`paired-with`, `ordered`, `co-mutated`, `checked-before-use`, `custom`). The runner loads analysis layers lazily and reports deviations from statistically strong beliefs.
+
+Validated against known results: the stepping-field co-mutation beliefs correctly identify `StepOver` (missing `stepFrame`) and `StepOut` (missing `stepFrameDepth`) as deviations from the `wile/machine` Debugger convention.
+
+See [`plans/BELIEF-DSL.md`](plans/BELIEF-DSL.md) for the design and [`examples/goast-query/belief-comutation.scm`](examples/goast-query/belief-comutation.scm) for the validation script.
+
 ## Complex Examples
 
 The `examples/goast-query/` directory contains analysis scripts that demonstrate what wile-goast enables. These are the kind of scripts an AI agent composes given access to the primitive reference.
@@ -97,6 +124,8 @@ Validated on the [crdt](https://github.com/aalpar/crdt) project (17 packages, 13
 | [`goast-query.scm`](examples/goast-query/goast-query.scm) | AST | Parse source, extract function names, find error-returning functions |
 | [`state-trace-detect.scm`](examples/goast-query/state-trace-detect.scm) | AST | 2-pass boolean cluster + if-chain detection |
 | [`unify-detect.scm`](examples/goast-query/unify-detect.scm) | AST | Prototype diff engine comparing two inline Go functions |
+| [`belief-comutation.scm`](examples/goast-query/belief-comutation.scm) | AST+SSA | Co-mutation beliefs via DSL, validated against known results |
+| [`belief-example.scm`](examples/goast-query/belief-example.scm) | AST | Belief DSL smoke test against wile-goast itself |
 
 See [`docs/EXAMPLES.md`](docs/EXAMPLES.md) for annotated walkthroughs of each script.
 
@@ -124,6 +153,7 @@ func main() {
     ctx := context.Background()
     engine, err := wile.NewEngine(ctx,
         wile.WithSafeExtensions(),
+        wile.WithLibraryPaths(),  // enables (import ...) for Scheme libraries
         wile.WithExtension(goast.Extension),
         wile.WithExtension(goastssa.Extension),
         wile.WithExtension(goastcfg.Extension),

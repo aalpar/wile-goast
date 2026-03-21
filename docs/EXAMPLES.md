@@ -1,6 +1,6 @@
 # Example Walkthroughs
 
-Annotated walkthroughs of the seven example scripts in `examples/goast-query/`.
+Annotated walkthroughs of the nine example scripts in `examples/goast-query/`.
 Each script demonstrates a different level of analysis complexity, from basic AST
 queries to module-wide structural comparison with type substitution collapsing.
 
@@ -755,6 +755,113 @@ infrastructure.
 
 ---
 
+## 8. belief-comutation.scm -- Belief DSL Co-Mutation Validation
+
+**File:** `examples/goast-query/belief-comutation.scm`
+
+### Purpose
+
+Re-expresses the co-mutation analysis from `consistency-comutation.scm` as
+`define-belief` forms using the `(wile goast belief)` DSL. Validates the DSL
+against the known results documented in `plans/CONSISTENCY-DEVIATION.md`.
+
+### Layers Used
+
+- **AST** (`go-typecheck-package`) -- struct field enumeration for receiver-type
+  disambiguation.
+- **SSA** (`go-ssa-build`) -- field store detection via `ssa-field-addr` +
+  `ssa-store`.
+
+### What It Demonstrates
+
+**Declarative belief definitions.** What was 377 lines of hand-written Scheme
+(`consistency-comutation.scm`) becomes 35 lines:
+
+```scheme
+(import (wile goast belief))
+
+(define-belief "stepping-mode-frame"
+  (sites (functions-matching
+           (stores-to-fields "Debugger" "stepMode" "stepFrame")))
+  (expect (co-mutated "stepMode" "stepFrame"))
+  (threshold 0.66 3))
+
+(define-belief "stepping-mode-depth"
+  (sites (functions-matching
+           (stores-to-fields "Debugger" "stepMode" "stepFrameDepth")))
+  (expect (co-mutated "stepMode" "stepFrameDepth"))
+  (threshold 0.66 3))
+
+(run-beliefs "github.com/aalpar/wile/machine")
+```
+
+**`stores-to-fields` as a site selector.** The predicate
+`(stores-to-fields "Debugger" "stepMode" "stepFrame")` matches functions that
+store to any of the named fields via SSA. It uses `struct-field-names` to look
+up the full struct field set for receiver-type disambiguation.
+
+**`co-mutated` as a property checker.** Classifies each site as `'co-mutated`
+(stores all listed fields) or `'partial` (stores only some). The statistical
+comparison engine identifies the majority category and reports deviations.
+
+**Lazy layer loading.** The runner loads AST first (always needed), then SSA
+only because `stores-to-fields` and `co-mutated` require it. The call graph
+layer is never loaded because no belief uses `callers-of`.
+
+### How to Run
+
+```bash
+./dist/wile-goast '(include "examples/goast-query/belief-comutation.scm")'
+```
+
+### Sample Output
+
+```
+══════════════════════════════════════════════════
+  Consistency Analysis
+══════════════════════════════════════════════════
+
+── Belief: stepping-mode-frame ──
+  Pattern: co-mutated (3/4 sites)
+    DEVIATION: StepOver -> partial
+
+── Belief: stepping-mode-depth ──
+  Pattern: co-mutated (3/4 sites)
+    DEVIATION: StepOut -> partial
+
+── Summary ──
+  Beliefs evaluated:   2
+  Strong beliefs:      2
+  Deviations found:    2
+```
+
+StepOver deviates from `stepping-mode-frame` because it stores `stepMode` and
+`stepFrameDepth` but not `stepFrame`. StepOut deviates from `stepping-mode-depth`
+because it stores `stepMode` and `stepFrame` but not `stepFrameDepth`. Both match
+the findings documented in `plans/CONSISTENCY-DEVIATION.md` §Validation Results.
+
+---
+
+## 9. belief-example.scm -- Belief DSL Smoke Test
+
+**File:** `examples/goast-query/belief-example.scm`
+
+### Purpose
+
+A minimal smoke test for the belief DSL, run against wile-goast's own codebase.
+Defines one belief: functions matching "Prim" in goast should have a body.
+
+### How to Run
+
+```bash
+./dist/wile-goast '(include "examples/goast-query/belief-example.scm")'
+```
+
+All 7 `Prim*` functions have bodies, so 100% adherence with 0 deviations. This
+script serves as a quick integration test rather than a meaningful analysis.
+
+---
+
 ## Progression Summary
 
 | Script | Lines | Layers | Complexity | What it demonstrates |
@@ -766,11 +873,13 @@ infrastructure.
 | `unify-detect-pkg.scm` | 563 | AST (typed) | Module-wide analysis | Substitution collapsing, signature-shape grouping, threshold filtering |
 | `consistency-comutation.scm` | 377 | AST + SSA | Statistical deviation detection | Receiver-type disambiguation, pairwise co-mutation, threshold tuning |
 | `dead-field-detect.scm` | 620 | AST + SSA | Cross-layer field liveness | Two-source reads (SSA + AST methods), forward value tracing, external call analysis |
+| `belief-comutation.scm` | 35 | AST + SSA | Declarative consistency | Belief DSL: `define-belief`, `stores-to-fields`, `co-mutated`, `run-beliefs` |
+| `belief-example.scm` | 15 | AST | DSL smoke test | Minimal `define-belief` + `custom` checker |
 
 Each script builds on patterns from the previous one. The utility functions
-(`nf`, `tag?`, `walk`, `filter-map`, `flat-map`) are copy-pasted between
-scripts -- they are small enough that a shared library is not necessary, and
-having them inline makes each script self-contained.
+(`nf`, `tag?`, `walk`, `filter-map`, `flat-map`) were originally copy-pasted
+between scripts. They are now extracted into `(wile goast utils)` and reused
+by the belief DSL library.
 
 The scripts are composable primitives for an AI agent: given the reference for
 `go-typecheck-package`, `go-ssa-build`, `go-cfg`, and the tagged-alist node
