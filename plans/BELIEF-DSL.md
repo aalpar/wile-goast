@@ -241,6 +241,57 @@ This is a Scheme library under `lib/`, importable as `(wile goast belief)`. It d
 
 The traversal functions duplicated across example scripts (`nf`, `walk`, `tag?`, `filter-map`, `flat-map`, `member?`, `unique`, `ordered-pairs`) are extracted into `belief-utils.scm` and reused by both the DSL internals and the `custom` escape hatch.
 
+## Belief Graduation
+
+Discovery scripts (e.g., `consistency-comutation.scm`) sweep broadly — all field pairs, all callers — and find patterns statistically. Once a pattern is verified, it should become a coded belief. The question: what's the artifact of discovery?
+
+**Answer: discovery produces `define-belief` forms.**
+
+The output of a discovery run is not just a report — it's candidate Scheme code:
+
+```
+══════════════════════════════════════════════════
+  Discovery: Co-Mutation
+══════════════════════════════════════════════════
+
+;; Debugger stepping fields: stepMode + stepFrame
+;; Adherence: 75% (3/4 sites), Deviations: StepOver
+;;
+(define-belief "Debugger:stepMode+stepFrame"
+  (sites (functions-matching
+           (stores-to-fields "Debugger" "stepMode" "stepFrame")))
+  (expect (co-mutated "stepMode" "stepFrame"))
+  (threshold 0.66 3))
+```
+
+### Lifecycle
+
+```
+discover → review → commit → enforce
+   │                  │         │
+   │  human judgment  │  CI     │
+   ▼                  ▼         ▼
+ candidates       belief file  run-beliefs
+ (stdout)         (.scm)       (exit code)
+```
+
+1. **Discover** — broad sweep produces `define-belief` candidates on stdout.
+2. **Review** — human reads candidates, discards false positives, accepts real conventions.
+3. **Commit** — accepted beliefs go into a `.scm` file checked into the repo.
+4. **Enforce** — `run-beliefs` in CI evaluates committed beliefs, fails on deviations.
+
+### Suppression
+
+Future discovery runs diff their output against committed belief files. A belief whose `(sites ...)` and `(expect ...)` match an existing `define-belief` is suppressed — discovery only reports *new* findings. This avoids re-reporting known conventions.
+
+The diff is structural, not textual: two beliefs match if they have the same selector type, the same target fields/functions, and the same checker. Names and thresholds don't matter for matching.
+
+### Discovery as Code Generation
+
+Discovery scripts gain a `--emit` mode (or equivalent flag) that switches output from human-readable report to `define-belief` forms. The default remains the report for exploration; `--emit` is for graduation.
+
+This means the discovery scripts and the belief DSL share a common representation — `define-belief` is both the output of discovery and the input to evaluation. The representation is closed under the full lifecycle.
+
 ## Trade-offs
 
 | Gain | Cost |
