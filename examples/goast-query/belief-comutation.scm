@@ -3,7 +3,7 @@
 ;;; Re-expresses consistency-comutation.scm as define-belief forms.
 ;;; Validates against known results from CONSISTENCY-DEVIATION.md.
 ;;;
-;;; Usage: ./dist/wile-goast '(begin (load "examples/goast-query/belief-comutation.scm"))'
+;;; Usage: ./dist/wile-goast '(include "examples/goast-query/belief-comutation.scm")'
 
 (import (wile goast belief))
 
