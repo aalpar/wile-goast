@@ -58,6 +58,7 @@
   (list (cons 'target target)
         (cons 'pkgs #f)
         (cons 'ssa #f)
+        (cons 'ssa-index #f)
         (cons 'callgraph #f)
         (cons 'results '())))
 
@@ -86,6 +87,34 @@
       (let ((cg (go-callgraph (ctx-target ctx) 'static)))
         (ctx-set! ctx 'callgraph cg)
         cg)))
+
+;; Extract short name from SSA qualified name.
+;; "(*Debugger).Continue" -> "Continue", "init" -> "init"
+(define (ssa-short-name full-name)
+  (let ((len (string-length full-name)))
+    (let loop ((i (- len 1)))
+      (cond ((<= i 0) full-name)
+            ((char=? (string-ref full-name i) #\.)
+             (substring full-name (+ i 1) len))
+            (else (loop (- i 1)))))))
+
+;; SSA name lookup index — built once, indexed by short name.
+;; Methods like (*Debugger).Continue are indexed as "Continue".
+(define (ctx-ssa-index ctx)
+  (or (ctx-ref ctx 'ssa-index)
+      (let* ((ssa-funcs (ctx-ssa ctx))
+             (index (filter-map
+                      (lambda (fn)
+                        (let ((name (nf fn 'name)))
+                          (and name (cons (ssa-short-name name) fn))))
+                      (if (pair? ssa-funcs) ssa-funcs '()))))
+        (ctx-set! ctx 'ssa-index index)
+        index)))
+
+;; Fast SSA function lookup via cached index (by short name).
+(define (ctx-find-ssa-func ctx name)
+  (let ((entry (assoc name (ctx-ssa-index ctx))))
+    (and entry (cdr entry))))
 
 ;; Store belief results for bootstrapping via sites-from.
 (define (ctx-store-result! ctx name adherence-sites deviation-sites)
@@ -237,10 +266,10 @@
 (define (stores-to-fields struct-name . field-names)
   (lambda (fn ctx)
     (let* ((fname (nf fn 'name))
-           (ssa-funcs (ctx-ssa ctx))
-           (ssa-fn (find-ssa-func-by-name ssa-funcs fname)))
+           (ssa-fn (ctx-find-ssa-func ctx fname)))
       (if ssa-fn
-        (let ((stored (stored-fields-in-func ssa-fn field-names)))
+        (let* ((all-fields (struct-field-names (ctx-pkgs ctx) struct-name))
+               (stored (stored-fields-in-func ssa-fn field-names all-fields)))
           (pair? stored))
         #f))))
 
@@ -269,12 +298,30 @@
 
 ;; ── SSA helpers ─────────────────────────────────────────
 
-;; Find an SSA function by name.
-(define (find-ssa-func-by-name ssa-funcs name)
-  (let loop ((fns (if (pair? ssa-funcs) ssa-funcs '())))
-    (cond ((null? fns) #f)
-          ((equal? (nf (car fns) 'name) name) (car fns))
-          (else (loop (cdr fns))))))
+;; Look up all field names for a struct by name from AST packages.
+(define (struct-field-names pkgs struct-name)
+  (let loop ((ps (if (pair? pkgs) pkgs '())))
+    (if (null? ps) '()
+      (let file-loop ((files (let ((fs (nf (car ps) 'files)))
+                               (if (pair? fs) fs '()))))
+        (if (null? files) (loop (cdr ps))
+          (let ((found (walk (car files)
+                   (lambda (node)
+                     (and (tag? node 'type-spec)
+                          (equal? (nf node 'name) struct-name)
+                          (let ((stype (nf node 'type)))
+                            (and (tag? stype 'struct-type)
+                                 (let ((fields (nf stype 'fields)))
+                                   (flat-map
+                                     (lambda (f)
+                                       (if (tag? f 'field)
+                                         (let ((ns (nf f 'names)))
+                                           (if (pair? ns) ns '()))
+                                         '()))
+                                     (if (pair? fields) fields '()))))))))))
+            (if (pair? found)
+              (car found)
+              (file-loop (cdr files)))))))))
 
 ;; Collect ssa-field-addr instructions from an SSA function.
 (define (collect-field-addrs ssa-func)
@@ -295,8 +342,9 @@
 
 ;; Determine which target fields are stored in an SSA function.
 ;; Uses receiver-type disambiguation: a receiver is valid only
-;; if every field it accesses is in target-fields.
-(define (stored-fields-in-func ssa-func target-fields)
+;; if every field it accesses is in struct-fields (the full struct).
+;; Only fields in target-fields are counted in the result.
+(define (stored-fields-in-func ssa-func target-fields struct-fields)
   (let* ((all-field-addrs (collect-field-addrs ssa-func))
          (stores (collect-stores ssa-func))
          (store-addrs (map car stores))
@@ -310,7 +358,7 @@
                       (recv-fields (unique (map cadr recv-fas)))
                       (all-match (let loop ((fs recv-fields))
                                    (cond ((null? fs) #t)
-                                         ((not (member? (car fs) target-fields)) #f)
+                                         ((not (member? (car fs) struct-fields)) #f)
                                          (else (loop (cdr fs)))))))
                  (and all-match recv)))
              receivers))
@@ -400,13 +448,28 @@
 ;; (co-mutated field ...) — checks whether all named fields are stored
 ;; together in the function.
 ;; Returns: 'co-mutated or 'partial
+;; (co-mutated field ...) — checks whether all named fields are stored
+;; together in the function.
+;; Skips receiver-type disambiguation: the site selector (stores-to-fields)
+;; already filtered to functions that store to this struct's fields.
+;; Returns: 'co-mutated or 'partial
 (define (co-mutated . field-names)
   (lambda (site ctx)
     (let* ((fname (nf site 'name))
-           (ssa-funcs (ctx-ssa ctx))
-           (ssa-fn (find-ssa-func-by-name ssa-funcs fname)))
+           (ssa-fn (ctx-find-ssa-func ctx fname)))
       (if (not ssa-fn) 'partial
-        (let ((stored (stored-fields-in-func ssa-fn field-names)))
+        (let* ((all-field-addrs (collect-field-addrs ssa-fn))
+               (stores (collect-stores ssa-fn))
+               (store-addrs (map car stores))
+               ;; Collect stored field names without disambiguation
+               (stored (unique (filter-map
+                         (lambda (fa)
+                           (let ((reg (car fa))
+                                 (field (cadr fa)))
+                             (and (member? reg store-addrs)
+                                  (member? field field-names)
+                                  field)))
+                         all-field-addrs))))
           (if (= (length stored) (length field-names))
             'co-mutated
             'partial))))))
@@ -417,8 +480,7 @@
 (define (checked-before-use value-pattern)
   (lambda (site ctx)
     (let* ((fname (nf site 'name))
-           (ssa-funcs (ctx-ssa ctx))
-           (ssa-fn (find-ssa-func-by-name ssa-funcs fname)))
+           (ssa-fn (ctx-find-ssa-func ctx fname)))
       (if (not ssa-fn) 'unguarded
         (let* ((blocks (nf ssa-fn 'blocks))
                (all-instrs (if (pair? blocks)
