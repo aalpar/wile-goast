@@ -37,6 +37,7 @@ func main() {
 
 	engine, err := wile.NewEngine(ctx,
 		wile.WithSafeExtensions(),
+		wile.WithLibraryPaths(),
 		wile.WithExtension(goast.Extension),
 		wile.WithExtension(goastssa.Extension),
 		wile.WithExtension(goastcg.Extension),
