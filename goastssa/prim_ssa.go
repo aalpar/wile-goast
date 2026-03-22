@@ -74,7 +74,7 @@ func PrimGoSSABuild(mc *machine.MachineContext) error {
 		return err
 	}
 
-	err = security.Check(mc.Context(), security.AccessRequest{
+	err = security.CheckWithAuthorizer(mc.Authorizer(), security.AccessRequest{
 		Resource: security.ResourceProcess,
 		Action:   security.ActionLoad,
 		Target:   "go",

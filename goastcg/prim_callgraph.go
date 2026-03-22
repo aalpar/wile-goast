@@ -67,7 +67,7 @@ func PrimGoCallgraph(mc *machine.MachineContext) error {
 			"go-callgraph: algorithm must be static, cha, rta, or vta; got %s", algo.Key)
 	}
 
-	err = security.Check(mc.Context(), security.AccessRequest{
+	err = security.CheckWithAuthorizer(mc.Authorizer(), security.AccessRequest{
 		Resource: security.ResourceProcess,
 		Action:   security.ActionLoad,
 		Target:   "go",
