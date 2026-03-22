@@ -169,7 +169,7 @@ make ci          # Full CI: lint + build + test + covercheck + verify-mod
 
 - **Commits:** No Co-Authored-By lines. Direct push to master at this stage.
 - **Dependencies:** `github.com/aalpar/wile` + `golang.org/x/tools`. Prefer standard library otherwise.
-- **Version:** v0.3.3 (see `VERSION`). Zero consumers — break freely.
+- **Version:** v0.3.4 (see `VERSION`). Zero consumers — break freely.
 - **Coverage:** 80% threshold enforced by `tools/sh/covercheck.sh`. `cmd/wile-goast` excluded.
 - **Error handling:** Follow wile's sentinel + wrap pattern (`werr.WrapForeignErrorf`).
 
