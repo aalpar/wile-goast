@@ -1,6 +1,6 @@
 # Consistency-Based Deviation Detection
 
-**Status**: Proposed
+**Status**: Partially implemented (co-mutation validated; belief DSL implemented; categories 1-4 designed but unvalidated)
 **Foundation**: [wile-goast](https://github.com/aalpar/wile-goast) — all five goast layers (see `plans/GO-STATIC-ANALYSIS.md`)
 **Dependencies**: None beyond existing goast infrastructure
 **Implementation**: Pure Scheme scripts using `(wile goast)`, `(wile goast ssa)`, `(wile goast callgraph)`, `(wile goast cfg)` primitives
@@ -10,11 +10,13 @@
 
 Codebases accumulate implicit conventions — patterns that most call sites follow but no specification enforces. When a site deviates from its codebase's own convention, the deviation is either a bug or an intentional exception. Mechanically surfacing deviations lets a human answer which.
 
-The key insight (Engler et al.): **the code is its own specification.** A pattern followed in 98 of 100 sites is a strong convention. The 2 deviations are likely bugs. No annotations, no configuration, no external spec needed — the statistical signal comes from the codebase itself.
+The key insight (Engler et al.): **the code is its own specification.** A pattern followed in 98 of 100 sites is a strong convention. The 2 deviations are worth investigating — they may be bugs, or they may be intentional exceptions. No annotations, no configuration, no external spec needed — the statistical signal comes from the codebase itself.
 
 ## Fundamental Assumption
 
-There is one assumption this approach cannot verify: **the majority pattern must be correct.** If the bug is in the majority behavior, this approach confirms rather than catches it. Engler's method detects *inconsistency*, not *incorrectness*. A codebase where every caller mishandles errors consistently will produce zero deviations.
+There is one assumption this approach cannot verify: **the majority pattern should generally represent the intended convention.** If the bug is in the majority behavior, this approach confirms rather than catches it. Engler's method detects *inconsistency*, not *incorrectness*. A codebase where every caller mishandles errors consistently will produce zero deviations.
+
+The validation (§ Validation Results) shows this is a soft guideline, not a hard requirement: deviations are frequently *intentional* (focused setter functions, semantically distinct operations). The tool surfaces deviations; the human classifies them as bugs or legitimate exceptions.
 
 This is the dual of the unification detector's objective precondition. Unification requires agreement on the shared domain (a semantic property). Consistency detection requires that the majority behavior is the intended behavior (a social property). Both require human judgment at the boundary.
 
@@ -45,9 +47,13 @@ where `n` is total sites, `adherence` is sites following the pattern, and `p₀`
 
 Thresholds are tunable per belief category. A conservative default: report deviations only when adherence ≥ 90% and total sites ≥ 5.
 
+**Note on ranking in practice:** The validation (§ Validation Results) used simple ratio thresholds (66%/3), not z-scores. The z-statistic and ratio threshold are not equivalent — the z-statistic accounts for sample size more rigorously. Future work should evaluate whether z-scores improve signal quality over raw ratios at varying corpus sizes.
+
+**Independence assumption:** The z-statistic assumes each site independently follows or deviates. Sites within the same package, by the same author, or copied from the same template may be correlated, which would inflate the z-score beyond what the evidence warrants.
+
 ## Layer Strategy
 
-Each analysis layer answers a different kind of consistency question. Some questions require a single layer. The interesting ones require crossing layers — that is where wile-goast provides capability that no existing tool matches.
+Each analysis layer answers a different kind of consistency question. Some questions require a single layer. The interesting ones require crossing layers — that is where wile-goast provides capability that no commonly available Go analysis tool matches. (Tools like CodeQL and Semgrep offer cross-layer query capability for other ecosystems; the claim here is about Go-specific scriptability, not about the general space of static analysis tools.)
 
 ### Single-Layer Roles
 
@@ -74,6 +80,12 @@ This is the same multi-pass structure as `state-trace-full.scm` and `unify-detec
 ## Belief Categories
 
 Five categories, ordered by implementation complexity. Each category has a site enumeration strategy, a characterization method, and a deviation definition.
+
+**Validation status:** Only category 5 (co-mutation) has empirical validation (§ Validation Results). Categories 1-4 are designed but untested. The belief DSL (§ `BELIEF-DSL.md`) implements verbs for all five categories, but the verbs for categories 1-4 have not been exercised against real codebases.
+
+**Completeness:** These five categories are not claimed to be exhaustive. Belief types that don't fit include: initialization-order beliefs (field X set before use), concurrency beliefs (goroutine spawning patterns), import-dependency beliefs (certain packages always imported together), and naming-convention beliefs. The `custom` escape hatch in the DSL covers these, but their absence from the core categories means they require more effort to express.
+
+**Granularity:** All five categories enumerate *functions* as sites. Some conventions operate at other scopes: statement, block, expression, file, or package level. This is a design choice, not an inherent limitation — but it means beliefs like "all test files import testify" or "all struct literals initialize field X" don't fit the current site model.
 
 ### 1. Pairing Beliefs
 
@@ -148,6 +160,8 @@ This is strictly more powerful than check beliefs. Check beliefs ask "is the err
 ```
 
 **Deviation:** A caller whose handling category differs from the majority category.
+
+**Classification caveat:** The classifier forces each call site into a single category. In practice, a site may both wrap and log, or wrap with a different format string than peers. Multi-label classification would increase precision but complicate the statistical comparison. The current approach trades precision for simplicity — acceptable for deviation *detection* (flag for human review) but not for automated *correction*.
 
 **Existing coverage:** No existing Go tool compares error handling *across callers of the same function*. This is a cross-layer pattern that requires call graph for enumeration and AST for characterization.
 
@@ -436,7 +450,7 @@ Output format matches the existing examples — structured text with pass labels
 
 ## Belief Bootstrapping
 
-A strong belief's output has the same shape as a site enumeration input: `(pattern, sites, counts)`. The pipeline `enumerate → characterize → verify → compare` is closed under composition — Phase 3 output can feed Phase 1 input without changing the data model.
+A strong belief's output has the same shape as a site enumeration input: `(pattern, sites, counts)`. Phase 3 output (adherence/deviation site lists) can feed Phase 1 input without changing the data model. The pipeline is composable across discovery stages, though it is not algebraically closed — the final reporting step produces human-readable output, not belief forms.
 
 ### Forms
 
@@ -474,7 +488,7 @@ The compound belief generates its own deviations: functions that access X withou
 
 Each bootstrapping step strictly shrinks the site set. Co-mutation starts with all functions that store to any field of struct S. Strong beliefs narrow to functions that store a specific pair. Ordering further narrows to functions where the pair is in different blocks. The chain terminates when the site set drops below `min-sites`.
 
-This guarantees convergence and means bootstrapping works best on large codebases with many instances of the same pattern.
+This guarantees convergence. Bootstrapping should be most effective on large codebases with many instances of the same pattern, where each funnel step retains enough sites for statistical power — though this has not been empirically validated beyond the co-mutation → ordering chain prediction (§ Validation Prediction).
 
 ### Trade-offs
 
@@ -655,6 +669,8 @@ Three co-mutation beliefs: `(stepMode, stepFrameDepth)` at 75% adherence, `(step
 
 ### Proposed further validation targets
 
+**Status:** Not yet attempted. These are hypotheses about where the approach would produce useful signal.
+
 #### Target: crdt (github.com/aalpar/crdt)
 
 Previously used to validate the unification detector. The 17-package CRDT library has:
@@ -678,7 +694,8 @@ Two classes of false positives were identified:
 3. **Intentional variations.** Some deviations are correct — a background goroutine that logs-and-continues an error rather than returning it. The tool reports these as deviations; the human must distinguish intentional from accidental.
 4. **Cross-module conventions.** Beliefs are extracted per-module. A convention shared across modules but followed inconsistently within one module would be missed.
 5. **Dynamic behavior.** Patterns that depend on runtime values (e.g., "this error is retried only when the server returns 503") are not visible in static analysis.
-6. **Field name collisions (partially mitigated).** SSA `ssa-field-addr` instructions carry the field name but not the struct type. When two structs share a field name (e.g., `Source` on both `SchemeError` and `ErrExceptionEscape`), stores to one struct can be mis-attributed to the other. The co-mutation script mitigates this via receiver-type disambiguation — grouping field-addrs by receiver and discarding receivers that access foreign fields. This heuristic is effective but not complete: it fails when two structs have identical field sets (rare in practice). Exposing the struct type in `ssa-field-addr` (the Go mapper already computes it) would eliminate this class of false positive entirely.
+6. **Semantic equivalence behind structural difference.** The approach classifies sites by structural pattern (AST shape, call names). Two sites that achieve the same semantic goal through different structural means (e.g., wrapping an error with `fmt.Errorf` vs. a project-specific `errors.Wrap`) appear as deviations. The tool detects structural inconsistency, which is a proxy for semantic inconsistency — but the proxy is imperfect.
+7. **Field name collisions (partially mitigated).** SSA `ssa-field-addr` instructions carry the field name but not the struct type. When two structs share a field name (e.g., `Source` on both `SchemeError` and `ErrExceptionEscape`), stores to one struct can be mis-attributed to the other. The co-mutation script mitigates this via receiver-type disambiguation — grouping field-addrs by receiver and discarding receivers that access foreign fields. This heuristic is effective but not complete: it fails when two structs have identical field sets (rare in practice). Exposing the struct type in `ssa-field-addr` (the Go mapper already computes it) would eliminate this class of false positive entirely.
 
 ### What the ranking cannot capture
 
@@ -688,9 +705,11 @@ Two classes of false positives were identified:
 
 ### Open design questions
 
-1. **Framework vs. scripts.** Should beliefs be expressed in a DSL, or should each belief be a hand-written Scheme script? A DSL enables composability and automated belief discovery. Hand-written scripts are more readable and match the existing example pattern. Given that wile-goast targets AI agents — which generate Scheme fluently — hand-written scripts per belief category may be sufficient.
+1. ~~**Framework vs. scripts.**~~ **Resolved: DSL.** The belief DSL ([BELIEF-DSL.md](BELIEF-DSL.md)) was implemented as a pure Scheme library. Beliefs are `define-belief` forms, not hand-written scripts. The DSL handles layer selection, data loading, and statistical comparison. See `BELIEF-DSL.md` for design, trade-offs, and limitations.
 2. **Belief discovery.** Engler's system requires the analyst to choose which belief category to check. Belief bootstrapping (§ Belief Bootstrapping) partially addresses this — discovered beliefs generate enumeration sets for other categories, so the analyst specifies starting categories but not cross-category patterns. Full automatic discovery (mining arbitrary patterns) overlaps with specification mining (Ammons, Bodik, Larus 2002).
 3. **Incremental analysis.** Running consistency analysis on every commit requires incremental updates to beliefs as code changes. The current architecture (load full module, analyze from scratch) does not support this. For CI integration, incremental analysis would be necessary.
+4. **Threshold sensitivity.** The validation chose 66%/3 empirically. How sensitive are results to these parameters? Would 50%/3 or 80%/5 tell a substantially different story? No sensitivity analysis has been performed. At minimum, future validation should report results at 2-3 threshold levels to characterize the tradeoff between signal and noise.
+5. **Minimum corpus size.** At what scale does the approach start producing meaningful signal? The co-mutation validation used ~60 SSA functions. A 5-function package would produce no beliefs above threshold. Guidance on minimum viable corpus size would help users decide when to apply this tool vs. manual inspection.
 
 ## Future Enhancements
 
