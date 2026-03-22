@@ -82,6 +82,28 @@ func TestBeliefSiteAnnotation(t *testing.T) {
 	c.Assert(result.SchemeString(), qt.Matches, `.*wile-goast/goast.*`)
 }
 
+func TestBeliefSSALookup(t *testing.T) {
+	engine := newBeliefEngine(t)
+
+	// Build SSA for the goast package. Look up a known function
+	// by package path + short name. Should return the SSA function.
+	result := evalMultiple(t, engine, `
+		(import (wile goast belief))
+
+		(let ((ctx (make-context "github.com/aalpar/wile-goast/goast")))
+		  ;; Trigger SSA build
+		  (ctx-ssa ctx)
+		  ;; Look up PrimGoParseFile by package path + short name
+		  (let ((fn (ctx-find-ssa-func ctx
+		              "github.com/aalpar/wile-goast/goast"
+		              "PrimGoParseFile")))
+		    (and fn (nf fn 'name))))
+	`)
+	c := qt.New(t)
+	c.Assert(result, qt.Not(qt.Equals), nil)
+	c.Assert(result.SchemeString(), qt.Matches, `.*PrimGoParseFile.*`)
+}
+
 func TestBeliefDefineAndRun(t *testing.T) {
 	engine := newBeliefEngine(t)
 

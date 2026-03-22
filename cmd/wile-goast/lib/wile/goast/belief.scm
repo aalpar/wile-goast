@@ -98,23 +98,43 @@
              (substring full-name (+ i 1) len))
             (else (loop (- i 1)))))))
 
-;; SSA name lookup index — built once, indexed by short name.
-;; Methods like (*Debugger).Continue are indexed as "Continue".
+;; SSA name lookup index — two-level, keyed by (pkg-path, short-name).
+;; First level: package path -> alist of (short-name . ssa-func).
+;; Methods like (*Debugger).Continue are indexed as "Continue" within
+;; their package's sub-index.
+(define (build-ssa-index ssa-funcs)
+  (let loop ((fns (if (pair? ssa-funcs) ssa-funcs '()))
+             (index '()))
+    (if (null? fns) index
+      (let* ((fn (car fns))
+             (name (nf fn 'name))
+             (pkg (nf fn 'pkg))
+             (short (and name (ssa-short-name name))))
+        (if (and short pkg)
+          (let ((pkg-entry (assoc pkg index)))
+            (if pkg-entry
+              (begin
+                (set-cdr! pkg-entry
+                  (cons (cons short fn) (cdr pkg-entry)))
+                (loop (cdr fns) index))
+              (loop (cdr fns)
+                    (cons (list pkg (cons short fn)) index))))
+          (loop (cdr fns) index))))))
+
 (define (ctx-ssa-index ctx)
   (or (ctx-ref ctx 'ssa-index)
-      (let* ((ssa-funcs (ctx-ssa ctx))
-             (index (filter-map
-                      (lambda (fn)
-                        (let ((name (nf fn 'name)))
-                          (and name (cons (ssa-short-name name) fn))))
-                      (if (pair? ssa-funcs) ssa-funcs '()))))
+      (let ((index (build-ssa-index (ctx-ssa ctx))))
         (ctx-set! ctx 'ssa-index index)
         index)))
 
-;; Fast SSA function lookup via cached index (by short name).
-(define (ctx-find-ssa-func ctx name)
-  (let ((entry (assoc name (ctx-ssa-index ctx))))
-    (and entry (cdr entry))))
+;; Package-qualified SSA function lookup.
+;; Returns the SSA function for the given package path and short name,
+;; or #f if not found.
+(define (ctx-find-ssa-func ctx pkg-path name)
+  (let ((pkg-entry (assoc pkg-path (ctx-ssa-index ctx))))
+    (and pkg-entry
+         (let ((entry (assoc name (cdr pkg-entry))))
+           (and entry (cdr entry))))))
 
 ;; Store belief results for bootstrapping via sites-from.
 (define (ctx-store-result! ctx name adherence-sites deviation-sites)

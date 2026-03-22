@@ -3,7 +3,7 @@
     ;; Core
     define-belief run-beliefs
     ;; Context (needed by custom lambdas)
-    make-context ctx-pkgs ctx-ssa ctx-callgraph
+    make-context ctx-pkgs ctx-ssa ctx-callgraph ctx-find-ssa-func
     ;; Site selectors
     functions-matching callers-of methods-of sites-from all-func-decls
     ;; Predicates
