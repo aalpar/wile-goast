@@ -64,8 +64,8 @@ func main() {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
 		}
-		if val != nil {
-			fmt.Println(val)
+		if val != nil && !val.IsVoid() {
+			fmt.Println(val.SchemeString())
 		}
 		return
 	}
@@ -133,7 +133,7 @@ func runScript(ctx context.Context, name string) {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", evalErr)
 		os.Exit(1)
 	}
-	if val != nil {
-		fmt.Println(val)
+	if val != nil && !val.IsVoid() {
+		fmt.Println(val.SchemeString())
 	}
 }
