@@ -348,7 +348,8 @@
 (define (stores-to-fields struct-name . field-names)
   (lambda (fn ctx)
     (let* ((fname (nf fn 'name))
-           (ssa-fn (ctx-find-ssa-func ctx fname)))
+           (pkg-path (nf fn 'pkg-path))
+           (ssa-fn (and pkg-path (ctx-find-ssa-func ctx pkg-path fname))))
       (if ssa-fn
         (let* ((all-fields (struct-field-names (ctx-pkgs ctx) struct-name))
                (stored (stored-fields-in-func ssa-fn field-names all-fields)))
@@ -498,7 +499,8 @@
 (define (ordered op-a op-b)
   (lambda (site ctx)
     (let* ((fname (nf site 'name))
-           (cfg (go-cfg fname)))
+           (pkg-path (nf site 'pkg-path))
+           (cfg (and pkg-path (go-cfg pkg-path fname))))
       (if (not cfg) 'missing
         (let* ((blocks (nf cfg 'blocks))
                (a-blocks (find-call-blocks blocks op-a))
@@ -538,7 +540,8 @@
 (define (co-mutated . field-names)
   (lambda (site ctx)
     (let* ((fname (nf site 'name))
-           (ssa-fn (ctx-find-ssa-func ctx fname)))
+           (pkg-path (nf site 'pkg-path))
+           (ssa-fn (and pkg-path (ctx-find-ssa-func ctx pkg-path fname))))
       (if (not ssa-fn) 'partial
         (let* ((all-field-addrs (collect-field-addrs ssa-fn))
                (stores (collect-stores ssa-fn))
@@ -562,7 +565,8 @@
 (define (checked-before-use value-pattern)
   (lambda (site ctx)
     (let* ((fname (nf site 'name))
-           (ssa-fn (ctx-find-ssa-func ctx fname)))
+           (pkg-path (nf site 'pkg-path))
+           (ssa-fn (and pkg-path (ctx-find-ssa-func ctx pkg-path fname))))
       (if (not ssa-fn) 'unguarded
         (let* ((blocks (nf ssa-fn 'blocks))
                (all-instrs (if (pair? blocks)
@@ -650,7 +654,11 @@
 (define (site-display-name site)
   (cond
     ((and (pair? site) (tag? site 'func-decl))
-     (or (nf site 'name) "<anonymous>"))
+     (let ((name (or (nf site 'name) "<anonymous>"))
+           (pkg-path (nf site 'pkg-path)))
+       (if pkg-path
+         (string-append (package-short-name pkg-path) "." name)
+         name)))
     ((and (pair? site) (pair? (car site)))
      ;; Caller site: (caller-name edge)
      (let ((name (car site)))
