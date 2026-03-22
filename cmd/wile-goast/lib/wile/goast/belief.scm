@@ -198,34 +198,80 @@
 ;; Each predicate returns (lambda (func-decl ctx) -> #t/#f).
 ;; Used as arguments to functions-matching.
 
+;; Extract type strings from a type AST node for matching.
+;; Returns a list of candidate strings: the inferred-type (full path)
+;; and a short form built from the AST (e.g., "klog.Logger" from a
+;; selector-expr). The short form handles Go module versioning where
+;; inferred-type contains paths like "k8s.io/klog/v2.Logger" that
+;; don't match the source-level "klog.Logger".
+(define (type-match-strings t)
+  (let ((inferred (and t (nf t 'inferred-type)))
+        (short (and t (tag? t 'selector-expr)
+                    (let ((x (nf t 'x))
+                          (sel (nf t 'sel)))
+                      (and x sel (tag? x 'ident)
+                           (let ((name (nf x 'name)))
+                             (and name
+                                  (string-append name "." sel))))))))
+    (filter-map (lambda (x) (and (pair? x) x))
+                (list (and inferred (list inferred))
+                      (and short (list short))))))
+
+;; Flatten a list of lists.
+(define (flatten-1 xss)
+  (let loop ((xs xss) (acc '()))
+    (if (null? xs) acc
+      (loop (cdr xs) (append acc (car xs))))))
+
 ;; (has-params type-str ...) — function signature contains these param types.
+;; Matches each type-str as a substring of the param's inferred-type or
+;; its short source-level name (e.g., "klog.Logger" matches both
+;; "k8s.io/klog/v2.Logger" and "klog.Logger").
 (define (has-params . type-strings)
   (lambda (fn ctx)
     (let* ((ftype (nf fn 'type))
            (params (and ftype (nf ftype 'params)))
            (param-types
              (if (pair? params)
-               (flat-map
-                 (lambda (p)
-                   (let ((t (nf p 'type)))
-                     (if t (list (nf p 'type-string)) '())))
-                 params)
+               (flatten-1
+                 (filter-map
+                   (lambda (p)
+                     (let ((t (nf p 'type)))
+                       (let ((strs (type-match-strings t)))
+                         (if (pair? strs) (flatten-1 strs) #f))))
+                   params))
                '())))
       (let loop ((ts type-strings))
         (cond ((null? ts) #t)
-              ((member? (car ts) param-types) (loop (cdr ts)))
+              ((let check ((pts param-types))
+                 (cond ((null? pts) #f)
+                       ((string-contains (car pts) (car ts)) #t)
+                       (else (check (cdr pts)))))
+               (loop (cdr ts)))
               (else #f))))))
 
 ;; (has-receiver type-str) — method receiver matches type string.
+;; Matches type-str as a substring of the receiver's inferred-type
+;; or short name, so "MyType" matches "pkg.MyType", "*pkg.MyType",
+;; and versioned paths like "pkg/v2.MyType".
 (define (has-receiver type-str)
   (lambda (fn ctx)
     (let* ((recv (nf fn 'recv))
            (recv-list (and recv (if (pair? recv) recv '())))
-           (recv-type
-             (if (pair? recv-list)
-               (nf (car recv-list) 'type-string)
-               #f)))
-      (and recv-type (equal? recv-type type-str)))))
+           (recv-t (if (pair? recv-list)
+                     (nf (car recv-list) 'type)
+                     #f))
+           ;; For pointer receivers, unwrap *T to get T's type node.
+           (inner-t (if (and recv-t (tag? recv-t 'star-expr))
+                      (nf recv-t 'x)
+                      recv-t))
+           (candidates (flatten-1
+                         (type-match-strings
+                           (or inner-t recv-t)))))
+      (let check ((cs candidates))
+        (cond ((null? cs) #f)
+              ((string-contains (car cs) type-str) #t)
+              (else (check (cdr cs))))))))
 
 ;; (name-matches pattern) — function name matches substring.
 (define (name-matches pattern)

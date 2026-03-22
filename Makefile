@@ -8,7 +8,7 @@ GO_MOD=$(GO) mod
 GO_BUILD_DIR=./build
 SH_TOOLS_DIR=./tools/sh
 
-SOURCES=$(shell find . -type f -name "*.go" -print)
+SOURCES=$(shell find . -type f \( -name "*.go" -o -name "*.scm" -o -name "*.sld" \) -print)
 SOURCE_DIRS=$(shell go list -f "{{.Dir}}" ./...)
 BUILD_SHA:=$(shell git rev-parse --short HEAD 2>/dev/null || echo "0000000")
 BUILD_VERSION:=$(shell cat ./VERSION 2>/dev/null || echo "v0.0.0")
