@@ -104,6 +104,30 @@ func TestBeliefSSALookup(t *testing.T) {
 	c.Assert(result.SchemeString(), qt.Matches, `.*PrimGoParseFile.*`)
 }
 
+func TestBeliefMultiPackage(t *testing.T) {
+	engine := newBeliefEngine(t)
+
+	// Use functions-matching with name-matches to find Prim* functions
+	// across all goast packages. Count distinct pkg-path values.
+	result := evalMultiple(t, engine, `
+		(import (wile goast belief))
+
+		(let* ((ctx (make-context "github.com/aalpar/wile-goast/..."))
+		       (selector (functions-matching (name-matches "Prim")))
+		       (funcs (selector ctx))
+		       (pkg-paths (filter-map
+		                    (lambda (fn) (nf fn 'pkg-path))
+		                    funcs))
+		       (unique-pkgs (unique pkg-paths)))
+		  (length unique-pkgs))
+	`)
+	c := qt.New(t)
+	c.Assert(result, qt.Not(qt.Equals), nil)
+	// Prim* functions exist in goast, goastssa, goastcfg, goastcg, goastlint
+	c.Assert(result.SchemeString(), qt.Not(qt.Equals), "0")
+	c.Assert(result.SchemeString(), qt.Not(qt.Equals), "1")
+}
+
 func TestBeliefDefineAndRun(t *testing.T) {
 	engine := newBeliefEngine(t)
 

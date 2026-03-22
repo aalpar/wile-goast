@@ -64,26 +64,6 @@
                          "Since"))
   (threshold 0.70 5))
 
-;; ── Run against kubelet packages ─────────────────────────
+;; ── Run against all kubelet packages ─────────────────────
 
-(define kubelet-packages
-  '("k8s.io/kubernetes/pkg/kubelet/kuberuntime"
-    "k8s.io/kubernetes/pkg/kubelet/status"
-    "k8s.io/kubernetes/pkg/kubelet/pleg"
-    "k8s.io/kubernetes/pkg/kubelet/eviction"
-    "k8s.io/kubernetes/pkg/kubelet/images"
-    "k8s.io/kubernetes/pkg/kubelet/prober"
-    "k8s.io/kubernetes/pkg/kubelet/lifecycle"))
-
-(for-each
-  (lambda (pkg)
-    (let ((short (substring pkg
-                   (+ 1 (let find-last ((k (- (string-length pkg) 1)))
-                           (cond ((< k 0) 0)
-                                 ((char=? (string-ref pkg k) #\/) k)
-                                 (else (find-last (- k 1))))))
-                   (string-length pkg))))
-      (newline)
-      (display "▸ ") (display short) (newline)
-      (run-beliefs pkg)))
-  kubelet-packages)
+(run-beliefs "k8s.io/kubernetes/pkg/kubelet/...")
