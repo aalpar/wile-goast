@@ -12,17 +12,27 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Command wile-goast demonstrates using Go AST analysis extensions with Wile.
-// It creates an engine with all goast extensions loaded, then evaluates
-// each -e expression or runs interactively if none are provided.
+// Command wile-goast provides Go static analysis extensions for the Wile
+// Scheme interpreter. It supports the same execution modes as wile:
+//
+//	wile-goast -e '(+ 1 2)'            evaluate expression
+//	wile-goast -f script.scm            run file
+//	wile-goast -f lib.scm -e '(run)'    load file, then evaluate
+//	echo '(+ 1 2)' | wile-goast         read from stdin
+//	wile-goast script.scm               positional file argument
+//	wile-goast --run belief-example      run embedded script
+//	wile-goast --list-scripts            list embedded scripts
 package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
+	"io"
 	"io/fs"
 	"log"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/aalpar/wile"
@@ -33,56 +43,98 @@ import (
 	"github.com/aalpar/wile-goast/goastssa"
 )
 
+// stringSlice implements flag.Value for repeatable string flags (-e, -f).
+type stringSlice []string
+
+func (s *stringSlice) String() string { return strings.Join(*s, ", ") }
+func (s *stringSlice) Set(v string) error {
+	*s = append(*s, v)
+	return nil
+}
+
+var (
+	evalExprs   stringSlice
+	files       stringSlice
+	listScripts bool
+	runScript   string
+)
+
+func init() {
+	flag.Var(&evalExprs, "e", "Evaluate Scheme expression (repeatable)")
+	flag.Var(&files, "f", "Scheme file to load (repeatable)")
+	flag.BoolVar(&listScripts, "list-scripts", false, "List available embedded scripts")
+	flag.StringVar(&runScript, "run", "", "Run an embedded script by name")
+
+	flag.Usage = func() {
+		fmt.Fprintln(os.Stderr, "Usage: wile-goast [OPTIONS] [FILE]")
+		fmt.Fprintln(os.Stderr)
+		fmt.Fprintln(os.Stderr, "Go static analysis extensions for Wile Scheme.")
+		fmt.Fprintln(os.Stderr)
+		fmt.Fprintln(os.Stderr, "Options:")
+		flag.PrintDefaults()
+		fmt.Fprintln(os.Stderr)
+		fmt.Fprintln(os.Stderr, "Extensions: goast, goast-ssa, goast-cfg, goast-cg, goast-lint")
+	}
+}
+
 func main() {
+	flag.Parse()
 	ctx := context.Background()
 
-	if len(os.Args) > 1 {
-		switch os.Args[1] {
-		case "--list-scripts":
-			listScripts()
-			return
-		case "--run":
-			if len(os.Args) < 3 {
-				fmt.Fprintln(os.Stderr, "Usage: wile-goast --run <script-name>")
-				os.Exit(1)
-			}
-			runScript(ctx, os.Args[2])
-			return
-		}
-	}
-
-	engine := buildEngine(ctx)
-	defer func() {
-		_ = engine.Close()
-	}()
-
-	// If arguments are provided, evaluate them as Scheme expressions.
-	if len(os.Args) > 1 {
-		code := strings.Join(os.Args[1:], " ")
-		val, err := engine.Eval(ctx, code)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-			os.Exit(1)
-		}
-		if val != nil && !val.IsVoid() {
-			fmt.Println(val.SchemeString())
-		}
+	// --list-scripts: no engine needed
+	if listScripts {
+		doListScripts()
 		return
 	}
 
-	// No arguments: print available extensions.
-	fmt.Println("wile-goast: Wile Scheme with Go AST analysis extensions")
-	fmt.Println()
-	fmt.Println("Available extensions:")
-	fmt.Println("  goast      — parse, format, type-check Go source as s-expressions")
-	fmt.Println("  goast-ssa  — SSA (Static Single Assignment) analysis")
-	fmt.Println("  goast-cfg  — control flow graph, dominators, path enumeration")
-	fmt.Println("  goast-cg   — call graph construction (static, CHA, RTA)")
-	fmt.Println("  goast-lint — go/analysis passes")
-	fmt.Println()
-	fmt.Println("Usage: wile-goast '<scheme-expression>'")
-	fmt.Println("       wile-goast --list-scripts")
-	fmt.Println("       wile-goast --run <script-name>")
+	// --run: run an embedded script
+	if runScript != "" {
+		doRunScript(ctx, runScript)
+		return
+	}
+
+	// Positional argument as file if -f not specified
+	if len(files) == 0 && flag.NArg() > 0 {
+		files = append(files, flag.Arg(0))
+	}
+
+	// No flags, no files, no positional args, no stdin pipe → usage
+	if len(files) == 0 && len(evalExprs) == 0 && !stdinIsPipe() {
+		flag.Usage()
+		return
+	}
+
+	engine := buildEngine(ctx)
+	defer func() { _ = engine.Close() }()
+
+	// Load files (-f or positional)
+	for _, filename := range files {
+		if err := loadFile(ctx, engine, filename); err != nil {
+			fmt.Fprintf(os.Stderr, "Error loading %s: %v\n", filename, err)
+			os.Exit(1)
+		}
+	}
+
+	// Evaluate -e expressions
+	for _, expr := range evalExprs {
+		if err := evalAndPrint(ctx, engine, expr); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+	}
+
+	// Read from stdin if piped and no files/evals were provided
+	if len(files) == 0 && len(evalExprs) == 0 && stdinIsPipe() {
+		data, err := io.ReadAll(os.Stdin)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error reading stdin: %v\n", err)
+			os.Exit(1)
+		}
+		if err := evalAndPrint(ctx, engine, string(data)); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+	}
 }
 
 func buildEngine(ctx context.Context) *wile.Engine {
@@ -102,7 +154,39 @@ func buildEngine(ctx context.Context) *wile.Engine {
 	return engine
 }
 
-func listScripts() {
+func loadFile(ctx context.Context, engine *wile.Engine, filename string) error {
+	data, err := os.ReadFile(filename)
+	if err != nil {
+		return err
+	}
+	absPath, err := filepath.Abs(filename)
+	if err != nil {
+		return err
+	}
+	return engine.WithLoadPath(absPath, func() error {
+		val, evalErr := engine.EvalMultipleWithSource(ctx, string(data), filename)
+		if evalErr != nil {
+			return evalErr
+		}
+		if val != nil && !val.IsVoid() {
+			fmt.Println(val.SchemeString())
+		}
+		return nil
+	})
+}
+
+func evalAndPrint(ctx context.Context, engine *wile.Engine, code string) error {
+	val, err := engine.EvalMultiple(ctx, code)
+	if err != nil {
+		return err
+	}
+	if val != nil && !val.IsVoid() {
+		fmt.Println(val.SchemeString())
+	}
+	return nil
+}
+
+func doListScripts() {
 	entries, err := fs.ReadDir(embeddedScripts, "scripts")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error reading scripts: %v\n", err)
@@ -117,7 +201,7 @@ func listScripts() {
 	}
 }
 
-func runScript(ctx context.Context, name string) {
+func doRunScript(ctx context.Context, name string) {
 	scriptPath := "scripts/" + name + ".scm"
 	data, err := fs.ReadFile(embeddedScripts, scriptPath)
 	if err != nil {
@@ -128,7 +212,7 @@ func runScript(ctx context.Context, name string) {
 	engine := buildEngine(ctx)
 	defer func() { _ = engine.Close() }()
 
-	val, evalErr := engine.Eval(ctx, string(data))
+	val, evalErr := engine.EvalMultiple(ctx, string(data))
 	if evalErr != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", evalErr)
 		os.Exit(1)
@@ -136,4 +220,12 @@ func runScript(ctx context.Context, name string) {
 	if val != nil && !val.IsVoid() {
 		fmt.Println(val.SchemeString())
 	}
+}
+
+func stdinIsPipe() bool {
+	fi, err := os.Stdin.Stat()
+	if err != nil {
+		return false
+	}
+	return fi.Mode()&os.ModeCharDevice == 0
 }
