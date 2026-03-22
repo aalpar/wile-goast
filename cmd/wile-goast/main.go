@@ -26,7 +26,6 @@ package main
 
 import (
 	"context"
-	"flag"
 	"fmt"
 	"io"
 	"io/fs"
@@ -34,6 +33,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	goflags "github.com/jessevdk/go-flags"
 
 	"github.com/aalpar/wile"
 	"github.com/aalpar/wile-goast/goast"
@@ -43,64 +44,52 @@ import (
 	"github.com/aalpar/wile-goast/goastssa"
 )
 
-// stringSlice implements flag.Value for repeatable string flags (-e, -f).
-type stringSlice []string
-
-func (s *stringSlice) String() string { return strings.Join(*s, ", ") }
-func (s *stringSlice) Set(v string) error {
-	*s = append(*s, v)
-	return nil
+// Options defines the command-line flags, matching wile's style.
+type Options struct {
+	Eval        []string `short:"e" long:"eval" description:"Evaluate Scheme expression (repeatable)"`
+	File        []string `short:"f" long:"file" description:"Scheme file to load (repeatable)"`
+	ListScripts bool     `long:"list-scripts" description:"List available embedded scripts"`
+	Run         string   `long:"run" description:"Run an embedded script by name"`
 }
 
-var (
-	evalExprs   stringSlice
-	files       stringSlice
-	listScripts bool
-	runScript   string
-)
-
-func init() {
-	flag.Var(&evalExprs, "e", "Evaluate Scheme expression (repeatable)")
-	flag.Var(&files, "f", "Scheme file to load (repeatable)")
-	flag.BoolVar(&listScripts, "list-scripts", false, "List available embedded scripts")
-	flag.StringVar(&runScript, "run", "", "Run an embedded script by name")
-
-	flag.Usage = func() {
-		fmt.Fprintln(os.Stderr, "Usage: wile-goast [OPTIONS] [FILE]")
-		fmt.Fprintln(os.Stderr)
-		fmt.Fprintln(os.Stderr, "Go static analysis extensions for Wile Scheme.")
-		fmt.Fprintln(os.Stderr)
-		fmt.Fprintln(os.Stderr, "Options:")
-		flag.PrintDefaults()
-		fmt.Fprintln(os.Stderr)
-		fmt.Fprintln(os.Stderr, "Extensions: goast, goast-ssa, goast-cfg, goast-cg, goast-lint")
-	}
-}
+var opts Options
 
 func main() {
-	flag.Parse()
+	parser := goflags.NewParser(&opts, goflags.Default)
+	parser.Name = "wile-goast"
+	parser.Usage = "[OPTIONS] [FILE]"
+
+	args, err := parser.Parse()
+	if err != nil {
+		flagsErr, ok := err.(*goflags.Error)
+		if ok && flagsErr.Type == goflags.ErrHelp {
+			os.Exit(0)
+		}
+		os.Exit(1)
+	}
+
 	ctx := context.Background()
 
 	// --list-scripts: no engine needed
-	if listScripts {
+	if opts.ListScripts {
 		doListScripts()
 		return
 	}
 
 	// --run: run an embedded script
-	if runScript != "" {
-		doRunScript(ctx, runScript)
+	if opts.Run != "" {
+		doRunScript(ctx, opts.Run)
 		return
 	}
 
 	// Positional argument as file if -f not specified
-	if len(files) == 0 && flag.NArg() > 0 {
-		files = append(files, flag.Arg(0))
+	if len(opts.File) == 0 && len(args) > 0 {
+		opts.File = append(opts.File, args[0])
 	}
 
 	// No flags, no files, no positional args, no stdin pipe → usage
-	if len(files) == 0 && len(evalExprs) == 0 && !stdinIsPipe() {
-		flag.Usage()
+	if len(opts.File) == 0 && len(opts.Eval) == 0 && !stdinIsPipe() {
+		parser.WriteHelp(os.Stderr)
 		return
 	}
 
@@ -108,7 +97,7 @@ func main() {
 	defer func() { _ = engine.Close() }()
 
 	// Load files (-f or positional)
-	for _, filename := range files {
+	for _, filename := range opts.File {
 		if err := loadFile(ctx, engine, filename); err != nil {
 			fmt.Fprintf(os.Stderr, "Error loading %s: %v\n", filename, err)
 			os.Exit(1)
@@ -116,7 +105,7 @@ func main() {
 	}
 
 	// Evaluate -e expressions
-	for _, expr := range evalExprs {
+	for _, expr := range opts.Eval {
 		if err := evalAndPrint(ctx, engine, expr); err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
@@ -124,7 +113,7 @@ func main() {
 	}
 
 	// Read from stdin if piped and no files/evals were provided
-	if len(files) == 0 && len(evalExprs) == 0 && stdinIsPipe() {
+	if len(opts.File) == 0 && len(opts.Eval) == 0 && stdinIsPipe() {
 		data, err := io.ReadAll(os.Stdin)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error reading stdin: %v\n", err)
