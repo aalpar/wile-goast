@@ -137,9 +137,9 @@ Declarative consistency deviation detection. Beliefs are patterns extracted stat
 
 | File | Purpose |
 |------|---------|
-| `lib/wile/goast/belief.sld` | R7RS library definition |
-| `lib/wile/goast/belief.scm` | Complete DSL implementation |
-| `lib/wile/goast/utils.sld` + `utils.scm` | Shared traversal utilities (`nf`, `walk`, `tag?`, etc.) |
+| `cmd/wile-goast/lib/wile/goast/belief.sld` | R7RS library definition (embedded in binary) |
+| `cmd/wile-goast/lib/wile/goast/belief.scm` | Complete DSL implementation |
+| `cmd/wile-goast/lib/wile/goast/utils.sld` + `utils.scm` | Shared traversal utilities (`nf`, `walk`, `tag?`, etc.) |
 | `plans/BELIEF-DSL.md` | Design: graduation model, bootstrapping, trade-offs |
 | `plans/BELIEF-DSL-IMPL.md` | Implementation plan |
 
@@ -152,7 +152,9 @@ Declarative consistency deviation detection. Beliefs are patterns extracted stat
 
 ## AST Representation
 
-Go AST nodes map to tagged alists: `(tag (key . val) ...)`. Field access via `(assoc key (cdr node))`. The mapper is bidirectional — `go-parse-string` produces s-expressions, `go-format` converts them back to Go source. All five layers share this format.
+Go AST nodes map to tagged alists: `(tag (key . val) ...)`. Field access via `(assoc key (cdr node))` or `(nf node 'key)` from `(wile goast utils)`. The mapper is bidirectional — `go-parse-string` produces s-expressions, `go-format` converts them back to Go source. All five layers share this format.
+
+**Field types vary by node tag** — see [`docs/AST-NODES.md`](docs/AST-NODES.md) for the complete field reference (types, optionality, and descriptions for all 50+ tags).
 
 ## Build & Test
 
@@ -183,8 +185,8 @@ make ci          # Full CI: lint + build + test + covercheck + verify-mod
 | `goast/register.go` | Extension registration |
 | `goast{ssa,cfg,cg,lint}/mapper.go` | IR-specific s-expression mappers |
 | `goast{ssa,cfg,cg,lint}/register.go` | Sub-extension registration |
-| `lib/wile/goast/belief.scm` | Belief DSL implementation |
-| `lib/wile/goast/utils.scm` | Shared s-expression traversal utilities |
+| `cmd/wile-goast/lib/wile/goast/belief.scm` | Belief DSL implementation (embedded in binary) |
+| `cmd/wile-goast/lib/wile/goast/utils.scm` | Shared traversal utilities (`nf`, `walk`, `tag?`) |
 
 ## Documentation
 
@@ -192,6 +194,7 @@ make ci          # Full CI: lint + build + test + covercheck + verify-mod
 |----------|---------|
 | [`README.md`](README.md) | Project overview, motivation, complex examples |
 | [`docs/PRIMITIVES.md`](docs/PRIMITIVES.md) | Complete primitive reference for all 5 layers |
+| [`docs/AST-NODES.md`](docs/AST-NODES.md) | AST node field reference (types, optionality for all tags) |
 | [`docs/EXAMPLES.md`](docs/EXAMPLES.md) | Annotated walkthroughs of example scripts |
 | [`docs/GO-STATIC-ANALYSIS.md`](docs/GO-STATIC-ANALYSIS.md) | Full guide to multi-layer Go analysis |
 | [`BIBLIOGRAPHY.md`](BIBLIOGRAPHY.md) | Static analysis references |
