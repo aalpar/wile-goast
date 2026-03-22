@@ -1,6 +1,6 @@
 # Procedure Unification Detection
 
-**Status**: Proposed
+**Status**: Prototype validated (single codebase; substitution collapsing implemented; SSA pass designed but unbuilt)
 **Foundation**: [wile-goast](https://github.com/aalpar/wile-goast) — all five goast layers (see `plans/GO-STATIC-ANALYSIS.md`)
 **Dependencies**: None beyond existing goast infrastructure
 **Implementation**: Pure Scheme rule using `(wile goast)` primitives
@@ -11,7 +11,7 @@ Two procedures that share most of their structure but differ in a few parameteri
 
 ## Objective Precondition for Unification
 
-There is one objective precondition: **agreement on the shared domain** — where the input spaces overlap, the procedures must produce identical results. If `f(x) != g(x)` for some `x` in both domains, what you have is dispatch behind a flag, not unification.
+There is one objective precondition: **agreement on the shared domain** — where the input spaces overlap, the procedures must produce identical results. This is a definitional choice: if `f(x) != g(x)` for some `x` in both domains, this plan treats that as dispatch behind a flag, not unification. Other refactoring tools may consider flag-parameterized dispatch a valid unification; this plan excludes it because the complexity cost of flag parameters is high (see diff classification, "Control flow" row).
 
 Everything beyond that is a design judgment: does unification reduce total complexity or increase it? The rule's job is to identify candidates where the complexity equation favors unification, not to make the decision.
 
@@ -32,9 +32,9 @@ The tool serves two purposes at two layers:
 
    - **AST preserves structure.** Type differences are localized to specific nodes (the `inferred-type` annotation). This makes it easy to identify "same structure, different types" — the core signal for unification.
    - **AST retains programmer intent.** Variable names, function names, and structural choices are preserved. SSA erases these, making it harder to classify differences as semantic vs. accidental.
-   - **SSA normalizes too aggressively for structural comparison.** Two functions doing "the same thing with different types" produce completely different SSA instruction sequences because types flow through every instruction. Structural similarity is obscured.
+   - **SSA normalizes away structural similarity.** Two functions doing "the same thing with different types" produce different SSA instruction sequences because types flow through every instruction. The structural similarity that is obvious in the AST is obscured in SSA.
 
-2. **Equivalence detector (SSA, secondary).** "These two expressions compute the same thing via different operator arrangements." SSA is the right layer here because Go's SSA builder already canonicalizes operand order, folds constants, and normalizes strength reductions. Operator algebra (commutativity, identity elimination, De Morgan's, etc.) falls out of the representation for free — there is no need to build custom rewrite rules or maintain a table of algebraic laws in Scheme.
+2. **Equivalence detector (SSA, secondary — not yet implemented).** "These two expressions compute the same thing via different operator arrangements." SSA should be the right layer here because Go's SSA builder canonicalizes some operand orderings and folds constants. The expectation is that operator algebra (commutativity, identity elimination) would fall out of the representation without custom rewrite rules — but this is a prediction about the v2 pass, not an observation from implementation.
 
 The two layers answer different questions. The refactoring advisor asks "same **shape**, different **leaves**?" — a structural question. The equivalence detector asks "same **result**, different **shape**?" — a semantic question. AST comparison is the workhorse; SSA comparison is a secondary filter that catches what AST comparison cannot.
 
@@ -99,8 +99,10 @@ Metric: `parameter_count / shared_node_count`. Low = good candidate.
 
 Additional pre-filters to consider:
 - Same receiver type (methods) or both free functions
-- Same package (cross-package unification is architecturally suspect)
+- ~~Same package (cross-package unification is architecturally suspect)~~ — Superseded by validation: the strongest findings (ewflag/dwflag) are cross-package pairs. Cross-package comparison is valuable.
 - Minimum function size (skip trivial 1-3 line functions)
+
+**Signature shape strictness:** This pre-filter eliminates candidates where the functions differ by one parameter (e.g., one has a context parameter the other doesn't). This is a strict filter — it prevents comparison of pairs where the signature difference itself is the unification parameter. Relaxing to `|param-count-diff| ≤ 1` would widen the candidate set at the cost of more comparisons.
 
 ### Pass 1: Structural Comparison (AST Diff)
 
@@ -143,7 +145,9 @@ Core algorithm: recursive s-expression comparison.
      (make-diff (classify-leaf node-a node-b) path node-a node-b))))
 ```
 
-**List diff strategy for v1:** Element-wise positional comparison (zip). If lists differ in length, the extra elements are structural diffs. This is simpler than full tree edit distance and sufficient for functions with the same control flow — their statement/expression lists will be the same length.
+**List diff strategy for v1:** Element-wise positional comparison (zip). If lists differ in length, the extra elements are structural diffs. This is simpler than full tree edit distance but has a significant limitation: inserting a single statement at the beginning of a function shifts every subsequent pair, making all of them "different" even if the remaining statements are identical. This means the tool is blind to insertion/deletion similarity — it only detects substitution similarity.
+
+On the crdt validation set, this limitation doesn't matter (the candidates differ by type substitution, not by insertion). On codebases with more organic duplication, it would reduce recall.
 
 Full tree edit distance (handling insertions/deletions) is a v2 enhancement for functions that differ by one added/removed statement.
 
@@ -186,7 +190,12 @@ Full tree edit distance (handling insertions/deletions) is a v2 enhancement for 
 ### Pass 3: Scoring and Reporting
 
 ```scheme
-;; Weights for different diff categories
+;; Weights for different diff categories.
+;; These values were calibrated on the crdt codebase, where the
+;; separation between genuine candidates (cost 0) and noise (cost 100+)
+;; is binary. On codebases with more heterogeneous duplication, the
+;; intermediate range (cost 5-20) may contain interesting candidates
+;; that these weights would reject.
 (define diff-weights
   '((type-name . 1)      ;; one type parameter covers all
     (literal-value . 1)   ;; one value parameter per distinct literal
@@ -260,7 +269,7 @@ The prototype (`examples/goast-query/unify-detect-pkg.scm`) was run on the full 
 | 97.9% | 0 | `pncounter→gcounter`, `CounterValue→GValue`, `int64→uint64` | `pncounter.Increment` ↔ `gcounter.Increment` | Known pattern |
 | 97.6% | 0 | same 3 roots | `pncounter.Value` ↔ `gcounter.Value` | Known pattern |
 
-The remaining 395 pairs have weighted cost ≥ 100 (structural diffs, missing elements, cross-domain mismatches). The weighted cost filter cleanly separates signal from noise.
+The remaining 395 pairs have weighted cost ≥ 100 (structural diffs, missing elements, cross-domain mismatches). On this codebase, the weighted cost filter produces a binary separation — zero cost (genuine candidates) vs. 100+ cost (noise), with nothing in between. Whether this clean separation generalizes to codebases with more heterogeneous duplication is untested.
 
 ### pncounter ↔ gcounter (known, validated)
 
@@ -279,9 +288,11 @@ This duality was previously documented only in prose (CLAUDE.md: "DWFlag: Exact 
 
 **Implications:** EWFlag and DWFlag could share a single implementation parameterized by the semantic interpretation of "dots present" (enabled vs. disabled). Whether this reduces complexity depends on whether the dual naming adds more confusion than the duplication — a judgment call, but the rule correctly surfaces it.
 
-### Substitution collapsing
+### Substitution collapsing (load-bearing)
 
 Type annotations from `go-typecheck-package` propagate root type substitutions into every sub-expression. `pncounter.Increment` has 95 raw type-name diffs — but they collapse to 3 root substitutions (`pncounter→gcounter`, `CounterValue→GValue`, `int64→uint64`). Without collapsing, similarity was 73.6%; after collapsing, 97.9%. The collapsing algorithm sorts type-name diff pairs by string length (shortest first), then iteratively checks if longer pairs are derivable from known roots via substring replacement.
+
+**This is not a refinement — it is essential.** At the 70% similarity threshold (line 217), the pncounter/gcounter pair barely passes without collapsing (73.6%). At any higher threshold, collapsing would be the difference between detecting the tool's strongest candidates and missing them entirely. The 25-percentage-point recovery (73.6% → 97.9%) demonstrates that raw AST comparison systematically underestimates similarity when type annotations propagate through the tree.
 
 ## Limitations
 
@@ -299,8 +310,15 @@ The scoring function approximates "does unification reduce complexity?" but cann
 - **Call-site cost** is not measured (how many callers would need to change?)
 - **Cognitive cost** of the unified function's signature is subjective
 - **Package boundary effects** (would unification create a new dependency?) are not checked
+- **Interface compliance** — two functions might be structurally similar but satisfy different interface contracts; unifying them could break interface compliance
 
 These require human judgment. The rule identifies candidates; the human decides.
+
+### Validation limitations
+
+- **Single codebase.** All results are from crdt (17 packages). The crdt library has deliberately duplicated CRDT types with the same patterns for different value types — nearly ideal for this detection. A codebase with more organic, irregular duplication would stress the tool differently.
+- **No false positive rate.** With 4 positives, the false positive rate cannot be estimated. The 4 candidates are all genuine structural matches, but whether a human would choose to unify them is a judgment call (the document acknowledges this for ewflag/dwflag).
+- **Type-substitution dominance.** All 4 findings are type-substitution patterns. Since Go 1.18, generics can eliminate this class of duplication at the source. As generics adoption grows, the tool's primary finding category may shrink. The tool would remain useful for non-type duplication (literal values, function names), but these produce higher diff costs and are less likely to yield zero-cost candidates.
 
 ## Future Enhancements (v2+)
 
