@@ -22,14 +22,18 @@ func newEngine(t *testing.T) *wile.Engine {
 
 func eval(t *testing.T, engine *wile.Engine, code string) wile.Value {
 	t.Helper()
-	result, err := engine.Eval(context.Background(), code)
+	result, err := engine.EvalMultiple(context.Background(), code)
 	qt.New(t).Assert(err, qt.IsNil)
 	return result
 }
 
 func evalExpectError(t *testing.T, engine *wile.Engine, code string) {
 	t.Helper()
-	_, err := engine.Eval(context.Background(), code)
+	expr, err := engine.Parse(context.Background(), code)
+	if err != nil {
+		return
+	}
+	_, err = engine.Eval(context.Background(), expr)
 	qt.New(t).Assert(err, qt.IsNotNil)
 }
 

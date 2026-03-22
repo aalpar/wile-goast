@@ -92,7 +92,7 @@ func PrimGoAnalyze(mc *machine.MachineContext) error {
 		return nil
 	}
 
-	err = security.Check(mc.Context(), security.AccessRequest{
+	err = security.CheckWithAuthorizer(mc.Authorizer(), security.AccessRequest{
 		Resource: security.ResourceProcess,
 		Action:   security.ActionLoad,
 		Target:   "go",
