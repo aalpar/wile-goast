@@ -5,7 +5,7 @@
     ;; Context (needed by custom lambdas)
     make-context ctx-pkgs ctx-ssa ctx-callgraph
     ;; Site selectors
-    functions-matching callers-of methods-of sites-from
+    functions-matching callers-of methods-of sites-from all-func-decls
     ;; Predicates
     has-params has-receiver name-matches
     contains-call stores-to-fields

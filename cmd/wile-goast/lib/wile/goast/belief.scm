@@ -135,18 +135,24 @@
 ;; or a call-graph edge (for caller-based selectors).
 
 ;; Extract all func-decl nodes from a package list.
+;; Each func-decl is annotated with (pkg-path . <import-path>) from its
+;; parent package, enabling cross-package SSA/CFG disambiguation.
 (define (all-func-decls pkgs)
   (flat-map
     (lambda (pkg)
-      (flat-map
-        (lambda (file)
-          (filter-map
-            (lambda (decl)
-              (and (tag? decl 'func-decl) decl))
-            (let ((decls (nf file 'decls)))
-              (if (pair? decls) decls '()))))
-        (let ((files (nf pkg 'files)))
-          (if (pair? files) files '()))))
+      (let ((pkg-path (nf pkg 'path)))
+        (flat-map
+          (lambda (file)
+            (filter-map
+              (lambda (decl)
+                (and (tag? decl 'func-decl)
+                     (cons (car decl)
+                           (cons (cons 'pkg-path pkg-path)
+                                 (cdr decl)))))
+              (let ((decls (nf file 'decls)))
+                (if (pair? decls) decls '()))))
+          (let ((files (nf pkg 'files)))
+            (if (pair? files) files '())))))
     pkgs))
 
 ;; (functions-matching pred ...) -> (lambda (ctx) -> list-of-func-decls)
@@ -287,6 +293,16 @@
       (cond ((> (+ i sublen) slen) #f)
             ((string=? (substring s i (+ i sublen)) sub) #t)
             (else (loop (+ i 1)))))))
+
+;; Extract short package name from full import path.
+;; "k8s.io/kubernetes/pkg/kubelet/kuberuntime" -> "kuberuntime"
+(define (package-short-name path)
+  (let ((len (string-length path)))
+    (let loop ((i (- len 1)))
+      (cond ((<= i 0) path)
+            ((char=? (string-ref path i) #\/)
+             (substring path (+ i 1) len))
+            (else (loop (- i 1)))))))
 
 ;; (contains-call func-name ...) — function body contains a call to any
 ;; of the named functions. Dual-use:

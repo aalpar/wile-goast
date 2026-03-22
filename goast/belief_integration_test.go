@@ -62,6 +62,26 @@ func TestBeliefImport(t *testing.T) {
 	evalMultiple(t, engine, `(import (wile goast belief))`)
 }
 
+func TestBeliefSiteAnnotation(t *testing.T) {
+	engine := newBeliefEngine(t)
+
+	// After importing the belief library, load a package and extract
+	// func-decls via all-func-decls. Each site should have a pkg-path field.
+	result := evalMultiple(t, engine, `
+		(import (wile goast belief))
+
+		(let* ((pkgs (go-typecheck-package "github.com/aalpar/wile-goast/goast"))
+		       (funcs (all-func-decls pkgs)))
+		  ;; Check that the first func-decl has a pkg-path field
+		  (and (pair? funcs)
+		       (nf (car funcs) 'pkg-path)))
+	`)
+	c := qt.New(t)
+	c.Assert(result, qt.Not(qt.Equals), nil)
+	// Result should be the package path string
+	c.Assert(result.SchemeString(), qt.Matches, `.*wile-goast/goast.*`)
+}
+
 func TestBeliefDefineAndRun(t *testing.T) {
 	engine := newBeliefEngine(t)
 
