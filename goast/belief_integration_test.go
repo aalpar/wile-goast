@@ -29,13 +29,13 @@ import (
 )
 
 // newBeliefEngine creates a Wile engine with all goast extensions and
-// library support loaded. The library path points to the project's lib/
-// directory so that (import (wile goast belief)) resolves.
+// library support loaded. The library path points to the embedded lib/
+// directory under cmd/wile-goast/ so that (import (wile goast belief)) resolves.
 func newBeliefEngine(t *testing.T) *wile.Engine {
 	t.Helper()
 	engine, err := wile.NewEngine(context.Background(),
 		wile.WithSafeExtensions(),
-		wile.WithLibraryPaths("../lib"),
+		wile.WithLibraryPaths("../cmd/wile-goast/lib"),
 		wile.WithExtension(goast.Extension),
 		wile.WithExtension(goastssa.Extension),
 		wile.WithExtension(goastcg.Extension),

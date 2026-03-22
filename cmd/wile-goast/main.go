@@ -20,6 +20,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"io/fs"
 	"log"
 	"os"
 	"strings"
@@ -35,18 +36,22 @@ import (
 func main() {
 	ctx := context.Background()
 
-	engine, err := wile.NewEngine(ctx,
-		wile.WithSafeExtensions(),
-		wile.WithLibraryPaths(),
-		wile.WithExtension(goast.Extension),
-		wile.WithExtension(goastssa.Extension),
-		wile.WithExtension(goastcg.Extension),
-		wile.WithExtension(goastcfg.Extension),
-		wile.WithExtension(goastlint.Extension),
-	)
-	if err != nil {
-		log.Fatal(err)
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "--list-scripts":
+			listScripts()
+			return
+		case "--run":
+			if len(os.Args) < 3 {
+				fmt.Fprintln(os.Stderr, "Usage: wile-goast --run <script-name>")
+				os.Exit(1)
+			}
+			runScript(ctx, os.Args[2])
+			return
+		}
 	}
+
+	engine := buildEngine(ctx)
 	defer func() {
 		_ = engine.Close()
 	}()
@@ -76,4 +81,59 @@ func main() {
 	fmt.Println("  goast-lint — go/analysis passes")
 	fmt.Println()
 	fmt.Println("Usage: wile-goast '<scheme-expression>'")
+	fmt.Println("       wile-goast --list-scripts")
+	fmt.Println("       wile-goast --run <script-name>")
+}
+
+func buildEngine(ctx context.Context) *wile.Engine {
+	engine, err := wile.NewEngine(ctx,
+		wile.WithSafeExtensions(),
+		wile.WithSourceFS(embeddedLib),
+		wile.WithLibraryPaths("lib"),
+		wile.WithExtension(goast.Extension),
+		wile.WithExtension(goastssa.Extension),
+		wile.WithExtension(goastcg.Extension),
+		wile.WithExtension(goastcfg.Extension),
+		wile.WithExtension(goastlint.Extension),
+	)
+	if err != nil {
+		log.Fatal(err)
+	}
+	return engine
+}
+
+func listScripts() {
+	entries, err := fs.ReadDir(embeddedScripts, "scripts")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error reading scripts: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Println("Available scripts:")
+	for _, e := range entries {
+		if !e.IsDir() && strings.HasSuffix(e.Name(), ".scm") {
+			name := strings.TrimSuffix(e.Name(), ".scm")
+			fmt.Printf("  %s\n", name)
+		}
+	}
+}
+
+func runScript(ctx context.Context, name string) {
+	scriptPath := "scripts/" + name + ".scm"
+	data, err := fs.ReadFile(embeddedScripts, scriptPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Script %q not found. Use --list-scripts to see available scripts.\n", name)
+		os.Exit(1)
+	}
+
+	engine := buildEngine(ctx)
+	defer func() { _ = engine.Close() }()
+
+	val, evalErr := engine.Eval(ctx, string(data))
+	if evalErr != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", evalErr)
+		os.Exit(1)
+	}
+	if val != nil {
+		fmt.Println(val)
+	}
 }

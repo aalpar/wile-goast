@@ -3,7 +3,7 @@ module github.com/aalpar/wile-goast
 go 1.24.0
 
 require (
-	github.com/aalpar/wile v1.7.0
+	github.com/aalpar/wile v1.7.1
 	github.com/frankban/quicktest v1.14.6
 	golang.org/x/tools v0.42.0
 )
