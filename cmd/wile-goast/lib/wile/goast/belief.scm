@@ -59,6 +59,7 @@
         (cons 'pkgs #f)
         (cons 'ssa #f)
         (cons 'ssa-index #f)
+        (cons 'field-index #f)
         (cons 'callgraph #f)
         (cons 'results '())))
 
@@ -87,6 +88,42 @@
       (let ((cg (go-callgraph (ctx-target ctx) 'static)))
         (ctx-set! ctx 'callgraph cg)
         cg)))
+
+(define (ctx-field-index ctx)
+  (or (ctx-ref ctx 'field-index)
+      (let ((idx (go-ssa-field-index (ctx-target ctx))))
+        (ctx-set! ctx 'field-index idx)
+        idx)))
+
+;; Find the field summary for a function by package path and name.
+(define (find-field-summary index pkg-path func-name)
+  (let loop ((entries (if (pair? index) index '())))
+    (if (null? entries) #f
+      (let ((entry (car entries)))
+        (if (and (equal? (nf entry 'func) func-name)
+                 (equal? (nf entry 'pkg) pkg-path))
+          entry
+          (loop (cdr entries)))))))
+
+;; Extract written field names for a given struct from a summary.
+;; If struct-name is #f, returns writes for all structs.
+(define (writes-for-struct summary struct-name)
+  (let ((fields (nf summary 'fields)))
+    (if (not (pair? fields)) '()
+      (filter-map
+        (lambda (access)
+          (and (eq? (nf access 'mode) 'write)
+               (or (not struct-name)
+                   (equal? (nf access 'struct) struct-name))
+               (nf access 'field)))
+        fields))))
+
+;; Check that all names in required are present in available.
+(define (all-present? required available)
+  (let loop ((rs required))
+    (cond ((null? rs) #t)
+          ((member? (car rs) available) (loop (cdr rs)))
+          (else #f))))
 
 ;; Extract short name from SSA qualified name.
 ;; "(*Debugger).Continue" -> "Continue", "init" -> "init"
@@ -344,17 +381,15 @@
     (pair? (walk (or (nf fn 'body) '()) call-matches?))))
 
 ;; (stores-to-fields struct-name field ...) — SSA: function stores to
-;; these fields. Requires SSA layer.
+;; these fields. Uses the pre-built field index from Go.
 (define (stores-to-fields struct-name . field-names)
   (lambda (fn ctx)
     (let* ((fname (nf fn 'name))
            (pkg-path (nf fn 'pkg-path))
-           (ssa-fn (and pkg-path (ctx-find-ssa-func ctx pkg-path fname))))
-      (if ssa-fn
-        (let* ((all-fields (struct-field-names (ctx-pkgs ctx) struct-name))
-               (stored (stored-fields-in-func ssa-fn field-names all-fields)))
-          (pair? stored))
-        #f))))
+           (summary (find-field-summary (ctx-field-index ctx) pkg-path fname)))
+      (and summary
+           (let ((writes (writes-for-struct summary struct-name)))
+             (all-present? field-names writes))))))
 
 ;; ── Predicate combinators ───────────────────────────────
 
@@ -530,32 +565,16 @@
     (if (pair? blocks) blocks '())))
 
 ;; (co-mutated field ...) — checks whether all named fields are stored
-;; together in the function.
-;; Returns: 'co-mutated or 'partial
-;; (co-mutated field ...) — checks whether all named fields are stored
-;; together in the function.
-;; Skips receiver-type disambiguation: the site selector (stores-to-fields)
-;; already filtered to functions that store to this struct's fields.
+;; together in the function. Uses the pre-built field index from Go.
 ;; Returns: 'co-mutated or 'partial
 (define (co-mutated . field-names)
   (lambda (site ctx)
     (let* ((fname (nf site 'name))
            (pkg-path (nf site 'pkg-path))
-           (ssa-fn (and pkg-path (ctx-find-ssa-func ctx pkg-path fname))))
-      (if (not ssa-fn) 'partial
-        (let* ((all-field-addrs (collect-field-addrs ssa-fn))
-               (stores (collect-stores ssa-fn))
-               (store-addrs (map car stores))
-               ;; Collect stored field names without disambiguation
-               (stored (unique (filter-map
-                         (lambda (fa)
-                           (let ((reg (car fa))
-                                 (field (cadr fa)))
-                             (and (member? reg store-addrs)
-                                  (member? field field-names)
-                                  field)))
-                         all-field-addrs))))
-          (if (= (length stored) (length field-names))
+           (summary (find-field-summary (ctx-field-index ctx) pkg-path fname)))
+      (if (not summary) 'partial
+        (let ((writes (writes-for-struct summary #f)))
+          (if (all-present? field-names writes)
             'co-mutated
             'partial))))))
 
