@@ -1,52 +1,98 @@
 # wile-goast
 
-Cross-layer static analysis of Go source code, scripted in Scheme. Designed for AI agents that need to reason about Go codebases at the level of ASTs, SSA, control flow graphs, call graphs, and lint diagnostics — from a single script.
+Cross-layer static analysis of Go source code, scripted in Scheme. Exposes
+Go's compiler toolchain — AST, SSA, call graph, control flow graph, and
+lint diagnostics — as composable Scheme primitives.
 
-The thesis behind these tools is **software maintenance through simplification**. Less code means fewer bugs, less surface area for defects, and lower maintenance cost. Each analysis layer detects a different kind of redundancy — structural clones, algebraic equivalences, isomorphic control flow, shared dependency signatures, known anti-patterns. The tools surface unification candidates only when merging actually simplifies; adding parameters that increase indirection without reducing complexity is not simplification.
+Built on [Wile](https://github.com/aalpar/wile), an R7RS Scheme interpreter.
 
-## The Problem
+## Installation
 
-Go has mature analysis infrastructure — `go/ast`, `go/types`, `go/ssa`, `go/callgraph`, `go/cfg`, `go/analysis` — but using it requires writing hundreds of lines of Go per analyzer. Each tool in the ecosystem addresses one slice:
+```bash
+go install github.com/aalpar/wile-goast/cmd/wile-goast@latest
+```
 
-| Tool | Strength | What it can't do |
-|------|----------|-----------------|
-| `golangci-lint` | 40+ fixed analyzers, CI integration | Compose ad-hoc queries; no cross-layer analysis |
-| `gopls` | IDE-level incremental analysis | Single-query lookups, not scriptable |
-| Semgrep | Syntactic pattern matching | No SSA, no CFG, no call graph |
-| CodeQL | Rich query language, data flow | Proprietary, database build step, separate QL language |
-| `go/analysis` | Full access to Go's compiler IRs | Requires Go, hundreds of lines of boilerplate per analyzer |
+The binary is self-contained — all Scheme libraries and built-in scripts are
+embedded.
 
-None of them let you ask: "Which struct fields are mutated independently (SSA), checked in cascading conditionals (AST), and accessed in a fixed dominance order (CFG)?" — a question that spans three IR layers.
+## Quick Start
 
-wile-goast exposes all five layers through a uniform s-expression interface. One vocabulary — `walk`, `assoc`, `filter-map` — works across every layer. A 400-line Scheme script replaces what would be a multi-thousand-line custom Go analyzer.
+```bash
+# Evaluate a Scheme expression
+wile-goast '(go-parse-expr "1 + 2")'
 
-## Why Scheme
+# Run a built-in script
+wile-goast --run goast-query
 
-S-expressions are the natural representation for tree-structured compiler data. Go AST nodes map directly to tagged alists — `(func-decl (name . "Add") (type . ...))` — with no serialization gap, no schema files, no query language to learn.
+# List available scripts
+wile-goast --list-scripts
 
-For AI agents, this matters:
+# Run a script file
+wile-goast -f my-analysis.scm
+```
 
-- **LLMs generate valid Scheme more reliably than Go analysis passes.** An s-expression script is a flat sequence of definitions and queries. A Go analyzer requires package setup, type switches, `go/analysis` registration, and careful pointer handling.
-- **Uniform format across all IR layers.** AST nodes, SSA instructions, CFG blocks, call graph edges, and lint diagnostics all use the same `(tag (key . val) ...)` encoding. An agent that can traverse one layer can traverse all five.
-- **Scripts are self-contained and composable.** No build step, no dependency graph, no module initialization. A script loads a package and queries it.
+## Six Layers
 
-For human developers, the examples are readable. The language is a natural fit for tree-structured data regardless of who writes it — and reading these scripts is often the fastest way to understand what a Go analysis *does*.
+| Library | Import | What it answers |
+|---------|--------|-----------------|
+| AST | `(wile goast)` | What is the shape of this code? |
+| SSA | `(wile goast ssa)` | Where does this value flow? |
+| Call Graph | `(wile goast callgraph)` | Who calls whom? |
+| CFG | `(wile goast cfg)` | Must this check happen before that return? |
+| Lint | `(wile goast lint)` | What do standard analyzers report? |
+| Belief DSL | `(wile goast belief)` | What implicit conventions are being violated? |
 
-## Five Analysis Layers
+All layers share one node format — tagged alists `(tag (key . val) ...)` —
+queryable with standard Scheme list operations.
 
-| Package | R7RS Library | Primitives | What it answers |
-|---------|-------------|------------|-----------------|
-| `goast` | `(wile goast)` | `go-parse-file`, `go-parse-string`, `go-parse-expr`, `go-format`, `go-node-type`, `go-typecheck-package` | What is the shape of this code? (syntax, structure, types) |
-| `goastssa` | `(wile goast ssa)` | `go-ssa-build` | Where does this value flow? Are mutations coordinated? (data flow) |
-| `goastcfg` | `(wile goast cfg)` | `go-cfg`, `go-cfg-dominators`, `go-cfg-dominates?`, `go-cfg-paths` | Must this check happen before that return? (control flow) |
-| `goastcg` | `(wile goast callgraph)` | `go-callgraph`, `go-callgraph-callers`, `go-callgraph-callees`, `go-callgraph-reachable` | Who calls whom? What's reachable? (inter-procedural) |
-| `goastlint` | `(wile goast lint)` | `go-analyze`, `go-analyze-list` | What do existing analyzers report? (~40 built-in) |
+## Primitives
 
-See [`docs/PRIMITIVES.md`](docs/PRIMITIVES.md) for the complete reference.
+### AST — `(wile goast)`
 
-## Belief DSL — `(wile goast belief)`
+| Primitive | Description |
+|-----------|-------------|
+| `(go-parse-file path . options)` | Parse a `.go` file to s-expression AST |
+| `(go-parse-string source . options)` | Parse Go source string |
+| `(go-parse-expr source)` | Parse a single Go expression |
+| `(go-format ast)` | Convert s-expression AST back to Go source |
+| `(go-node-type ast)` | Return the tag symbol of an AST node |
+| `(go-typecheck-package pattern . options)` | Load and type-check a package |
 
-A declarative DSL for Engler-style consistency deviation detection. Instead of writing 70+ line scripts per belief, define beliefs in 3-5 lines:
+Options: `'positions` (include source positions), `'comments` (include doc comments).
+
+### SSA — `(wile goast ssa)`
+
+| Primitive | Description |
+|-----------|-------------|
+| `(go-ssa-build pattern . options)` | Build SSA; returns list of `ssa-func` nodes |
+| `(go-ssa-field-index pattern)` | Pre-correlated per-function field access index |
+
+### Call Graph — `(wile goast callgraph)`
+
+| Primitive | Description |
+|-----------|-------------|
+| `(go-callgraph pattern algorithm)` | Build call graph (`'static`, `'cha`, `'rta`, `'vta`) |
+| `(go-callgraph-callers graph func-name)` | Direct callers of a function |
+| `(go-callgraph-callees graph func-name)` | Direct callees of a function |
+| `(go-callgraph-reachable graph root-name)` | Transitive closure from a root |
+
+### CFG — `(wile goast cfg)`
+
+| Primitive | Description |
+|-----------|-------------|
+| `(go-cfg pattern func-name . options)` | Build CFG for a named function |
+| `(go-cfg-dominators cfg)` | Build dominator tree |
+| `(go-cfg-dominates? dom-tree a b)` | Does block `a` dominate block `b`? |
+| `(go-cfg-paths cfg from to)` | Enumerate simple paths between blocks |
+
+### Lint — `(wile goast lint)`
+
+| Primitive | Description |
+|-----------|-------------|
+| `(go-analyze pattern name ...)` | Run named analyzers on a package |
+| `(go-analyze-list)` | List available analyzer names (~25 built-in) |
+
+### Belief DSL — `(wile goast belief)`
 
 ```scheme
 (import (wile goast belief))
@@ -56,132 +102,97 @@ A declarative DSL for Engler-style consistency deviation detection. Instead of w
   (expect (paired-with "Lock" "Unlock"))
   (threshold 0.90 5))
 
-(define-belief "stepping-mode-frame"
-  (sites (functions-matching
-           (stores-to-fields "Debugger" "stepMode" "stepFrame")))
-  (expect (co-mutated "stepMode" "stepFrame"))
-  (threshold 0.66 3))
-
-(run-beliefs "my/package/...")
+(run-beliefs "./...")
 ```
 
-The DSL provides site selectors (`functions-matching`, `callers-of`, `methods-of`, `sites-from`), composable predicates (`has-params`, `has-receiver`, `name-matches`, `contains-call`, `stores-to-fields`, `all-of`/`any-of`/`none-of`), and property checkers (`paired-with`, `ordered`, `co-mutated`, `checked-before-use`, `custom`). The runner loads analysis layers lazily and reports deviations from statistically strong beliefs.
+Site selectors: `functions-matching`, `callers-of`, `methods-of`, `sites-from`
 
-Validated against known results: the stepping-field co-mutation beliefs correctly identify `StepOver` (missing `stepFrame`) and `StepOut` (missing `stepFrameDepth`) as deviations from the `wile/machine` Debugger convention.
+Predicates: `has-params`, `has-receiver`, `name-matches`, `contains-call`,
+`stores-to-fields`, `all-of`/`any-of`/`none-of`
 
-See [`plans/BELIEF-DSL.md`](plans/BELIEF-DSL.md) for the design and [`examples/goast-query/belief-comutation.scm`](examples/goast-query/belief-comutation.scm) for the validation script.
+Property checkers: `paired-with`, `ordered`, `co-mutated`,
+`checked-before-use`, `custom`
 
-## Complex Examples
+See [`docs/PRIMITIVES.md`](docs/PRIMITIVES.md) for the complete reference.
 
-The `examples/goast-query/` directory contains analysis scripts that demonstrate what wile-goast enables. These are the kind of scripts an AI agent composes given access to the primitive reference.
+## Examples
 
-### Cross-Layer Split-State Detection
+### Parse and query Go source
 
-[`state-trace-full.scm`](examples/goast-query/state-trace-full.scm) — 400 lines, 4 analysis layers
+```scheme
+(define file (go-parse-string
+  "package demo
+   func Add(a, b int) int { return a + b }
+   func helper() {}"))
 
-Detects **split state**: conceptually atomic values scattered across multiple struct fields, checked piecewise in distributed conditionals. No single existing Go tool can perform this analysis.
+(define names
+  (filter-map
+    (lambda (decl)
+      (and (eq? (car decl) 'func-decl)
+           (cdr (assoc 'name (cdr decl)))))
+    (cdr (assoc 'decls (cdr file)))))
 
-| Pass | Layer | Question |
-|------|-------|----------|
-| 1 | AST | Which structs have 2+ boolean fields? (enum candidates) |
-| 2 | AST | Which if-chains check multiple fields of the same receiver? |
-| 3 | SSA | Are those boolean fields mutated independently across functions? |
-| 4 | CFG | Do reads of one field always dominate reads of the other? |
-
-Sample output (run against `github.com/aalpar/wile/machine`):
-
-```
--- Pass 3: Mutation Independence (SSA) --
-  struct NativeTemplate:
-    NewForeignClosure stores only: (isVariadic)
-    computeNoCopyApply stores only: (noCopyApply)
-
--- Pass 4: Check Ordering (SSA + CFG) --
-  struct NativeTemplate:
-    func Copy:
-      isVariadic [block 4] -> noCopyApply [block 4]: same-block
+names ; => ("Add" "helper")
 ```
 
-Pass 3 proves the fields are mutated independently. Pass 4 proves they're always accessed together in the same basic block — evidence of a discriminated union encoded as separate booleans.
+### Build a call graph
 
-### Module-Wide Unification Detection
+```scheme
+(import (wile goast callgraph))
 
-[`unify-detect-pkg.scm`](examples/goast-query/unify-detect-pkg.scm) — 560 lines, recursive AST diff engine
-
-Scans an entire Go module for function pairs that are candidates for unification — functions with the same structure that differ only in type names, identifiers, or literal values. Uses type-checked ASTs for accurate classification.
-
-Key techniques:
-- **Recursive AST diff** with category-aware classification (structural, type-name, identifier, literal, operator)
-- **Substitution collapsing**: type annotations propagate root substitutions into every sub-expression; the engine finds minimal root substitutions that explain all derived diffs
-- **Weighted scoring**: structural differences cost 100x, operator changes cost 2x, identifier renames cost 0 (free parameter)
-
-Validated on the [crdt](https://github.com/aalpar/crdt) project (17 packages, 132 functions): found the ewflag/dwflag duality and pncounter/gcounter pattern — both confirmed as real unification candidates.
-
-### More Examples
-
-| Script | Layers | What it demonstrates |
-|--------|--------|---------------------|
-| [`goast-query.scm`](examples/goast-query/goast-query.scm) | AST | Parse source, extract function names, find error-returning functions |
-| [`state-trace-detect.scm`](examples/goast-query/state-trace-detect.scm) | AST | 2-pass boolean cluster + if-chain detection |
-| [`unify-detect.scm`](examples/goast-query/unify-detect.scm) | AST | Prototype diff engine comparing two inline Go functions |
-| [`belief-comutation.scm`](examples/goast-query/belief-comutation.scm) | AST+SSA | Co-mutation beliefs via DSL, validated against known results |
-| [`belief-example.scm`](examples/goast-query/belief-example.scm) | AST | Belief DSL smoke test against wile-goast itself |
-
-See [`docs/EXAMPLES.md`](docs/EXAMPLES.md) for annotated walkthroughs of each script.
-
-## Usage
-
-### As a Go library
-
-```go
-package main
-
-import (
-    "context"
-    "fmt"
-    "log"
-
-    "github.com/aalpar/wile"
-    "github.com/aalpar/wile-goast/goast"
-    "github.com/aalpar/wile-goast/goastssa"
-    "github.com/aalpar/wile-goast/goastcfg"
-    "github.com/aalpar/wile-goast/goastcg"
-    "github.com/aalpar/wile-goast/goastlint"
-)
-
-func main() {
-    ctx := context.Background()
-    engine, err := wile.NewEngine(ctx,
-        wile.WithSafeExtensions(),
-        wile.WithLibraryPaths(),  // enables (import ...) for Scheme libraries
-        wile.WithExtension(goast.Extension),
-        wile.WithExtension(goastssa.Extension),
-        wile.WithExtension(goastcfg.Extension),
-        wile.WithExtension(goastcg.Extension),
-        wile.WithExtension(goastlint.Extension),
-    )
-    if err != nil {
-        log.Fatal(err)
-    }
-    defer engine.Close()
-
-    val, err := engine.Eval(ctx, `
-        (let ((file (go-parse-string "package demo\nfunc Add(a, b int) int { return a + b }")))
-          (go-format file))
-    `)
-    if err != nil {
-        log.Fatal(err)
-    }
-    fmt.Println(val)
-}
+(define cg (go-callgraph "." 'cha))
+(go-callgraph-callers cg "(*Server).Handle")
+(go-callgraph-reachable cg "command-line-arguments.main")
 ```
 
-### As a standalone binary
+### Check control flow dominance
+
+```scheme
+(import (wile goast cfg))
+
+(define cfg (go-cfg "." "ProcessRequest"))
+(define dom (go-cfg-dominators cfg))
+(go-cfg-dominates? dom 0 3)  ; does entry dominate block 3?
+```
+
+### Run lint analyzers
+
+```scheme
+(import (wile goast lint))
+
+(define diags (go-analyze "./..." "nilness" "shadow"))
+```
+
+### Module-wide unification detection
+
+The built-in `unify-detect-pkg` script scans an entire Go module for
+function pairs that are candidates for unification — functions with the
+same structure differing only in types, identifiers, or literals:
 
 ```bash
-make build
-./dist/wile-goast '(display (go-parse-string "package p\nfunc F() {}"))'
-./dist/wile-goast -f examples/goast-query/state-trace-full.scm
+cd /path/to/go/module
+wile-goast --run unify-detect-pkg
+```
+
+Uses recursive AST diff with substitution collapsing to find minimal root
+type substitutions that explain all derived differences.
+
+See [`docs/EXAMPLES.md`](docs/EXAMPLES.md) for annotated walkthroughs.
+
+## As a Go Library
+
+```go
+engine, err := wile.NewEngine(ctx,
+    wile.WithSafeExtensions(),
+    wile.WithExtension(goast.Extension),
+    wile.WithExtension(goastssa.Extension),
+    wile.WithExtension(goastcfg.Extension),
+    wile.WithExtension(goastcg.Extension),
+    wile.WithExtension(goastlint.Extension),
+)
+defer engine.Close()
+
+val, err := engine.Eval(ctx, `(go-parse-expr "1 + 2")`)
 ```
 
 ## Build & Test
@@ -191,29 +202,25 @@ make build       # Build to ./dist/{os}/{arch}/wile-goast
 make test        # Run all tests
 make lint        # Run golangci-lint
 make ci          # Full CI: lint + build + test + covercheck + verify-mod
-make cover       # Coverage report
-make covercheck  # Enforce 80% coverage threshold
 ```
 
 ## Dependencies
 
 | Dependency | Purpose |
 |-----------|---------|
-| `github.com/aalpar/wile` | Scheme engine, extension API, value types |
+| [`github.com/aalpar/wile`](https://github.com/aalpar/wile) | R7RS Scheme interpreter, extension API |
 | `golang.org/x/tools` | `go/ssa`, `go/callgraph`, `go/cfg`, `go/analysis` |
-
-No other runtime dependencies.
 
 ## Documentation
 
 | Document | Purpose |
 |----------|---------|
-| [`docs/PRIMITIVES.md`](docs/PRIMITIVES.md) | Complete primitive reference for all 5 layers |
+| [`docs/PRIMITIVES.md`](docs/PRIMITIVES.md) | Complete primitive reference for all layers |
+| [`docs/AST-NODES.md`](docs/AST-NODES.md) | Field reference for all 50+ AST node tags |
 | [`docs/EXAMPLES.md`](docs/EXAMPLES.md) | Annotated walkthroughs of example scripts |
-| [`docs/GO-STATIC-ANALYSIS.md`](docs/GO-STATIC-ANALYSIS.md) | Full guide to multi-layer Go analysis with Scheme |
-| [`BIBLIOGRAPHY.md`](BIBLIOGRAPHY.md) | Static analysis references |
-| [`plans/`](plans/) | Design documents and implementation plans |
+| [`docs/GO-STATIC-ANALYSIS.md`](docs/GO-STATIC-ANALYSIS.md) | Usage guide with cross-layer examples |
 
 ## Version
 
-v0.1.0 — all five analysis layers complete. Zero external consumers. API may change without notice.
+v0.3.4 — all six layers complete (AST, SSA, CFG, call graph, lint, belief DSL).
+Zero external consumers. API may change without notice.
