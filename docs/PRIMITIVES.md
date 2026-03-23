@@ -130,6 +130,7 @@ flow is explicit via basic blocks, and phi nodes merge values at join points.
 | Primitive | Returns | Description |
 |-----------|---------|-------------|
 | `(go-ssa-build pattern . options)` | list of `ssa-func` nodes | Build SSA for a Go package |
+| `(go-ssa-field-index pattern)` | list of `ssa-field-summary` nodes | Pre-correlated per-function field access index |
 
 ### Options
 
@@ -191,11 +192,37 @@ an `(operands ...)` field listing its SSA value operands by name.
 
 **Fallback:** `ssa-unknown` (unmapped instruction types)
 
+### `go-ssa-field-index`
+
+Returns a pre-correlated field access index: one entry per function that
+reads or writes at least one struct field. Functions with no field accesses
+are omitted. This is orders of magnitude faster than walking SSA trees in
+Scheme for field-access queries.
+
+Each `(ssa-field-summary ...)` node contains:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `func` | string | Function short name |
+| `pkg` | string | Package import path |
+| `fields` | list of `ssa-field-access` | Field access entries |
+
+Each `(ssa-field-access ...)` contains:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `struct` | string | Short struct type name (from Go type system) |
+| `struct-pkg` | string | Import path of package defining the struct |
+| `field` | string | Field name |
+| `recv` | string | SSA receiver register name |
+| `mode` | symbol | `read` or `write` |
+
 ### Security
 
 | Primitive | Resource | Action |
 |-----------|----------|--------|
 | `go-ssa-build` | `ResourceProcess` | `ActionLoad` |
+| `go-ssa-field-index` | `ResourceProcess` | `ActionLoad` |
 
 ### Usage
 
@@ -214,6 +241,21 @@ an `(operands ...)` field listing its SSA value operands by name.
                             (cdr (assoc 'instrs (cdr blk)))))
                   (cdr (assoc 'blocks (cdr fn))))))
          funcs)))
+
+;; Field index: find which functions write to a specific field
+(define index (go-ssa-field-index "."))
+(define writers
+  (filter-map
+    (lambda (summary)
+      (let ((writes (filter-map
+                      (lambda (access)
+                        (and (eq? (cdr (assoc 'mode (cdr access))) 'write)
+                             (equal? (cdr (assoc 'field (cdr access))) "Name")
+                             access))
+                      (cdr (assoc 'fields (cdr summary))))))
+        (and (pair? writes)
+             (cdr (assoc 'func (cdr summary))))))
+    index))
 ```
 
 ---
@@ -509,7 +551,147 @@ primitives to include these fields.
 
 ---
 
+---
+
+## Belief DSL -- `(wile goast belief)`
+
+**Implementation:** Pure Scheme library (embedded in binary)
+
+Declarative consistency deviation detection. Define beliefs as patterns
+extracted from code (Engler et al., "Bugs as Deviant Behavior"). The DSL
+handles layer selection, data loading, and statistical comparison.
+
+### Core Form
+
+```scheme
+(define-belief <name:string>
+  (sites <site-selector>)
+  (expect <property-checker>)
+  (threshold <min-adherence:number> <min-sites:number>))
+
+(run-beliefs <target:string>)
+```
+
+- **name** -- string identifier, used in output and for `sites-from` references.
+- **sites** -- enumerates code locations to analyze. Returns a list of sites.
+- **expect** -- classifies each site into a category symbol. The majority
+  category becomes the belief; minorities are deviations.
+- **threshold** -- minimum adherence ratio and minimum site count for reporting.
+- **target** -- a `go list`-compatible pattern (e.g. `"."`, `"./..."`,
+  `"my/package/..."`).
+
+### Site Selectors
+
+| Selector | Description |
+|----------|-------------|
+| `(functions-matching pred ...)` | Functions matching all predicates |
+| `(callers-of "func")` | All callers of a function (call graph layer) |
+| `(methods-of "Type")` | All methods on a receiver type |
+| `(sites-from "belief" 'which 'adherence)` | Results from a prior belief (bootstrapping) |
+
+### Selector Predicates
+
+Used as arguments to `functions-matching`:
+
+| Predicate | Description |
+|-----------|-------------|
+| `(has-params "type" ...)` | Signature contains these param types |
+| `(has-receiver "type")` | Method receiver matches |
+| `(name-matches "pattern")` | Function name substring match |
+| `(contains-call "func" ...)` | Body calls any of these |
+| `(stores-to-fields "Struct" "field" ...)` | SSA: stores to these fields |
+| `(all-of pred ...)` | All predicates match |
+| `(any-of pred ...)` | Any predicate matches |
+| `(none-of pred ...)` | No predicate matches |
+
+### Property Checkers
+
+| Checker | Returns | Description |
+|---------|---------|-------------|
+| `(contains-call "func" ...)` | `'present` / `'absent` | Call present in body? |
+| `(paired-with "A" "B")` | `'paired-defer` / `'paired-call` / `'unpaired` | A paired with B? |
+| `(ordered "A" "B")` | `'a-dominates-b` / `'b-dominates-a` / `'same-block` / `'unordered` | CFG dominance |
+| `(co-mutated "field" ...)` | `'co-mutated` / `'partial` | Fields stored together? |
+| `(checked-before-use "val")` | `'guarded` / `'unguarded` | Value checked before use? |
+| `(custom (lambda (site ctx) ...))` | user-defined symbol | Escape hatch |
+
+### Context Accessors
+
+Available in `custom` lambdas:
+
+| Accessor | Description |
+|----------|-------------|
+| `(ctx-pkgs ctx)` | Lazy-loaded type-checked packages |
+| `(ctx-ssa ctx)` | Lazy-loaded SSA functions |
+| `(ctx-callgraph ctx)` | Lazy-loaded call graph |
+| `(ctx-field-index ctx)` | Lazy-loaded field access index |
+| `(ctx-find-ssa-func ctx pkg-path name)` | Look up SSA function by package + name |
+
+### Utility Functions
+
+Re-exported from `(wile goast utils)` for use in `custom` lambdas:
+
+`nf`, `tag?`, `walk`, `filter-map`, `flat-map`, `member?`, `unique`
+
+### Usage
+
+```scheme
+(import (wile goast belief))
+
+;; Define a co-mutation belief
+(define-belief "status-fields"
+  (sites (functions-matching
+           (stores-to-fields "Status" "State" "Message")))
+  (expect (co-mutated "State" "Message"))
+  (threshold 0.66 3))
+
+;; Define a pairing belief
+(define-belief "lock-unlock"
+  (sites (functions-matching (contains-call "Lock")))
+  (expect (paired-with "Lock" "Unlock"))
+  (threshold 0.90 5))
+
+;; Run all beliefs against target package(s)
+(run-beliefs "./...")
+```
+
+---
+
+## Shared Utilities -- `(wile goast utils)`
+
+**Implementation:** Pure Scheme library (embedded in binary)
+
+Traversal utilities for the tagged-alist node format shared by all layers.
+
+| Function | Description |
+|----------|-------------|
+| `(nf node 'key)` | Get field value by key, or `#f` if absent |
+| `(tag? node 'tag)` | Test whether node has a given tag |
+| `(walk val visitor)` | Depth-first walk; collect non-`#f` visitor results |
+| `(filter-map f lst)` | Map, keeping only non-`#f` results |
+| `(flat-map f lst)` | Map (f returns list), concatenate results |
+| `(member? x lst)` | Membership test using `equal?` |
+| `(unique lst)` | Remove duplicates, preserving order |
+
+### Usage
+
+```scheme
+(import (wile goast utils))
+
+;; Extract a field
+(nf some-node 'name)  ; => "Add" or #f
+
+;; Find all call-expr nodes in a function body
+(walk (nf func-decl 'body)
+  (lambda (node)
+    (and (tag? node 'call-expr) node)))
+```
+
+---
+
 ## Cross-References
 
-- [GO-STATIC-ANALYSIS.md](GO-STATIC-ANALYSIS.md) -- Full guide: architecture,
-  design rationale, cross-layer example.
+- [GO-STATIC-ANALYSIS.md](GO-STATIC-ANALYSIS.md) -- Usage guide with
+  architecture overview and cross-layer examples.
+- [AST-NODES.md](AST-NODES.md) -- Field reference for all 50+ AST node tags.
+- [EXAMPLES.md](EXAMPLES.md) -- Annotated walkthroughs of example scripts.

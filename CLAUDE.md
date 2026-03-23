@@ -192,15 +192,12 @@ make ci          # Full CI: lint + build + test + covercheck + verify-mod
 
 | Document | Purpose |
 |----------|---------|
-| [`README.md`](README.md) | Project overview, motivation, complex examples |
-| [`docs/PRIMITIVES.md`](docs/PRIMITIVES.md) | Complete primitive reference for all 5 layers |
+| [`README.md`](README.md) | Project overview, motivation |
+| [`docs/PRIMITIVES.md`](docs/PRIMITIVES.md) | Complete primitive reference for all layers + belief DSL |
 | [`docs/AST-NODES.md`](docs/AST-NODES.md) | AST node field reference (types, optionality for all tags) |
 | [`docs/EXAMPLES.md`](docs/EXAMPLES.md) | Annotated walkthroughs of example scripts |
-| [`docs/GO-STATIC-ANALYSIS.md`](docs/GO-STATIC-ANALYSIS.md) | Full guide to multi-layer Go analysis |
+| [`docs/GO-STATIC-ANALYSIS.md`](docs/GO-STATIC-ANALYSIS.md) | Usage guide with cross-layer examples |
 | [`BIBLIOGRAPHY.md`](BIBLIOGRAPHY.md) | Static analysis references |
-| [`plans/GO-AST.md`](plans/GO-AST.md) | AST extension design and phases |
-| [`plans/GO-STATIC-ANALYSIS.md`](plans/GO-STATIC-ANALYSIS.md) | SSA/callgraph/CFG/lint umbrella design |
-| [`plans/UNIFICATION-DETECTION.md`](plans/UNIFICATION-DETECTION.md) | Procedure unification detection |
-| [`plans/CONSISTENCY-DEVIATION.md`](plans/CONSISTENCY-DEVIATION.md) | Engler-style consistency-based deviation detection |
-| [`plans/BELIEF-DSL.md`](plans/BELIEF-DSL.md) | Belief DSL design: combinators, graduation, bootstrapping |
-| [`plans/BELIEF-DSL-IMPL.md`](plans/BELIEF-DSL-IMPL.md) | Belief DSL implementation plan |
+| [`plans/UNIFICATION-DETECTION.md`](plans/UNIFICATION-DETECTION.md) | Remaining: SSA equivalence v2 pass |
+| [`plans/CONSISTENCY-DEVIATION.md`](plans/CONSISTENCY-DEVIATION.md) | Remaining: unvalidated belief categories 1-4 |
+| [`plans/BELIEF-DSL.md`](plans/BELIEF-DSL.md) | Remaining: graduation --emit mode, suppression |
