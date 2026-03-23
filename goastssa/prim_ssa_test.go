@@ -203,7 +203,8 @@ func TestGoSSABuild_BlockDominance(t *testing.T) {
 	})
 }
 
-func TestSSAFieldIndex(t *testing.T) {
+func TestGoSSAFieldIndex_ReturnsFieldSummaries(t *testing.T) {
+	c := qt.New(t)
 	engine := newEngine(t)
 
 	// go-ssa-field-index should return a list of ssa-field-summary nodes.
@@ -214,11 +215,11 @@ func TestSSAFieldIndex(t *testing.T) {
 		         (and (pair? first)
 		              (eq? (car first) 'ssa-field-summary)))))
 	`)
-	c := qt.New(t)
 	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
 }
 
-func TestSSAFieldIndexContent(t *testing.T) {
+func TestGoSSAFieldIndex_Content(t *testing.T) {
+	c := qt.New(t)
 	engine := newEngine(t)
 
 	// Each entry should have func, pkg, and fields keys.
@@ -231,11 +232,11 @@ func TestSSAFieldIndexContent(t *testing.T) {
 		       (assoc 'fields fields)
 		       #t))
 	`)
-	c := qt.New(t)
 	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
 }
 
-func TestSSAFieldIndexAccessMode(t *testing.T) {
+func TestGoSSAFieldIndex_AccessMode(t *testing.T) {
+	c := qt.New(t)
 	engine := newEngine(t)
 
 	// Field access entries should have struct, field, recv, mode keys.
@@ -254,8 +255,24 @@ func TestSSAFieldIndexAccessMode(t *testing.T) {
 		       (let ((m (cdr (assoc 'mode (cdr access)))))
 		         (or (eq? m 'read) (eq? m 'write)))))
 	`)
-	c := qt.New(t)
 	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
+}
+
+func TestGoSSAFieldIndex_Errors(t *testing.T) {
+	engine := newEngine(t)
+
+	tcs := []struct {
+		name string
+		code string
+	}{
+		{name: "wrong arg type", code: `(go-ssa-field-index 42)`},
+		{name: "nonexistent package", code: `(go-ssa-field-index "github.com/aalpar/wile/does-not-exist-xyz")`},
+	}
+	for _, tc := range tcs {
+		t.Run(tc.name, func(t *testing.T) {
+			evalExpectError(t, engine, tc.code)
+		})
+	}
 }
 
 func TestGoSSABuild_Errors(t *testing.T) {

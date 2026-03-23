@@ -355,11 +355,11 @@ func fieldAccessNode(info fieldInfo, mode string) values.Value {
 }
 
 // structTypeName extracts the short type name and package path from a
-// types.Type. Returns ("", "") for unnamed struct types.
+// types.Type. Returns ("<anonymous>", "") for unnamed struct types.
 func structTypeName(t types.Type) (name, pkg string) {
 	named, ok := t.(*types.Named)
 	if !ok {
-		return "", ""
+		return "<anonymous>", ""
 	}
 	obj := named.Obj()
 	name = obj.Name()

@@ -515,13 +515,13 @@
 
 ;; (co-mutated field ...) — checks whether all named fields are stored
 ;; together in the function. Uses the pre-built field index from Go.
-;; Returns: 'co-mutated or 'partial
+;; Returns: 'co-mutated, 'partial, or 'missing
 (define (co-mutated . field-names)
   (lambda (site ctx)
     (let* ((fname (nf site 'name))
            (pkg-path (nf site 'pkg-path))
            (summary (find-field-summary (ctx-field-index ctx) pkg-path fname)))
-      (if (not summary) 'partial
+      (if (not summary) 'missing
         (let ((writes (writes-for-struct summary #f)))
           (if (all-present? field-names writes)
             'co-mutated
