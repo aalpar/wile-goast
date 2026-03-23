@@ -203,6 +203,61 @@ func TestGoSSABuild_BlockDominance(t *testing.T) {
 	})
 }
 
+func TestSSAFieldIndex(t *testing.T) {
+	engine := newEngine(t)
+
+	// go-ssa-field-index should return a list of ssa-field-summary nodes.
+	result := eval(t, engine, `
+		(let ((index (go-ssa-field-index "github.com/aalpar/wile-goast/goastssa")))
+		  (and (pair? index)
+		       (let ((first (car index)))
+		         (and (pair? first)
+		              (eq? (car first) 'ssa-field-summary)))))
+	`)
+	c := qt.New(t)
+	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
+}
+
+func TestSSAFieldIndexContent(t *testing.T) {
+	engine := newEngine(t)
+
+	// Each entry should have func, pkg, and fields keys.
+	result := eval(t, engine, `
+		(let* ((index (go-ssa-field-index "github.com/aalpar/wile-goast/goastssa"))
+		       (first (car index))
+		       (fields (cdr first)))
+		  (and (assoc 'func fields)
+		       (assoc 'pkg fields)
+		       (assoc 'fields fields)
+		       #t))
+	`)
+	c := qt.New(t)
+	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
+}
+
+func TestSSAFieldIndexAccessMode(t *testing.T) {
+	engine := newEngine(t)
+
+	// Field access entries should have struct, field, recv, mode keys.
+	// Mode should be read or write.
+	result := eval(t, engine, `
+		(let* ((index (go-ssa-field-index "github.com/aalpar/wile-goast/goastssa"))
+		       (entry (let loop ((idx index))
+		                (if (null? idx) #f
+		                  (let ((fs (cdr (assoc 'fields (cdr (car idx))))))
+		                    (if (pair? fs) (car idx) (loop (cdr idx)))))))
+		       (access (car (cdr (assoc 'fields (cdr entry))))))
+		  (and (assoc 'struct (cdr access))
+		       (assoc 'field (cdr access))
+		       (assoc 'recv (cdr access))
+		       (assoc 'mode (cdr access))
+		       (let ((m (cdr (assoc 'mode (cdr access)))))
+		         (or (eq? m 'read) (eq? m 'write)))))
+	`)
+	c := qt.New(t)
+	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
+}
+
 func TestGoSSABuild_Errors(t *testing.T) {
 	engine := newEngine(t)
 

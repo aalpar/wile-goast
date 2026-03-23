@@ -42,6 +42,9 @@ func addPrimitives(r *registry.Registry) error {
 		{Name: "go-ssa-build", ParamCount: 2, IsVariadic: true, Impl: PrimGoSSABuild,
 			Doc:        "Builds SSA for a Go package and returns a list of ssa-func nodes.",
 			ParamNames: []string{"pattern", "options"}, Category: "goast-ssa"},
+		{Name: "go-ssa-field-index", ParamCount: 1, Impl: PrimGoSSAFieldIndex,
+			Doc:        "Returns per-function field access summaries for a Go package.",
+			ParamNames: []string{"pattern"}, Category: "goast-ssa"},
 	}, registry.PhaseRuntime)
 	return nil
 }
