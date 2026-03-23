@@ -441,57 +441,6 @@
               (car found)
               (file-loop (cdr files)))))))))
 
-;; Collect ssa-field-addr instructions from an SSA function.
-(define (collect-field-addrs ssa-func)
-  (walk ssa-func
-    (lambda (node)
-      (and (tag? node 'ssa-field-addr)
-           (list (nf node 'name)
-                 (nf node 'field)
-                 (nf node 'x))))))
-
-;; Collect ssa-store instructions from an SSA function.
-(define (collect-stores ssa-func)
-  (walk ssa-func
-    (lambda (node)
-      (and (tag? node 'ssa-store)
-           (list (nf node 'addr)
-                 (nf node 'val))))))
-
-;; Determine which target fields are stored in an SSA function.
-;; Uses receiver-type disambiguation: a receiver is valid only
-;; if every field it accesses is in struct-fields (the full struct).
-;; Only fields in target-fields are counted in the result.
-(define (stored-fields-in-func ssa-func target-fields struct-fields)
-  (let* ((all-field-addrs (collect-field-addrs ssa-func))
-         (stores (collect-stores ssa-func))
-         (store-addrs (map car stores))
-         (receivers (unique (map caddr all-field-addrs)))
-         (valid-receivers
-           (filter-map
-             (lambda (recv)
-               (let* ((recv-fas (filter-map
-                                  (lambda (fa) (and (equal? (caddr fa) recv) fa))
-                                  all-field-addrs))
-                      (recv-fields (unique (map cadr recv-fas)))
-                      (all-match (let loop ((fs recv-fields))
-                                   (cond ((null? fs) #t)
-                                         ((not (member? (car fs) struct-fields)) #f)
-                                         (else (loop (cdr fs)))))))
-                 (and all-match recv)))
-             receivers))
-         (stored (filter-map
-                   (lambda (fa)
-                     (let ((reg (car fa))
-                           (field (cadr fa))
-                           (recv (caddr fa)))
-                       (and (member? recv valid-receivers)
-                            (member? reg store-addrs)
-                            (member? field target-fields)
-                            field)))
-                   all-field-addrs)))
-    (unique stored)))
-
 ;; ── Property checkers ───────────────────────────────────
 ;;
 ;; Each checker returns (lambda (site ctx) -> category-symbol).
