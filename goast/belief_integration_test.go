@@ -177,3 +177,43 @@ func TestUtilsTakeDrop(t *testing.T) {
 		qt.New(t).Assert(result.SchemeString(), qt.Equals, "()")
 	})
 }
+
+func TestAstTransform(t *testing.T) {
+	engine := newBeliefEngine(t)
+
+	t.Run("replace matching node", func(t *testing.T) {
+		result := evalMultiple(t, engine, `
+			(import (wile goast utils))
+			(let* ((node (go-parse-expr "x + 1"))
+			       (transformed (ast-transform node
+			         (lambda (n)
+			           (and (tag? n 'ident)
+			                (equal? (nf n 'name) "x")
+			                (list 'ident (cons 'name "y")))))))
+			  (go-format transformed))`)
+		qt.New(t).Assert(result.SchemeString(), qt.Equals, `"y + 1"`)
+	})
+
+	t.Run("no match returns unchanged", func(t *testing.T) {
+		result := evalMultiple(t, engine, `
+			(import (wile goast utils))
+			(let* ((node (go-parse-expr "x + 1"))
+			       (transformed (ast-transform node
+			         (lambda (n) #f))))
+			  (go-format transformed))`)
+		qt.New(t).Assert(result.SchemeString(), qt.Equals, `"x + 1"`)
+	})
+
+	t.Run("no recursion into replacement", func(t *testing.T) {
+		result := evalMultiple(t, engine, `
+			(import (wile goast utils))
+			(let* ((node (go-parse-expr "x"))
+			       (transformed (ast-transform node
+			         (lambda (n)
+			           (and (tag? n 'ident)
+			                (equal? (nf n 'name) "x")
+			                (go-parse-expr "x + 1"))))))
+			  (go-format transformed))`)
+		qt.New(t).Assert(result.SchemeString(), qt.Equals, `"x + 1"`)
+	})
+}

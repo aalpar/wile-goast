@@ -76,3 +76,24 @@
 (define (drop lst n)
   (if (or (= n 0) (null? lst)) lst
     (drop (cdr lst) (- n 1))))
+
+;; Depth-first pre-order tree rewriter over goast s-expressions.
+;; f returns a replacement node (no recursion into it) or #f (keep, recurse).
+(define (ast-transform node f)
+  (let ((replacement (f node)))
+    (if replacement replacement
+      (cond
+        ;; Tagged alist: recurse into field values
+        ((and (pair? node) (symbol? (car node)))
+         (cons (car node)
+               (map (lambda (field)
+                      (if (pair? field)
+                        (cons (car field)
+                              (ast-transform (cdr field) f))
+                        field))
+                    (cdr node))))
+        ;; List of child nodes
+        ((and (pair? node) (pair? (car node)))
+         (map (lambda (n) (ast-transform n f)) node))
+        ;; Atom
+        (else node)))))
