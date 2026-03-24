@@ -25,7 +25,41 @@ source. Optionally type-checks packages via `go/packages`.
 | `(go-parse-expr source)` | tagged alist | Parse a single Go expression |
 | `(go-format ast)` | string | Convert s-expression AST back to Go source |
 | `(go-node-type ast)` | symbol | Return the tag symbol of an AST node |
-| `(go-typecheck-package pattern . options)` | list of tagged alists | Load and type-check Go package(s) |
+| `(go-typecheck-package target . options)` | list of tagged alists | Load and type-check Go package(s) |
+| `(go-interface-implementors name target)` | tagged alist | Find types implementing a named interface |
+| `(go-load pattern ... . options)` | GoSession | Load packages into a reusable session |
+| `(go-session? v)` | boolean | Type predicate for GoSession |
+| `(go-list-deps pattern ...)` | list of strings | Transitive import path discovery |
+
+### Session Management
+
+`go-load` creates a GoSession that holds loaded packages and lazily builds SSA.
+All package-loading primitives (`go-typecheck-package`, `go-ssa-build`,
+`go-ssa-field-index`, `go-cfg`, `go-callgraph`, `go-analyze`,
+`go-interface-implementors`) accept either a pattern string (load fresh) or a
+GoSession (reuse loaded state). The `target` parameter in the signatures above
+accepts both types.
+
+```scheme
+;; Load once, query many — all layers see the same source snapshot
+(define s (go-load "my/pkg/a" "my/pkg/b"))
+(define pkgs (go-typecheck-package s))
+(define ssa  (go-ssa-build s))
+(define cfg  (go-cfg s "MyFunc"))
+(define cg   (go-callgraph s 'cha))
+
+;; Old style still works — loads fresh each time
+(go-ssa-build "my/pkg/a")
+```
+
+**Options for `go-load`:**
+
+| Symbol | Effect |
+|--------|--------|
+| `'lint` | Upgrade to `LoadAllSyntax` for `go-analyze` support |
+
+**`go-list-deps`** uses lightweight loading (`NeedName | NeedImports` only) for
+dependency discovery before committing to a full load.
 
 ### Options
 

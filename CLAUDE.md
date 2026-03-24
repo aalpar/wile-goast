@@ -46,6 +46,10 @@ All sub-extensions depend on the base `goast` package for shared mapper/helper i
 | `go-format` | Convert s-expression AST back to Go source |
 | `go-node-type` | Return the tag symbol of an AST node |
 | `go-typecheck-package` | Load package with type annotations |
+| `go-interface-implementors` | Find types implementing an interface |
+| `go-load` | Load packages into a GoSession for reuse |
+| `go-session?` | Type predicate for GoSession |
+| `go-list-deps` | Lightweight transitive dependency discovery |
 
 ### goastssa — `(wile goast ssa)`
 | Primitive | Description |
@@ -75,6 +79,17 @@ All sub-extensions depend on the base `goast` package for shared mapper/helper i
 | `go-analyze-list` | List available analyzer names |
 
 See [`docs/PRIMITIVES.md`](docs/PRIMITIVES.md) for complete signatures, options, and examples.
+
+### Session sharing
+
+Package-loading primitives (`go-typecheck-package`, `go-ssa-build`, `go-ssa-field-index`, `go-cfg`, `go-callgraph`, `go-analyze`, `go-interface-implementors`) accept either a pattern string (load fresh) or a GoSession from `go-load` (reuse). A session provides snapshot consistency and avoids redundant `packages.Load` calls.
+
+```scheme
+(define s (go-load "my/pkg"))
+(go-typecheck-package s)  ;; reuses loaded state
+(go-ssa-build s)          ;; same packages, no reload
+(go-cfg s "MyFunc")       ;; same SSA program
+```
 
 ## Belief DSL — `(wile goast belief)`
 
