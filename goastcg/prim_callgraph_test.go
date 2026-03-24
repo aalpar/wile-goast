@@ -19,7 +19,9 @@ import (
 	"testing"
 
 	"github.com/aalpar/wile"
+	extgoast "github.com/aalpar/wile-goast/goast"
 	extgoastcg "github.com/aalpar/wile-goast/goastcg"
+	"github.com/aalpar/wile-goast/testutil"
 	"github.com/aalpar/wile/values"
 
 	qt "github.com/frankban/quicktest"
@@ -77,6 +79,24 @@ func TestGoCallgraph_CHA(t *testing.T) {
 	result := eval(t, engine,
 		`(pair? (go-callgraph "github.com/aalpar/wile-goast/goast" 'cha))`)
 	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
+}
+
+func newSessionEngine(t *testing.T) *wile.Engine {
+	t.Helper()
+	engine, err := wile.NewEngine(context.Background(),
+		wile.WithExtension(extgoast.Extension),
+		wile.WithExtension(extgoastcg.Extension),
+	)
+	qt.New(t).Assert(err, qt.IsNil)
+	return engine
+}
+
+func TestGoCallgraph_WithSession(t *testing.T) {
+	engine := newSessionEngine(t)
+	testutil.RunScheme(t, engine, `(define s (go-load "github.com/aalpar/wile-goast/goast"))`)
+	result := testutil.RunScheme(t, engine,
+		`(pair? (go-callgraph s 'static))`)
+	qt.New(t).Assert(result.Internal(), qt.Equals, values.TrueValue)
 }
 
 func TestGoCallgraph_Errors(t *testing.T) {

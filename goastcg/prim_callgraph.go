@@ -50,12 +50,10 @@ var validAlgorithms = map[string]bool{
 	"vta":    true,
 }
 
-// PrimGoCallgraph implements (go-callgraph pattern algorithm).
+// PrimGoCallgraph implements (go-callgraph target algorithm).
+// target is a package pattern string or a GoSession from go-load.
 func PrimGoCallgraph(mc *machine.MachineContext) error {
-	pattern, err := helpers.RequireArg[*values.String](mc, 0, werr.ErrNotAString, "go-callgraph")
-	if err != nil {
-		return err
-	}
+	arg := mc.Arg(0)
 
 	algo, err := helpers.RequireArg[*values.Symbol](mc, 1, werr.ErrNotASymbol, "go-callgraph")
 	if err != nil {
@@ -67,7 +65,32 @@ func PrimGoCallgraph(mc *machine.MachineContext) error {
 			"go-callgraph: algorithm must be static, cha, rta, or vta; got %s", algo.Key)
 	}
 
-	err = security.CheckWithAuthorizer(mc.Authorizer(), security.AccessRequest{
+	switch v := arg.(type) {
+	case *goast.GoSession:
+		return callgraphFromSession(mc, v, algo.Key)
+	case *values.String:
+		return callgraphFromPattern(mc, v, algo.Key)
+	default:
+		return werr.WrapForeignErrorf(werr.ErrNotAString,
+			"go-callgraph: expected string or go-session, got %T", arg)
+	}
+}
+
+func callgraphFromSession(mc *machine.MachineContext, session *goast.GoSession, algorithm string) error {
+	prog := session.SSAAllPackages()
+
+	cg, cgErr := dispatchCallgraph(prog, algorithm)
+	if cgErr != nil {
+		return cgErr
+	}
+
+	mapper := &cgMapper{fset: session.FileSet()}
+	mc.SetValue(mapper.mapGraph(cg))
+	return nil
+}
+
+func callgraphFromPattern(mc *machine.MachineContext, pattern *values.String, algorithm string) error {
+	err := security.CheckWithAuthorizer(mc.Authorizer(), security.AccessRequest{
 		Resource: security.ResourceProcess,
 		Action:   security.ActionLoad,
 		Target:   "go",
@@ -95,7 +118,6 @@ func PrimGoCallgraph(mc *machine.MachineContext) error {
 			"go-callgraph: %s: %s", pattern.Value, loadErr)
 	}
 
-	// Check for package load errors.
 	var errs []string
 	for _, pkg := range pkgs {
 		for _, e := range pkg.Errors {
@@ -108,14 +130,12 @@ func PrimGoCallgraph(mc *machine.MachineContext) error {
 			strings.Join(errs, "; "))
 	}
 
-	// Build SSA for the entire program (call graph needs cross-package edges).
 	prog, _ := ssautil.Packages(pkgs, ssa.SanityCheckFunctions|ssa.InstantiateGenerics)
 	for _, pkg := range prog.AllPackages() {
 		pkg.Build()
 	}
 
-	// Dispatch to selected algorithm.
-	cg, cgErr := dispatchCallgraph(prog, algo.Key)
+	cg, cgErr := dispatchCallgraph(prog, algorithm)
 	if cgErr != nil {
 		return cgErr
 	}
