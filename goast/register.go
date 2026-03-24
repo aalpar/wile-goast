@@ -50,6 +50,15 @@ func addPrimitives(r *registry.Registry) error {
 		{Name: "go-interface-implementors", ParamCount: 2, Impl: PrimInterfaceImplementors,
 			Doc:        "Finds all types implementing a named interface within the specified packages.",
 			ParamNames: []string{"interface-name", "package-pattern"}, Category: "goast"},
+		{Name: "go-load", ParamCount: 2, IsVariadic: true, Impl: PrimGoLoad,
+			Doc:        "Loads Go packages and returns a GoSession for reuse across analysis primitives.",
+			ParamNames: []string{"pattern", "rest"}, Category: "goast"},
+		{Name: "go-session?", ParamCount: 1, Impl: PrimGoSessionP,
+			Doc:        "Returns #t if the argument is a GoSession.",
+			ParamNames: []string{"v"}, Category: "goast"},
+		{Name: "go-list-deps", ParamCount: 2, IsVariadic: true, Impl: PrimGoListDeps,
+			Doc:        "Returns the transitive closure of import paths for the given package patterns.",
+			ParamNames: []string{"pattern", "rest"}, Category: "goast"},
 	}, registry.PhaseRuntime)
 	return nil
 }
