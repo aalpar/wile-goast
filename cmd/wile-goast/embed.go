@@ -21,3 +21,6 @@ var embeddedLib embed.FS
 
 //go:embed scripts
 var embeddedScripts embed.FS
+
+//go:embed prompts
+var embeddedPrompts embed.FS
