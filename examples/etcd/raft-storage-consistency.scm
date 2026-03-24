@@ -11,27 +11,30 @@
 
 (define target "go.etcd.io/raft/v3/...")
 
+;; Qualified name needed — rafttest also defines a Storage interface.
+(define iface "go.etcd.io/raft/v3.Storage")
+
 ;; Every Entries() implementation should guard against compacted log
 (define-belief "entries-compaction-guard"
-  (sites (interface-methods "Storage" "Entries"))
+  (sites (interface-methods iface "Entries"))
   (expect (contains-call "ErrCompacted" "ErrUnavailable"))
   (threshold 0.80 2))
 
 ;; Every Snapshot() should handle ErrSnapshotTemporarilyUnavailable
 (define-belief "snapshot-temp-unavail"
-  (sites (interface-methods "Storage" "Snapshot"))
+  (sites (interface-methods iface "Snapshot"))
   (expect (contains-call "ErrSnapshotTemporarilyUnavailable"))
   (threshold 0.60 2))
 
 ;; Every Term() implementation should handle out-of-range indices
 (define-belief "term-bounds-check"
-  (sites (interface-methods "Storage" "Term"))
+  (sites (interface-methods iface "Term"))
   (expect (contains-call "ErrCompacted" "ErrUnavailable"))
   (threshold 0.80 2))
 
 ;; Broader: do Storage implementors consistently close/release resources?
 (define-belief "storage-resource-cleanup"
-  (sites (implementors-of "Storage"))
+  (sites (implementors-of iface))
   (expect (contains-call "Close" "Release" "Unlock"))
   (threshold 0.50 3))
 
