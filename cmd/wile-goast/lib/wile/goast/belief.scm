@@ -55,14 +55,16 @@
 ;;    (results . ((belief-name . (adherence-sites deviation-sites)) ...)))
 
 (define (make-context target)
-  (list (cons 'target target)
-        (cons 'pkgs #f)
-        (cons 'ssa #f)
-        (cons 'ssa-index #f)
-        (cons 'field-index #f)
-        (cons 'callgraph #f)
-        (cons 'interface-cache '())
-        (cons 'results '())))
+  (let ((session (go-load target)))
+    (list (cons 'target target)
+          (cons 'session session)
+          (cons 'pkgs #f)
+          (cons 'ssa #f)
+          (cons 'ssa-index #f)
+          (cons 'field-index #f)
+          (cons 'callgraph #f)
+          (cons 'interface-cache '())
+          (cons 'results '()))))
 
 (define (ctx-ref ctx key)
   (cdr (assoc key ctx)))
@@ -72,37 +74,40 @@
 
 (define (ctx-target ctx) (ctx-ref ctx 'target))
 
+(define (ctx-session ctx) (ctx-ref ctx 'session))
+
 (define (ctx-pkgs ctx)
   (or (ctx-ref ctx 'pkgs)
-      (let ((pkgs (go-typecheck-package (ctx-target ctx))))
+      (let ((pkgs (go-typecheck-package (ctx-session ctx))))
         (ctx-set! ctx 'pkgs pkgs)
         pkgs)))
 
 (define (ctx-ssa ctx)
   (or (ctx-ref ctx 'ssa)
-      (let ((ssa (go-ssa-build (ctx-target ctx))))
+      (let ((ssa (go-ssa-build (ctx-session ctx))))
         (ctx-set! ctx 'ssa ssa)
         ssa)))
 
 (define (ctx-callgraph ctx)
   (or (ctx-ref ctx 'callgraph)
-      (let ((cg (go-callgraph (ctx-target ctx) 'static)))
+      (let ((cg (go-callgraph (ctx-session ctx) 'static)))
         (ctx-set! ctx 'callgraph cg)
         cg)))
 
 (define (ctx-field-index ctx)
   (or (ctx-ref ctx 'field-index)
-      (let ((idx (go-ssa-field-index (ctx-target ctx))))
+      (let ((idx (go-ssa-field-index (ctx-session ctx))))
         (ctx-set! ctx 'field-index idx)
         idx)))
 
-;; Lazy interface info lookup, cached by (iface-name . pkg-pattern).
+;; Lazy interface info lookup, cached by (iface-name . session).
 (define (ctx-interface-info ctx iface-name)
   (let* ((cache (ctx-ref ctx 'interface-cache))
-         (key (cons iface-name (ctx-target ctx)))
+         (session (ctx-session ctx))
+         (key (cons iface-name session))
          (cached (assoc key cache)))
     (if cached (cdr cached)
-      (let ((info (go-interface-implementors iface-name (ctx-target ctx))))
+      (let ((info (go-interface-implementors iface-name session)))
         (ctx-set! ctx 'interface-cache (cons (cons key info) cache))
         info))))
 
@@ -546,7 +551,7 @@
   (lambda (site ctx)
     (let* ((fname (nf site 'name))
            (pkg-path (nf site 'pkg-path))
-           (cfg (and pkg-path (go-cfg pkg-path fname))))
+           (cfg (and pkg-path (go-cfg (ctx-session ctx) fname))))
       (if (not cfg) 'missing
         (let* ((blocks (nf cfg 'blocks))
                (a-blocks (find-call-blocks blocks op-a))
