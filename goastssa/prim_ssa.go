@@ -124,7 +124,7 @@ func PrimGoSSABuild(mc *machine.MachineContext) error {
 	}
 
 	// Build SSA.
-	prog, ssaPkgs := ssautil.Packages(pkgs, ssa.SanityCheckFunctions)
+	prog, ssaPkgs := ssautil.Packages(pkgs, ssa.SanityCheckFunctions|ssa.InstantiateGenerics)
 	for _, ssaPkg := range ssaPkgs {
 		if ssaPkg != nil {
 			ssaPkg.Build()
@@ -222,7 +222,7 @@ func PrimGoSSAFieldIndex(mc *machine.MachineContext) error {
 			strings.Join(errs, "; "))
 	}
 
-	_, ssaPkgs := ssautil.Packages(pkgs, ssa.SanityCheckFunctions)
+	_, ssaPkgs := ssautil.Packages(pkgs, ssa.SanityCheckFunctions|ssa.InstantiateGenerics)
 	for _, ssaPkg := range ssaPkgs {
 		if ssaPkg != nil {
 			ssaPkg.Build()

@@ -228,7 +228,7 @@ func PrimGoCFG(mc *machine.MachineContext) error {
 			"go-cfg: %s: %s", pattern.Value, strings.Join(errs, "; "))
 	}
 
-	prog, ssaPkgs := ssautil.Packages(pkgs, ssa.SanityCheckFunctions)
+	prog, ssaPkgs := ssautil.Packages(pkgs, ssa.SanityCheckFunctions|ssa.InstantiateGenerics)
 	for _, ssaPkg := range ssaPkgs {
 		if ssaPkg != nil {
 			ssaPkg.Build()
