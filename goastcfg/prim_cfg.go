@@ -173,18 +173,49 @@ func findFunction(prog *ssa.Program, ssaPkg *ssa.Package, name string) *ssa.Func
 	return nil
 }
 
-// PrimGoCFG implements (go-cfg pattern func-name . options).
+// PrimGoCFG implements (go-cfg target func-name . options).
+// target is a package pattern string or a GoSession from go-load.
 func PrimGoCFG(mc *machine.MachineContext) error {
-	pattern, err := helpers.RequireArg[*values.String](mc, 0, werr.ErrNotAString, "go-cfg")
-	if err != nil {
-		return err
-	}
+	arg := mc.Arg(0)
 	funcName, err := helpers.RequireArg[*values.String](mc, 1, werr.ErrNotAString, "go-cfg")
 	if err != nil {
 		return err
 	}
 
-	err = security.CheckWithAuthorizer(mc.Authorizer(), security.AccessRequest{
+	switch v := arg.(type) {
+	case *goast.GoSession:
+		return cfgFromSession(mc, v, funcName.Value)
+	case *values.String:
+		return cfgFromPattern(mc, v, funcName.Value)
+	default:
+		return werr.WrapForeignErrorf(werr.ErrNotAString,
+			"go-cfg: expected string or go-session, got %T", arg)
+	}
+}
+
+func cfgFromSession(mc *machine.MachineContext, session *goast.GoSession, funcName string) error {
+	mapper, err := parseCFGOpts(mc.Arg(2), session.FileSet())
+	if err != nil {
+		return err
+	}
+	prog, ssaPkgs := session.SSA()
+	for _, ssaPkg := range ssaPkgs {
+		if ssaPkg == nil {
+			continue
+		}
+		fn := findFunction(prog, ssaPkg, funcName)
+		if fn == nil {
+			continue
+		}
+		mc.SetValue(mapper.mapFunction(fn))
+		return nil
+	}
+	return werr.WrapForeignErrorf(errCFGFuncNotFound,
+		"go-cfg: function %q not found in session", funcName)
+}
+
+func cfgFromPattern(mc *machine.MachineContext, pattern *values.String, funcName string) error {
+	err := security.CheckWithAuthorizer(mc.Authorizer(), security.AccessRequest{
 		Resource: security.ResourceProcess,
 		Action:   security.ActionLoad,
 		Target:   "go",
@@ -239,7 +270,7 @@ func PrimGoCFG(mc *machine.MachineContext) error {
 		if ssaPkg == nil {
 			continue
 		}
-		fn := findFunction(prog, ssaPkg, funcName.Value)
+		fn := findFunction(prog, ssaPkg, funcName)
 		if fn == nil {
 			continue
 		}
@@ -248,7 +279,7 @@ func PrimGoCFG(mc *machine.MachineContext) error {
 	}
 
 	return werr.WrapForeignErrorf(errCFGFuncNotFound,
-		"go-cfg: function %q not found in %s", funcName.Value, pattern.Value)
+		"go-cfg: function %q not found in %s", funcName, pattern.Value)
 }
 
 // PrimGoCFGDominators implements (go-cfg-dominators cfg).

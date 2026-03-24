@@ -19,7 +19,9 @@ import (
 	"testing"
 
 	"github.com/aalpar/wile"
+	extgoast "github.com/aalpar/wile-goast/goast"
 	extgoastcfg "github.com/aalpar/wile-goast/goastcfg"
+	"github.com/aalpar/wile-goast/testutil"
 	"github.com/aalpar/wile/values"
 
 	qt "github.com/frankban/quicktest"
@@ -227,6 +229,24 @@ func TestIntegration_DominanceQuery(t *testing.T) {
 					(and (go-cfg-dominates? dom b-idx b-idx)
 					     (loop (cdr blocks))))))`)
 	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
+}
+
+func newSessionEngine(t *testing.T) *wile.Engine {
+	t.Helper()
+	engine, err := wile.NewEngine(context.Background(),
+		wile.WithExtension(extgoast.Extension),
+		wile.WithExtension(extgoastcfg.Extension),
+	)
+	qt.New(t).Assert(err, qt.IsNil)
+	return engine
+}
+
+func TestGoCFG_WithSession(t *testing.T) {
+	engine := newSessionEngine(t)
+	testutil.RunScheme(t, engine, `(define s (go-load "github.com/aalpar/wile-goast/goast"))`)
+	result := testutil.RunScheme(t, engine,
+		`(pair? (go-cfg s "PrimGoParseExpr"))`)
+	qt.New(t).Assert(result.Internal(), qt.Equals, values.TrueValue)
 }
 
 func TestGoCFG_Errors(t *testing.T) {
