@@ -97,3 +97,13 @@
          (map (lambda (n) (ast-transform n f)) node))
         ;; Atom
         (else node)))))
+
+;; Flat-mapping rewriter for lists (e.g. statement lists).
+;; f returns a list (splice in place) or #f (keep original element).
+(define (ast-splice lst f)
+  (let loop ((xs lst) (acc '()))
+    (if (null? xs) (reverse acc)
+      (let ((result (f (car xs))))
+        (if result
+          (loop (cdr xs) (append (reverse result) acc))
+          (loop (cdr xs) (cons (car xs) acc)))))))

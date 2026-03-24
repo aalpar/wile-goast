@@ -5,5 +5,5 @@
     member? unique has-char?
     ordered-pairs
     take drop
-    ast-transform)
+    ast-transform ast-splice)
   (include "utils.scm"))

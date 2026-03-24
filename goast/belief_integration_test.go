@@ -217,3 +217,30 @@ func TestAstTransform(t *testing.T) {
 		qt.New(t).Assert(result.SchemeString(), qt.Equals, `"x + 1"`)
 	})
 }
+
+func TestAstSplice(t *testing.T) {
+	engine := newBeliefEngine(t)
+
+	t.Run("splice replaces element with multiple", func(t *testing.T) {
+		result := evalMultiple(t, engine, `
+			(import (wile goast utils))
+			(ast-splice '(a b c)
+			  (lambda (x) (and (eq? x 'b) '(x y z))))`)
+		qt.New(t).Assert(result.SchemeString(), qt.Equals, "(a x y z c)")
+	})
+
+	t.Run("splice no match keeps original", func(t *testing.T) {
+		result := evalMultiple(t, engine, `
+			(import (wile goast utils))
+			(ast-splice '(a b c) (lambda (x) #f))`)
+		qt.New(t).Assert(result.SchemeString(), qt.Equals, "(a b c)")
+	})
+
+	t.Run("splice with empty list deletes", func(t *testing.T) {
+		result := evalMultiple(t, engine, `
+			(import (wile goast utils))
+			(ast-splice '(a b c)
+			  (lambda (x) (and (eq? x 'b) '())))`)
+		qt.New(t).Assert(result.SchemeString(), qt.Equals, "(a c)")
+	})
+}
