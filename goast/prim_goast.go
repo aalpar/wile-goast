@@ -20,6 +20,7 @@ import (
 	"go/parser"
 	"go/printer"
 	"go/token"
+	"go/types"
 	"strings"
 
 	"golang.org/x/tools/go/packages"
@@ -279,5 +280,146 @@ func PrimGoTypecheckPackage(mc *machine.MachineContext) error {
 		result[i] = mapPackage(pkg, baseOpts)
 	}
 	mc.SetValue(ValueList(result))
+	return nil
+}
+
+// PrimInterfaceImplementors implements (go-interface-implementors interface-name package-pattern).
+// Finds all concrete types implementing the named interface within the loaded packages.
+// Returns a tagged alist: (interface-info (name . X) (pkg . Y) (methods . (...)) (implementors . (...))).
+func PrimInterfaceImplementors(mc *machine.MachineContext) error {
+	ifaceName, err := helpers.RequireArg[*values.String](mc, 0, werr.ErrNotAString, "go-interface-implementors")
+	if err != nil {
+		return err
+	}
+	pattern, err := helpers.RequireArg[*values.String](mc, 1, werr.ErrNotAString, "go-interface-implementors")
+	if err != nil {
+		return err
+	}
+
+	err = security.CheckWithAuthorizer(mc.Authorizer(), security.AccessRequest{
+		Resource: security.ResourceProcess,
+		Action:   security.ActionLoad,
+		Target:   "go",
+	})
+	if err != nil {
+		return err
+	}
+
+	cfg := &packages.Config{
+		Mode:    packages.NeedName | packages.NeedTypes,
+		Context: mc.Context(),
+	}
+	pkgs, loadErr := packages.Load(cfg, pattern.Value)
+	if loadErr != nil {
+		return werr.WrapForeignErrorf(errGoPackageLoadError,
+			"go-interface-implementors: %s: %s", pattern.Value, loadErr)
+	}
+
+	var errs []string
+	for _, pkg := range pkgs {
+		for _, e := range pkg.Errors {
+			errs = append(errs, e.Error())
+		}
+	}
+	if len(errs) > 0 {
+		return werr.WrapForeignErrorf(errGoPackageLoadError,
+			"go-interface-implementors: %s: %s", pattern.Value, strings.Join(errs, "; "))
+	}
+
+	// Find the named interface across all loaded packages.
+	name := ifaceName.Value
+	qualified := strings.Contains(name, ".")
+
+	type ifaceMatch struct {
+		iface   *types.Interface
+		pkgPath string
+		short   string
+	}
+	var candidates []ifaceMatch
+
+	for _, pkg := range pkgs {
+		if pkg.Types == nil {
+			continue
+		}
+		scope := pkg.Types.Scope()
+		for _, n := range scope.Names() {
+			obj := scope.Lookup(n)
+			tn, ok := obj.(*types.TypeName)
+			if !ok {
+				continue
+			}
+			it, ok := tn.Type().Underlying().(*types.Interface)
+			if !ok {
+				continue
+			}
+			fullName := pkg.PkgPath + "." + n
+			if (qualified && fullName == name) || (!qualified && n == name) {
+				candidates = append(candidates, ifaceMatch{
+					iface:   it,
+					pkgPath: pkg.PkgPath,
+					short:   n,
+				})
+			}
+		}
+	}
+
+	if len(candidates) == 0 {
+		return werr.WrapForeignErrorf(errGoInterfaceNotFound,
+			"go-interface-implementors: interface %q not found in %s", name, pattern.Value)
+	}
+	if len(candidates) > 1 {
+		var names []string
+		for _, c := range candidates {
+			names = append(names, c.pkgPath+"."+c.short)
+		}
+		return werr.WrapForeignErrorf(errGoInterfaceNotFound,
+			"go-interface-implementors: ambiguous interface %q: %s", name, strings.Join(names, ", "))
+	}
+
+	found := candidates[0]
+	if found.iface.NumMethods() == 0 {
+		return werr.WrapForeignErrorf(errGoInterfaceNotFound,
+			"go-interface-implementors: interface %q has no methods", name)
+	}
+
+	// Collect interface method names.
+	methods := make([]values.Value, found.iface.NumMethods())
+	for i := range found.iface.NumMethods() {
+		methods[i] = Str(found.iface.Method(i).Name())
+	}
+
+	// Find all concrete types satisfying the interface (T or *T).
+	var implementors []values.Value
+	for _, pkg := range pkgs {
+		if pkg.Types == nil {
+			continue
+		}
+		scope := pkg.Types.Scope()
+		for _, n := range scope.Names() {
+			obj := scope.Lookup(n)
+			tn, ok := obj.(*types.TypeName)
+			if !ok {
+				continue
+			}
+			t := tn.Type()
+			if _, isIface := t.Underlying().(*types.Interface); isIface {
+				continue
+			}
+			ptr := types.NewPointer(t)
+			if types.Implements(t, found.iface) || types.Implements(ptr, found.iface) {
+				implementors = append(implementors, ValueList([]values.Value{
+					Field("type", Str(n)),
+					Field("pkg", Str(pkg.PkgPath)),
+				}))
+			}
+		}
+	}
+
+	mc.SetValue(Node("interface-info",
+		Field("name", Str(found.short)),
+		Field("pkg", Str(found.pkgPath)),
+		Field("methods", ValueList(methods)),
+		Field("implementors", ValueList(implementors)),
+	))
 	return nil
 }

@@ -6,6 +6,7 @@
     make-context ctx-pkgs ctx-ssa ctx-callgraph ctx-find-ssa-func ctx-field-index
     ;; Site selectors
     functions-matching callers-of methods-of sites-from all-func-decls
+    implementors-of interface-methods
     ;; Predicates
     has-params has-receiver name-matches
     contains-call stores-to-fields

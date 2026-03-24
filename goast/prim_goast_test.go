@@ -322,6 +322,88 @@ func TestGoTypecheckPackageErrors(t *testing.T) {
 	}
 }
 
+func TestGoInterfaceImplementors(t *testing.T) {
+	c := qt.New(t)
+	engine := newEngine(t)
+
+	const pkgPath = "github.com/aalpar/wile-goast/goast/testdata/iface"
+
+	// Load once and cache.
+	eval(t, engine, `(define iface-info (go-interface-implementors "Store" "`+pkgPath+`"))`)
+
+	t.Run("returns interface-info node", func(t *testing.T) {
+		result := eval(t, engine, `(go-node-type iface-info)`)
+		c.Assert(result.Internal(), valuestest.SchemeEquals, values.NewSymbol("interface-info"))
+	})
+
+	t.Run("interface name", func(t *testing.T) {
+		result := eval(t, engine, `(cdr (assoc 'name (cdr iface-info)))`)
+		c.Assert(result.Internal(), valuestest.SchemeEquals, values.NewString("Store"))
+	})
+
+	t.Run("interface package", func(t *testing.T) {
+		result := eval(t, engine, `(cdr (assoc 'pkg (cdr iface-info)))`)
+		c.Assert(result.Internal(), valuestest.SchemeEquals, values.NewString(pkgPath))
+	})
+
+	t.Run("has three methods", func(t *testing.T) {
+		result := eval(t, engine, `(length (cdr (assoc 'methods (cdr iface-info))))`)
+		c.Assert(result.Internal(), valuestest.SchemeEquals, values.NewInteger(3))
+	})
+
+	t.Run("has two implementors", func(t *testing.T) {
+		result := eval(t, engine, `(length (cdr (assoc 'implementors (cdr iface-info))))`)
+		c.Assert(result.Internal(), valuestest.SchemeEquals, values.NewInteger(2))
+	})
+
+	t.Run("finds pointer-receiver implementor", func(t *testing.T) {
+		// MemoryStore uses pointer receivers — found via *T check.
+		result := eval(t, engine, `
+			(let loop ((impls (cdr (assoc 'implementors (cdr iface-info)))))
+			  (cond ((null? impls) #f)
+			        ((equal? (cdr (assoc 'type (car impls))) "MemoryStore") #t)
+			        (else (loop (cdr impls)))))`)
+		c.Assert(result.Internal(), valuestest.SchemeEquals, values.TrueValue)
+	})
+
+	t.Run("finds value-receiver implementor", func(t *testing.T) {
+		// SimpleStore uses value receivers — found via T check.
+		result := eval(t, engine, `
+			(let loop ((impls (cdr (assoc 'implementors (cdr iface-info)))))
+			  (cond ((null? impls) #f)
+			        ((equal? (cdr (assoc 'type (car impls))) "SimpleStore") #t)
+			        (else (loop (cdr impls)))))`)
+		c.Assert(result.Internal(), valuestest.SchemeEquals, values.TrueValue)
+	})
+
+	t.Run("excludes non-implementor", func(t *testing.T) {
+		result := eval(t, engine, `
+			(let loop ((impls (cdr (assoc 'implementors (cdr iface-info)))))
+			  (cond ((null? impls) #t)
+			        ((equal? (cdr (assoc 'type (car impls))) "NotAStore") #f)
+			        (else (loop (cdr impls)))))`)
+		c.Assert(result.Internal(), valuestest.SchemeEquals, values.TrueValue)
+	})
+}
+
+func TestGoInterfaceImplementorsErrors(t *testing.T) {
+	engine := newEngine(t)
+
+	tcs := []struct {
+		name string
+		code string
+	}{
+		{name: "wrong first arg type", code: `(go-interface-implementors 42 "pkg")`},
+		{name: "wrong second arg type", code: `(go-interface-implementors "Store" 42)`},
+		{name: "interface not found", code: `(go-interface-implementors "NonExistent" "github.com/aalpar/wile-goast/goast/testdata/iface")`},
+	}
+	for _, tc := range tcs {
+		t.Run(tc.name, func(t *testing.T) {
+			evalExpectError(t, engine, tc.code)
+		})
+	}
+}
+
 // schemeStringLiteral wraps a Go string as a Scheme string literal,
 // escaping backslashes, double quotes, and newlines.
 func schemeStringLiteral(s string) string {

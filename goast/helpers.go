@@ -23,7 +23,8 @@ import (
 var (
 	errGoParseError       = werr.NewStaticError("go parse error")
 	errMalformedGoAST     = werr.NewStaticError("malformed go ast")
-	errGoPackageLoadError = werr.NewStaticError("go package load error")
+	errGoPackageLoadError    = werr.NewStaticError("go package load error")
+	errGoInterfaceNotFound   = werr.NewStaticError("go interface not found")
 )
 
 // Tag returns a symbol value for a node tag name.

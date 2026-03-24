@@ -61,6 +61,7 @@
         (cons 'ssa-index #f)
         (cons 'field-index #f)
         (cons 'callgraph #f)
+        (cons 'interface-cache '())
         (cons 'results '())))
 
 (define (ctx-ref ctx key)
@@ -94,6 +95,16 @@
       (let ((idx (go-ssa-field-index (ctx-target ctx))))
         (ctx-set! ctx 'field-index idx)
         idx)))
+
+;; Lazy interface info lookup, cached by (iface-name . pkg-pattern).
+(define (ctx-interface-info ctx iface-name)
+  (let* ((cache (ctx-ref ctx 'interface-cache))
+         (key (cons iface-name (ctx-target ctx)))
+         (cached (assoc key cache)))
+    (if cached (cdr cached)
+      (let ((info (go-interface-implementors iface-name (ctx-target ctx))))
+        (ctx-set! ctx 'interface-cache (cons (cons key info) cache))
+        info))))
 
 ;; Find the field summary for a function by package path and name.
 (define (find-field-summary index pkg-path func-name)
@@ -240,6 +251,57 @@
 ;; Matches methods whose receiver type contains type-name.
 (define (methods-of type-name)
   (functions-matching (has-receiver type-name)))
+
+;; (implementors-of iface-name) -> (lambda (ctx) -> list-of-func-decls)
+;; Returns all func-decls whose receiver type implements the named interface.
+(define (implementors-of iface-name)
+  (lambda (ctx)
+    (let* ((info (ctx-interface-info ctx iface-name))
+           (implementors (nf info 'implementors))
+           (funcs (all-func-decls (ctx-pkgs ctx))))
+      (filter-map
+        (lambda (fn)
+          (and (let loop ((impls (if (pair? implementors) implementors '())))
+                 (cond ((null? impls) #f)
+                       (((has-receiver (cdr (assoc 'type (car impls)))) fn ctx) #t)
+                       (else (loop (cdr impls)))))
+               fn))
+        funcs))))
+
+;; (interface-methods iface-name [method-name]) -> (lambda (ctx) -> list-of-func-decls)
+;; Returns func-decls that implement interface methods. Without method-name,
+;; returns all interface methods across all implementors. With method-name,
+;; narrows to a single method — the primary form for behavioral consistency
+;; analysis ("compare how different types implement the same method").
+;; Each returned func-decl is annotated with (impl-type . type-name) for
+;; type-qualified display names in deviation reports.
+(define (interface-methods iface-name . args)
+  (let ((method-name (if (pair? args) (car args) #f)))
+    (lambda (ctx)
+      (let* ((info (ctx-interface-info ctx iface-name))
+             (iface-methods (nf info 'methods))
+             (implementors (nf info 'implementors))
+             (funcs (all-func-decls (ctx-pkgs ctx)))
+             (target-methods
+               (if method-name (list method-name)
+                 (if (pair? iface-methods) iface-methods '()))))
+        (let impl-loop ((impls (if (pair? implementors) implementors '()))
+                        (result '()))
+          (if (null? impls) result
+            (let* ((impl (car impls))
+                   (type-name (cdr (assoc 'type impl)))
+                   (matching
+                     (filter-map
+                       (lambda (fn)
+                         (and ((has-receiver type-name) fn ctx)
+                              (let ((fn-name (nf fn 'name)))
+                                (and fn-name (member? fn-name target-methods)))
+                              ;; Annotate with impl-type for display.
+                              (cons (car fn)
+                                    (cons (cons 'impl-type type-name)
+                                          (cdr fn)))))
+                       funcs)))
+              (impl-loop (cdr impls) (append result matching)))))))))
 
 ;; (sites-from belief-name [#:which 'adherence|'deviation])
 ;; -> (lambda (ctx) -> list-of-sites)
@@ -623,10 +685,12 @@
   (cond
     ((and (pair? site) (tag? site 'func-decl))
      (let ((name (or (nf site 'name) "<anonymous>"))
+           (impl-type (nf site 'impl-type))
            (pkg-path (nf site 'pkg-path)))
-       (if pkg-path
-         (string-append (package-short-name pkg-path) "." name)
-         name)))
+       (cond
+         (impl-type (string-append impl-type "." name))
+         (pkg-path (string-append (package-short-name pkg-path) "." name))
+         (else name))))
     ((and (pair? site) (pair? (car site)))
      ;; Caller site: (caller-name edge)
      (let ((name (car site)))

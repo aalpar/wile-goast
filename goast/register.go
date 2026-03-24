@@ -47,6 +47,9 @@ func addPrimitives(r *registry.Registry) error {
 		{Name: "go-typecheck-package", ParamCount: 2, IsVariadic: true, Impl: PrimGoTypecheckPackage,
 			Doc:        "Loads a Go package with type information and returns annotated s-expression ASTs.",
 			ParamNames: []string{"pattern", "options"}, Category: "goast"},
+		{Name: "go-interface-implementors", ParamCount: 2, Impl: PrimInterfaceImplementors,
+			Doc:        "Finds all types implementing a named interface within the specified packages.",
+			ParamNames: []string{"interface-name", "package-pattern"}, Category: "goast"},
 	}, registry.PhaseRuntime)
 	return nil
 }
