@@ -23,6 +23,7 @@ MODULE="github.com/aalpar/wile-goast"
 # Packages excluded from coverage enforcement.
 EXCLUDED_PKGS=(
 	"cmd/wile-goast"
+	"testutil"
 )
 
 is_excluded() {
