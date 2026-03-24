@@ -25,7 +25,6 @@ import (
 
 	"github.com/aalpar/wile-goast/goast"
 	"github.com/aalpar/wile/machine"
-	"github.com/aalpar/wile/registry/helpers"
 	"github.com/aalpar/wile/security"
 	"github.com/aalpar/wile/values"
 	"github.com/aalpar/wile/werr"
@@ -70,14 +69,32 @@ func parseSSAOpts(rest values.Value, fset *token.FileSet) (*ssaMapper, error) {
 	return opts, nil
 }
 
-// PrimGoSSABuild implements (go-ssa-build pattern . options).
+// PrimGoSSABuild implements (go-ssa-build target . options).
+// target is a package pattern string or a GoSession from go-load.
 func PrimGoSSABuild(mc *machine.MachineContext) error {
-	pattern, err := helpers.RequireArg[*values.String](mc, 0, werr.ErrNotAString, "go-ssa-build")
+	arg := mc.Arg(0)
+	switch v := arg.(type) {
+	case *goast.GoSession:
+		return ssaBuildFromSession(mc, v)
+	case *values.String:
+		return ssaBuildFromPattern(mc, v)
+	default:
+		return werr.WrapForeignErrorf(werr.ErrNotAString,
+			"go-ssa-build: expected string or go-session, got %T", arg)
+	}
+}
+
+func ssaBuildFromSession(mc *machine.MachineContext, session *goast.GoSession) error {
+	mapper, err := parseSSAOpts(mc.Arg(1), session.FileSet())
 	if err != nil {
 		return err
 	}
+	prog, ssaPkgs := session.SSA()
+	return collectSSAFuncs(mc, mapper, prog, ssaPkgs)
+}
 
-	err = security.CheckWithAuthorizer(mc.Authorizer(), security.AccessRequest{
+func ssaBuildFromPattern(mc *machine.MachineContext, pattern *values.String) error {
+	err := security.CheckWithAuthorizer(mc.Authorizer(), security.AccessRequest{
 		Resource: security.ResourceProcess,
 		Action:   security.ActionLoad,
 		Target:   "go",
@@ -110,7 +127,6 @@ func PrimGoSSABuild(mc *machine.MachineContext) error {
 			"go-ssa-build: %s: %s", pattern.Value, loadErr)
 	}
 
-	// Check for package load errors.
 	var errs []string
 	for _, pkg := range pkgs {
 		for _, e := range pkg.Errors {
@@ -123,7 +139,6 @@ func PrimGoSSABuild(mc *machine.MachineContext) error {
 			strings.Join(errs, "; "))
 	}
 
-	// Build SSA.
 	prog, ssaPkgs := ssautil.Packages(pkgs, ssa.SanityCheckFunctions|ssa.InstantiateGenerics)
 	for _, ssaPkg := range ssaPkgs {
 		if ssaPkg != nil {
@@ -131,7 +146,10 @@ func PrimGoSSABuild(mc *machine.MachineContext) error {
 		}
 	}
 
-	// Collect source-level functions from the requested packages.
+	return collectSSAFuncs(mc, mapper, prog, ssaPkgs)
+}
+
+func collectSSAFuncs(mc *machine.MachineContext, mapper *ssaMapper, prog *ssa.Program, ssaPkgs []*ssa.Package) error {
 	var funcs []values.Value
 	for _, ssaPkg := range ssaPkgs {
 		if ssaPkg == nil {
@@ -143,14 +161,10 @@ func PrimGoSSABuild(mc *machine.MachineContext) error {
 				continue
 			}
 			if fn.Synthetic != "" {
-				continue // skip compiler-generated functions
+				continue
 			}
 			funcs = append(funcs, mapper.mapFunction(fn))
 		}
-		// Collect methods on named types.
-		// MethodSet(*T) is a superset of MethodSet(T): it includes both pointer- and
-		// value-receiver methods. Iterating only the pointer-receiver set avoids
-		// collecting value-receiver methods twice.
 		for _, mem := range ssaPkg.Members {
 			typ, ok := mem.(*ssa.Type)
 			if !ok {
@@ -168,21 +182,42 @@ func PrimGoSSABuild(mc *machine.MachineContext) error {
 			}
 		}
 	}
-
 	mc.SetValue(goast.ValueList(funcs))
 	return nil
 }
 
-// PrimGoSSAFieldIndex implements (go-ssa-field-index pattern).
+// PrimGoSSAFieldIndex implements (go-ssa-field-index target).
+// target is a package pattern string or a GoSession from go-load.
 // Returns a list of ssa-field-summary nodes with per-function field
 // access data (struct type, field name, receiver, read/write mode).
 func PrimGoSSAFieldIndex(mc *machine.MachineContext) error {
-	pattern, err := helpers.RequireArg[*values.String](mc, 0, werr.ErrNotAString, "go-ssa-field-index")
-	if err != nil {
-		return err
+	arg := mc.Arg(0)
+	switch v := arg.(type) {
+	case *goast.GoSession:
+		return fieldIndexFromSession(mc, v)
+	case *values.String:
+		return fieldIndexFromPattern(mc, v)
+	default:
+		return werr.WrapForeignErrorf(werr.ErrNotAString,
+			"go-ssa-field-index: expected string or go-session, got %T", arg)
 	}
+}
 
-	err = security.CheckWithAuthorizer(mc.Authorizer(), security.AccessRequest{
+func fieldIndexFromSession(mc *machine.MachineContext, session *goast.GoSession) error {
+	_, ssaPkgs := session.SSA()
+	var summaries []values.Value
+	for _, ssaPkg := range ssaPkgs {
+		if ssaPkg == nil {
+			continue
+		}
+		collectFieldSummaries(ssaPkg, &summaries)
+	}
+	mc.SetValue(goast.ValueList(summaries))
+	return nil
+}
+
+func fieldIndexFromPattern(mc *machine.MachineContext, pattern *values.String) error {
+	err := security.CheckWithAuthorizer(mc.Authorizer(), security.AccessRequest{
 		Resource: security.ResourceProcess,
 		Action:   security.ActionLoad,
 		Target:   "go",

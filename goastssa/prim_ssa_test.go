@@ -19,7 +19,9 @@ import (
 	"testing"
 
 	"github.com/aalpar/wile"
+	extgoast "github.com/aalpar/wile-goast/goast"
 	extgoastssa "github.com/aalpar/wile-goast/goastssa"
+	"github.com/aalpar/wile-goast/testutil"
 	"github.com/aalpar/wile/values"
 
 	qt "github.com/frankban/quicktest"
@@ -273,6 +275,30 @@ func TestGoSSAFieldIndex_Errors(t *testing.T) {
 			evalExpectError(t, engine, tc.code)
 		})
 	}
+}
+
+func newSessionEngine(t *testing.T) *wile.Engine {
+	t.Helper()
+	engine, err := wile.NewEngine(context.Background(),
+		wile.WithExtension(extgoast.Extension),
+		wile.WithExtension(extgoastssa.Extension),
+	)
+	qt.New(t).Assert(err, qt.IsNil)
+	return engine
+}
+
+func TestGoSSABuild_WithSession(t *testing.T) {
+	engine := newSessionEngine(t)
+	testutil.RunScheme(t, engine, `(define s (go-load "github.com/aalpar/wile-goast/goast"))`)
+	result := testutil.RunScheme(t, engine, `(pair? (go-ssa-build s))`)
+	qt.New(t).Assert(result.Internal(), qt.Equals, values.TrueValue)
+}
+
+func TestGoSSAFieldIndex_WithSession(t *testing.T) {
+	engine := newSessionEngine(t)
+	testutil.RunScheme(t, engine, `(define s (go-load "github.com/aalpar/wile-goast/goastssa"))`)
+	result := testutil.RunScheme(t, engine, `(list? (go-ssa-field-index s))`)
+	qt.New(t).Assert(result.Internal(), qt.Equals, values.TrueValue)
 }
 
 func TestGoSSABuild_Errors(t *testing.T) {
