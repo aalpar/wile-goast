@@ -168,15 +168,41 @@ make ci          # Full CI: lint + build + test + covercheck + verify-mod
 ## Project Conventions
 
 - **Commits:** No Co-Authored-By lines. Direct push to master at this stage.
-- **Dependencies:** `github.com/aalpar/wile` + `golang.org/x/tools`. Prefer standard library otherwise.
-- **Version:** v0.3.4 (see `VERSION`). Zero consumers — break freely.
+- **Dependencies:** `github.com/aalpar/wile` + `golang.org/x/tools` + `mark3labs/mcp-go`. Prefer standard library otherwise.
+- **Version:** v0.4.0 (see `VERSION`). Zero consumers — break freely.
 - **Coverage:** 80% threshold enforced by `tools/sh/covercheck.sh`. `cmd/wile-goast` excluded.
 - **Error handling:** Follow wile's sentinel + wrap pattern (`werr.WrapForeignErrorf`).
+
+## MCP Server
+
+`wile-goast --mcp` starts a stdio MCP server (JSON-RPC). One persistent Wile engine serves all tool calls within the session.
+
+### Tool
+
+Single tool: `eval` — takes a `code` string (Scheme expression), returns the evaluation result.
+
+### Prompts
+
+| Prompt | Description |
+|--------|-------------|
+| `goast-analyze` | Structural analysis — layer selection, primitive reference, examples |
+| `goast-beliefs` | Belief DSL — define and run consistency beliefs |
+| `goast-refactor` | Unification detection — find duplicates, verify refactoring |
+
+Prompt content lives in `cmd/wile-goast/prompts/*.md` (embedded in binary).
+
+### Client Config
+
+```json
+{"mcpServers": {"wile-goast": {"command": "wile-goast", "args": ["--mcp"]}}}
+```
 
 ## Key Files
 
 | File | Purpose |
 |------|---------|
+| `cmd/wile-goast/mcp.go` | MCP server: eval tool handler, prompt handlers |
+| `cmd/wile-goast/prompts/*.md` | MCP prompt content (embedded) |
 | `goast/mapper.go` | Go AST to s-expression conversion |
 | `goast/unmapper.go` | S-expression to Go AST conversion (dispatch) |
 | `goast/unmapper_{decl,stmt,expr,types,comments}.go` | Unmapper by AST category |
