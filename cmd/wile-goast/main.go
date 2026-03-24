@@ -22,6 +22,7 @@
 //	wile-goast script.scm               positional file argument
 //	wile-goast --run belief-example      run embedded script
 //	wile-goast --list-scripts            list embedded scripts
+//	wile-goast --mcp                    start MCP server on stdio
 package main
 
 import (
@@ -51,6 +52,7 @@ type Options struct {
 	File        []string `short:"f" long:"file" description:"Scheme file to load (repeatable)"`
 	ListScripts bool     `long:"list-scripts" description:"List available embedded scripts"`
 	Run         string   `long:"run" description:"Run an embedded script by name"`
+	MCP         bool     `long:"mcp" description:"Start as MCP server on stdio"`
 }
 
 var opts Options
@@ -70,6 +72,19 @@ func main() {
 	}
 
 	ctx := context.Background()
+
+	// --mcp: start MCP server
+	if opts.MCP {
+		if len(opts.Eval) > 0 || len(opts.File) > 0 || opts.ListScripts || opts.Run != "" {
+			fmt.Fprintln(os.Stderr, "Error: --mcp cannot be combined with -e, -f, --run, or --list-scripts")
+			os.Exit(1)
+		}
+		if err := doMCP(ctx); err != nil {
+			fmt.Fprintf(os.Stderr, "MCP server error: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
 
 	// --list-scripts: no engine needed
 	if opts.ListScripts {
