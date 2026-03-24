@@ -108,6 +108,14 @@ func TestGoTypecheckPackage_SessionMatchesString(t *testing.T) {
 	qt.New(t).Assert(fromSession.Internal(), valuestest.SchemeEquals, fromString.Internal())
 }
 
+func TestGoInterfaceImplementors_WithSession(t *testing.T) {
+	engine := newEngine(t)
+	testutil.RunScheme(t, engine, `(define s (go-load "github.com/aalpar/wile-goast/goast/testdata/iface"))`)
+	result := testutil.RunScheme(t, engine,
+		`(go-node-type (go-interface-implementors "Store" s))`)
+	qt.New(t).Assert(result.Internal(), valuestest.SchemeEquals, values.NewSymbol("interface-info"))
+}
+
 func TestGoListDeps_ReturnsImportPaths(t *testing.T) {
 	engine := newEngine(t)
 	result := testutil.RunScheme(t, engine,

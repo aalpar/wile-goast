@@ -301,7 +301,8 @@ func typecheckFromPattern(mc *machine.MachineContext, pattern *values.String) er
 	return nil
 }
 
-// PrimInterfaceImplementors implements (go-interface-implementors interface-name package-pattern).
+// PrimInterfaceImplementors implements (go-interface-implementors interface-name target).
+// target is a package pattern string or a GoSession from go-load.
 // Finds all concrete types implementing the named interface within the loaded packages.
 // Returns a tagged alist: (interface-info (name . X) (pkg . Y) (methods . (...)) (implementors . (...))).
 func PrimInterfaceImplementors(mc *machine.MachineContext) error {
@@ -309,12 +310,25 @@ func PrimInterfaceImplementors(mc *machine.MachineContext) error {
 	if err != nil {
 		return err
 	}
-	pattern, err := helpers.RequireArg[*values.String](mc, 1, werr.ErrNotAString, "go-interface-implementors")
-	if err != nil {
-		return err
-	}
 
-	err = security.CheckWithAuthorizer(mc.Authorizer(), security.AccessRequest{
+	arg1 := mc.Arg(1)
+	switch v := arg1.(type) {
+	case *GoSession:
+		return implementorsFromSession(mc, ifaceName.Value, v)
+	case *values.String:
+		return implementorsFromPattern(mc, ifaceName.Value, v)
+	default:
+		return werr.WrapForeignErrorf(werr.ErrNotAString,
+			"go-interface-implementors: expected string or go-session, got %T", arg1)
+	}
+}
+
+func implementorsFromSession(mc *machine.MachineContext, ifaceName string, session *GoSession) error {
+	return findImplementors(mc, ifaceName, session.Packages())
+}
+
+func implementorsFromPattern(mc *machine.MachineContext, ifaceName string, pattern *values.String) error {
+	err := security.CheckWithAuthorizer(mc.Authorizer(), security.AccessRequest{
 		Resource: security.ResourceProcess,
 		Action:   security.ActionLoad,
 		Target:   "go",
@@ -344,8 +358,10 @@ func PrimInterfaceImplementors(mc *machine.MachineContext) error {
 			"go-interface-implementors: %s: %s", pattern.Value, strings.Join(errs, "; "))
 	}
 
-	// Find the named interface across all loaded packages.
-	name := ifaceName.Value
+	return findImplementors(mc, ifaceName, pkgs)
+}
+
+func findImplementors(mc *machine.MachineContext, name string, pkgs []*packages.Package) error {
 	qualified := strings.Contains(name, ".")
 
 	type ifaceMatch struct {
@@ -383,7 +399,7 @@ func PrimInterfaceImplementors(mc *machine.MachineContext) error {
 
 	if len(candidates) == 0 {
 		return werr.WrapForeignErrorf(errGoInterfaceNotFound,
-			"go-interface-implementors: interface %q not found in %s", name, pattern.Value)
+			"go-interface-implementors: interface %q not found", name)
 	}
 	if len(candidates) > 1 {
 		var names []string
