@@ -59,6 +59,9 @@ func addPrimitives(r *registry.Registry) error {
 		{Name: "go-list-deps", ParamCount: 2, IsVariadic: true, Impl: PrimGoListDeps,
 			Doc:        "Returns the transitive closure of import paths for the given package patterns.",
 			ParamNames: []string{"pattern", "rest"}, Category: "goast"},
+		{Name: "go-cfg-to-structured", ParamCount: 1, Impl: PrimGoCFGToStructured,
+			Doc:        "Restructures a block with early returns into a single-exit if/else tree.",
+			ParamNames: []string{"block"}, Category: "goast"},
 	}, registry.PhaseRuntime)
 	return nil
 }
