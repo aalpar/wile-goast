@@ -25,7 +25,6 @@ import (
 
 	"github.com/aalpar/wile-goast/goast"
 	"github.com/aalpar/wile/machine"
-	"github.com/aalpar/wile/registry/helpers"
 	"github.com/aalpar/wile/security"
 	"github.com/aalpar/wile/values"
 	"github.com/aalpar/wile/werr"
@@ -73,14 +72,11 @@ var (
 	errLintRunError    = werr.NewStaticError("analyzer run error")
 )
 
-// PrimGoAnalyze implements (go-analyze pattern analyzer-name ...).
-// Loads the package, runs the named analyzers, and returns diagnostics as
-// a list of (diagnostic (analyzer . "...") (pos . "...") (message . "...") (category . "...")).
+// PrimGoAnalyze implements (go-analyze target analyzer-name ...).
+// target is a package pattern string or a GoSession from go-load.
+// If given a GoSession loaded without 'lint mode, falls back to fresh loading.
 func PrimGoAnalyze(mc *machine.MachineContext) error {
-	pattern, err := helpers.RequireArg[*values.String](mc, 0, werr.ErrNotAString, "go-analyze")
-	if err != nil {
-		return err
-	}
+	arg := mc.Arg(0)
 
 	analyzers, err := parseAnalyzerNames(mc.Arg(1))
 	if err != nil {
@@ -92,7 +88,32 @@ func PrimGoAnalyze(mc *machine.MachineContext) error {
 		return nil
 	}
 
-	err = security.CheckWithAuthorizer(mc.Authorizer(), security.AccessRequest{
+	switch v := arg.(type) {
+	case *goast.GoSession:
+		if v.IsLintMode() {
+			return analyzeFromSession(mc, v, analyzers)
+		}
+		// Non-lint session: fall back to fresh load with LoadAllSyntax.
+		return analyzeFromPatterns(mc, v.Patterns(), analyzers)
+	case *values.String:
+		return analyzeFromPatterns(mc, []string{v.Value}, analyzers)
+	default:
+		return werr.WrapForeignErrorf(werr.ErrNotAString,
+			"go-analyze: expected string or go-session, got %T", arg)
+	}
+}
+
+func analyzeFromSession(mc *machine.MachineContext, session *goast.GoSession, analyzers []*analysis.Analyzer) error {
+	graph, analyzeErr := checker.Analyze(analyzers, session.Packages(), nil)
+	if analyzeErr != nil {
+		return werr.WrapForeignErrorf(errLintRunError,
+			"go-analyze: %s", analyzeErr)
+	}
+	return collectDiagnostics(mc, graph, session.FileSet())
+}
+
+func analyzeFromPatterns(mc *machine.MachineContext, patterns []string, analyzers []*analysis.Analyzer) error {
+	err := security.CheckWithAuthorizer(mc.Authorizer(), security.AccessRequest{
 		Resource: security.ResourceProcess,
 		Action:   security.ActionLoad,
 		Target:   "go",
@@ -108,14 +129,14 @@ func PrimGoAnalyze(mc *machine.MachineContext) error {
 		Fset:    fset,
 	}
 
-	pkgs, loadErr := packages.Load(cfg, pattern.Value)
+	pkgs, loadErr := packages.Load(cfg, patterns...)
 	if loadErr != nil {
 		return werr.WrapForeignErrorf(errLintBuildError,
-			"go-analyze: %s: %s", pattern.Value, loadErr)
+			"go-analyze: %s", loadErr)
 	}
 	if len(pkgs) == 0 {
 		return werr.WrapForeignErrorf(errLintBuildError,
-			"go-analyze: %s: no packages found", pattern.Value)
+			"go-analyze: no packages found")
 	}
 
 	var errs []string
@@ -126,7 +147,7 @@ func PrimGoAnalyze(mc *machine.MachineContext) error {
 	}
 	if len(errs) > 0 {
 		return werr.WrapForeignErrorf(errLintBuildError,
-			"go-analyze: %s: %s", pattern.Value, strings.Join(errs, "; "))
+			"go-analyze: %s", strings.Join(errs, "; "))
 	}
 
 	graph, analyzeErr := checker.Analyze(analyzers, pkgs, nil)
@@ -134,10 +155,10 @@ func PrimGoAnalyze(mc *machine.MachineContext) error {
 		return werr.WrapForeignErrorf(errLintRunError,
 			"go-analyze: %s", analyzeErr)
 	}
+	return collectDiagnostics(mc, graph, fset)
+}
 
-	// Collect diagnostics from root actions only. The driver runs
-	// analyzers on dependency packages for fact propagation, but
-	// only root diagnostics are relevant to the user's query.
+func collectDiagnostics(mc *machine.MachineContext, graph *checker.Graph, fset *token.FileSet) error {
 	var result []values.Value
 	for _, act := range graph.Roots {
 		if act.Err != nil {

@@ -5,7 +5,9 @@ import (
 	"testing"
 
 	"github.com/aalpar/wile"
+	extgoast "github.com/aalpar/wile-goast/goast"
 	extgoastlint "github.com/aalpar/wile-goast/goastlint"
+	"github.com/aalpar/wile-goast/testutil"
 	"github.com/aalpar/wile/values"
 
 	qt "github.com/frankban/quicktest"
@@ -104,6 +106,34 @@ func TestGoAnalyze_MultipleAnalyzers(t *testing.T) {
 	result := eval(t, engine,
 		`(list? (go-analyze "github.com/aalpar/wile-goast/goast" "assign" "unreachable"))`)
 	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
+}
+
+func newSessionEngine(t *testing.T) *wile.Engine {
+	t.Helper()
+	engine, err := wile.NewEngine(context.Background(),
+		wile.WithExtension(extgoast.Extension),
+		wile.WithExtension(extgoastlint.Extension),
+	)
+	qt.New(t).Assert(err, qt.IsNil)
+	return engine
+}
+
+func TestGoAnalyze_WithLintSession(t *testing.T) {
+	engine := newSessionEngine(t)
+	testutil.RunScheme(t, engine,
+		`(define s (go-load "github.com/aalpar/wile-goast/goast" 'lint))`)
+	result := testutil.RunScheme(t, engine,
+		`(list? (go-analyze s "assign"))`)
+	qt.New(t).Assert(result.Internal(), qt.Equals, values.TrueValue)
+}
+
+func TestGoAnalyze_WithNonLintSession_FallsBack(t *testing.T) {
+	engine := newSessionEngine(t)
+	testutil.RunScheme(t, engine,
+		`(define s (go-load "github.com/aalpar/wile-goast/goast"))`)
+	result := testutil.RunScheme(t, engine,
+		`(list? (go-analyze s "assign"))`)
+	qt.New(t).Assert(result.Internal(), qt.Equals, values.TrueValue)
 }
 
 func TestGoAnalyze_Errors(t *testing.T) {
