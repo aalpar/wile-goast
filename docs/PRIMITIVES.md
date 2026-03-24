@@ -30,6 +30,7 @@ source. Optionally type-checks packages via `go/packages`.
 | `(go-load pattern ... . options)` | GoSession | Load packages into a reusable session |
 | `(go-session? v)` | boolean | Type predicate for GoSession |
 | `(go-list-deps pattern ...)` | list of strings | Transitive import path discovery |
+| `(go-cfg-to-structured block)` | block or `#f` | Restructure early returns into single-exit if/else |
 
 ### Session Management
 
@@ -148,6 +149,29 @@ The mapper produces 50+ distinct node tags. The major categories:
 ;; Type-check a package
 (define pkgs (go-typecheck-package "./..." 'positions))
 ```
+
+### Transformation
+
+`go-cfg-to-structured` takes a block s-expression and returns a restructured
+block where guard-if-return patterns are folded into nested if/else chains.
+Every return in the output is at a leaf of the if/else tree.
+
+Returns the block unchanged if there are no early returns. Returns `#f` if
+the block contains `goto` or labeled statements.
+
+```scheme
+;; Before: early-return guards
+;; if x < lo { return lo }
+;; if x > hi { return hi }
+;; return x
+
+;; After: single-exit if/else
+;; if x < lo { return lo } else if x > hi { return hi } else { return x }
+```
+
+**Limitations:**
+- Top-level only — does not recurse into nested blocks
+- Case 1 only (linear early returns) — loop-internal early returns not handled
 
 ---
 
@@ -706,6 +730,10 @@ Traversal utilities for the tagged-alist node format shared by all layers.
 | `(flat-map f lst)` | Map (f returns list), concatenate results |
 | `(member? x lst)` | Membership test using `equal?` |
 | `(unique lst)` | Remove duplicates, preserving order |
+| `(take lst n)` | First n elements |
+| `(drop lst n)` | Drop first n elements |
+| `(ast-transform node f)` | Depth-first pre-order tree rewriter. `f` returns replacement or `#f` |
+| `(ast-splice lst f)` | Flat-map rewriter for lists. `f` returns list (splice) or `#f` (keep) |
 
 ### Usage
 

@@ -50,6 +50,7 @@ All sub-extensions depend on the base `goast` package for shared mapper/helper i
 | `go-load` | Load packages into a GoSession for reuse |
 | `go-session?` | Type predicate for GoSession |
 | `go-list-deps` | Lightweight transitive dependency discovery |
+| `go-cfg-to-structured` | Restructure early-return block into single-exit if/else tree |
 
 ### goastssa — `(wile goast ssa)`
 | Primitive | Description |
@@ -227,7 +228,8 @@ Prompt content lives in `cmd/wile-goast/prompts/*.md` (embedded in binary).
 | `goast{ssa,cfg,cg,lint}/mapper.go` | IR-specific s-expression mappers |
 | `goast{ssa,cfg,cg,lint}/register.go` | Sub-extension registration |
 | `cmd/wile-goast/lib/wile/goast/belief.scm` | Belief DSL implementation (embedded in binary) |
-| `cmd/wile-goast/lib/wile/goast/utils.scm` | Shared traversal utilities (`nf`, `walk`, `tag?`) |
+| `cmd/wile-goast/lib/wile/goast/utils.scm` | Shared traversal utilities (`nf`, `walk`, `tag?`) and tree rewriters (`ast-transform`, `ast-splice`) |
+| `goast/restructure.go` | Early-return restructuring (`go-cfg-to-structured`) |
 
 ## Documentation
 

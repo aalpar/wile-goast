@@ -15,18 +15,20 @@ creates session in `make-context`. See `plans/2026-03-24-shared-session-impl.md`
 Scheme-level tree rewriting and Go-level control flow restructuring for
 refactoring operations (inlining, extraction, code motion).
 
-### B1. Scheme utils (no dependencies)
+### B1. Scheme utils — DONE
 
-- [ ] Implement `ast-transform` in `cmd/wile-goast/lib/wile/goast/utils.scm`
-- [ ] Implement `ast-splice` in `cmd/wile-goast/lib/wile/goast/utils.scm`
-- [ ] Add `take` and `drop` to `utils.scm`
-- [ ] Export new functions from `utils.sld`
+- [x] Implement `ast-transform` in `cmd/wile-goast/lib/wile/goast/utils.scm`
+- [x] Implement `ast-splice` in `cmd/wile-goast/lib/wile/goast/utils.scm`
+- [x] Add `take` and `drop` to `utils.scm`
+- [x] Export new functions from `utils.sld`
 
-### B2. go-cfg-to-structured (no dependencies)
+### B2a. go-cfg-to-structured — Case 1 (no dependencies) — DONE
 
-- [ ] Implement `go-cfg-to-structured` Go primitive in `goast/`
-  - Case 1: linear with early returns → nested if/else
-  - Case 2: early returns inside loops → _r0/_done/break rewrite
+- [x] Linear early returns → nested if/else
+
+### B2b. go-cfg-to-structured — Case 2 (depends on B2a)
+
+- [ ] Early returns inside loops → _r0/_done/break rewrite
 
 ### B3. go-cfg-to-structured improvements (depends on B2)
 
