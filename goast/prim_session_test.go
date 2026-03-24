@@ -20,6 +20,7 @@ import (
 	extgoast "github.com/aalpar/wile-goast/goast"
 	"github.com/aalpar/wile-goast/testutil"
 	"github.com/aalpar/wile/values"
+	"github.com/aalpar/wile/values/valuestest"
 
 	qt "github.com/frankban/quicktest"
 )
@@ -86,6 +87,25 @@ func TestGoLoad_Errors(t *testing.T) {
 			testutil.RunSchemeExpectError(t, engine, tc.code)
 		})
 	}
+}
+
+func TestGoTypecheckPackage_WithSession(t *testing.T) {
+	engine := newEngine(t)
+	testutil.RunScheme(t, engine, `(define s (go-load "github.com/aalpar/wile-goast/goast"))`)
+	result := testutil.RunScheme(t, engine, `(pair? (go-typecheck-package s))`)
+	qt.New(t).Assert(result.Internal(), qt.Equals, values.TrueValue)
+}
+
+func TestGoTypecheckPackage_SessionMatchesString(t *testing.T) {
+	engine := newEngine(t)
+	testutil.RunScheme(t, engine, `(define s (go-load "github.com/aalpar/wile-goast/goast"))`)
+	fromSession := testutil.RunScheme(t, engine, `
+		(let ((pkgs (go-typecheck-package s)))
+			(cdr (assoc 'name (cdr (car pkgs)))))`)
+	fromString := testutil.RunScheme(t, engine, `
+		(let ((pkgs (go-typecheck-package "github.com/aalpar/wile-goast/goast")))
+			(cdr (assoc 'name (cdr (car pkgs)))))`)
+	qt.New(t).Assert(fromSession.Internal(), valuestest.SchemeEquals, fromString.Internal())
 }
 
 func TestGoListDeps_ReturnsImportPaths(t *testing.T) {

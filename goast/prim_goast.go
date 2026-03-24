@@ -220,23 +220,41 @@ func mapPackage(pkg *packages.Package, baseOpts *mapperOpts) values.Value {
 	)
 }
 
-// PrimGoTypecheckPackage implements (go-typecheck-package pattern . options).
+// PrimGoTypecheckPackage implements (go-typecheck-package target . options).
+// target is a package pattern string or a GoSession from go-load.
 // Loads a Go package using go/packages (module-aware via go list), type-checks it,
 // and returns a list of annotated (package ...) s-expression nodes.
-// pattern is a go-list-compatible pattern: ".", "./...", or an import path.
 func PrimGoTypecheckPackage(mc *machine.MachineContext) error {
-	pattern, err := helpers.RequireArg[*values.String](mc, 0, werr.ErrNotAString, "go-typecheck-package")
-	if err != nil {
-		return err
+	arg := mc.Arg(0)
+	switch v := arg.(type) {
+	case *GoSession:
+		return typecheckFromSession(mc, v)
+	case *values.String:
+		return typecheckFromPattern(mc, v)
+	default:
+		return werr.WrapForeignErrorf(werr.ErrNotAString,
+			"go-typecheck-package: expected string or go-session, got %T", arg)
 	}
+}
 
+func typecheckFromSession(mc *machine.MachineContext, session *GoSession) error {
+	baseOpts, _ := parseOpts(mc.Arg(1), session.FileSet())
+	result := make([]values.Value, len(session.Packages()))
+	for i, pkg := range session.Packages() {
+		result[i] = mapPackage(pkg, baseOpts)
+	}
+	mc.SetValue(ValueList(result))
+	return nil
+}
+
+func typecheckFromPattern(mc *machine.MachineContext, pattern *values.String) error {
 	// packages.Load internally spawns "go list" to perform module-aware import
 	// resolution and type information collection. That subprocess can read
 	// arbitrary source files and download modules from the network, so the
 	// correct security gate is ResourceProcess/ActionLoad targeting "go" — not
 	// ResourceFile/ActionRead. File reads are an internal implementation detail
 	// of go list, not paths directly supplied by the Scheme caller.
-	err = security.CheckWithAuthorizer(mc.Authorizer(), security.AccessRequest{
+	err := security.CheckWithAuthorizer(mc.Authorizer(), security.AccessRequest{
 		Resource: security.ResourceProcess,
 		Action:   security.ActionLoad,
 		Target:   "go",
