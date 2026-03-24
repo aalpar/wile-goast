@@ -3,5 +3,6 @@
     nf tag? walk
     filter-map flat-map
     member? unique has-char?
-    ordered-pairs)
+    ordered-pairs
+    take drop)
   (include "utils.scm"))

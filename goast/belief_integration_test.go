@@ -145,3 +145,35 @@ func TestBeliefDefineAndRun(t *testing.T) {
 		(run-beliefs "github.com/aalpar/wile-goast/goast")
 	`)
 }
+
+func TestUtilsTakeDrop(t *testing.T) {
+	engine := newBeliefEngine(t)
+
+	t.Run("take", func(t *testing.T) {
+		result := evalMultiple(t, engine, `
+			(import (wile goast utils))
+			(take '(a b c d e) 3)`)
+		qt.New(t).Assert(result.SchemeString(), qt.Equals, "(a b c)")
+	})
+
+	t.Run("take zero", func(t *testing.T) {
+		result := evalMultiple(t, engine, `
+			(import (wile goast utils))
+			(take '(a b c) 0)`)
+		qt.New(t).Assert(result.SchemeString(), qt.Equals, "()")
+	})
+
+	t.Run("drop", func(t *testing.T) {
+		result := evalMultiple(t, engine, `
+			(import (wile goast utils))
+			(drop '(a b c d e) 2)`)
+		qt.New(t).Assert(result.SchemeString(), qt.Equals, "(c d e)")
+	})
+
+	t.Run("drop all", func(t *testing.T) {
+		result := evalMultiple(t, engine, `
+			(import (wile goast utils))
+			(drop '(a b c) 3)`)
+		qt.New(t).Assert(result.SchemeString(), qt.Equals, "()")
+	})
+}
