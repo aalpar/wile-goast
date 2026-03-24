@@ -4,55 +4,11 @@ Top-level task: composable API for wile-goast analysis and transformation (Go co
 Two independent tracks — shared sessions and transformation primitives — converge
 at the inlining pipeline. See `plans/2026-03-24-transformation-primitives-design.md`.
 
-## Track A: Shared Session API
+## Track A: Shared Session API — DONE (v0.5.0)
 
-Eliminate redundant `packages.Load()` calls by introducing a first-class session
-object that all layers accept. Today each primitive independently loads, type-checks,
-and builds SSA for the same package. A single `go-load` call should feed all of them.
-
-### A1. Wile core: OpaqueValue (blocked — wile changes in progress)
-
-- [ ] Add `OpaqueValue` type to `wile/values/` (~80 lines + tests)
-  - `SchemeString()` → `#<tag:id>` display
-  - `IsVoid()`, `EqualTo()` (identity-based)
-  - Type predicate primitive: `(opaque? v)`
-  - Tag accessor primitive: `(opaque-tag v)`
-
-### A2. GoSession type (depends on A1)
-
-- [ ] Define `GoSession` struct in `goast/` implementing `values.Value`
-  - Wraps: `[]*packages.Package`, `*token.FileSet`
-  - Lazy slots: `*ssa.Program`, `*callgraph.Graph`, field index
-  - Builds SSA/callgraph on first demand, caches for reuse
-- [ ] Implement `go-load` primitive: `(go-load pattern ... . options)` → GoSession
-  - Accepts multiple patterns (loaded as roots into a single session)
-  - `'lint` option upgrades to `LoadAllSyntax`
-- [ ] Implement `go-list-deps` primitive: `(go-list-deps pattern ...)` → list of import paths
-  - Lightweight: `NeedName | NeedImports` only, no type checking
-  - Returns transitive closure for scope discovery before loading
-- [ ] Add `go-session?` type predicate
-
-### A3. Refactor existing primitives to accept GoSession (depends on A2)
-
-Each primitive accepts either a pattern string (backward compatible, loads fresh)
-or a GoSession (reuses loaded state).
-
-- [ ] `go-typecheck-package`: accept GoSession or string
-- [ ] `go-ssa-build`: accept GoSession or string
-- [ ] `go-ssa-field-index`: accept GoSession or string
-- [ ] `go-cfg`: accept GoSession or string
-- [ ] `go-callgraph`: accept GoSession or string
-- [ ] `go-analyze`: accept GoSession or string
-- [ ] `go-interface-implementors`: accept GoSession or string
-
-### A4. Update Scheme layer (depends on A3)
-
-- [ ] Update belief DSL (`belief.scm`) to create GoSession in `make-context`, pass to all primitives
-- [ ] Update `docs/PRIMITIVES.md` with `go-load`, `go-session?`, dual-accept signatures
-
-### A5. Design doc
-
-- [x] Write `plans/2026-03-24-shared-session-design.md`
+Completed 2026-03-24. GoSession holds loaded packages, lazy SSA/callgraph.
+All 7 package-loading primitives accept GoSession or string. Belief DSL
+creates session in `make-context`. See `plans/2026-03-24-shared-session-impl.md`.
 
 ## Track B: Transformation Primitives
 
