@@ -125,6 +125,7 @@ The mapper produces 50+ distinct node tags. The major categories:
 |-----------|----------|--------|
 | `go-parse-file` | `ResourceFile` | `ActionRead` |
 | `go-typecheck-package` | `ResourceProcess` | `ActionLoad` |
+| `go-interface-implementors` (pattern) | `ResourceProcess` | `ActionLoad` |
 | `go-parse-string`, `go-parse-expr`, `go-format`, `go-node-type` | none | none |
 
 ### Usage
@@ -148,6 +149,50 @@ The mapper produces 50+ distinct node tags. The major categories:
 
 ;; Type-check a package
 (define pkgs (go-typecheck-package "./..." 'positions))
+```
+
+### Interface Implementors
+
+`go-interface-implementors` finds all concrete types implementing a named
+interface within the loaded packages. Uses `go/types` to check both `T` and
+`*T` against the interface method set.
+
+**Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `name` | string | Interface name — short (`"Store"`) or qualified (`"pkg.Store"`) |
+| `target` | string or GoSession | Package pattern or reusable session |
+
+If the short name is ambiguous across packages, an error lists the candidates.
+Interfaces with no methods (e.g. type-constraint interfaces) are rejected.
+
+**Return value:** A tagged alist:
+
+```scheme
+(interface-info
+  (name . "Store")
+  (pkg . "github.com/example/pkg")
+  (methods . ("Get" "Set" "Delete"))
+  (implementors . (((type . "MemoryStore") (pkg . "github.com/example/pkg"))
+                   ((type . "SimpleStore") (pkg . "github.com/example/pkg")))))
+```
+
+**Usage:**
+
+```scheme
+;; Find implementors of a project-local interface
+(define info (go-interface-implementors "Store" "my/pkg/..."))
+
+;; With a shared session
+(define s (go-load "my/pkg/..."))
+(define info (go-interface-implementors "Store" s))
+
+;; Use in belief DSL via selectors (preferred)
+(define-belief "store-handles-errors"
+  (sites (interface-methods "Store" "Get"))
+  (expect (contains-call "ErrNotFound"))
+  (threshold 0.80 2))
 ```
 
 ### Transformation
@@ -647,6 +692,8 @@ handles layer selection, data loading, and statistical comparison.
 | `(functions-matching pred ...)` | Functions matching all predicates |
 | `(callers-of "func")` | All callers of a function (call graph layer) |
 | `(methods-of "Type")` | All methods on a receiver type |
+| `(implementors-of "Interface")` | All func-decls whose receiver implements the interface |
+| `(interface-methods "Interface" [method])` | Func-decls implementing interface methods, optionally narrowed to one method |
 | `(sites-from "belief" 'which 'adherence)` | Results from a prior belief (bootstrapping) |
 
 ### Selector Predicates
@@ -685,6 +732,7 @@ Available in `custom` lambdas:
 | `(ctx-ssa ctx)` | Lazy-loaded SSA functions |
 | `(ctx-callgraph ctx)` | Lazy-loaded call graph |
 | `(ctx-field-index ctx)` | Lazy-loaded field access index |
+| `(ctx-interface-info ctx iface-name)` | Lazy-cached interface implementor info |
 | `(ctx-find-ssa-func ctx pkg-path name)` | Look up SSA function by package + name |
 
 ### Utility Functions

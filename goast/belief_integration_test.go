@@ -236,3 +236,85 @@ func TestAstSplice(t *testing.T) {
 		qt.New(t).Assert(result.SchemeString(), qt.Equals, "(a c)")
 	})
 }
+
+func TestBeliefImplementorsOf(t *testing.T) {
+	c := qt.New(t)
+	engine := newBeliefEngine(t)
+
+	// implementors-of should return func-decls whose receiver type implements Store.
+	// MemoryStore and SimpleStore each have 3 methods = 6 func-decls total.
+	result := eval(t, engine, `
+		(import (wile goast belief))
+
+		(let* ((ctx (make-context "github.com/aalpar/wile-goast/goast/testdata/iface"))
+		       (selector (implementors-of "Store"))
+		       (sites (selector ctx)))
+		  (length sites))
+	`)
+	c.Assert(result.SchemeString(), qt.Equals, "6")
+}
+
+func TestBeliefInterfaceMethods(t *testing.T) {
+	c := qt.New(t)
+	engine := newBeliefEngine(t)
+
+	t.Run("all methods across implementors", func(t *testing.T) {
+		// 3 methods x 2 implementors = 6 func-decls
+		result := eval(t, engine, `
+			(import (wile goast belief))
+
+			(let* ((ctx (make-context "github.com/aalpar/wile-goast/goast/testdata/iface"))
+			       (selector (interface-methods "Store"))
+			       (sites (selector ctx)))
+			  (length sites))
+		`)
+		c.Assert(result.SchemeString(), qt.Equals, "6")
+	})
+
+	t.Run("single method across implementors", func(t *testing.T) {
+		// "Get" on MemoryStore + SimpleStore = 2 func-decls
+		result := eval(t, engine, `
+			(import (wile goast belief))
+
+			(let* ((ctx (make-context "github.com/aalpar/wile-goast/goast/testdata/iface"))
+			       (selector (interface-methods "Store" "Get"))
+			       (sites (selector ctx)))
+			  (length sites))
+		`)
+		c.Assert(result.SchemeString(), qt.Equals, "2")
+	})
+
+	t.Run("impl-type annotation present", func(t *testing.T) {
+		// Each returned func-decl should have an impl-type field.
+		result := eval(t, engine, `
+			(import (wile goast belief))
+
+			(let* ((ctx (make-context "github.com/aalpar/wile-goast/goast/testdata/iface"))
+			       (selector (interface-methods "Store" "Get"))
+			       (sites (selector ctx)))
+			  (and (pair? sites) (nf (car sites) 'impl-type)))
+		`)
+		c.Assert(result, qt.Not(qt.Equals), nil)
+		c.Assert(result.SchemeString(), qt.Not(qt.Equals), "#f")
+	})
+
+	t.Run("display name is type-qualified", func(t *testing.T) {
+		// site-display-name should produce "TypeName.MethodName" for interface-methods sites.
+		result := eval(t, engine, `
+			(import (wile goast belief))
+
+			(let* ((ctx (make-context "github.com/aalpar/wile-goast/goast/testdata/iface"))
+			       (selector (interface-methods "Store" "Get"))
+			       (sites (selector ctx))
+			       (names (map (lambda (s)
+			                     (let ((impl-type (nf s 'impl-type))
+			                           (name (nf s 'name)))
+			                       (string-append impl-type "." name)))
+			                   sites)))
+			  names)
+		`)
+		s := result.SchemeString()
+		c.Assert(s, qt.Matches, `.*MemoryStore\.Get.*`)
+		c.Assert(s, qt.Matches, `.*SimpleStore\.Get.*`)
+	})
+}
