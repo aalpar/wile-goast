@@ -312,10 +312,20 @@ Replace the entire `checked-before-use` function (around lines 650-706 of belief
                                          ((tag? (car rs) 'ssa-if) #t)
                                          (else (loop (cdr rs))))))
                      ;; Collect output names for the next iteration.
-                     (new-names (filter-map
+                     ;; For stores (no output name), track operands
+                     ;; to follow value-to-address connections.
+                     (new-names (flat-map
                                   (lambda (instr)
                                     (let ((nm (nf instr 'name)))
-                                      (and nm (not (member? nm tracked)) nm)))
+                                      (cond
+                                        ((and nm (not (member? nm tracked)))
+                                         (list nm))
+                                        ((tag? instr 'ssa-store)
+                                         (filter-map
+                                           (lambda (op)
+                                             (and (not (member? op tracked)) op))
+                                           (or (nf instr 'operands) '())))
+                                        (else '()))))
                                   reached)))
                 (cond
                   (found-guard 'guarded)

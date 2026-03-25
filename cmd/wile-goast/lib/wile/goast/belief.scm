@@ -680,14 +680,14 @@
 ;; the value is guarded.
 ;; Covers: direct comparison (if err != nil), field access
 ;; (if m.Type == x), and any chain up to 4 hops.
-;; Returns: 'guarded or 'unguarded
+;; Returns: 'guarded, 'unguarded, or 'missing (SSA lookup failed)
 (define (checked-before-use value-pattern)
   (define max-depth 4)
   (lambda (site ctx)
     (let* ((fname (nf site 'name))
            (pkg-path (nf site 'pkg-path))
            (ssa-fn (and pkg-path (ctx-find-ssa-func ctx pkg-path fname))))
-      (if (not ssa-fn) 'unguarded
+      (if (not ssa-fn) 'missing
         (let* ((blocks (nf ssa-fn 'blocks))
                (all-instrs (if (pair? blocks)
                              (flat-map

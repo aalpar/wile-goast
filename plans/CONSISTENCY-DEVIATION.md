@@ -6,7 +6,7 @@
 
 ## Belief Categories (Validated)
 
-Categories 1-4 validated against controlled packages in `examples/goast-query/testdata/`. Each belief found the planted deviation. See "Validation Results" below for details.
+Categories 1-5 validated against controlled packages in `examples/goast-query/testdata/`. Each belief found the planted deviation. See "Validation Results" below for details.
 
 ### 1. Pairing Beliefs
 **Validated.** "Operation A always paired with operation B" (Lock/Unlock, Open/Close). DSL verb: `paired-with`.
@@ -24,7 +24,7 @@ Categories 1-4 validated against controlled packages in `examples/goast-query/te
 
 ### Synthetic Testdata
 
-All four categories validated against controlled packages in
+All five categories validated against controlled packages in
 `examples/goast-query/testdata/`. Each belief found the planted deviation.
 
 | Category | Checker | Sites | Majority | Deviations | Status |
@@ -33,6 +33,7 @@ All four categories validated against controlled packages in
 | 2. Check | `checked-before-use` | 5 | guarded | 1 (HandleUnsafe -> unguarded) | PASS (after fix) |
 | 3. Handling | `callers-of` + `contains-call` | 5 | present | 1 (CallerBad -> absent) | PASS (after fix) |
 | 4. Ordering | `ordered` | 5 | a-dominates-b | 1 (PipelineReversed -> b-dominates-a) | PASS |
+| 5. Co-mutation | `co-mutated` | 5 | co-mutated | 1 (SetServer -> partial) | PASS |
 
 ### Bugs Fixed During Validation
 

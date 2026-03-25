@@ -735,8 +735,8 @@ Used as arguments to `functions-matching`:
 | `(contains-call "func" ...)` | `'present` / `'absent` | Call present in body? |
 | `(paired-with "A" "B")` | `'paired-defer` / `'paired-call` / `'unpaired` | A paired with B? |
 | `(ordered "A" "B")` | `'a-dominates-b` / `'b-dominates-a` / `'unordered` / `'missing` | SSA block dominance; same-block resolved by instruction position |
-| `(co-mutated "field" ...)` | `'co-mutated` / `'partial` | Fields stored together? |
-| `(checked-before-use "val")` | `'guarded` / `'unguarded` | Value checked before use? Bounded transitive reachability on the def-use graph (4-hop limit) |
+| `(co-mutated "field" ...)` | `'co-mutated` / `'partial` / `'missing` | Fields stored together? |
+| `(checked-before-use "val")` | `'guarded` / `'unguarded` / `'missing` | Value checked before use? Bounded transitive reachability on the def-use graph (4-hop limit) |
 | `(custom (lambda (site ctx) ...))` | user-defined symbol | Escape hatch |
 
 ### Context Accessors

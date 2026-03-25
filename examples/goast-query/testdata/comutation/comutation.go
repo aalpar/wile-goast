@@ -36,7 +36,7 @@ func (c *Config) Restore(host string, port int, timeout int) {
 	c.Timeout = timeout
 }
 
-// SetServer writes only Host and Port — the planted deviation.
+// SetServer writes only Host and Port — intentional deviation.
 func (c *Config) SetServer(host string, port int) {
 	c.Host = host
 	c.Port = port
