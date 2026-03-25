@@ -1,6 +1,6 @@
 ;;; raft-error-handling.scm — Do callers of raft.Step handle errors consistently?
 ;;;
-;;; Usage: cd etcd && wile-goast -f /path/to/raft-error-handling.scm
+;;; Usage: cd etcd/raft && wile-goast -f /path/to/raft-error-handling.scm
 
 (import (wile goast belief))
 
@@ -10,4 +10,4 @@
   (expect (contains-call "Errorf" "Error" "Fatalf" "Warn"))
   (threshold 0.50 3))
 
-(run-beliefs "go.etcd.io/raft/v3/...")
+(run-beliefs "go.etcd.io/etcd/raft/v3/...")

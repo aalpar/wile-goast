@@ -5,14 +5,14 @@
 ;;; method, surfacing behavioral deviations (one impl handles an error,
 ;;; another doesn't).
 ;;;
-;;; Usage: cd etcd && wile-goast -f /path/to/raft-storage-consistency.scm
+;;; Usage: cd etcd/raft && wile-goast -f /path/to/raft-storage-consistency.scm
 
 (import (wile goast belief))
 
-(define target "go.etcd.io/raft/v3/...")
+(define target "go.etcd.io/etcd/raft/v3/...")
 
 ;; Qualified name needed — rafttest also defines a Storage interface.
-(define iface "go.etcd.io/raft/v3.Storage")
+(define iface "go.etcd.io/etcd/raft/v3.Storage")
 
 ;; Every Entries() implementation should guard against compacted log
 (define-belief "entries-compaction-guard"
