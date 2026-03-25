@@ -318,3 +318,54 @@ func TestBeliefInterfaceMethods(t *testing.T) {
 		c.Assert(s, qt.Matches, `.*SimpleStore\.Get.*`)
 	})
 }
+
+func TestBeliefCategory1_Pairing(t *testing.T) {
+	engine := newBeliefEngine(t)
+
+	// Use the public API: get sites via functions-matching, classify each
+	// with paired-with, then inspect the results directly.
+	eval(t, engine, `
+		(import (wile goast belief))
+
+		(define ctx (make-context
+		              "github.com/aalpar/wile-goast/examples/goast-query/testdata/pairing"))
+
+		;; Get all functions that call Lock
+		(define sites ((functions-matching (contains-call "Lock")) ctx))
+
+		;; Classify each site with the paired-with checker
+		(define checker (paired-with "Lock" "Unlock"))
+		(define classified
+		  (map (lambda (site) (cons (nf site 'name) (checker site ctx)))
+		       sites))
+	`)
+
+	t.Run("5 sites found", func(t *testing.T) {
+		total := eval(t, engine, `(length sites)`)
+		qt.New(t).Assert(total.SchemeString(), qt.Equals, "5")
+	})
+
+	t.Run("majority is paired-defer", func(t *testing.T) {
+		// Count paired-defer results — should be 4 of 5
+		count := eval(t, engine, `
+			(length (filter-map (lambda (p) (and (eq? (cdr p) 'paired-defer) p)) classified))
+		`)
+		qt.New(t).Assert(count.SchemeString(), qt.Equals, "4")
+	})
+
+	t.Run("1 deviation", func(t *testing.T) {
+		// Non-paired-defer entries are deviations
+		devs := eval(t, engine, `
+			(length (filter-map (lambda (p) (and (not (eq? (cdr p) 'paired-defer)) p)) classified))
+		`)
+		qt.New(t).Assert(devs.SchemeString(), qt.Equals, "1")
+	})
+
+	t.Run("deviation is ReadUnsafe", func(t *testing.T) {
+		devName := eval(t, engine, `
+			(let ((devs (filter-map (lambda (p) (and (not (eq? (cdr p) 'paired-defer)) p)) classified)))
+			  (car (car devs)))
+		`)
+		qt.New(t).Assert(devName.SchemeString(), qt.Equals, `"ReadUnsafe"`)
+	})
+}
