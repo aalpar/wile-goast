@@ -60,6 +60,56 @@ All four categories validated against controlled packages in
   resolves short names but may be ambiguous if multiple packages define the same
   function name.
 
+### etcd Raft
+
+Validated against `go.etcd.io/etcd` (multi-module repo). Scripts in `examples/etcd/`.
+
+**lock-beliefs.scm** (categories 1 & 4, from `etcd/` root):
+
+| Belief | Category | Sites | Majority | Deviations |
+|--------|----------|-------|----------|------------|
+| lock-unlock-pairing | 1. Pairing | 13 | paired-call (8) | 5 use paired-defer |
+| rlock-runlock-pairing | 1. Pairing | 11 | paired-defer (6) | 5 use paired-call |
+| lock-before-unlock | 4. Ordering | 13 | weak (9/13, below 0.80) | — |
+
+Finding: etcd genuinely mixes `defer Unlock()` and direct `Unlock()` calls. The
+deviations are style inconsistencies (paired-defer vs paired-call), not missing
+unlocks. The `ordered` belief is weak because `same-block` (both calls in one
+SSA block) splits the majority vote.
+
+**raft-check-beliefs.scm** (category 2, from `etcd/raft/`):
+
+| Belief | Sites | Majority |
+|--------|-------|----------|
+| raft-msg-type-guard | 22 | unguarded (22/22) |
+
+All 22 functions accepting `raftpb.Message` are uniformly `unguarded`. The
+checker found consistency (no deviations) but the belief hypothesis was wrong:
+raft doesn't guard `m.Type` at the function boundary. The SSA parameter name
+may also differ from the assumed `"m"`.
+
+**raft-error-handling.scm** (category 3, from `etcd/raft/`):
+
+| Belief | Sites | Majority |
+|--------|-------|----------|
+| step-error-handling | 13 | absent (13/13) |
+
+Callers of `Step` uniformly propagate errors up the stack without wrapping or
+logging. Consistent behavior, just not the pattern hypothesized.
+
+**raft-storage-consistency.scm** (interface methods, from `etcd/raft/`):
+
+| Belief | Sites | Majority | Deviations |
+|--------|-------|----------|------------|
+| entries-compaction-guard | 1 | weak (below threshold) | — |
+| snapshot-temp-unavail | 2 | absent (2/2) | none |
+| term-bounds-check | 1 | weak (below threshold) | — |
+| storage-resource-cleanup | 34 | absent (24) | 10 (MemoryStorage methods use Unlock) |
+
+Finding: `MemoryStorage` methods use locks (10 deviations calling `Unlock`)
+while other Storage implementors don't. Genuine behavioral divergence —
+MemoryStorage is thread-safe, others delegate locking to their callers.
+
 ## Proposed Validation Targets
 
 - **crdt** — method protocol consistency (`Merge`, `Value`, `MarshalJSON`) and field access protocols across CRDT types.
