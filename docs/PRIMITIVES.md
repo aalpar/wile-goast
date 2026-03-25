@@ -706,7 +706,7 @@ handles layer selection, data loading, and statistical comparison.
 | Selector | Description |
 |----------|-------------|
 | `(functions-matching pred ...)` | Functions matching all predicates |
-| `(callers-of "func")` | All callers of a function (call graph layer) |
+| `(callers-of "func")` | All callers of a function (call graph layer); returns AST func-decl nodes via `ssa-short-name` matching |
 | `(methods-of "Type")` | All methods on a receiver type |
 | `(implementors-of "Interface")` | All func-decls whose receiver implements the interface |
 | `(interface-methods "Interface" [method])` | Func-decls implementing interface methods, optionally narrowed to one method |
@@ -733,9 +733,9 @@ Used as arguments to `functions-matching`:
 |---------|---------|-------------|
 | `(contains-call "func" ...)` | `'present` / `'absent` | Call present in body? |
 | `(paired-with "A" "B")` | `'paired-defer` / `'paired-call` / `'unpaired` | A paired with B? |
-| `(ordered "A" "B")` | `'a-dominates-b` / `'b-dominates-a` / `'same-block` / `'unordered` | CFG dominance |
+| `(ordered "A" "B")` | `'a-dominates-b` / `'b-dominates-a` / `'same-block` / `'unordered` | SSA block dominance (finds call blocks, checks idom chain) |
 | `(co-mutated "field" ...)` | `'co-mutated` / `'partial` | Fields stored together? |
-| `(checked-before-use "val")` | `'guarded` / `'unguarded` | Value checked before use? |
+| `(checked-before-use "val")` | `'guarded` / `'unguarded` | Value checked before use? Follows one level of data flow (val -> comparison -> ssa-if) |
 | `(custom (lambda (site ctx) ...))` | user-defined symbol | Escape hatch |
 
 ### Context Accessors

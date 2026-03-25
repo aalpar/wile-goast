@@ -140,6 +140,8 @@ Declarative consistency deviation detection. Beliefs are patterns extracted stat
   (sites <selector>)      ;; where to look
   (expect <checker>)       ;; what to verify
   (threshold <ratio> <n>)) ;; when to report
+
+(reset-beliefs!)  ;; clear all defined beliefs
 ```
 
 ### Site Selectors
@@ -170,7 +172,7 @@ Declarative consistency deviation detection. Beliefs are patterns extracted stat
 |---------|-------|---------|
 | `(contains-call "func" ...)` | AST | `'present` / `'absent` |
 | `(paired-with "A" "B")` | AST+CFG | `'paired-defer` / `'paired-call` / `'unpaired` |
-| `(ordered "A" "B")` | CFG | `'a-dominates-b` / `'b-dominates-a` / `'same-block` / `'unordered` |
+| `(ordered "A" "B")` | SSA | `'a-dominates-b` / `'b-dominates-a` / `'same-block` / `'unordered` |
 | `(co-mutated "field" ...)` | SSA | `'co-mutated` / `'partial` |
 | `(checked-before-use "val")` | SSA+CFG | `'guarded` / `'unguarded` |
 | `(custom (lambda (site ctx) ...))` | any | user-defined symbol |
@@ -191,6 +193,9 @@ Declarative consistency deviation detection. Beliefs are patterns extracted stat
 - `stores-to-fields` disambiguates receivers against the full struct field set (from `struct-field-names`), not just the target fields.
 - `co-mutated` skips receiver disambiguation — `stores-to-fields` already filtered.
 - Analysis layers load lazily: AST always, SSA/callgraph only when a belief needs them.
+- Categories 1-4 validated against synthetic testdata (`examples/goast-query/testdata/`).
+  Three bugs fixed during validation: `ordered` (moved from CFG to SSA), `callers-of`
+  (returns func-decls), `checked-before-use` (follows comparison data flow).
 
 ## AST Representation
 
@@ -271,5 +276,5 @@ Prompt content lives in `cmd/wile-goast/prompts/*.md` (embedded in binary).
 | [`docs/GO-STATIC-ANALYSIS.md`](docs/GO-STATIC-ANALYSIS.md) | Usage guide with cross-layer examples |
 | [`BIBLIOGRAPHY.md`](BIBLIOGRAPHY.md) | Static analysis references |
 | [`plans/UNIFICATION-DETECTION.md`](plans/UNIFICATION-DETECTION.md) | Remaining: SSA equivalence v2 pass |
-| [`plans/CONSISTENCY-DEVIATION.md`](plans/CONSISTENCY-DEVIATION.md) | Remaining: unvalidated belief categories 1-4 |
+| [`plans/CONSISTENCY-DEVIATION.md`](plans/CONSISTENCY-DEVIATION.md) | Belief categories 1-4: validation results, bug fixes, known limitations |
 | [`plans/BELIEF-DSL.md`](plans/BELIEF-DSL.md) | Remaining: graduation --emit mode, suppression |
