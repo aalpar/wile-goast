@@ -12,7 +12,7 @@ Categories 1-4 validated against controlled packages in `examples/goast-query/te
 **Validated.** "Operation A always paired with operation B" (Lock/Unlock, Open/Close). DSL verb: `paired-with`.
 
 ### 2. Check Beliefs
-**Validated.** "Value V checked for condition C before use." DSL verb: `checked-before-use`. Partially covered by `errcheck`/`nilness` but the cross-caller comparison is novel. Uses transitive BFS through SSA def-use chain (up to 4 hops). For `ssa-store` instructions, follows value-to-address connections to traverse struct field access patterns.
+**Validated.** "Value V checked for condition C before use." DSL verb: `checked-before-use`. Partially covered by `errcheck`/`nilness` but the cross-caller comparison is novel. Uses bounded transitive reachability on the SSA def-use graph (up to 4 hops). For `ssa-store` instructions, follows value-to-address connections to traverse struct field access patterns.
 
 ### 3. Handling Beliefs
 **Validated.** "All callers of F handle the result the same way." DSL verbs: `callers-of` + `contains-call`. Bug fixed during validation: `callers-of` now returns AST func-decl nodes (was returning incompatible `(name edge)` pairs).
@@ -46,8 +46,8 @@ All four categories validated against controlled packages in
    name resolution.
 
 3. **`checked-before-use` checker** — looked for value directly in `ssa-if` operands,
-   but `if err != nil` compiles to `BinOp(err, nil) -> If(t0)`. Fixed: transitive
-   BFS through def-use chain (up to 4 hops). For `ssa-store` instructions (no output
+   but `if err != nil` compiles to `BinOp(err, nil) -> If(t0)`. Fixed: bounded
+   transitive reachability on the def-use graph (up to 4 hops). For `ssa-store` instructions (no output
    name), tracks operands to follow value-to-address connections. Handles struct field
    guard patterns like `if r.Valid` where the chain is:
    `r -> store(t0, r) -> field-addr(t0) -> unop(t1) -> if(t2)`.
@@ -91,8 +91,8 @@ functions where the SSA doesn't find the expected call pair.
 |--------|-------|----------|
 | raft-msg-type-guard | 22 | unguarded (11/22) | 11 guarded |
 
-After the BFS def-use fix, the checker now detects 11/22 functions as `guarded`.
-The BFS follows the chain `m -> store -> field-addr -> unop -> if` to detect
+After the def-use reachability fix, the checker now detects 11/22 functions as `guarded`.
+The traversal follows the chain `m -> store -> field-addr -> unop -> if` to detect
 struct field guards like `if m.Type == ...`. The majority is still `unguarded`
 (11/22), surfacing the 11 guarded functions as deviations — but these are the
 core dispatch functions (`Step`, `stepLeader`, `stepCandidate`, `stepFollower`,

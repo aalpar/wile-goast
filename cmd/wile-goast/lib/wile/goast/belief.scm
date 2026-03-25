@@ -673,9 +673,11 @@
             'partial))))))
 
 ;; (checked-before-use value-pattern) — checks whether a value is
-;; tested before use via transitive def-use chain analysis.
-;; BFS from value-pattern through SSA instructions up to max-depth
-;; hops. If any ssa-if is reached, the value is guarded.
+;; tested before use via bounded transitive reachability on the
+;; SSA def-use graph. Starting from value-pattern, each iteration
+;; expands the tracked name set by one hop through instruction
+;; operands, up to max-depth rounds. If any ssa-if is reached,
+;; the value is guarded.
 ;; Covers: direct comparison (if err != nil), field access
 ;; (if m.Type == x), and any chain up to 4 hops.
 ;; Returns: 'guarded or 'unguarded
@@ -693,10 +695,10 @@
                                              (if (pair? is) is '())))
                                blocks)
                              '())))
-          ;; BFS: expand the set of tracked names through def-use chain.
-          ;; At each depth, find instructions whose operands intersect
-          ;; the tracked set, add their output names, check for ssa-if.
-          (let bfs ((tracked (list value-pattern)) (depth 0))
+          ;; Bounded Kleene iteration: expand the tracked name set through
+          ;; the def-use chain. Each round finds instructions whose operands
+          ;; intersect the tracked set, adds their output names, checks for ssa-if.
+          (let chase ((tracked (list value-pattern)) (depth 0))
             (if (> depth max-depth) 'unguarded
               (let* ((reached (filter-map
                                 (lambda (instr)
@@ -712,7 +714,7 @@
                                    (cond ((null? rs) #f)
                                          ((tag? (car rs) 'ssa-if) #t)
                                          (else (loop (cdr rs))))))
-                     ;; Collect output names for next BFS iteration.
+                     ;; Collect output names for the next iteration.
                      ;; For stores (no output name), track operands
                      ;; to follow value-to-address connections.
                      (new-names (flat-map
@@ -731,7 +733,7 @@
                 (cond
                   (found-guard 'guarded)
                   ((null? new-names) 'unguarded)
-                  (else (bfs (append tracked new-names) (+ depth 1))))))))))))
+                  (else (chase (append tracked new-names) (+ depth 1))))))))))))
 
 ;; (custom proc) — escape hatch. proc is (lambda (site ctx) -> symbol).
 (define (custom proc) proc)

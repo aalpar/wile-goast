@@ -4,7 +4,7 @@
 
 **Goal:** Fix two belief checkers that produced poor results on etcd: `ordered` (same-block vote splitting) and `checked-before-use` (shallow data-flow tracking).
 
-**Architecture:** Category 4 (`ordered`): add intra-block instruction position comparison so `same-block` resolves to `a-dominates-b` or `b-dominates-a`. Category 2 (`checked-before-use`): replace 1-hop binop check with BFS through the SSA def-use chain (4-hop depth limit) to follow chains like `m -> store -> field-addr -> load -> call -> if`.
+**Architecture:** Category 4 (`ordered`): add intra-block instruction position comparison so `same-block` resolves to `a-dominates-b` or `b-dominates-a`. Category 2 (`checked-before-use`): replace 1-hop binop check with bounded transitive reachability on the SSA def-use graph (4-hop depth limit) to follow chains like `m -> store -> field-addr -> load -> call -> if`.
 
 **Tech Stack:** R7RS Scheme (`cmd/wile-goast/lib/wile/goast/belief.scm`), Go integration tests (`goast/belief_integration_test.go`), Go test helpers (`newBeliefEngine(t)`, the test `eval` helper from `prim_goast_test.go`).
 
@@ -159,9 +159,9 @@ splitting between same-block and a-dominates-b in etcd results.
 
 ---
 
-### Task 2: Fix `checked-before-use` — transitive def-use BFS
+### Task 2: Fix `checked-before-use` — transitive def-use reachability
 
-Replace the current 1-hop check (value -> binop -> if) with BFS through the SSA def-use chain up to 4 hops.
+Replace the current 1-hop check (value -> binop -> if) with bounded transitive reachability on the SSA def-use graph, up to 4 hops.
 
 **Files:**
 - Create: `examples/goast-query/testdata/fieldguard/fieldguard.go`
@@ -265,14 +265,14 @@ func TestBeliefCategory2_FieldGuard(t *testing.T) {
 Run: `cd /Users/aalpar/projects/wile-workspace/wile-goast && go test ./goast/ -run TestBeliefCategory2_FieldGuard -v -timeout 120s`
 Expected: FAIL — all 5 sites return `'unguarded` because the 1-hop check can't follow `r -> field-addr -> load -> unop -> if`.
 
-**Step 4: Replace `checked-before-use` with BFS implementation**
+**Step 4: Replace `checked-before-use` with bounded reachability implementation**
 
 Replace the entire `checked-before-use` function (around lines 650-706 of belief.scm) with:
 
 ```scheme
 ;; (checked-before-use value-pattern) — checks whether a value is
-;; tested before use via transitive def-use chain analysis.
-;; BFS from value-pattern through SSA instructions up to max-depth
+;; tested before use via bounded transitive reachability on the
+;; SSA def-use graph. Each iteration expands the tracked name set
 ;; hops. If any ssa-if is reached, the value is guarded.
 ;; Covers: direct comparison (if err != nil), field access
 ;; (if m.Type == x), and any chain up to 4 hops.
@@ -291,10 +291,10 @@ Replace the entire `checked-before-use` function (around lines 650-706 of belief
                                              (if (pair? is) is '())))
                                blocks)
                              '())))
-          ;; BFS: expand the set of tracked names through def-use chain.
-          ;; At each depth, find instructions whose operands intersect
-          ;; the tracked set, add their output names, check for ssa-if.
-          (let bfs ((tracked (list value-pattern)) (depth 0))
+          ;; Bounded Kleene iteration: expand the tracked name set through
+          ;; the def-use chain. Each round finds instructions whose operands
+          ;; intersect the tracked set, adds their output names, checks for ssa-if.
+          (let chase ((tracked (list value-pattern)) (depth 0))
             (if (> depth max-depth) 'unguarded
               ;; Find all instructions using any tracked name as operand.
               (let* ((reached (filter-map
@@ -311,7 +311,7 @@ Replace the entire `checked-before-use` function (around lines 650-706 of belief
                                    (cond ((null? rs) #f)
                                          ((tag? (car rs) 'ssa-if) #t)
                                          (else (loop (cdr rs))))))
-                     ;; Collect output names for next BFS iteration.
+                     ;; Collect output names for the next iteration.
                      (new-names (filter-map
                                   (lambda (instr)
                                     (let ((nm (nf instr 'name)))
@@ -320,7 +320,7 @@ Replace the entire `checked-before-use` function (around lines 650-706 of belief
                 (cond
                   (found-guard 'guarded)
                   ((null? new-names) 'unguarded)
-                  (else (bfs (append tracked new-names) (+ depth 1))))))))))))
+                  (else (chase (append tracked new-names) (+ depth 1))))))))))))
 ```
 
 **Step 5: Run the new test**
@@ -331,7 +331,7 @@ Expected: PASS
 **Step 6: Run existing category 2 test**
 
 Run: `go test ./goast/ -run TestBeliefCategory2_Check -v -timeout 120s`
-Expected: PASS — the BFS subsumes the old 1-hop check.
+Expected: PASS — the bounded reachability subsumes the old 1-hop check.
 
 **Step 7: Run all category tests**
 
@@ -341,10 +341,11 @@ Expected: All pass.
 **Step 8: Commit**
 
 ```
-fix(belief): checked-before-use uses transitive def-use BFS
+fix(belief): checked-before-use uses transitive def-use reachability
 
-Replaces 1-hop (value -> binop -> if) with BFS through the SSA
-def-use chain up to 4 hops. Handles struct field guard patterns
+Replaces 1-hop (value -> binop -> if) with bounded transitive
+reachability on the SSA def-use graph (up to 4 hops). Handles
+struct field guard patterns
 like `if m.Type == x` where the chain is:
   m -> store -> field-addr -> load -> call/binop -> if
 ```
@@ -369,7 +370,7 @@ Run from `~/projects/etcd/raft`:
 /path/to/dist/wile-goast -f examples/etcd/raft-check-beliefs.scm
 ```
 
-Expected: Some sites should now be `guarded` instead of all `unguarded`. The BFS should follow `m -> store -> field-addr -> load -> call/binop -> if` chains.
+Expected: Some sites should now be `guarded` instead of all `unguarded`. The reachability traversal should follow `m -> store -> field-addr -> load -> call/binop -> if` chains.
 
 **Step 3: Update `plans/CONSISTENCY-DEVIATION.md`**
 

@@ -736,7 +736,7 @@ Used as arguments to `functions-matching`:
 | `(paired-with "A" "B")` | `'paired-defer` / `'paired-call` / `'unpaired` | A paired with B? |
 | `(ordered "A" "B")` | `'a-dominates-b` / `'b-dominates-a` / `'unordered` / `'missing` | SSA block dominance; same-block resolved by instruction position |
 | `(co-mutated "field" ...)` | `'co-mutated` / `'partial` | Fields stored together? |
-| `(checked-before-use "val")` | `'guarded` / `'unguarded` | Value checked before use? Transitive BFS through def-use chain (4-hop depth limit) |
+| `(checked-before-use "val")` | `'guarded` / `'unguarded` | Value checked before use? Bounded transitive reachability on the def-use graph (4-hop limit) |
 | `(custom (lambda (site ctx) ...))` | user-defined symbol | Escape hatch |
 
 ### Context Accessors
