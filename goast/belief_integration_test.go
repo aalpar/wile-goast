@@ -594,3 +594,174 @@ func TestBeliefCategory1_Pairing(t *testing.T) {
 		qt.New(t).Assert(devName.SchemeString(), qt.Equals, `"ReadUnsafe"`)
 	})
 }
+
+func TestBeliefCategory5_CoMutation(t *testing.T) {
+	engine := newBeliefEngine(t)
+
+	// Use the public API: get sites via functions-matching + stores-to-fields,
+	// classify each with co-mutated, then inspect results.
+	eval(t, engine, `
+		(import (wile goast belief))
+
+		(define ctx (make-context
+		              "github.com/aalpar/wile-goast/examples/goast-query/testdata/comutation"))
+
+		;; Get all methods that store to at least Host and Port on Config
+		(define sites ((functions-matching
+		                 (stores-to-fields "Config" "Host" "Port"))
+		               ctx))
+
+		;; Classify each site: do they also write Timeout?
+		(define checker (co-mutated "Host" "Port" "Timeout"))
+		(define classified
+		  (map (lambda (site) (cons (nf site 'name) (checker site ctx)))
+		       sites))
+	`)
+
+	t.Run("5 sites found", func(t *testing.T) {
+		total := eval(t, engine, `(length sites)`)
+		qt.New(t).Assert(total.SchemeString(), qt.Equals, "5")
+	})
+
+	t.Run("4 co-mutated", func(t *testing.T) {
+		count := eval(t, engine, `
+			(length (filter-map (lambda (p) (and (eq? (cdr p) 'co-mutated) p)) classified))
+		`)
+		qt.New(t).Assert(count.SchemeString(), qt.Equals, "4")
+	})
+
+	t.Run("1 partial", func(t *testing.T) {
+		count := eval(t, engine, `
+			(length (filter-map (lambda (p) (and (eq? (cdr p) 'partial) p)) classified))
+		`)
+		qt.New(t).Assert(count.SchemeString(), qt.Equals, "1")
+	})
+
+	t.Run("deviation is SetServer", func(t *testing.T) {
+		devName := eval(t, engine, `
+			(let ((devs (filter-map (lambda (p) (and (eq? (cdr p) 'partial) p)) classified)))
+			  (car (car devs)))
+		`)
+		qt.New(t).Assert(devName.SchemeString(), qt.Equals, `"SetServer"`)
+	})
+}
+
+func TestBeliefStoresToFields(t *testing.T) {
+	engine := newBeliefEngine(t)
+
+	eval(t, engine, `
+		(import (wile goast belief))
+
+		(define ctx (make-context
+		              "github.com/aalpar/wile-goast/examples/goast-query/testdata/comutation"))
+	`)
+
+	t.Run("all 5 write Host+Port", func(t *testing.T) {
+		// All 5 methods write at least Host and Port
+		count := eval(t, engine, `
+			(length ((functions-matching
+			           (stores-to-fields "Config" "Host" "Port"))
+			         ctx))
+		`)
+		qt.New(t).Assert(count.SchemeString(), qt.Equals, "5")
+	})
+
+	t.Run("only 4 write all three", func(t *testing.T) {
+		// Only 4 methods also write Timeout
+		count := eval(t, engine, `
+			(length ((functions-matching
+			           (stores-to-fields "Config" "Host" "Port" "Timeout"))
+			         ctx))
+		`)
+		qt.New(t).Assert(count.SchemeString(), qt.Equals, "4")
+	})
+}
+
+func TestBeliefSitesFrom(t *testing.T) {
+	engine := newBeliefEngine(t)
+
+	// Define two beliefs: the second bootstraps from the first's deviations.
+	// Capture run-beliefs output to verify the second belief sees the right sites.
+	result := eval(t, engine, `
+		(import (wile goast belief))
+
+		(reset-beliefs!)
+
+		(define-belief "pairing"
+		  (sites (functions-matching (contains-call "Lock")))
+		  (expect (paired-with "Lock" "Unlock"))
+		  (threshold 0.60 3))
+
+		(define-belief "followup"
+		  (sites (sites-from "pairing" 'which 'deviation))
+		  (expect (custom (lambda (site ctx) 'found)))
+		  (threshold 0.50 1))
+
+		(let ((out (open-output-string)))
+		  (parameterize ((current-output-port out))
+		    (run-beliefs
+		      "github.com/aalpar/wile-goast/examples/goast-query/testdata/pairing"))
+		  (get-output-string out))
+	`)
+
+	c := qt.New(t)
+	output := result.SchemeString()
+
+	t.Run("pairing belief reported", func(t *testing.T) {
+		c.Assert(output, qt.Matches, `.*pairing.*`)
+	})
+
+	t.Run("followup belief sees 1 site", func(t *testing.T) {
+		// The followup belief should see exactly 1 site (the deviation from pairing)
+		c.Assert(output, qt.Matches, `.*followup.*1/1 sites.*`)
+	})
+}
+
+func TestBeliefRunBeliefsOutput(t *testing.T) {
+	engine := newBeliefEngine(t)
+
+	// Run a single belief and verify the output contains expected structure:
+	// header, belief name, pattern, deviation, summary.
+	result := eval(t, engine, `
+		(import (wile goast belief))
+
+		(reset-beliefs!)
+
+		(define-belief "ordering-test"
+		  (sites (functions-matching
+		           (all-of (contains-call "Validate") (contains-call "Process"))))
+		  (expect (ordered "Validate" "Process"))
+		  (threshold 0.60 3))
+
+		(let ((out (open-output-string)))
+		  (parameterize ((current-output-port out))
+		    (run-beliefs
+		      "github.com/aalpar/wile-goast/examples/goast-query/testdata/ordering"))
+		  (get-output-string out))
+	`)
+
+	c := qt.New(t)
+	output := result.SchemeString()
+
+	t.Run("has header", func(t *testing.T) {
+		c.Assert(output, qt.Matches, `.*Consistency Analysis.*`)
+	})
+
+	t.Run("has belief name", func(t *testing.T) {
+		c.Assert(output, qt.Matches, `.*ordering-test.*`)
+	})
+
+	t.Run("has pattern with counts", func(t *testing.T) {
+		c.Assert(output, qt.Matches, `.*a-dominates-b.*4/5 sites.*`)
+	})
+
+	t.Run("has deviation", func(t *testing.T) {
+		c.Assert(output, qt.Matches, `.*DEVIATION.*PipelineReversed.*`)
+	})
+
+	t.Run("has summary", func(t *testing.T) {
+		c.Assert(output, qt.Matches, `.*Beliefs evaluated:.*1.*`)
+		c.Assert(output, qt.Matches, `.*Strong beliefs:.*1.*`)
+		c.Assert(output, qt.Matches, `.*Deviations found:.*1.*`)
+	})
+}
