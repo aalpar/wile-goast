@@ -595,7 +595,18 @@
                (b-blocks (find-ssa-call-blocks blocks op-b)))
           (cond
             ((or (null? a-blocks) (null? b-blocks)) 'missing)
-            ((= (car a-blocks) (car b-blocks)) 'same-block)
+            ((= (car a-blocks) (car b-blocks))
+             (let* ((blk-idx (car a-blocks))
+                    (block (let find ((bs (if (pair? blocks) blocks '())))
+                             (cond ((null? bs) #f)
+                                   ((= (nf (car bs) 'index) blk-idx) (car bs))
+                                   (else (find (cdr bs))))))
+                    (pos-a (and block (find-call-position block op-a)))
+                    (pos-b (and block (find-call-position block op-b))))
+               (cond
+                 ((or (not pos-a) (not pos-b)) 'unordered)
+                 ((< pos-a pos-b) 'a-dominates-b)
+                 (else 'b-dominates-a))))
             ((ssa-dominates? blocks (car a-blocks) (car b-blocks)) 'a-dominates-b)
             ((ssa-dominates? blocks (car b-blocks) (car a-blocks)) 'b-dominates-a)
             (else 'unordered)))))))
@@ -616,6 +627,20 @@
                           (equal? (nf node 'method) func-name))))))
              idx)))
     (if (pair? blocks) blocks '())))
+
+;; Find the instruction index of the first call to func-name in a block.
+;; Returns the 0-based position in the block's instrs list, or #f.
+(define (find-call-position block func-name)
+  (let ((instrs (or (nf block 'instrs) '())))
+    (let loop ((is instrs) (pos 0))
+      (cond
+        ((null? is) #f)
+        ((and (or (tag? (car is) 'ssa-call) (tag? (car is) 'ssa-go)
+                  (tag? (car is) 'ssa-defer))
+              (or (equal? (nf (car is) 'func) func-name)
+                  (equal? (nf (car is) 'method) func-name)))
+         pos)
+        (else (loop (cdr is) (+ pos 1)))))))
 
 ;; Check whether block a-idx dominates block b-idx using the idom chain.
 ;; Walks b's immediate dominator chain upward. If a is encountered, a dominates b.

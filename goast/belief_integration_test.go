@@ -471,6 +471,43 @@ func TestBeliefCategory2_Check(t *testing.T) {
 	})
 }
 
+func TestBeliefCategory4_SameBlockOrdering(t *testing.T) {
+	engine := newBeliefEngine(t)
+
+	eval(t, engine, `
+		(import (wile goast belief))
+
+		(define ctx (make-context
+		              "github.com/aalpar/wile-goast/examples/goast-query/testdata/sameblock"))
+
+		(define checker (ordered "Foo" "Bar"))
+		(define sites ((functions-matching
+		                 (all-of (contains-call "Foo") (contains-call "Bar")))
+		               ctx))
+		(define classified
+		  (map (lambda (site) (cons (nf site 'name) (checker site ctx)))
+		       sites))
+	`)
+
+	t.Run("FooFirst is a-dominates-b", func(t *testing.T) {
+		result := eval(t, engine, `
+			(cdr (car (filter-map
+			  (lambda (p) (and (equal? (car p) "FooFirst") p))
+			  classified)))
+		`)
+		qt.New(t).Assert(result.SchemeString(), qt.Equals, "a-dominates-b")
+	})
+
+	t.Run("BarFirst is b-dominates-a", func(t *testing.T) {
+		result := eval(t, engine, `
+			(cdr (car (filter-map
+			  (lambda (p) (and (equal? (car p) "BarFirst") p))
+			  classified)))
+		`)
+		qt.New(t).Assert(result.SchemeString(), qt.Equals, "b-dominates-a")
+	})
+}
+
 func TestBeliefCategory1_Pairing(t *testing.T) {
 	engine := newBeliefEngine(t)
 
