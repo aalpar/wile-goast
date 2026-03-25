@@ -1,7 +1,7 @@
 (define-library (wile goast belief)
   (export
     ;; Core
-    define-belief run-beliefs
+    define-belief run-beliefs reset-beliefs! *beliefs*
     ;; Context (needed by custom lambdas)
     make-context ctx-pkgs ctx-ssa ctx-callgraph ctx-find-ssa-func ctx-field-index
     ;; Site selectors

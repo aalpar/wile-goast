@@ -19,6 +19,9 @@
 
 (define *beliefs* '())
 
+(define (reset-beliefs!)
+  (set! *beliefs* '()))
+
 (define (register-belief! name sites-fn expect-fn min-adherence min-sites)
   (set! *beliefs*
     (append *beliefs*
