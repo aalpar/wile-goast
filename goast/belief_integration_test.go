@@ -508,6 +508,42 @@ func TestBeliefCategory4_SameBlockOrdering(t *testing.T) {
 	})
 }
 
+func TestBeliefCategory2_FieldGuard(t *testing.T) {
+	engine := newBeliefEngine(t)
+
+	eval(t, engine, `
+		(import (wile goast belief))
+
+		(define ctx (make-context
+		              "github.com/aalpar/wile-goast/examples/goast-query/testdata/fieldguard"))
+
+		(define checker (checked-before-use "r"))
+		(define sites ((functions-matching (has-params "Request")) ctx))
+		(define classified
+		  (map (lambda (site) (cons (nf site 'name) (checker site ctx)))
+		       sites))
+	`)
+
+	t.Run("5 sites found", func(t *testing.T) {
+		total := eval(t, engine, `(length sites)`)
+		qt.New(t).Assert(total.SchemeString(), qt.Equals, "5")
+	})
+
+	t.Run("4 guarded", func(t *testing.T) {
+		count := eval(t, engine, `
+			(length (filter-map (lambda (p) (and (eq? (cdr p) 'guarded) p)) classified))
+		`)
+		qt.New(t).Assert(count.SchemeString(), qt.Equals, "4")
+	})
+
+	t.Run("1 unguarded", func(t *testing.T) {
+		count := eval(t, engine, `
+			(length (filter-map (lambda (p) (and (eq? (cdr p) 'unguarded) p)) classified))
+		`)
+		qt.New(t).Assert(count.SchemeString(), qt.Equals, "1")
+	})
+}
+
 func TestBeliefCategory1_Pairing(t *testing.T) {
 	engine := newBeliefEngine(t)
 

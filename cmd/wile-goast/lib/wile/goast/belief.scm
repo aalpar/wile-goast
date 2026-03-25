@@ -673,12 +673,14 @@
             'partial))))))
 
 ;; (checked-before-use value-pattern) — checks whether a value is
-;; tested before use. Two-level check:
-;;   1. Direct: value appears in ssa-if operands
-;;   2. Indirect: value appears in a comparison (ssa-binop) whose
-;;      result feeds an ssa-if (covers `if err != nil` pattern)
+;; tested before use via transitive def-use chain analysis.
+;; BFS from value-pattern through SSA instructions up to max-depth
+;; hops. If any ssa-if is reached, the value is guarded.
+;; Covers: direct comparison (if err != nil), field access
+;; (if m.Type == x), and any chain up to 4 hops.
 ;; Returns: 'guarded or 'unguarded
 (define (checked-before-use value-pattern)
+  (define max-depth 4)
   (lambda (site ctx)
     (let* ((fname (nf site 'name))
            (pkg-path (nf site 'pkg-path))
@@ -690,45 +692,46 @@
                                (lambda (b) (let ((is (nf b 'instrs)))
                                              (if (pair? is) is '())))
                                blocks)
-                             '()))
-               ;; Find all instructions that use value-pattern as an operand.
-               (uses (filter-map
-                       (lambda (instr)
-                         (let ((ops (nf instr 'operands)))
-                           (and (pair? ops) (member? value-pattern ops)
-                                instr)))
-                       all-instrs))
-               ;; Direct guard: value appears in an ssa-if.
-               (has-direct-guard
-                 (let loop ((us uses))
-                   (cond ((null? us) #f)
-                         ((tag? (car us) 'ssa-if) #t)
-                         (else (loop (cdr us))))))
-               ;; Indirect guard: value appears in a comparison whose
-               ;; result name feeds into an ssa-if.
-               (comparison-names
-                 (filter-map
-                   (lambda (u)
-                     (and (tag? u 'ssa-binop)
-                          (nf u 'name)))
-                   uses))
-               (has-indirect-guard
-                 (and (pair? comparison-names)
-                      (let loop ((is all-instrs))
-                        (cond
-                          ((null? is) #f)
-                          ((and (tag? (car is) 'ssa-if)
-                                (let ((ops (nf (car is) 'operands)))
-                                  (and (pair? ops)
-                                       (let check ((ns comparison-names))
-                                         (cond ((null? ns) #f)
-                                               ((member? (car ns) ops) #t)
-                                               (else (check (cdr ns))))))))
-                           #t)
-                          (else (loop (cdr is))))))))
-          (if (or has-direct-guard has-indirect-guard)
-            'guarded
-            'unguarded))))))
+                             '())))
+          ;; BFS: expand the set of tracked names through def-use chain.
+          ;; At each depth, find instructions whose operands intersect
+          ;; the tracked set, add their output names, check for ssa-if.
+          (let bfs ((tracked (list value-pattern)) (depth 0))
+            (if (> depth max-depth) 'unguarded
+              (let* ((reached (filter-map
+                                (lambda (instr)
+                                  (let ((ops (nf instr 'operands)))
+                                    (and (pair? ops)
+                                         (let check ((ts tracked))
+                                           (cond ((null? ts) #f)
+                                                 ((member? (car ts) ops) instr)
+                                                 (else (check (cdr ts))))))))
+                                all-instrs))
+                     ;; Check if any reached instruction is an ssa-if.
+                     (found-guard (let loop ((rs reached))
+                                   (cond ((null? rs) #f)
+                                         ((tag? (car rs) 'ssa-if) #t)
+                                         (else (loop (cdr rs))))))
+                     ;; Collect output names for next BFS iteration.
+                     ;; For stores (no output name), track operands
+                     ;; to follow value-to-address connections.
+                     (new-names (flat-map
+                                  (lambda (instr)
+                                    (let ((nm (nf instr 'name)))
+                                      (cond
+                                        ((and nm (not (member? nm tracked)))
+                                         (list nm))
+                                        ((tag? instr 'ssa-store)
+                                         (filter-map
+                                           (lambda (op)
+                                             (and (not (member? op tracked)) op))
+                                           (or (nf instr 'operands) '())))
+                                        (else '()))))
+                                  reached)))
+                (cond
+                  (found-guard 'guarded)
+                  ((null? new-names) 'unguarded)
+                  (else (bfs (append tracked new-names) (+ depth 1))))))))))))
 
 ;; (custom proc) — escape hatch. proc is (lambda (site ctx) -> symbol).
 (define (custom proc) proc)
