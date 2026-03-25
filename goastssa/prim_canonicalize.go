@@ -15,13 +15,13 @@
 package goastssa
 
 import (
+	"strconv"
+
 	"github.com/aalpar/wile-goast/goast"
 	"github.com/aalpar/wile/machine"
 	"github.com/aalpar/wile/values"
 	"github.com/aalpar/wile/werr"
 )
-
-var errSSACanonicalizeError = werr.NewStaticError("ssa canonicalize error")
 
 // ssaFuncData is the intermediate representation of an SSA function s-expression.
 type ssaFuncData struct {
@@ -71,7 +71,9 @@ func PrimGoSSACanonicalize(mc *machine.MachineContext) error {
 		return err
 	}
 
-	canonicalizeBlockOrder(&fd)
+	if err := canonicalizeBlockOrder(&fd); err != nil {
+		return err
+	}
 	renameRegisters(&fd)
 
 	mc.SetValue(rebuildSSAFunc(&fd))
@@ -142,7 +144,8 @@ func parseSSAParams(paramsList values.Value) ([]ssaParamData, error) {
 	for !values.IsEmptyList(cur) {
 		pair, ok := cur.(*values.Pair)
 		if !ok {
-			break
+			return nil, werr.WrapForeignErrorf(errSSACanonicalizeError,
+				"go-ssa-canonicalize: malformed params list")
 		}
 		paramNode, ok := pair.Car().(*values.Pair)
 		if !ok {
@@ -185,7 +188,8 @@ func parseSSABlocks(blocksList values.Value) ([]ssaBlockData, error) {
 	for !values.IsEmptyList(cur) {
 		pair, ok := cur.(*values.Pair)
 		if !ok {
-			break
+			return nil, werr.WrapForeignErrorf(errSSACanonicalizeError,
+				"go-ssa-canonicalize: malformed blocks list")
 		}
 		blockNode, ok := pair.Car().(*values.Pair)
 		if !ok {
@@ -244,9 +248,11 @@ func parseSSABlock(fields values.Value) (ssaBlockData, error) {
 	commentVal, found := goast.GetField(fields, "comment")
 	if found {
 		s, ok := commentVal.(*values.String)
-		if ok {
-			bd.comment = s.Value
+		if !ok {
+			return bd, werr.WrapForeignErrorf(errSSACanonicalizeError,
+				"go-ssa-canonicalize: block comment expected string")
 		}
+		bd.comment = s.Value
 	}
 
 	instrsVal, err := goast.RequireField(fields, "ssa-block", "instrs")
@@ -269,7 +275,8 @@ func parseIntList(fields values.Value, key string) ([]int64, error) {
 	for !values.IsEmptyList(cur) {
 		pair, ok := cur.(*values.Pair)
 		if !ok {
-			break
+			return nil, werr.WrapForeignErrorf(errSSACanonicalizeError,
+				"go-ssa-canonicalize: malformed %s list", key)
 		}
 		n, ok := pair.Car().(*values.Integer)
 		if !ok {
@@ -299,9 +306,9 @@ func collectList(list values.Value) []values.Value {
 
 // canonicalizeBlockOrder reorders blocks by pre-order DFS of the dominator tree
 // and reindexes all cross-references (preds, succs, idom, phi edges, jump/if targets).
-func canonicalizeBlockOrder(fd *ssaFuncData) {
+func canonicalizeBlockOrder(fd *ssaFuncData) error {
 	if len(fd.blocks) <= 1 {
-		return
+		return nil
 	}
 
 	// Build dominator tree: children[parentIdx] = [...childIndices]
@@ -315,7 +322,8 @@ func canonicalizeBlockOrder(fd *ssaFuncData) {
 		}
 	}
 	if entryIdx == -1 {
-		return
+		return werr.WrapForeignErrorf(errSSACanonicalizeError,
+			"go-ssa-canonicalize: no entry block (idom == -1) found")
 	}
 
 	// Pre-order DFS from entry.
@@ -328,6 +336,12 @@ func canonicalizeBlockOrder(fd *ssaFuncData) {
 		}
 	}
 	dfs(entryIdx)
+
+	if len(order) != len(fd.blocks) {
+		return werr.WrapForeignErrorf(errSSACanonicalizeError,
+			"go-ssa-canonicalize: dominator tree covers %d of %d blocks",
+			len(order), len(fd.blocks))
+	}
 
 	// Build old→new index mapping.
 	oldToNew := make(map[int64]int64, len(order))
@@ -355,6 +369,7 @@ func canonicalizeBlockOrder(fd *ssaFuncData) {
 		newBlocks[i] = b
 	}
 	fd.blocks = newBlocks
+	return nil
 }
 
 // remapIndices applies oldToNew mapping to a slice of block indices.
@@ -475,7 +490,7 @@ func renameRegisters(fd *ssaFuncData) {
 
 	// Rename params: p0, p1, ...
 	for i := range fd.params {
-		canonical := "p" + intToStr(int64(i))
+		canonical := "p" + strconv.FormatInt(int64(i), 10)
 		nameMap[fd.params[i].name] = canonical
 		fd.params[i].name = canonical
 	}
@@ -487,7 +502,7 @@ func renameRegisters(fd *ssaFuncData) {
 			name := instrName(instr)
 			if name != "" {
 				if _, exists := nameMap[name]; !exists {
-					nameMap[name] = "r" + intToStr(int64(rIdx))
+					nameMap[name] = "r" + strconv.FormatInt(int64(rIdx), 10)
 					rIdx++
 				}
 			}
@@ -521,7 +536,7 @@ func renameFreeVars(freeVars values.Value, nameMap map[string]string) values.Val
 					oldName = s.Value
 				}
 			}
-			canonical := "fv" + intToStr(int64(idx))
+			canonical := "fv" + strconv.FormatInt(int64(idx), 10)
 			if oldName != "" {
 				nameMap[oldName] = canonical
 			}
@@ -570,26 +585,6 @@ func renameInstrStrings(v values.Value, nameMap map[string]string) values.Value 
 	default:
 		return v
 	}
-}
-
-// intToStr converts an int64 to a decimal string without importing strconv.
-func intToStr(n int64) string {
-	if n == 0 {
-		return "0"
-	}
-	var digits []byte
-	neg := n < 0
-	if neg {
-		n = -n
-	}
-	for n > 0 {
-		digits = append([]byte{byte('0' + n%10)}, digits...)
-		n /= 10
-	}
-	if neg {
-		return "-" + string(digits)
-	}
-	return string(digits)
 }
 
 // rebuildSSAFunc converts ssaFuncData back to an s-expression.

@@ -817,6 +817,70 @@ Traversal utilities for the tagged-alist node format shared by all layers.
 
 ---
 
+## SSA Normalization -- `(wile goast ssa-normalize)`
+
+**Implementation:** Pure Scheme library (embedded in binary)
+
+Algebraic normalization rules for SSA binop nodes. Integer-type scoped to avoid IEEE 754 issues. Extensible via `ssa-rule-set`.
+
+| Function | Description |
+|----------|-------------|
+| `(ssa-normalize node)` | Apply default rules to a node |
+| `(ssa-normalize node rules)` | Apply custom rule set to a node |
+| `(ssa-rule-commutative)` | Sort operands lexicographically for commutative ops |
+| `(ssa-rule-identity)` | `x + 0 -> x`, `x * 1 -> x`, etc. (integer types only) |
+| `(ssa-rule-annihilation)` | `x * 0 -> 0`, `x & 0 -> 0` (integer types only) |
+| `(ssa-rule-set rule ...)` | Compose rules: first non-`#f` wins |
+
+### Usage
+
+```scheme
+(import (wile goast ssa-normalize))
+
+;; Apply default normalization
+(ssa-normalize some-binop-node)
+
+;; Custom rule set (commutative only)
+(define my-rules (ssa-rule-set (ssa-rule-commutative)))
+(ssa-normalize some-binop-node my-rules)
+```
+
+---
+
+## Unification Detection -- `(wile goast unify)`
+
+**Implementation:** Pure Scheme library (embedded in binary)
+
+Shared diff/scoring library for AST and SSA structural comparison. Pluggable classifier design: the core `tree-diff` is generic; a classifier function determines how string diffs are categorized.
+
+| Function | Description |
+|----------|-------------|
+| `(ast-diff node-a node-b)` | Diff two AST nodes with path-based classification |
+| `(ssa-diff node-a node-b)` | Diff two SSA nodes with tag-based classification |
+| `(tree-diff node-a node-b classifier)` | Generic diff with custom classifier |
+| `(diff-result-similarity r)` | Extract similarity (0.0--1.0) from diff result |
+| `(diff-result-shared r)` | Shared node count |
+| `(diff-result-diff-count r)` | Differing node count |
+| `(diff-result-diffs r)` | List of `(category path val-a val-b)` entries |
+| `(score-diffs shared diff-count diffs)` | Compute effective similarity with substitution collapsing |
+| `(unifiable? result threshold)` | Verdict: `#t` when effective similarity >= threshold and all remaining diffs are type/register |
+
+### Usage
+
+```scheme
+(import (wile goast unify))
+
+;; Compare two SSA functions after canonicalization
+(let* ((r (ssa-diff canon-a canon-b))
+       (sim (diff-result-similarity r)))
+  (display sim))
+
+;; Full verdict
+(unifiable? (ssa-diff canon-a canon-b) 0.80)
+```
+
+---
+
 ## Cross-References
 
 - [GO-STATIC-ANALYSIS.md](GO-STATIC-ANALYSIS.md) -- Usage guide with

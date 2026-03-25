@@ -31,8 +31,9 @@ import (
 )
 
 var (
-	errSSABuildError      = werr.NewStaticError("ssa build error")
-	errSSAFieldIndexError = werr.NewStaticError("ssa field index error")
+	errSSABuildError         = werr.NewStaticError("ssa build error")
+	errSSAFieldIndexError    = werr.NewStaticError("ssa field index error")
+	errSSACanonicalizeError  = werr.NewStaticError("ssa canonicalize error")
 )
 
 // parseSSAOpts extracts mapper options from a variadic rest-arg list.

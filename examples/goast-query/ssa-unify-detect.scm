@@ -84,38 +84,38 @@
   (let* ((ast-a (go-typecheck-package pkg-a-path))
          (ast-b (go-typecheck-package pkg-b-path))
          (func-a (find-func-decl ast-a func-name-a))
-         (func-b (find-func-decl ast-b func-name-b))
-         (ast-result (if (and func-a func-b)
-                       (ast-diff func-a func-b)
-                       (list 0 1 '())))
-         (ast-sim (diff-result-similarity ast-result)))
+         (func-b (find-func-decl ast-b func-name-b)))
+    (if (not (and func-a func-b))
+      (begin
+        (display "    ERROR: function not found in AST") (newline)
+        (list label "N/A" "N/A" "N/A" "error"))
 
-    ;; Stage 2: SSA canonicalized
-    (let* ((ssa-a (go-ssa-build pkg-a-path))
-           (ssa-b (go-ssa-build pkg-b-path))
-           (sfn-a (find-ssa-func ssa-a func-name-a))
-           (sfn-b (find-ssa-func ssa-b func-name-b))
-           (canon-a (if sfn-a (go-ssa-canonicalize sfn-a) #f))
-           (canon-b (if sfn-b (go-ssa-canonicalize sfn-b) #f))
-           (canon-result (if (and canon-a canon-b)
-                           (ssa-diff canon-a canon-b)
-                           (list 0 1 '())))
-           (canon-sim (diff-result-similarity canon-result)))
+      (let ((ast-sim (diff-result-similarity (ast-diff func-a func-b))))
 
-      ;; Stage 3: SSA canonicalized + normalized
-      (let* ((norm-a (if canon-a (ssa-normalize-func canon-a) #f))
-             (norm-b (if canon-b (ssa-normalize-func canon-b) #f))
-             (norm-result (if (and norm-a norm-b)
-                            (ssa-diff norm-a norm-b)
-                            (list 0 1 '())))
-             (norm-sim (diff-result-similarity norm-result))
-             (verdict (if (and norm-a norm-b)
-                        (if (unifiable? norm-result threshold)
-                          "unifiable"
-                          "divergent")
-                        "error")))
+        ;; Stage 2: SSA canonicalized
+        (let* ((ssa-a (go-ssa-build pkg-a-path))
+               (ssa-b (go-ssa-build pkg-b-path))
+               (sfn-a (find-ssa-func ssa-a func-name-a))
+               (sfn-b (find-ssa-func ssa-b func-name-b)))
+          (if (not (and sfn-a sfn-b))
+            (begin
+              (display "    ERROR: function not found in SSA") (newline)
+              (list label ast-sim "N/A" "N/A" "error"))
 
-        (list label ast-sim canon-sim norm-sim verdict)))))
+            (let* ((canon-a (go-ssa-canonicalize sfn-a))
+                   (canon-b (go-ssa-canonicalize sfn-b))
+                   (canon-sim (diff-result-similarity (ssa-diff canon-a canon-b))))
+
+              ;; Stage 3: SSA canonicalized + normalized
+              (let* ((norm-a (ssa-normalize-func canon-a))
+                     (norm-b (ssa-normalize-func canon-b))
+                     (norm-result (ssa-diff norm-a norm-b))
+                     (norm-sim (diff-result-similarity norm-result))
+                     (verdict (if (unifiable? norm-result threshold)
+                                "unifiable"
+                                "divergent")))
+
+                (list label ast-sim canon-sim norm-sim verdict)))))))))
 
 ;; ── Main ─────────────────────────────────────────────────
 
@@ -145,15 +145,18 @@
 (display "  Test case                       AST      SSA-canon  SSA-norm   Verdict") (newline)
 (display "  ────────────────────────────────────────────────────────────────────────") (newline)
 
+(define (fmt-or-na v)
+  (if (string? v) v (fmt-sim v)))
+
 (for-each
   (lambda (r)
     (display "  ")
     (let ((label (list-ref r 0)))
       (display label)
       (display (make-string (max 1 (- 34 (string-length label))) #\space)))
-    (display (fmt-sim (list-ref r 1))) (display "   ")
-    (display (fmt-sim (list-ref r 2))) (display "   ")
-    (display (fmt-sim (list-ref r 3))) (display "   ")
+    (display (fmt-or-na (list-ref r 1))) (display "   ")
+    (display (fmt-or-na (list-ref r 2))) (display "   ")
+    (display (fmt-or-na (list-ref r 3))) (display "   ")
     (display (list-ref r 4))
     (newline))
   results)

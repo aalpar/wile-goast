@@ -9,15 +9,14 @@
 (define commutative-ops '(+ * & |\|| ^ == !=))
 
 ;; Predicate: is this an integer type string?
-;; Matches "int", "int8", "int16", "int32", "int64",
-;; "uint", "uint8", "uint16", "uint32", "uint64", "uintptr", "byte", "rune"
+;; Go SSA represents byte as uint8 and rune as int32, so those
+;; aliases are covered by the base types in this list.
+(define integer-types
+  '("int" "int8" "int16" "int32" "int64"
+    "uint" "uint8" "uint16" "uint32" "uint64" "uintptr"))
+
 (define (integer-type? s)
-  (and (string? s)
-       (let ((len (string-length s)))
-         (or (and (>= len 3)
-                  (string=? (substring s 0 3) "int"))
-             (and (>= len 4)
-                  (string=? (substring s 0 4) "uint"))))))
+  (and (string? s) (member s integer-types) #t))
 
 ;; Constant matching for SSA constant strings like "0:int" or just "0"
 (define (constant-zero? s)
