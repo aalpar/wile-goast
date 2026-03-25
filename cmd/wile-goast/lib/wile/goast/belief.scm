@@ -544,41 +544,57 @@
         (has-call-b 'paired-call)
         (else 'unpaired)))))
 
-;; (ordered op-a op-b) — checks whether op-a's block dominates op-b's block.
-;; Requires CFG layer.
+;; (ordered op-a op-b) — checks whether op-a's SSA block dominates op-b's block.
+;; Uses SSA representation (blocks have instrs + idom). Does not require go-cfg.
 ;; Returns: 'a-dominates-b, 'b-dominates-a, 'same-block, 'unordered, or 'missing
 (define (ordered op-a op-b)
   (lambda (site ctx)
     (let* ((fname (nf site 'name))
            (pkg-path (nf site 'pkg-path))
-           (cfg (and pkg-path (go-cfg (ctx-session ctx) fname))))
-      (if (not cfg) 'missing
-        (let* ((blocks (nf cfg 'blocks))
-               (a-blocks (find-call-blocks blocks op-a))
-               (b-blocks (find-call-blocks blocks op-b)))
+           (ssa-fn (and pkg-path (ctx-find-ssa-func ctx pkg-path fname))))
+      (if (not ssa-fn) 'missing
+        (let* ((blocks (nf ssa-fn 'blocks))
+               (a-blocks (find-ssa-call-blocks blocks op-a))
+               (b-blocks (find-ssa-call-blocks blocks op-b)))
           (cond
             ((or (null? a-blocks) (null? b-blocks)) 'missing)
             ((= (car a-blocks) (car b-blocks)) 'same-block)
-            ((go-cfg-dominates? cfg (car a-blocks) (car b-blocks)) 'a-dominates-b)
-            ((go-cfg-dominates? cfg (car b-blocks) (car a-blocks)) 'b-dominates-a)
+            ((ssa-dominates? blocks (car a-blocks) (car b-blocks)) 'a-dominates-b)
+            ((ssa-dominates? blocks (car b-blocks) (car a-blocks)) 'b-dominates-a)
             (else 'unordered)))))))
 
-;; Find block indices containing a call to the named function.
-(define (find-call-blocks blocks func-name)
+;; Find SSA block indices containing a call to the named function.
+;; Walks SSA instructions (not AST statements). Checks both static
+;; calls (func field) and method calls (method field).
+(define (find-ssa-call-blocks blocks func-name)
   (filter-map
     (lambda (block)
       (let ((idx (nf block 'index))
-            (stmts (or (nf block 'stmts) '())))
-        (and (pair? (walk stmts
+            (instrs (or (nf block 'instrs) '())))
+        (and (pair? (walk instrs
                (lambda (node)
-                 (and (tag? node 'call-expr)
-                      (let ((fn (nf node 'fun)))
-                        (or (and (tag? fn 'ident)
-                                 (equal? (nf fn 'name) func-name))
-                            (and (tag? fn 'selector-expr)
-                                 (equal? (nf fn 'sel) func-name))))))))
+                 (and (or (tag? node 'ssa-call) (tag? node 'ssa-go)
+                          (tag? node 'ssa-defer))
+                      (or (equal? (nf node 'func) func-name)
+                          (equal? (nf node 'method) func-name))))))
              idx)))
     (if (pair? blocks) blocks '())))
+
+;; Check whether block a-idx dominates block b-idx using the idom chain.
+;; Walks b's immediate dominator chain upward. If a is encountered, a dominates b.
+(define (ssa-dominates? blocks a-idx b-idx)
+  (let ((block-map (map (lambda (b) (cons (nf b 'index) b))
+                        (if (pair? blocks) blocks '()))))
+    (let loop ((current b-idx))
+      (cond
+        ((= current a-idx) #t)
+        (else
+          (let ((entry (assoc current block-map)))
+            (if (not entry) #f
+              (let ((idom (nf (cdr entry) 'idom)))
+                (if (or (not idom) (eq? idom #f) (= idom current))
+                  #f
+                  (loop idom))))))))))
 
 ;; (co-mutated field ...) — checks whether all named fields are stored
 ;; together in the function. Uses the pre-built field index from Go.
