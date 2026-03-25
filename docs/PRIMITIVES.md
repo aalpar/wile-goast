@@ -198,27 +198,36 @@ Interfaces with no methods (e.g. type-constraint interfaces) are rejected.
 ### Transformation
 
 `go-cfg-to-structured` takes a block s-expression and returns a restructured
-block where guard-if-return patterns are folded into nested if/else chains.
-Every return in the output is at a leaf of the if/else tree.
+block where all early returns are eliminated, producing a single-exit block.
+Every return in the output is at a leaf of an if/else tree.
+
+Handles two cases in one call:
+
+- **Case 1 (linear guards):** `if cond { return X }` patterns are folded into
+  nested if/else chains via right-fold.
+- **Case 2 (loop returns):** Returns inside `for`/`range` are rewritten as
+  `_ctl<N> = K; break` with guard-if-return statements after the loop.
+  Supports nested loops (bottom-up) and multiple return sites per loop.
 
 Returns the block unchanged if there are no early returns. Returns `#f` if
-the block contains `goto` or labeled statements. **Callers must check for
-`#f` before chaining** — passing it to `ast-transform` or `subst-idents`
-will produce wrong results.
+the block contains `goto`, labeled statements, or returns inside
+`switch`/`select` within loops. **Callers must check for `#f` before
+chaining** — passing it to `ast-transform` or `subst-idents` will produce
+wrong results.
 
 ```scheme
-;; Before: early-return guards
-;; if x < lo { return lo }
-;; if x > hi { return hi }
-;; return x
+;; Case 1: linear guards → if/else
+;; if x < lo { return lo }; if x > hi { return hi }; return x
+;;   → if x < lo { return lo } else if x > hi { return hi } else { return x }
 
-;; After: single-exit if/else
-;; if x < lo { return lo } else if x > hi { return hi } else { return x }
+;; Case 2: loop returns → _ctl + break + guard
+;; for _, v := range items { if v < 0 { return v } }; return 0
+;;   → var _ctl0 int; for ... { _ctl0 = 1; break }; if _ctl0 == 1 { return v } else { return 0 }
 ```
 
 **Limitations:**
 - Top-level only — does not recurse into nested blocks
-- Case 1 only (linear early returns) — loop-internal early returns not handled
+- Returns inside `switch`/`select` within loops not handled (needs labeled break)
 
 ---
 

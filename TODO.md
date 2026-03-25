@@ -26,15 +26,65 @@ refactoring operations (inlining, extraction, code motion).
 
 - [x] Linear early returns → nested if/else
 
-### B2b. go-cfg-to-structured — Case 2 (depends on B2a)
+### B2b. go-cfg-to-structured — Case 2 (depends on B2a) — DONE
 
-- [ ] Early returns inside loops → _r0/_done/break rewrite
+Completed 2026-03-25. Returns inside for/range are rewritten as
+`_ctl<N> = K; break` with guard-if-return statements after the loop.
+Composes with Case 1 (guard folding) in a single call. Supports nested
+loops (bottom-up) and multiple return sites per loop.
+See `plans/2026-03-25-loop-return-restructuring.md`.
 
 ### B3. go-cfg-to-structured improvements (depends on B2)
 
 - [ ] Handle goto / labeled branches (currently returns #f)
-- [ ] Handle switch/select with early returns
+- [ ] Handle switch/select with early returns inside loops (needs labeled break)
 - [ ] Handle multiple return values (_r0, _r1, ...)
+
+## Track C: Static Analysis Forms (depends on Wile algebra library)
+
+Wile gets a general-purpose algebra library (`(wile algebra)` or similar).
+wile-goast builds static-analysis combinators on top. Items below are
+wile-goast consumers — they migrate to or are built on the Wile algebra API
+once it exists.
+
+### C1. Migrate existing hand-rolled algebra
+
+- [ ] `checked-before-use` Kleene iteration (`belief.scm:698`) → fixpoint over powerset lattice
+- [ ] `ssa-normalize` rewrite rules (commutativity, identity, annihilation) → monoid/ring axiom application
+- [ ] `score-diffs` similarity accumulation (`unify.scm`) → semiring-like weighted scoring
+
+### C2. Dataflow analysis framework
+
+- [ ] Define transfer function interface (per SSA instruction type)
+- [ ] Forward/backward analysis combinator over CFG blocks (reverse postorder)
+- [ ] Worklist algorithm integrated with CFG block ordering
+- [ ] Per-variable analysis via map lattice (vars → lattice values)
+- [ ] Product lattice for combining analysis dimensions
+- [ ] Monotonicity assertion (debug mode) — detect buggy transfer functions
+
+### C3. Pre-built abstract domains
+
+- [ ] Powerset lattice — liveness, reaching definitions
+- [ ] Flat lattice (⊥ < concrete values < ⊤) — constant propagation
+- [ ] Sign lattice ({⊥, -, 0, +, ⊤})
+- [ ] Interval lattice — range analysis
+
+### C4. Path algebra on call graphs
+
+- [ ] Boolean semiring — reachability (generalize `go-callgraph-reachable`)
+- [ ] Tropical semiring — shortest/longest call chains
+- [ ] CFL-reachability — context-sensitive analysis
+
+### C5. Galois connections for abstract interpretation
+
+- [ ] Abstraction/concretization pair interface
+- [ ] Soundness check (alpha ∘ gamma ⊒ id)
+- [ ] Connect Go concrete values to abstract domains
+
+### C6. Belief DSL integration
+
+- [ ] Belief graduation — 100% adherence beliefs become dataflow assertions
+- [ ] Belief-defined lattices — express belief checkers as lattice transfer functions
 
 ## Other
 
