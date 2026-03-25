@@ -39,3 +39,9 @@ refactoring operations (inlining, extraction, code motion).
 ## Other
 
 - [ ] Move `stores-to-fields` predicate to Go side
+  - Sub-tree matching (fragment detection within functions)
+  - CFG isomorphism as a standalone tool
+  - Call graph context pre-filtering
+  - Integration into the belief DSL
+  - --emit mode for the unification detector
+

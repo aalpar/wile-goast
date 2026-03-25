@@ -37,9 +37,9 @@ func TestGoSSACanonicalize_ReturnsSSAFunc(t *testing.T) {
 	engine := newEngine(t)
 
 	// Build SSA, grab one function, canonicalize it.
-	evl(t, engine, `(define funcs (go-ssa-build "github.com/aalpar/wile-goast/goast"))`)
-	evl(t, engine, `(define fn (car funcs))`)
-	result := evl(t, engine, `(eq? (car (go-ssa-canonicalize fn)) 'ssa-func)`)
+	eval(t, engine, `(define funcs (go-ssa-build "github.com/aalpar/wile-goast/goast"))`)
+	eval(t, engine, `(define fn (car funcs))`)
+	result := eval(t, engine, `(eq? (car (go-ssa-canonicalize fn)) 'ssa-func)`)
 	qt.New(t).Assert(result.Internal(), qt.Equals, values.TrueValue)
 }
 ```
@@ -88,6 +88,12 @@ type ssaBlockData struct {
 	instrs  []values.Value // kept opaque for now
 }
 ```
+
+**Optional field handling:** The SSA mapper conditionally emits `idom` and `comment` — entry blocks have no `idom` field, and blocks without comments have no `comment` field.
+
+- `parseSSABlock`: when `GetField` returns `found=false` for `idom`, store `-1`. When `comment` is absent, store `""`.
+- `parseSSAFunc`: when `GetField` returns `found=false` for `pkg`, store `""`.
+- `rebuildSSAFunc`: suppress `idom` when `-1`, `comment` when `""`, `pkg` when `""`. This preserves round-trip fidelity with the original s-expression.
 
 The primitive validates the input is `(ssa-func ...)`, parses into `ssaFuncData`, calls `canonicalizeBlockOrder` and `renameRegisters` (both stubs), and rebuilds.
 
@@ -140,15 +146,15 @@ Add a test that verifies block reordering. Build SSA for a function with known c
 func TestGoSSACanonicalize_BlockOrder(t *testing.T) {
 	engine := newEngine(t)
 
-	evl(t, engine, `(define funcs (go-ssa-build "github.com/aalpar/wile-goast/goast"))`)
-	evl(t, engine, `
+	eval(t, engine, `(define funcs (go-ssa-build "github.com/aalpar/wile-goast/goast"))`)
+	eval(t, engine, `
 		(define multi-fn
 			(let loop ((fs funcs))
 				(if (null? fs) #f
 					(let* ((fn (car fs))
 						   (blocks (cdr (assoc 'blocks (cdr fn)))))
 						(if (> (length blocks) 2) fn (loop (cdr fs)))))))`)
-	evl(t, engine, `(define canon (go-ssa-canonicalize multi-fn))`)
+	eval(t, engine, `(define canon (go-ssa-canonicalize multi-fn))`)
 
 	t.Run("block 0 is entry (no idom)", func(t *testing.T) {
 		// Entry block should have index 0 and no idom field.
@@ -175,9 +181,10 @@ Algorithm:
 1. Build dominator tree from `idom` fields: `children[parentIdx] = [...childIndices]`
 2. Find entry block (idom == -1)
 3. Pre-order DFS from entry → produces `order []int64` and `oldToNew map[int64]int64`
-4. Build `blockByOldIdx` map
-5. Reorder blocks, update: `index`, `idom`, `preds`, `succs`
-6. Walk instructions, update block index references in: `ssa-phi` edges, `ssa-if` then/else, `ssa-jump` target
+4. Drop unreachable blocks — any block not visited by the DFS is omitted from the result (dead code, irrelevant for comparison)
+5. Build `blockByOldIdx` map
+6. Reorder blocks, update: `index`, `idom`, `preds`, `succs`
+7. Walk instructions, update block index references in: `ssa-phi` edges, `ssa-if` then/else, `ssa-jump` target
 
 Implement helper functions:
 - `reindexInstr(instr values.Value, oldToNew map[int64]int64) values.Value` — dispatches on tag
@@ -217,9 +224,9 @@ Implement `renameRegisters` to assign canonical register names in first-use orde
 func TestGoSSACanonicalize_RegisterRenaming(t *testing.T) {
 	engine := newEngine(t)
 
-	evl(t, engine, `(define funcs (go-ssa-build "github.com/aalpar/wile-goast/goast"))`)
-	evl(t, engine, `(define fn (car funcs))`)
-	evl(t, engine, `(define canon (go-ssa-canonicalize fn))`)
+	eval(t, engine, `(define funcs (go-ssa-build "github.com/aalpar/wile-goast/goast"))`)
+	eval(t, engine, `(define fn (car funcs))`)
+	eval(t, engine, `(define canon (go-ssa-canonicalize fn))`)
 
 	t.Run("params are p0 p1 etc", func(t *testing.T) {
 		// First param name should be "p0".
@@ -239,16 +246,19 @@ Expected: FAIL — registers still have original SSA names.
 
 Algorithm:
 1. Build `nameMap map[string]string`
-2. Rename params: `p0`, `p1`, ... Update `ssaParamData.name` and rebuild `original` s-expression.
-3. First pass over blocks (canonical order): collect all instruction `name` fields, assign `r0`, `r1`, ... to `nameMap`.
-4. Second pass: apply `renameInstrStrings` to all instructions.
+2. Rename free variables: `fv0`, `fv1`, ... Extract names from `freeVars` s-expression (list of `ssa-free-var` nodes, each with a `name` field). Add to `nameMap`. Rebuild the `freeVars` list with updated names.
+3. Rename params: `p0`, `p1`, ... Update `ssaParamData.name` and rebuild `original` s-expression. Add to `nameMap`.
+4. First pass over blocks (canonical order): collect all instruction `name` fields, assign `r0`, `r1`, ... to `nameMap`.
+5. Second pass: apply `renameInstrStrings` to all instructions.
+
+All three namespaces (free variables, params, instructions) go into the same `nameMap`, ensuring no collisions — even if SSA happens to reuse a name across scopes, each original name maps to exactly one canonical name.
 
 `renameInstrStrings(v values.Value, nameMap map[string]string) values.Value`:
 - `*values.String`: if in nameMap, replace
 - `*values.Pair`: recurse car and cdr, reuse if unchanged
 - Other: return as-is
 
-This handles all operand positions because register references are always strings in the SSA s-expression format, and the recursive walk hits every string in the tree.
+The recursive walk hits every string in the tree, covering all operand positions. Non-string values (`#f` for nil operands, integers for block indices) pass through unchanged.
 
 **Step 4: Run test to verify it passes**
 
@@ -317,16 +327,16 @@ Expected: FAIL — library not found.
 
 **Step 3: Create the library files**
 
-`cmd/wile-goast/lib/wile/goast/ssa-normalize.sld` — exports: `ssa-normalize`, `ssa-rule-set`, `ssa-rule-identity`, `ssa-rule-commutative`, `ssa-rule-annihilation`, `ssa-rule-double-neg`. Imports `(wile goast utils)`.
+`cmd/wile-goast/lib/wile/goast/ssa-normalize.sld` — exports: `ssa-normalize`, `ssa-rule-set`, `ssa-rule-identity`, `ssa-rule-commutative`, `ssa-rule-annihilation`. Imports `(wile goast utils)`.
 
 `cmd/wile-goast/lib/wile/goast/ssa-normalize.scm` — implements:
 - `commutative-ops` list: `'(+ * & | ^ == !=)`
 - `(ssa-rule-commutative)`: returns lambda that swaps `x`/`y` when `(string>? x y)` for commutative ops
+- `(integer-type? s)`: matches type strings starting with `"int"` or `"uint"` (e.g. `"int"`, `"int64"`, `"uint32"`)
 - `(constant-zero? s)`: matches `"0"` or `"0:..."` strings
 - `(constant-one? s)`: matches `"1"` or `"1:..."` strings
-- `(ssa-rule-identity)`: `x + 0 → x`, `x * 1 → x`, etc.
-- `(ssa-rule-annihilation)`: `x * 0 → 0`, `x & 0 → 0`
-- `(ssa-rule-double-neg)`: placeholder returning `#f` (needs cross-instruction context)
+- `(ssa-rule-identity)`: `x + 0 → x`, `x * 1 → x`, etc. — **scoped to integer types only** (checks the node's `type` field via `integer-type?`). Float identity is unsafe due to IEEE 754 `-0.0` and `NaN` semantics.
+- `(ssa-rule-annihilation)`: `x * 0 → 0`, `x & 0 → 0` — **scoped to integer types only** (`NaN * 0 ≠ 0`)
 - `(ssa-rule-set . rules)`: composes rules, first non-`#f` wins
 - `default-rules`: identity + annihilation + commutative
 - `ssa-normalize`: `case-lambda` — `(node)` uses default-rules, `(node rules)` uses custom
@@ -385,7 +395,12 @@ Extract the reusable diff engine and scoring logic from `unify-detect-pkg.scm` i
 
 **Step 1: Write the failing test**
 
-Test `ssa-diff` on identical nodes (similarity 1.0) and on nodes differing only in type string (type-name diff detected).
+Test both `ast-diff` and `ssa-diff`:
+- `ast-diff` on identical AST nodes → similarity 1.0
+- `ast-diff` on AST nodes differing in type annotation → `type-name` diff detected
+- `ssa-diff` on identical SSA nodes → similarity 1.0
+- `ssa-diff` on SSA nodes differing only in `type` field → `type-name` diff detected
+- `ssa-diff` on SSA nodes differing in `name` field (instruction) → `register` diff (weight 0)
 
 **Step 2: Run test to verify it fails**
 
@@ -394,14 +409,25 @@ Expected: FAIL — library not found.
 
 **Step 3: Create the library**
 
-`cmd/wile-goast/lib/wile/goast/unify.sld` — exports: `ssa-diff`, `diff-result-similarity`, `diff-result-diffs`, `diff-result-shared`, `diff-result-diff-count`, `score-ssa-diffs`, `find-root-substitutions`, `collapse-diffs`, `unifiable?`
+`cmd/wile-goast/lib/wile/goast/unify.sld` — exports: `tree-diff`, `ast-diff`, `ssa-diff`, `classify-ast-diff`, `classify-ssa-diff`, `diff-result-similarity`, `diff-result-diffs`, `diff-result-shared`, `diff-result-diff-count`, `score-diffs`, `find-root-substitutions`, `collapse-diffs`, `unifiable?`
 
 `cmd/wile-goast/lib/wile/goast/unify.scm` — adapted from `unify-detect-pkg.scm`:
 
-Core diff engine (same algorithms, ~200 lines):
+**Pluggable classifier design.** The core diff engine is generic over tagged alists. It always tracks both `parent-tag` (the enclosing node's tag) and `path` (accumulated field keys) through the recursion. A **classifier function** receives `(tag field str-a str-b path)` and returns a category symbol. Two classifiers are provided:
+
+- `classify-ast-diff` — path-based, ported from `unify-detect-pkg.scm`'s `classify-string-diff`. Uses `path` to detect type positions. Ignores `tag`.
+- `classify-ssa-diff` — tag-based, uses `(tag, field)` pairs. Ignores `path` for classification (path still tracked for reporting).
+
+Convenience wrappers bind the classifier:
+- `(ast-diff node-a node-b)` — calls `tree-diff` with `classify-ast-diff`
+- `(ssa-diff node-a node-b)` — calls `tree-diff` with `classify-ssa-diff`
+- `(tree-diff node-a node-b classifier)` — generic entry point
+
+Core diff engine:
 - `merge-results`, `shared-result`, `diff-result`
-- `fields-diff`, `list-diff`, `ssa-diff` (dispatch)
-- SSA-aware `classify-ssa-diff`: register fields → weight 0, type → weight 1, op → weight 2, call-target → weight 3
+- `fields-diff` — takes `parent-tag`, `path`, and `classifier`; passes all three to leaf classification
+- `list-diff` — passes through `parent-tag` and `classifier` unchanged
+- `tree-diff-walk` — extracts tag from `(car node)` at each tagged-alist level, forwards to `fields-diff`
 
 Result format: `(diff-result (shared . N) (diff-count . N) (entries . (...)))`
 Accessors: `diff-result-similarity` computes `shared / (shared + diff-count)`
@@ -409,20 +435,52 @@ Accessors: `diff-result-similarity` computes `shared / (shared + diff-count)`
 Scoring and substitution collapsing:
 - `find-root-substitutions` — same algorithm as existing script
 - `collapse-diffs` — reclassify derived type diffs
-- `score-ssa-diffs` — effective similarity with derived promotion
+- `score-diffs` — effective similarity with derived promotion (works with either classifier's output)
 
 Verdict:
 - `(unifiable? result threshold)` — `#t` when effective similarity >= threshold AND all remaining diffs are type-name or derived-type
 
-Key SSA fields classification:
+**AST diff classification.** Ported from `classify-string-diff` in `unify-detect-pkg.scm`. Uses path position to classify:
 
 ```scheme
-(define ssa-register-fields '(name))
-(define ssa-type-fields '(type asserted-type))
-(define ssa-operator-fields '(op))
-(define ssa-target-fields '(func method))
-(define ssa-structural-fields '(index preds succs idom then else target))
+(define ast-type-fields '(type inferred-type asserted-type obj-pkg signature))
+(define ast-identifier-fields '(name sel label))
+
+(define (classify-ast-diff tag field str-a str-b path)
+  (cond
+    ((memq field ast-type-fields)                        'type-name)
+    ((and (eq? field 'name) (in-type-position? path))    'type-name)
+    ((memq field ast-identifier-fields)                  'identifier)
+    ((eq? field 'value)                                  'literal-value)
+    ((eq? field 'tok)                                    'operator)
+    (else                                                'identifier)))
 ```
+
+**SSA diff classification.** Uses `(tag, field)` pairs. The same field name means different things in different node types:
+
+```scheme
+;; Tags where 'name' is NOT a register — it's semantic identity.
+;; Everything else (instruction nodes) uses 'name' as a register.
+(define ssa-identity-name-tags '(ssa-func ssa-param))
+
+(define (classify-ssa-diff tag field str-a str-b path)
+  (cond
+    ;; Type annotations on any node.
+    ((memq field '(type asserted-type))                  'type-name)
+    ;; Operators.
+    ((eq? field 'op)                                     'operator)
+    ;; Call targets.
+    ((memq field '(func method))                         'call-target)
+    ;; Structural (block indices, preds/succs) — should match after canonicalization.
+    ((memq field '(index preds succs idom then else target)) 'structural)
+    ;; 'name' field: register in instructions, identity in ssa-func/ssa-param.
+    ((and (eq? field 'name) (memq tag ssa-identity-name-tags)) 'identifier)
+    ((eq? field 'name)                                   'register)
+    ;; Everything else.
+    (else                                                'identifier)))
+```
+
+Weight map: `register → 0`, `type-name → 1`, `identifier → 0`, `operator → 2`, `call-target → 3`, `structural → 100`.
 
 **Step 4: Run test to verify it passes**
 
@@ -435,8 +493,8 @@ Expected: PASS
 feat(ssa): (wile goast unify) shared diff/scoring library
 
 Extracted from unify-detect-pkg.scm with SSA-aware classification.
-Provides ssa-diff, score-ssa-diffs, substitution collapsing, and
-unifiable? verdict predicate.
+Provides ast-diff, ssa-diff, score-diffs, substitution collapsing,
+and unifiable? verdict predicate.
 ```
 
 ---
@@ -454,11 +512,15 @@ Write the validation script that runs the full pipeline on the crdt test case an
 
 **Step 1: Create testdata packages**
 
-`go-ssa-build` requires real Go packages (it loads via `packages.Load`). Put the test Go code in `examples/goast-query/testdata/` as real packages.
+`go-ssa-build` requires real Go packages (it loads via `packages.Load`). Put the test Go code in `examples/goast-query/testdata/` as real packages. These are under the module root and resolve as standard import paths:
 
-`pncounter/pncounter.go` and `gcounter/gcounter.go` — same code from the existing `unify-detect.scm` inline sources, as proper `.go` files.
+- `github.com/aalpar/wile-goast/examples/goast-query/testdata/pncounter`
+- `github.com/aalpar/wile-goast/examples/goast-query/testdata/gcounter`
+- `github.com/aalpar/wile-goast/examples/goast-query/testdata/identity`
 
-`identity/identity.go` — synthetic test case with two functions: one has `x + 0`, the other just uses `x`. Same structure otherwise.
+`pncounter/pncounter.go` (`package pncounter`) and `gcounter/gcounter.go` (`package gcounter`) — same code from the existing `unify-detect.scm` inline sources, as proper `.go` files.
+
+`identity/identity.go` (`package identity`) — synthetic test case with two functions: one has `x + 0`, the other just uses `x`. Same structure otherwise.
 
 **Step 2: Write the script**
 
@@ -466,10 +528,19 @@ Write the validation script that runs the full pipeline on the crdt test case an
 
 1. Import `(wile goast utils)`, `(wile goast ssa-normalize)`, `(wile goast unify)`
 2. Define helper to run the full pipeline on a pair of package paths + function names
-3. For each test case:
-   a. `go-typecheck-package` both packages → AST diff → AST similarity
-   b. `go-ssa-build` both packages → find function by name → `go-ssa-canonicalize` → `ssa-normalize` → `ssa-diff` → SSA similarity + verdict
-4. Print comparison table
+3. For each test case, measure at **three stages** to isolate each layer's contribution:
+   a. **AST diff** — `go-typecheck-package` both packages → `ast-diff` on AST func-decls → similarity
+   b. **SSA canonicalized only** — `go-ssa-build` → find function by name → `go-ssa-canonicalize` → `ssa-diff` → similarity
+   c. **SSA canonicalized + normalized** — same as (b) but apply `ssa-normalize` before diffing → similarity + verdict
+4. Print comparison table with all three measurements per test case:
+
+```
+  Test case                  AST     SSA-canon  SSA-canon+norm  Verdict
+  pncounter/gcounter Incr    0.72    0.85       0.91            unifiable
+  ...
+```
+
+This directly answers whether Scheme normalization adds value beyond what Go's SSA builder and block/register canonicalization already provide.
 
 The script must handle the SSA function lookup: `go-ssa-build` returns a flat list; find the function whose `name` field matches.
 
@@ -477,7 +548,7 @@ The script must handle the SSA function lookup: `go-ssa-build` returns a flat li
 
 Run: `cd /Users/aalpar/projects/wile-workspace/wile-goast && go run ./cmd/wile-goast -f examples/goast-query/ssa-unify-detect.scm`
 
-Observe the output. Record AST sim, SSA sim, and verdict. This answers the open question.
+Observe the output. Record all three similarity columns and verdicts. This answers the open question from `plans/UNIFICATION-DETECTION.md`. If the SSA-canon and SSA-canon+norm columns are identical, the normalization layer is redundant and can be removed.
 
 **Step 4: Commit**
 
