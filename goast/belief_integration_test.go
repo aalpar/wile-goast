@@ -372,6 +372,56 @@ func TestBeliefCategory4_Ordering(t *testing.T) {
 	})
 }
 
+func TestBeliefCategory3_Handling(t *testing.T) {
+	engine := newBeliefEngine(t)
+
+	// Use the public API: get sites via callers-of, classify each
+	// with contains-call checker, then inspect the results directly.
+	eval(t, engine, `
+		(import (wile goast belief))
+
+		(define ctx (make-context
+		              "github.com/aalpar/wile-goast/examples/goast-query/testdata/handling"))
+
+		;; Get all callers of DoWork
+		(define sites ((callers-of "DoWork") ctx))
+
+		;; Classify each site with the contains-call checker
+		(define checker (contains-call "Errorf"))
+		(define classified
+		  (map (lambda (site) (cons (nf site 'name) (checker site ctx)))
+		       sites))
+	`)
+
+	t.Run("5 sites found", func(t *testing.T) {
+		total := eval(t, engine, `(length sites)`)
+		qt.New(t).Assert(total.SchemeString(), qt.Equals, "5")
+	})
+
+	t.Run("4 callers wrap errors", func(t *testing.T) {
+		// contains-call returns #t/#f when used directly (not through runner)
+		count := eval(t, engine, `
+			(length (filter-map (lambda (p) (and (cdr p) p)) classified))
+		`)
+		qt.New(t).Assert(count.SchemeString(), qt.Equals, "4")
+	})
+
+	t.Run("1 deviation", func(t *testing.T) {
+		devs := eval(t, engine, `
+			(length (filter-map (lambda (p) (and (not (cdr p)) p)) classified))
+		`)
+		qt.New(t).Assert(devs.SchemeString(), qt.Equals, "1")
+	})
+
+	t.Run("deviation is CallerBad", func(t *testing.T) {
+		devName := eval(t, engine, `
+			(let ((devs (filter-map (lambda (p) (and (not (cdr p)) p)) classified)))
+			  (car (car devs)))
+		`)
+		qt.New(t).Assert(devName.SchemeString(), qt.Equals, `"CallerBad"`)
+	})
+}
+
 func TestBeliefCategory1_Pairing(t *testing.T) {
 	engine := newBeliefEngine(t)
 

@@ -242,14 +242,48 @@
                fn))
         funcs))))
 
-;; (callers-of func-name) -> (lambda (ctx) -> list-of-caller-sites)
-;; Each site is: (caller-name edge func-decl-or-#f)
+;; Resolve a short function name to its fully-qualified call graph name.
+;; Walks the call graph nodes looking for an exact match or a name ending
+;; with ".func-name". Returns the qualified name, or #f if not found.
+(define (cg-resolve-name cg func-name)
+  (let ((suffix (string-append "." func-name)))
+    (let loop ((nodes (if (pair? cg) cg '())))
+      (cond ((null? nodes) #f)
+            (else
+              (let ((name (nf (car nodes) 'name)))
+                (if (and name
+                         (or (equal? name func-name)
+                             (let ((nlen (string-length name))
+                                   (slen (string-length suffix)))
+                               (and (>= nlen slen)
+                                    (equal? (substring name (- nlen slen) nlen)
+                                            suffix)))))
+                  name
+                  (loop (cdr nodes)))))))))
+
+;; (callers-of func-name) -> (lambda (ctx) -> list-of-func-decls)
+;; Finds all callers of func-name via the call graph, then looks up
+;; each caller's AST func-decl from the loaded packages. Callers
+;; without an AST func-decl (e.g., generated code) are skipped.
 (define (callers-of func-name)
   (lambda (ctx)
     (let* ((cg (ctx-callgraph ctx))
-           (edges (go-callgraph-callers cg func-name)))
-      (if (pair? edges)
-        (map (lambda (e) (list (nf e 'caller) e)) edges)
+           (funcs (all-func-decls (ctx-pkgs ctx)))
+           (qualified (cg-resolve-name cg func-name))
+           (edges (if qualified
+                    (go-callgraph-callers cg qualified)
+                    #f)))
+      (if (and edges (pair? edges))
+        (filter-map
+          (lambda (e)
+            (let ((caller (nf e 'caller)))
+              (and caller
+                   (let ((short (ssa-short-name caller)))
+                     (let loop ((fs funcs))
+                       (cond ((null? fs) #f)
+                             ((equal? (nf (car fs) 'name) short) (car fs))
+                             (else (loop (cdr fs)))))))))
+          edges)
         '()))))
 
 ;; (methods-of type-name) -> (lambda (ctx) -> list-of-func-decls)
@@ -701,7 +735,7 @@
 
 ;; ── Runner ──────────────────────────────────────────────
 
-;; Extract a display name from a site (func-decl or caller edge).
+;; Extract a display name from a site (func-decl node).
 (define (site-display-name site)
   (cond
     ((and (pair? site) (tag? site 'func-decl))
@@ -712,10 +746,6 @@
          (impl-type (string-append impl-type "." name))
          (pkg-path (string-append (package-short-name pkg-path) "." name))
          (else name))))
-    ((and (pair? site) (pair? (car site)))
-     ;; Caller site: (caller-name edge)
-     (let ((name (car site)))
-       (if (string? name) name (display-to-string name))))
     (else
      (display-to-string site))))
 
