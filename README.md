@@ -256,5 +256,5 @@ make ci          # Full CI: lint + build + test + covercheck + verify-mod
 
 ## Version
 
-v0.5.1 — shared sessions, transformation primitives, MCP server.
+v0.5.2
 Zero external consumers. API may change without notice.
