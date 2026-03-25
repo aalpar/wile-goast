@@ -46,20 +46,12 @@ func newBeliefEngine(t *testing.T) *wile.Engine {
 	return engine
 }
 
-// evalMultiple runs Scheme code containing multiple expressions (e.g.
-// import + define) and returns the last result.
-func evalMultiple(t *testing.T, engine *wile.Engine, code string) wile.Value {
-	t.Helper()
-	result, err := engine.EvalMultiple(context.Background(), code)
-	qt.New(t).Assert(err, qt.IsNil)
-	return result
-}
 
 func TestBeliefImport(t *testing.T) {
 	engine := newBeliefEngine(t)
 
 	// Importing the belief library should succeed without error.
-	evalMultiple(t, engine, `(import (wile goast belief))`)
+	eval(t, engine, `(import (wile goast belief))`)
 }
 
 func TestBeliefSiteAnnotation(t *testing.T) {
@@ -67,7 +59,7 @@ func TestBeliefSiteAnnotation(t *testing.T) {
 
 	// After importing the belief library, load a package and extract
 	// func-decls via all-func-decls. Each site should have a pkg-path field.
-	result := evalMultiple(t, engine, `
+	result := eval(t, engine, `
 		(import (wile goast belief))
 
 		(let* ((pkgs (go-typecheck-package "github.com/aalpar/wile-goast/goast"))
@@ -87,7 +79,7 @@ func TestBeliefSSALookup(t *testing.T) {
 
 	// Build SSA for the goast package. Look up a known function
 	// by package path + short name. Should return the SSA function.
-	result := evalMultiple(t, engine, `
+	result := eval(t, engine, `
 		(import (wile goast belief))
 
 		(let ((ctx (make-context "github.com/aalpar/wile-goast/goast")))
@@ -109,7 +101,7 @@ func TestBeliefMultiPackage(t *testing.T) {
 
 	// Use functions-matching with name-matches to find Prim* functions
 	// across all goast packages. Count distinct pkg-path values.
-	result := evalMultiple(t, engine, `
+	result := eval(t, engine, `
 		(import (wile goast belief))
 
 		(let* ((ctx (make-context "github.com/aalpar/wile-goast/..."))
@@ -133,7 +125,7 @@ func TestBeliefDefineAndRun(t *testing.T) {
 
 	// Define a belief that checks whether functions matching "Prim" have a body,
 	// then run it against the goast package itself.
-	evalMultiple(t, engine, `
+	eval(t, engine, `
 		(import (wile goast belief))
 
 		(define-belief "prim-functions-have-body"
@@ -150,28 +142,28 @@ func TestUtilsTakeDrop(t *testing.T) {
 	engine := newBeliefEngine(t)
 
 	t.Run("take", func(t *testing.T) {
-		result := evalMultiple(t, engine, `
+		result := eval(t, engine, `
 			(import (wile goast utils))
 			(take '(a b c d e) 3)`)
 		qt.New(t).Assert(result.SchemeString(), qt.Equals, "(a b c)")
 	})
 
 	t.Run("take zero", func(t *testing.T) {
-		result := evalMultiple(t, engine, `
+		result := eval(t, engine, `
 			(import (wile goast utils))
 			(take '(a b c) 0)`)
 		qt.New(t).Assert(result.SchemeString(), qt.Equals, "()")
 	})
 
 	t.Run("drop", func(t *testing.T) {
-		result := evalMultiple(t, engine, `
+		result := eval(t, engine, `
 			(import (wile goast utils))
 			(drop '(a b c d e) 2)`)
 		qt.New(t).Assert(result.SchemeString(), qt.Equals, "(c d e)")
 	})
 
 	t.Run("drop all", func(t *testing.T) {
-		result := evalMultiple(t, engine, `
+		result := eval(t, engine, `
 			(import (wile goast utils))
 			(drop '(a b c) 3)`)
 		qt.New(t).Assert(result.SchemeString(), qt.Equals, "()")
@@ -182,7 +174,7 @@ func TestAstTransform(t *testing.T) {
 	engine := newBeliefEngine(t)
 
 	t.Run("replace matching node", func(t *testing.T) {
-		result := evalMultiple(t, engine, `
+		result := eval(t, engine, `
 			(import (wile goast utils))
 			(let* ((node (go-parse-expr "x + 1"))
 			       (transformed (ast-transform node
@@ -195,7 +187,7 @@ func TestAstTransform(t *testing.T) {
 	})
 
 	t.Run("no match returns unchanged", func(t *testing.T) {
-		result := evalMultiple(t, engine, `
+		result := eval(t, engine, `
 			(import (wile goast utils))
 			(let* ((node (go-parse-expr "x + 1"))
 			       (transformed (ast-transform node
@@ -205,7 +197,7 @@ func TestAstTransform(t *testing.T) {
 	})
 
 	t.Run("no recursion into replacement", func(t *testing.T) {
-		result := evalMultiple(t, engine, `
+		result := eval(t, engine, `
 			(import (wile goast utils))
 			(let* ((node (go-parse-expr "x"))
 			       (transformed (ast-transform node
@@ -222,7 +214,7 @@ func TestAstSplice(t *testing.T) {
 	engine := newBeliefEngine(t)
 
 	t.Run("splice replaces element with multiple", func(t *testing.T) {
-		result := evalMultiple(t, engine, `
+		result := eval(t, engine, `
 			(import (wile goast utils))
 			(ast-splice '(a b c)
 			  (lambda (x) (and (eq? x 'b) '(x y z))))`)
@@ -230,14 +222,14 @@ func TestAstSplice(t *testing.T) {
 	})
 
 	t.Run("splice no match keeps original", func(t *testing.T) {
-		result := evalMultiple(t, engine, `
+		result := eval(t, engine, `
 			(import (wile goast utils))
 			(ast-splice '(a b c) (lambda (x) #f))`)
 		qt.New(t).Assert(result.SchemeString(), qt.Equals, "(a b c)")
 	})
 
 	t.Run("splice with empty list deletes", func(t *testing.T) {
-		result := evalMultiple(t, engine, `
+		result := eval(t, engine, `
 			(import (wile goast utils))
 			(ast-splice '(a b c)
 			  (lambda (x) (and (eq? x 'b) '())))`)

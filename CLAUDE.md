@@ -229,7 +229,7 @@ Prompt content lives in `cmd/wile-goast/prompts/*.md` (embedded in binary).
 | `goast{ssa,cfg,cg,lint}/register.go` | Sub-extension registration |
 | `cmd/wile-goast/lib/wile/goast/belief.scm` | Belief DSL implementation (embedded in binary) |
 | `cmd/wile-goast/lib/wile/goast/utils.scm` | Shared traversal utilities (`nf`, `walk`, `tag?`) and tree rewriters (`ast-transform`, `ast-splice`) |
-| `goast/restructure.go` | Early-return restructuring (`go-cfg-to-structured`) |
+| `goast/prim_restructure.go` | Early-return restructuring (`go-cfg-to-structured`) |
 
 ## Documentation
 

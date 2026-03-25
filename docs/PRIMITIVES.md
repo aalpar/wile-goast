@@ -157,7 +157,9 @@ block where guard-if-return patterns are folded into nested if/else chains.
 Every return in the output is at a leaf of the if/else tree.
 
 Returns the block unchanged if there are no early returns. Returns `#f` if
-the block contains `goto` or labeled statements.
+the block contains `goto` or labeled statements. **Callers must check for
+`#f` before chaining** — passing it to `ast-transform` or `subst-idents`
+will produce wrong results.
 
 ```scheme
 ;; Before: early-return guards
@@ -732,8 +734,8 @@ Traversal utilities for the tagged-alist node format shared by all layers.
 | `(unique lst)` | Remove duplicates, preserving order |
 | `(take lst n)` | First n elements |
 | `(drop lst n)` | Drop first n elements |
-| `(ast-transform node f)` | Depth-first pre-order tree rewriter. `f` returns replacement or `#f` |
-| `(ast-splice lst f)` | Flat-map rewriter for lists. `f` returns list (splice) or `#f` (keep) |
+| `(ast-transform node f)` | Depth-first pre-order tree rewriter. `f` returns replacement or `#f` (keep). Note: `#f` cannot be used as a replacement value |
+| `(ast-splice lst f)` | Flat-map rewriter for lists. `f` returns list (splice) or `#f` (keep). Note: `#f` cannot be a splice element |
 
 ### Usage
 

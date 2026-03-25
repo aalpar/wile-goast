@@ -69,12 +69,12 @@
 
 ;; First n elements of a list
 (define (take lst n)
-  (if (or (= n 0) (null? lst)) '()
+  (if (or (<= n 0) (null? lst)) '()
     (cons (car lst) (take (cdr lst) (- n 1)))))
 
 ;; Drop first n elements of a list
 (define (drop lst n)
-  (if (or (= n 0) (null? lst)) lst
+  (if (or (<= n 0) (null? lst)) lst
     (drop (cdr lst) (- n 1))))
 
 ;; Depth-first pre-order tree rewriter over goast s-expressions.

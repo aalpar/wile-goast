@@ -1,3 +1,17 @@
+// Copyright 2026 Aaron Alpar
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package goast
 
 import (
@@ -9,7 +23,7 @@ import (
 	"github.com/aalpar/wile/werr"
 )
 
-var errRestructureError = werr.NewStaticError("restructure error")
+var errGoRestructureError = werr.NewStaticError("restructure error")
 
 // PrimGoCFGToStructured implements (go-cfg-to-structured block-sexpr).
 // Takes a block s-expression. Returns a restructured block where early
@@ -21,13 +35,13 @@ func PrimGoCFGToStructured(mc *machine.MachineContext) error {
 
 	node, err := unmapNode(blockVal)
 	if err != nil {
-		return werr.WrapForeignErrorf(errRestructureError,
+		return werr.WrapForeignErrorf(errGoRestructureError,
 			"go-cfg-to-structured: %s", err)
 	}
 
 	block, ok := node.(*ast.BlockStmt)
 	if !ok {
-		return werr.WrapForeignErrorf(errRestructureError,
+		return werr.WrapForeignErrorf(errGoRestructureError,
 			"go-cfg-to-structured: expected block, got %T", node)
 	}
 
@@ -131,7 +145,7 @@ func restructureStmts(stmts []ast.Stmt) []ast.Stmt {
 	for i := len(stmts) - 2; i >= 0; i-- {
 		stmt := stmts[i]
 		if isGuardIf(stmt) {
-			ifStmt := stmt.(*ast.IfStmt)
+			ifStmt := stmt.(*ast.IfStmt) // Safe: isGuardIf guarantees *ast.IfStmt
 			ifStmt = &ast.IfStmt{
 				Init: ifStmt.Init,
 				Cond: ifStmt.Cond,
