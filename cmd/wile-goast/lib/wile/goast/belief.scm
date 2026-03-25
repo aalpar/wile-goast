@@ -645,7 +645,10 @@
             'partial))))))
 
 ;; (checked-before-use value-pattern) — checks whether a value is
-;; tested before use via SSA + CFG dominance.
+;; tested before use. Two-level check:
+;;   1. Direct: value appears in ssa-if operands
+;;   2. Indirect: value appears in a comparison (ssa-binop) whose
+;;      result feeds an ssa-if (covers `if err != nil` pattern)
 ;; Returns: 'guarded or 'unguarded
 (define (checked-before-use value-pattern)
   (lambda (site ctx)
@@ -660,17 +663,44 @@
                                              (if (pair? is) is '())))
                                blocks)
                              '()))
+               ;; Find all instructions that use value-pattern as an operand.
                (uses (filter-map
                        (lambda (instr)
                          (let ((ops (nf instr 'operands)))
                            (and (pair? ops) (member? value-pattern ops)
                                 instr)))
                        all-instrs))
-               (has-guard (let loop ((us uses))
-                            (cond ((null? us) #f)
-                                  ((tag? (car us) 'ssa-if) #t)
-                                  (else (loop (cdr us)))))))
-          (if has-guard 'guarded 'unguarded))))))
+               ;; Direct guard: value appears in an ssa-if.
+               (has-direct-guard
+                 (let loop ((us uses))
+                   (cond ((null? us) #f)
+                         ((tag? (car us) 'ssa-if) #t)
+                         (else (loop (cdr us))))))
+               ;; Indirect guard: value appears in a comparison whose
+               ;; result name feeds into an ssa-if.
+               (comparison-names
+                 (filter-map
+                   (lambda (u)
+                     (and (tag? u 'ssa-binop)
+                          (nf u 'name)))
+                   uses))
+               (has-indirect-guard
+                 (and (pair? comparison-names)
+                      (let loop ((is all-instrs))
+                        (cond
+                          ((null? is) #f)
+                          ((and (tag? (car is) 'ssa-if)
+                                (let ((ops (nf (car is) 'operands)))
+                                  (and (pair? ops)
+                                       (let check ((ns comparison-names))
+                                         (cond ((null? ns) #f)
+                                               ((member? (car ns) ops) #t)
+                                               (else (check (cdr ns))))))))
+                           #t)
+                          (else (loop (cdr is))))))))
+          (if (or has-direct-guard has-indirect-guard)
+            'guarded
+            'unguarded))))))
 
 ;; (custom proc) — escape hatch. proc is (lambda (site ctx) -> symbol).
 (define (custom proc) proc)

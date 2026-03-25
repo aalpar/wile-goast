@@ -422,6 +422,55 @@ func TestBeliefCategory3_Handling(t *testing.T) {
 	})
 }
 
+func TestBeliefCategory2_Check(t *testing.T) {
+	engine := newBeliefEngine(t)
+
+	// Use the public API: get sites via functions-matching, classify each
+	// with checked-before-use, then inspect the results directly.
+	eval(t, engine, `
+		(import (wile goast belief))
+
+		(define ctx (make-context
+		              "github.com/aalpar/wile-goast/examples/goast-query/testdata/checking"))
+
+		;; Get all functions that take an error parameter
+		(define sites ((functions-matching (has-params "error")) ctx))
+
+		;; Classify each site with the checked-before-use checker
+		(define checker (checked-before-use "err"))
+		(define classified
+		  (map (lambda (site) (cons (nf site 'name) (checker site ctx)))
+		       sites))
+	`)
+
+	t.Run("5 sites found", func(t *testing.T) {
+		total := eval(t, engine, `(length sites)`)
+		qt.New(t).Assert(total.SchemeString(), qt.Equals, "5")
+	})
+
+	t.Run("4 guarded", func(t *testing.T) {
+		count := eval(t, engine, `
+			(length (filter-map (lambda (p) (and (eq? (cdr p) 'guarded) p)) classified))
+		`)
+		qt.New(t).Assert(count.SchemeString(), qt.Equals, "4")
+	})
+
+	t.Run("1 unguarded", func(t *testing.T) {
+		devs := eval(t, engine, `
+			(length (filter-map (lambda (p) (and (eq? (cdr p) 'unguarded) p)) classified))
+		`)
+		qt.New(t).Assert(devs.SchemeString(), qt.Equals, "1")
+	})
+
+	t.Run("deviation is HandleUnsafe", func(t *testing.T) {
+		devName := eval(t, engine, `
+			(let ((devs (filter-map (lambda (p) (and (eq? (cdr p) 'unguarded) p)) classified)))
+			  (car (car devs)))
+		`)
+		qt.New(t).Assert(devName.SchemeString(), qt.Equals, `"HandleUnsafe"`)
+	})
+}
+
 func TestBeliefCategory1_Pairing(t *testing.T) {
 	engine := newBeliefEngine(t)
 
