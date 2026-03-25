@@ -57,6 +57,11 @@ queryable with standard Scheme list operations.
 | `(go-format ast)` | Convert s-expression AST back to Go source |
 | `(go-node-type ast)` | Return the tag symbol of an AST node |
 | `(go-typecheck-package pattern . options)` | Load and type-check a package |
+| `(go-interface-implementors name target)` | Find types implementing an interface |
+| `(go-load pattern ... . options)` | Load packages into a reusable session |
+| `(go-session? v)` | Type predicate for GoSession |
+| `(go-list-deps pattern ...)` | Transitive import path discovery |
+| `(go-cfg-to-structured block)` | Restructure early returns into if/else tree |
 
 Options: `'positions` (include source positions), `'comments` (include doc comments).
 
@@ -66,6 +71,7 @@ Options: `'positions` (include source positions), `'comments` (include doc comme
 |-----------|-------------|
 | `(go-ssa-build pattern . options)` | Build SSA; returns list of `ssa-func` nodes |
 | `(go-ssa-field-index pattern)` | Pre-correlated per-function field access index |
+| `(go-ssa-canonicalize ssa-func)` | Canonicalize blocks and registers for structural comparison |
 
 ### Call Graph — `(wile goast callgraph)`
 
@@ -105,12 +111,13 @@ Options: `'positions` (include source positions), `'comments` (include doc comme
 (run-beliefs "./...")
 ```
 
-Site selectors: `functions-matching`, `callers-of`, `methods-of`, `sites-from`
+Site selectors: `functions-matching`, `callers-of`, `methods-of`, `sites-from`,
+`implementors-of`, `interface-methods`, `all-func-decls`
 
 Predicates: `has-params`, `has-receiver`, `name-matches`, `contains-call`,
 `stores-to-fields`, `all-of`/`any-of`/`none-of`
 
-Property checkers: `paired-with`, `ordered`, `co-mutated`,
+Property checkers: `contains-call`, `paired-with`, `ordered`, `co-mutated`,
 `checked-before-use`, `custom`
 
 See [`docs/PRIMITIVES.md`](docs/PRIMITIVES.md) for the complete reference.
@@ -179,6 +186,32 @@ type substitutions that explain all derived differences.
 
 See [`docs/EXAMPLES.md`](docs/EXAMPLES.md) for annotated walkthroughs.
 
+## MCP Server
+
+`wile-goast --mcp` starts a stdio MCP server (JSON-RPC). One persistent Wile
+engine serves all tool calls within the session.
+
+**Tool:** `eval` — takes a `code` string (Scheme expression), returns the result.
+
+**Prompts:** `goast-analyze`, `goast-beliefs`, `goast-refactor` — guided workflows
+for structural analysis, belief DSL, and unification detection.
+
+```json
+{"mcpServers": {"wile-goast": {"command": "wile-goast", "args": ["--mcp"]}}}
+```
+
+## Shared Sessions
+
+`go-load` creates a GoSession holding loaded packages with lazy SSA/callgraph.
+All package-loading primitives accept either a pattern string or a GoSession:
+
+```scheme
+(define s (go-load "my/pkg/a" "my/pkg/b"))
+(go-typecheck-package s)   ;; reuses loaded state
+(go-ssa-build s)           ;; same packages, no reload
+(go-cfg s "MyFunc")        ;; same SSA program
+```
+
 ## As a Go Library
 
 ```go
@@ -210,6 +243,7 @@ make ci          # Full CI: lint + build + test + covercheck + verify-mod
 |-----------|---------|
 | [`github.com/aalpar/wile`](https://github.com/aalpar/wile) | R7RS Scheme interpreter, extension API |
 | `golang.org/x/tools` | `go/ssa`, `go/callgraph`, `go/cfg`, `go/analysis` |
+| `mark3labs/mcp-go` | MCP server (JSON-RPC stdio) |
 
 ## Documentation
 
@@ -222,5 +256,5 @@ make ci          # Full CI: lint + build + test + covercheck + verify-mod
 
 ## Version
 
-v0.3.4 — all six layers complete (AST, SSA, CFG, call graph, lint, belief DSL).
+v0.5.1 — shared sessions, transformation primitives, MCP server.
 Zero external consumers. API may change without notice.

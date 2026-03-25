@@ -263,7 +263,7 @@ Prompt content lives in `cmd/wile-goast/prompts/*.md` (embedded in binary).
 | `cmd/wile-goast/lib/wile/goast/ssa-normalize.scm` | SSA algebraic normalization rules (embedded in binary) |
 | `cmd/wile-goast/lib/wile/goast/unify.scm` | AST/SSA diff engine with pluggable classifiers (embedded in binary) |
 | `goast/prim_restructure.go` | Early-return restructuring (`go-cfg-to-structured`) |
-| `goastssa/canonicalize.go` | SSA function canonicalization (`go-ssa-canonicalize`) |
+| `goastssa/prim_canonicalize.go` | SSA function canonicalization (`go-ssa-canonicalize`) |
 
 ## Documentation
 

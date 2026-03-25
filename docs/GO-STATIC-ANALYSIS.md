@@ -179,6 +179,54 @@ Enable `'positions` on the relevant primitives to include these fields.
 | What do standard vet checks report? | Lint |
 | Is there an implicit convention being violated? | Belief DSL |
 
+## Shared Sessions
+
+`go-load` creates a GoSession — an opaque value holding loaded packages with
+lazy SSA and callgraph. Pass it to any package-loading primitive instead of a
+pattern string to avoid redundant `packages.Load` calls:
+
+```scheme
+(define s (go-load "my/pkg/a" "my/pkg/b"))
+(go-typecheck-package s)   ;; reuses loaded state
+(go-ssa-build s)           ;; same packages, no reload
+(go-cfg s "MyFunc")        ;; same SSA program
+(go-callgraph s 'cha)      ;; same snapshot
+```
+
+Seven primitives accept this dual-accept pattern: `go-typecheck-package`,
+`go-ssa-build`, `go-ssa-field-index`, `go-cfg`, `go-callgraph`, `go-analyze`,
+and `go-interface-implementors`.
+
+`go-list-deps` uses lightweight loading (`NeedName | NeedImports` only) for
+dependency discovery before committing to a full load.
+
+## Transformation
+
+Two primitives support AST/SSA transformation:
+
+**`go-cfg-to-structured`** restructures guard-if-return blocks into single-exit
+if/else trees. Returns the block unchanged if no early returns; returns `#f` for
+blocks containing `goto` or labeled statements.
+
+**`go-ssa-canonicalize`** reorders SSA blocks by dominator pre-order and
+alpha-renames all registers, producing a deterministic representation for
+structural comparison.
+
+The `(wile goast utils)` library provides `ast-transform` (depth-first tree
+rewriter) and `ast-splice` (flat-map list rewriter) for custom transformations.
+
+## MCP Server
+
+`wile-goast --mcp` starts a stdio MCP server. One persistent Wile engine
+serves all `eval` tool calls within the session.
+
+Three prompts provide guided workflows: `goast-analyze` (structural analysis),
+`goast-beliefs` (belief DSL), and `goast-refactor` (unification detection).
+
+```json
+{"mcpServers": {"wile-goast": {"command": "wile-goast", "args": ["--mcp"]}}}
+```
+
 ## Per-Project Beliefs
 
 Create a `.goast-beliefs/` directory at your project root with `.scm` files

@@ -710,6 +710,7 @@ handles layer selection, data loading, and statistical comparison.
 | `(methods-of "Type")` | All methods on a receiver type |
 | `(implementors-of "Interface")` | All func-decls whose receiver implements the interface |
 | `(interface-methods "Interface" [method])` | Func-decls implementing interface methods, optionally narrowed to one method |
+| `(all-func-decls)` | All function declarations across all packages |
 | `(sites-from "belief" 'which 'adherence)` | Results from a prior belief (bootstrapping) |
 
 ### Selector Predicates
@@ -733,9 +734,9 @@ Used as arguments to `functions-matching`:
 |---------|---------|-------------|
 | `(contains-call "func" ...)` | `'present` / `'absent` | Call present in body? |
 | `(paired-with "A" "B")` | `'paired-defer` / `'paired-call` / `'unpaired` | A paired with B? |
-| `(ordered "A" "B")` | `'a-dominates-b` / `'b-dominates-a` / `'same-block` / `'unordered` | SSA block dominance (finds call blocks, checks idom chain) |
+| `(ordered "A" "B")` | `'a-dominates-b` / `'b-dominates-a` / `'unordered` / `'missing` | SSA block dominance; same-block resolved by instruction position |
 | `(co-mutated "field" ...)` | `'co-mutated` / `'partial` | Fields stored together? |
-| `(checked-before-use "val")` | `'guarded` / `'unguarded` | Value checked before use? Follows one level of data flow (val -> comparison -> ssa-if) |
+| `(checked-before-use "val")` | `'guarded` / `'unguarded` | Value checked before use? Transitive BFS through def-use chain (4-hop depth limit) |
 | `(custom (lambda (site ctx) ...))` | user-defined symbol | Escape hatch |
 
 ### Context Accessors
@@ -748,7 +749,6 @@ Available in `custom` lambdas:
 | `(ctx-ssa ctx)` | Lazy-loaded SSA functions |
 | `(ctx-callgraph ctx)` | Lazy-loaded call graph |
 | `(ctx-field-index ctx)` | Lazy-loaded field access index |
-| `(ctx-interface-info ctx iface-name)` | Lazy-cached interface implementor info |
 | `(ctx-find-ssa-func ctx pkg-path name)` | Look up SSA function by package + name |
 
 ### Utility Functions
@@ -796,6 +796,8 @@ Traversal utilities for the tagged-alist node format shared by all layers.
 | `(flat-map f lst)` | Map (f returns list), concatenate results |
 | `(member? x lst)` | Membership test using `equal?` |
 | `(unique lst)` | Remove duplicates, preserving order |
+| `(has-char? s c)` | Does string `s` contain character `c`? |
+| `(ordered-pairs lst)` | All unordered pairs from a list (each pair once) |
 | `(take lst n)` | First n elements |
 | `(drop lst n)` | Drop first n elements |
 | `(ast-transform node f)` | Depth-first pre-order tree rewriter. `f` returns replacement or `#f` (keep). Note: `#f` cannot be used as a replacement value |

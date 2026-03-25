@@ -89,7 +89,18 @@ Alan Donovan.
 GopherCon 2019.
 https://www.youtube.com/watch?v=eGKDqSbRqhI
 
-## 6. Pattern Detection and Code Similarity
+## 6. Consistency Deviation Detection
+
+Dawson Engler, David Yu Chen, Seth Hallem, Andy Chou, and Benjamin Chelf.
+"Bugs as Deviant Behavior: A General Approach to Inferring Errors in Systems Code."
+In *Proceedings of the 18th ACM Symposium on Operating Systems Principles (SOSP '01)*, pp. 57--72. ACM, 2001.
+https://doi.org/10.1145/502034.502041
+
+The foundational paper for wile-goast's belief DSL. Key insight: if a pattern
+holds in 95% of cases, the 5% are likely bugs. No explicit specification needed —
+statistical deviation *is* the specification.
+
+## 7. Pattern Detection and Code Similarity
 
 Ira D. Baxter, Andrew Yahin, Leonardo Moura, Marcelo Sant'Anna, and Lorraine Bier.
 "Clone Detection Using Abstract Syntax Trees."
