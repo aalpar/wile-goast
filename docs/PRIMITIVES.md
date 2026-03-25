@@ -236,6 +236,7 @@ flow is explicit via basic blocks, and phi nodes merge values at join points.
 |-----------|---------|-------------|
 | `(go-ssa-build pattern . options)` | list of `ssa-func` nodes | Build SSA for a Go package |
 | `(go-ssa-field-index pattern)` | list of `ssa-field-summary` nodes | Pre-correlated per-function field access index |
+| `(go-ssa-canonicalize ssa-func)` | `ssa-func` node | Canonicalize blocks (dominator pre-order) and registers (alpha-rename) |
 
 ### Options
 
@@ -296,6 +297,21 @@ an `(operands ...)` field listing its SSA value operands by name.
 **Debug:** `ssa-debug-ref`
 
 **Fallback:** `ssa-unknown` (unmapped instruction types)
+
+### `go-ssa-canonicalize`
+
+Canonicalizes an `ssa-func` s-expression for structural comparison:
+
+1. **Block ordering** — reorders blocks by pre-order DFS of the dominator tree
+2. **Register renaming** — alpha-renames parameters to `p0, p1, ...`, free variables to `fv0, fv1, ...`, and instruction definitions to `r0, r1, ...` in canonical block order
+3. **Cross-reference update** — reindexes all `preds`, `succs`, `idom`, phi edges, jump/if targets
+
+```scheme
+(define funcs (go-ssa-build "my/pkg"))
+(define fn (car funcs))
+(define canonical (go-ssa-canonicalize fn))
+;; canonical is an ssa-func node with deterministic block order and register names
+```
 
 ### `go-ssa-field-index`
 

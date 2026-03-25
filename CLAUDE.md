@@ -56,6 +56,7 @@ All sub-extensions depend on the base `goast` package for shared mapper/helper i
 | Primitive | Description |
 |-----------|-------------|
 | `go-ssa-build` | Build SSA for a Go package |
+| `go-ssa-canonicalize` | Canonicalize SSA function: dominator-order blocks, alpha-renamed registers |
 
 ### goastcfg — `(wile goast cfg)`
 | Primitive | Description |
@@ -91,6 +92,31 @@ Package-loading primitives (`go-typecheck-package`, `go-ssa-build`, `go-ssa-fiel
 (go-ssa-build s)          ;; same packages, no reload
 (go-cfg s "MyFunc")       ;; same SSA program
 ```
+
+## SSA Normalization — `(wile goast ssa-normalize)`
+
+Algebraic normalization rules for SSA binop nodes. Integer-type scoped to avoid IEEE 754 issues. Extensible via `ssa-rule-set`.
+
+| Export | Description |
+|--------|-------------|
+| `ssa-normalize` | Apply default rules to a node (case-lambda: 1 or 2 args) |
+| `ssa-rule-commutative` | Sort operands lexicographically for commutative ops |
+| `ssa-rule-identity` | `x + 0 → x`, `x * 1 → x`, etc. (integer types only) |
+| `ssa-rule-annihilation` | `x * 0 → 0`, `x & 0 → 0` (integer types only) |
+| `ssa-rule-set` | Compose rules: first non-`#f` wins |
+
+## Unification Detection — `(wile goast unify)`
+
+Shared diff/scoring library for AST and SSA structural comparison. Extracted from `unify-detect-pkg.scm` with pluggable classifier design.
+
+| Export | Description |
+|--------|-------------|
+| `ast-diff` | Diff two AST nodes with path-based classification |
+| `ssa-diff` | Diff two SSA nodes with tag-based classification |
+| `tree-diff` | Generic diff with custom classifier |
+| `score-diffs` | Compute effective similarity with substitution collapsing |
+| `unifiable?` | Verdict: `#t` when effective similarity >= threshold and all remaining diffs are type/register |
+| `diff-result-similarity` | Extract similarity from diff result |
 
 ## Belief DSL — `(wile goast belief)`
 
@@ -229,7 +255,10 @@ Prompt content lives in `cmd/wile-goast/prompts/*.md` (embedded in binary).
 | `goast{ssa,cfg,cg,lint}/register.go` | Sub-extension registration |
 | `cmd/wile-goast/lib/wile/goast/belief.scm` | Belief DSL implementation (embedded in binary) |
 | `cmd/wile-goast/lib/wile/goast/utils.scm` | Shared traversal utilities (`nf`, `walk`, `tag?`) and tree rewriters (`ast-transform`, `ast-splice`) |
+| `cmd/wile-goast/lib/wile/goast/ssa-normalize.scm` | SSA algebraic normalization rules (embedded in binary) |
+| `cmd/wile-goast/lib/wile/goast/unify.scm` | AST/SSA diff engine with pluggable classifiers (embedded in binary) |
 | `goast/prim_restructure.go` | Early-return restructuring (`go-cfg-to-structured`) |
+| `goastssa/canonicalize.go` | SSA function canonicalization (`go-ssa-canonicalize`) |
 
 ## Documentation
 
