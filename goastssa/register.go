@@ -45,6 +45,9 @@ func addPrimitives(r *registry.Registry) error {
 		{Name: "go-ssa-field-index", ParamCount: 1, Impl: PrimGoSSAFieldIndex,
 			Doc:        "Returns per-function field access summaries for a Go package.",
 			ParamNames: []string{"pattern"}, Category: "goast-ssa"},
+		{Name: "go-ssa-canonicalize", ParamCount: 1, Impl: PrimGoSSACanonicalize,
+			Doc:        "Canonicalizes an SSA function s-expression: dominator-order blocks, alpha-renamed registers.",
+			ParamNames: []string{"ssa-func"}, Category: "goast-ssa"},
 	}, registry.PhaseRuntime)
 	return nil
 }
