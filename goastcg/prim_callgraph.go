@@ -238,7 +238,7 @@ func PrimGoCallgraphCallers(mc *machine.MachineContext) error {
 	}
 	edgesIn, ok := goast.GetField(np.Cdr(), "edges-in")
 	if !ok {
-		mc.SetValue(values.EmptyList)
+		mc.SetValue(values.FalseValue)
 		return nil
 	}
 	mc.SetValue(edgesIn)
@@ -266,7 +266,7 @@ func PrimGoCallgraphCallees(mc *machine.MachineContext) error {
 	}
 	edgesOut, ok := goast.GetField(np.Cdr(), "edges-out")
 	if !ok {
-		mc.SetValue(values.EmptyList)
+		mc.SetValue(values.FalseValue)
 		return nil
 	}
 	mc.SetValue(edgesOut)

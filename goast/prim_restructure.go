@@ -23,7 +23,6 @@ import (
 	"github.com/aalpar/wile/werr"
 )
 
-var errGoRestructureError = werr.NewStaticError("restructure error")
 
 // PrimGoCFGToStructured implements (go-cfg-to-structured block-sexpr).
 // Takes a block s-expression. Returns a restructured block where early

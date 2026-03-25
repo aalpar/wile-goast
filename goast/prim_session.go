@@ -28,7 +28,6 @@ import (
 	"github.com/aalpar/wile/werr"
 )
 
-var errGoLoadError = werr.NewStaticError("go load error")
 
 // PrimGoLoad implements (go-load pattern ... . options).
 // Loads Go packages and returns a GoSession for reuse across primitives.
@@ -158,9 +157,11 @@ func PrimGoListDeps(mc *machine.MachineContext) error {
 				break
 			}
 			sv, sok := pair.Car().(*values.String)
-			if sok {
-				patterns = append(patterns, sv.Value)
+			if !sok {
+				return werr.WrapForeignErrorf(errGoLoadError,
+					"go-list-deps: expected string, got %T", pair.Car())
 			}
+			patterns = append(patterns, sv.Value)
 			tuple, ok = pair.Cdr().(values.Tuple)
 			if !ok {
 				break

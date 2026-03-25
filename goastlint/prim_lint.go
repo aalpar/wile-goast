@@ -94,9 +94,9 @@ func PrimGoAnalyze(mc *machine.MachineContext) error {
 			return analyzeFromSession(mc, v, analyzers)
 		}
 		// Non-lint session: fall back to fresh load with LoadAllSyntax.
-		return analyzeFromPatterns(mc, v.Patterns(), analyzers)
+		return analyzeFromPattern(mc, v.Patterns(), analyzers)
 	case *values.String:
-		return analyzeFromPatterns(mc, []string{v.Value}, analyzers)
+		return analyzeFromPattern(mc, []string{v.Value}, analyzers)
 	default:
 		return werr.WrapForeignErrorf(werr.ErrNotAString,
 			"go-analyze: expected string or go-session, got %T", arg)
@@ -112,7 +112,7 @@ func analyzeFromSession(mc *machine.MachineContext, session *goast.GoSession, an
 	return collectDiagnostics(mc, graph, session.FileSet())
 }
 
-func analyzeFromPatterns(mc *machine.MachineContext, patterns []string, analyzers []*analysis.Analyzer) error {
+func analyzeFromPattern(mc *machine.MachineContext, patterns []string, analyzers []*analysis.Analyzer) error {
 	err := security.CheckWithAuthorizer(mc.Authorizer(), security.AccessRequest{
 		Resource: security.ResourceProcess,
 		Action:   security.ActionLoad,

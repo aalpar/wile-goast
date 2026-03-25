@@ -15,4 +15,6 @@
 // Package goast exposes Go's AST packages as Scheme s-expressions.
 // Parse Go source into nested alists, transform with standard Scheme
 // operations, and format back to Go source.
+//
+// Use [Extension] or [AddToRegistry] to register all primitives.
 package goast

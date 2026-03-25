@@ -420,7 +420,7 @@ func schemeStringLiteral(s string) string {
 		case '\t':
 			b = append(b, '\\', 't')
 		default:
-			b = append(b, byte(r))
+			b = append(b, []byte(string(r))...)
 		}
 	}
 	b = append(b, '"')

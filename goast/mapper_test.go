@@ -559,6 +559,7 @@ func TestParseOpts(t *testing.T) {
 		positions bool
 		comments  bool
 		wantMode  parser.Mode
+		expectErr bool
 	}{
 		{
 			name:      "no options",
@@ -596,23 +597,24 @@ func TestParseOpts(t *testing.T) {
 			wantMode:  0,
 		},
 		{
-			name:      "unknown option ignored",
-			input:     values.List(values.NewSymbol("unknown"), values.NewSymbol("positions")),
-			positions: true,
-			comments:  false,
-			wantMode:  0,
+			name:      "unknown option errors",
+			input:     values.List(values.NewSymbol("unknown")),
+			expectErr: true,
 		},
 		{
-			name:      "non-symbol element ignored",
+			name:      "non-symbol element errors",
 			input:     values.List(values.NewString("not-a-symbol")),
-			positions: false,
-			comments:  false,
-			wantMode:  0,
+			expectErr: true,
 		},
 	}
 	for _, tc := range tcs {
 		t.Run(tc.name, func(t *testing.T) {
-			opts, mode := parseOpts(tc.input, fset)
+			opts, mode, err := parseOpts(tc.input, fset)
+			if tc.expectErr {
+				c.Assert(err, qt.IsNotNil)
+				return
+			}
+			c.Assert(err, qt.IsNil)
 			c.Assert(opts.positions, qt.Equals, tc.positions)
 			c.Assert(opts.comments, qt.Equals, tc.comments)
 			c.Assert(mode, qt.Equals, tc.wantMode)

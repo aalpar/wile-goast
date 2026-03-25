@@ -33,13 +33,13 @@ import (
 )
 
 // parseOpts extracts mapper options from a variadic rest-arg list of symbols.
-func parseOpts(rest values.Value, fset *token.FileSet) (*mapperOpts, parser.Mode) {
+func parseOpts(rest values.Value, fset *token.FileSet) (*mapperOpts, parser.Mode, error) {
 	opts := &mapperOpts{fset: fset}
 	var mode parser.Mode
 
 	tuple, ok := rest.(values.Tuple)
 	if !ok {
-		return opts, mode
+		return opts, mode, nil
 	}
 	for !values.IsEmptyList(tuple) {
 		pair, ok := tuple.(*values.Pair)
@@ -47,14 +47,19 @@ func parseOpts(rest values.Value, fset *token.FileSet) (*mapperOpts, parser.Mode
 			break
 		}
 		s, ok := pair.Car().(*values.Symbol)
-		if ok {
-			switch s.Key {
-			case "positions":
-				opts.positions = true
-			case "comments":
-				opts.comments = true
-				mode |= parser.ParseComments
-			}
+		if !ok {
+			return nil, 0, werr.WrapForeignErrorf(errGoParseError,
+				"go-parse: options must be symbols, got %T", pair.Car())
+		}
+		switch s.Key {
+		case "positions":
+			opts.positions = true
+		case "comments":
+			opts.comments = true
+			mode |= parser.ParseComments
+		default:
+			return nil, 0, werr.WrapForeignErrorf(errGoParseError,
+				"go-parse: unknown option '%s'; valid options: positions, comments", s.Key)
 		}
 		cdr, ok := pair.Cdr().(values.Tuple)
 		if !ok {
@@ -62,7 +67,7 @@ func parseOpts(rest values.Value, fset *token.FileSet) (*mapperOpts, parser.Mode
 		}
 		tuple = cdr
 	}
-	return opts, mode
+	return opts, mode, nil
 }
 
 // PrimGoParseFile implements (go-parse-file filename . options).
@@ -83,7 +88,10 @@ func PrimGoParseFile(mc *machine.MachineContext) error {
 	}
 
 	fset := token.NewFileSet()
-	opts, mode := parseOpts(mc.Arg(1), fset)
+	opts, mode, optErr := parseOpts(mc.Arg(1), fset)
+	if optErr != nil {
+		return optErr
+	}
 
 	f, parseErr := parser.ParseFile(fset, filename.Value, nil, mode)
 	if parseErr != nil {
@@ -104,7 +112,10 @@ func PrimGoParseString(mc *machine.MachineContext) error {
 	}
 
 	fset := token.NewFileSet()
-	opts, mode := parseOpts(mc.Arg(1), fset)
+	opts, mode, optErr := parseOpts(mc.Arg(1), fset)
+	if optErr != nil {
+		return optErr
+	}
 
 	f, parseErr := parser.ParseFile(fset, "source.go", source.Value, mode)
 	if parseErr != nil {
@@ -238,7 +249,10 @@ func PrimGoTypecheckPackage(mc *machine.MachineContext) error {
 }
 
 func typecheckFromSession(mc *machine.MachineContext, session *GoSession) error {
-	baseOpts, _ := parseOpts(mc.Arg(1), session.FileSet())
+	baseOpts, _, optErr := parseOpts(mc.Arg(1), session.FileSet())
+	if optErr != nil {
+		return optErr
+	}
 	result := make([]values.Value, len(session.Packages()))
 	for i, pkg := range session.Packages() {
 		result[i] = mapPackage(pkg, baseOpts)
@@ -264,7 +278,10 @@ func typecheckFromPattern(mc *machine.MachineContext, pattern *values.String) er
 	}
 
 	fset := token.NewFileSet()
-	baseOpts, _ := parseOpts(mc.Arg(1), fset)
+	baseOpts, _, optErr := parseOpts(mc.Arg(1), fset)
+	if optErr != nil {
+		return optErr
+	}
 
 	cfg := &packages.Config{
 		Mode: packages.NeedName |

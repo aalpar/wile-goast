@@ -142,8 +142,8 @@ func main() {
 	}
 }
 
-func buildEngine(ctx context.Context) *wile.Engine {
-	engine, err := wile.NewEngine(ctx,
+func buildEngineOrError(ctx context.Context) (*wile.Engine, error) {
+	return wile.NewEngine(ctx,
 		wile.WithSafeExtensions(),
 		wile.WithSourceFS(embeddedLib),
 		wile.WithLibraryPaths("lib"),
@@ -153,6 +153,10 @@ func buildEngine(ctx context.Context) *wile.Engine {
 		wile.WithExtension(goastcfg.Extension),
 		wile.WithExtension(goastlint.Extension),
 	)
+}
+
+func buildEngine(ctx context.Context) *wile.Engine {
+	engine, err := buildEngineOrError(ctx)
 	if err != nil {
 		log.Fatal(err)
 	}
