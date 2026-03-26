@@ -77,6 +77,22 @@
 (define (block-instrs block)
   (or (nf block 'instrs) '()))
 
+;; ─── Reverse postorder (internal) ──────────
+
+(define (reverse-postorder blocks)
+  (let ((block-map (map (lambda (b) (cons (nf b 'index) b)) blocks)))
+    (define (succs-of idx)
+      (let ((entry (assv idx block-map)))
+        (if entry (or (nf (cdr entry) 'succs) '()) '())))
+    (let ((visited '()) (result '()))
+      (define (dfs idx)
+        (unless (memv idx visited)
+          (set! visited (cons idx visited))
+          (for-each dfs (succs-of idx))
+          (set! result (cons idx result))))
+      (dfs (nf (car blocks) 'index))
+      result)))
+
 ;; ─── Top-level query ────────────────────────
 
 (define (defuse-reachable? ssa-fn start-names found? fuel)
