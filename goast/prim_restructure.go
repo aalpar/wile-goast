@@ -324,7 +324,14 @@ func rewriteLoopReturns(stmts []ast.Stmt, counter *int, labelCounter *int, resul
 		// Replace returns in the (now inner-processed) body.
 		retIdx := 0
 		var collected []*ast.ReturnStmt
-		newBodyStmts, ok := replaceReturnsInStmtsLabeled(innerStmts, ctlName, &retIdx, &collected, loopLabel)
+		resultVarCount := 0
+		var types []ast.Expr
+		if resultTypes != nil {
+			types = expandResultTypes(resultTypes)
+			resultVarCount = len(types)
+		}
+
+		newBodyStmts, ok := replaceReturnsInStmtsLabeled(innerStmts, ctlName, &retIdx, &collected, loopLabel, resultVarCount)
 		if !ok {
 			return nil, false
 		}
@@ -332,6 +339,9 @@ func rewriteLoopReturns(stmts []ast.Stmt, counter *int, labelCounter *int, resul
 		// Rebuild the loop with the rewritten body.
 		newBody := &ast.BlockStmt{List: newBodyStmts}
 		result = append(result, makeVarDeclInt(ctlName))
+		for i, ty := range types {
+			result = append(result, makeVarDeclTyped(fmt.Sprintf("_r%d", i), ty))
+		}
 		var loopStmt ast.Stmt
 		switch s := stmt.(type) {
 		case *ast.ForStmt:
@@ -364,7 +374,7 @@ func replaceReturnsInStmts(
 	retIdx *int,
 	collected *[]*ast.ReturnStmt,
 ) ([]ast.Stmt, bool) {
-	return replaceReturnsInStmtsLabeled(stmts, ctlName, retIdx, collected, "")
+	return replaceReturnsInStmtsLabeled(stmts, ctlName, retIdx, collected, "", 0)
 }
 
 func replaceReturnsInStmtsLabeled(
@@ -373,13 +383,37 @@ func replaceReturnsInStmtsLabeled(
 	retIdx *int,
 	collected *[]*ast.ReturnStmt,
 	loopLabel string,
+	resultVarCount int,
 ) ([]ast.Stmt, bool) {
 	var result []ast.Stmt
 	for _, stmt := range stmts {
 		switch s := stmt.(type) {
 		case *ast.ReturnStmt:
 			*retIdx++
-			*collected = append(*collected, s)
+			if resultVarCount > 0 {
+				if len(s.Results) == 0 {
+					// Naked return — cannot synthesize loop-local vars.
+					return nil, false
+				}
+				if len(s.Results) != resultVarCount {
+					// Multi-value call or count mismatch — bail.
+					return nil, false
+				}
+				for i, expr := range s.Results {
+					result = append(result, &ast.AssignStmt{
+						Lhs: []ast.Expr{ast.NewIdent(fmt.Sprintf("_r%d", i))},
+						Tok: token.ASSIGN,
+						Rhs: []ast.Expr{expr},
+					})
+				}
+				syntheticResults := make([]ast.Expr, resultVarCount)
+				for i := range resultVarCount {
+					syntheticResults[i] = ast.NewIdent(fmt.Sprintf("_r%d", i))
+				}
+				*collected = append(*collected, &ast.ReturnStmt{Results: syntheticResults})
+			} else {
+				*collected = append(*collected, s)
+			}
 			var brk ast.Stmt
 			if loopLabel != "" {
 				brk = makeLabeledBreak(loopLabel)
@@ -391,13 +425,13 @@ func replaceReturnsInStmtsLabeled(
 				brk,
 			)
 		case *ast.IfStmt:
-			newIf, ok := replaceReturnsInIf(s, ctlName, retIdx, collected, loopLabel)
+			newIf, ok := replaceReturnsInIf(s, ctlName, retIdx, collected, loopLabel, resultVarCount)
 			if !ok {
 				return nil, false
 			}
 			result = append(result, newIf)
 		case *ast.BlockStmt:
-			newList, ok := replaceReturnsInStmtsLabeled(s.List, ctlName, retIdx, collected, loopLabel)
+			newList, ok := replaceReturnsInStmtsLabeled(s.List, ctlName, retIdx, collected, loopLabel, resultVarCount)
 			if !ok {
 				return nil, false
 			}
@@ -407,7 +441,7 @@ func replaceReturnsInStmtsLabeled(
 				if loopLabel == "" {
 					return nil, false
 				}
-				newClauses, ok := replaceReturnsInClauses(s.Body.List, ctlName, retIdx, collected, loopLabel)
+				newClauses, ok := replaceReturnsInClauses(s.Body.List, ctlName, retIdx, collected, loopLabel, resultVarCount)
 				if !ok {
 					return nil, false
 				}
@@ -420,7 +454,7 @@ func replaceReturnsInStmtsLabeled(
 				if loopLabel == "" {
 					return nil, false
 				}
-				newClauses, ok := replaceReturnsInClauses(s.Body.List, ctlName, retIdx, collected, loopLabel)
+				newClauses, ok := replaceReturnsInClauses(s.Body.List, ctlName, retIdx, collected, loopLabel, resultVarCount)
 				if !ok {
 					return nil, false
 				}
@@ -433,7 +467,7 @@ func replaceReturnsInStmtsLabeled(
 				if loopLabel == "" {
 					return nil, false
 				}
-				newClauses, ok := replaceReturnsInClauses(s.Body.List, ctlName, retIdx, collected, loopLabel)
+				newClauses, ok := replaceReturnsInClauses(s.Body.List, ctlName, retIdx, collected, loopLabel, resultVarCount)
 				if !ok {
 					return nil, false
 				}
@@ -458,18 +492,19 @@ func replaceReturnsInClauses(
 	retIdx *int,
 	collected *[]*ast.ReturnStmt,
 	loopLabel string,
+	resultVarCount int,
 ) ([]ast.Stmt, bool) {
 	var result []ast.Stmt
 	for _, stmt := range stmts {
 		switch cc := stmt.(type) {
 		case *ast.CaseClause:
-			newBody, ok := replaceReturnsInStmtsLabeled(cc.Body, ctlName, retIdx, collected, loopLabel)
+			newBody, ok := replaceReturnsInStmtsLabeled(cc.Body, ctlName, retIdx, collected, loopLabel, resultVarCount)
 			if !ok {
 				return nil, false
 			}
 			result = append(result, &ast.CaseClause{List: cc.List, Body: newBody})
 		case *ast.CommClause:
-			newBody, ok := replaceReturnsInStmtsLabeled(cc.Body, ctlName, retIdx, collected, loopLabel)
+			newBody, ok := replaceReturnsInStmtsLabeled(cc.Body, ctlName, retIdx, collected, loopLabel, resultVarCount)
 			if !ok {
 				return nil, false
 			}
@@ -492,8 +527,9 @@ func replaceReturnsInIf(
 	retIdx *int,
 	collected *[]*ast.ReturnStmt,
 	loopLabel string,
+	resultVarCount int,
 ) (*ast.IfStmt, bool) {
-	newBodyList, ok := replaceReturnsInStmtsLabeled(ifStmt.Body.List, ctlName, retIdx, collected, loopLabel)
+	newBodyList, ok := replaceReturnsInStmtsLabeled(ifStmt.Body.List, ctlName, retIdx, collected, loopLabel, resultVarCount)
 	if !ok {
 		return nil, false
 	}
@@ -507,13 +543,13 @@ func replaceReturnsInIf(
 	if ifStmt.Else != nil {
 		switch e := ifStmt.Else.(type) {
 		case *ast.BlockStmt:
-			newList, ok := replaceReturnsInStmtsLabeled(e.List, ctlName, retIdx, collected, loopLabel)
+			newList, ok := replaceReturnsInStmtsLabeled(e.List, ctlName, retIdx, collected, loopLabel, resultVarCount)
 			if !ok {
 				return nil, false
 			}
 			newIf.Else = &ast.BlockStmt{List: newList}
 		case *ast.IfStmt:
-			newElse, ok := replaceReturnsInIf(e, ctlName, retIdx, collected, loopLabel)
+			newElse, ok := replaceReturnsInIf(e, ctlName, retIdx, collected, loopLabel, resultVarCount)
 			if !ok {
 				return nil, false
 			}
@@ -560,6 +596,62 @@ func makeBreakStmt() ast.Stmt {
 // makeLabeledBreak creates: break <label>
 func makeLabeledBreak(label string) ast.Stmt {
 	return &ast.BranchStmt{Tok: token.BREAK, Label: ast.NewIdent(label)}
+}
+
+// makeVarDeclTyped creates: var <name> <typeExpr>
+func makeVarDeclTyped(name string, typeExpr ast.Expr) ast.Stmt {
+	return &ast.DeclStmt{
+		Decl: &ast.GenDecl{
+			Tok: token.VAR,
+			Specs: []ast.Spec{
+				&ast.ValueSpec{
+					Names: []*ast.Ident{ast.NewIdent(name)},
+					Type:  typeExpr,
+				},
+			},
+		},
+	}
+}
+
+// expandResultTypes expands a field list into one type expression per
+// result position. For (x, y int, err error) this returns [int, int, error].
+// Each position gets a cloned type expression to avoid AST aliasing when
+// fields group multiple names (e.g., x, y int shares one ast.Expr).
+func expandResultTypes(fields []*ast.Field) []ast.Expr {
+	var types []ast.Expr
+	for _, f := range fields {
+		n := len(f.Names)
+		if n == 0 {
+			n = 1 // unnamed result
+		}
+		for i := range n {
+			if i == 0 {
+				types = append(types, f.Type)
+			} else {
+				types = append(types, cloneTypeExpr(f.Type))
+			}
+		}
+	}
+	return types
+}
+
+// cloneTypeExpr shallow-clones a type expression. Handles the common
+// cases: idents, selectors, stars, arrays, maps.
+func cloneTypeExpr(expr ast.Expr) ast.Expr {
+	switch e := expr.(type) {
+	case *ast.Ident:
+		return ast.NewIdent(e.Name)
+	case *ast.SelectorExpr:
+		return &ast.SelectorExpr{X: cloneTypeExpr(e.X), Sel: ast.NewIdent(e.Sel.Name)}
+	case *ast.StarExpr:
+		return &ast.StarExpr{X: cloneTypeExpr(e.X)}
+	case *ast.ArrayType:
+		return &ast.ArrayType{Len: e.Len, Elt: cloneTypeExpr(e.Elt)}
+	case *ast.MapType:
+		return &ast.MapType{Key: cloneTypeExpr(e.Key), Value: cloneTypeExpr(e.Value)}
+	default:
+		return expr // fallback: share reference
+	}
 }
 
 // makeCtlGuard creates: if <name> == <val> { <retStmt> }
