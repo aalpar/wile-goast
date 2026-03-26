@@ -49,7 +49,7 @@ once it exists.
 
 ### C1. Migrate existing hand-rolled algebra
 
-- [ ] `checked-before-use` Kleene iteration (`belief.scm:698`) → fixpoint over powerset lattice
+- [x] `checked-before-use` Kleene iteration → fixpoint over product lattice (powerset x boolean) via `(wile goast dataflow)`
 - [ ] `ssa-normalize` rewrite rules (commutativity, identity, annihilation) → monoid/ring axiom application
 - [ ] `score-diffs` similarity accumulation (`unify.scm`) → semiring-like weighted scoring
 

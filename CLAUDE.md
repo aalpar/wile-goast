@@ -259,6 +259,7 @@ Prompt content lives in `cmd/wile-goast/prompts/*.md` (embedded in binary).
 | `goast{ssa,cfg,cg,lint}/mapper.go` | IR-specific s-expression mappers |
 | `goast{ssa,cfg,cg,lint}/register.go` | Sub-extension registration |
 | `cmd/wile-goast/lib/wile/goast/belief.scm` | Belief DSL implementation (embedded in binary) |
+| `cmd/wile-goast/lib/wile/goast/dataflow.scm` | Def-use reachability via `(wile algebra)` fixpoint (embedded in binary) |
 | `cmd/wile-goast/lib/wile/goast/utils.scm` | Shared traversal utilities (`nf`, `walk`, `tag?`) and tree rewriters (`ast-transform`, `ast-splice`) |
 | `cmd/wile-goast/lib/wile/goast/ssa-normalize.scm` | SSA algebraic normalization rules (embedded in binary) |
 | `cmd/wile-goast/lib/wile/goast/unify.scm` | AST/SSA diff engine with pluggable classifiers (embedded in binary) |

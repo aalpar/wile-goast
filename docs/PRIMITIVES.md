@@ -745,7 +745,7 @@ Used as arguments to `functions-matching`:
 | `(paired-with "A" "B")` | `'paired-defer` / `'paired-call` / `'unpaired` | A paired with B? |
 | `(ordered "A" "B")` | `'a-dominates-b` / `'b-dominates-a` / `'unordered` / `'missing` | SSA block dominance; same-block resolved by instruction position |
 | `(co-mutated "field" ...)` | `'co-mutated` / `'partial` / `'missing` | Fields stored together? |
-| `(checked-before-use "val")` | `'guarded` / `'unguarded` / `'missing` | Value checked before use? Bounded transitive reachability on the def-use graph (4-hop limit) |
+| `(checked-before-use "val")` | `'guarded` / `'unguarded` / `'missing` | Value checked before use? Product lattice fixpoint via `(wile algebra)` with early exit. 4-hop def-use reachability |
 | `(custom (lambda (site ctx) ...))` | user-defined symbol | Escape hatch |
 
 ### Context Accessors
