@@ -930,3 +930,216 @@ func TestDataflowRunAnalysisForwardSingleBlock(t *testing.T) {
 		qt.New(t).Assert(result.SchemeString(), qt.Equals, `"1"`)
 	})
 }
+
+func TestDataflowRunAnalysisForwardBranching(t *testing.T) {
+	engine := newBeliefEngine(t)
+
+	eval(t, engine, `
+		(import (wile algebra))
+		(import (wile goast dataflow))
+		(import (wile goast utils))
+
+		(define ssa (go-ssa-build
+		  "github.com/aalpar/wile-goast/examples/goast-query/testdata/checking"))
+		(define fn (let loop ((fs ssa))
+		  (cond ((null? fs) #f)
+		        ((equal? (nf (car fs) 'name) "HandleSafeA") (car fs))
+		        (else (loop (cdr fs))))))
+
+		(define universe (ssa-instruction-names fn))
+		(define lat (powerset-lattice universe))
+		(define (transfer block state)
+		  (let ((names (filter-map (lambda (i) (nf i 'name)) (block-instrs block))))
+		    (lattice-join lat state names)))
+
+		(define result (run-analysis 'forward lat transfer fn))
+	`)
+
+	t.Run("block 0 out has t0", func(t *testing.T) {
+		result := eval(t, engine, `(and (member "t0" (analysis-out result 0)) #t)`)
+		qt.New(t).Assert(result.SchemeString(), qt.Equals, "#t")
+	})
+
+	t.Run("block 1 in has t0 from predecessor", func(t *testing.T) {
+		result := eval(t, engine, `(and (member "t0" (analysis-in result 1)) #t)`)
+		qt.New(t).Assert(result.SchemeString(), qt.Equals, "#t")
+	})
+
+	t.Run("block 1 out has names from both blocks", func(t *testing.T) {
+		result := eval(t, engine, `
+			(and (member "t0" (analysis-out result 1))
+			     (member "t1" (analysis-out result 1))
+			     #t)`)
+		qt.New(t).Assert(result.SchemeString(), qt.Equals, "#t")
+	})
+
+	t.Run("block 2 in has t0 only", func(t *testing.T) {
+		result := eval(t, engine, `
+			(and (member "t0" (analysis-in result 2))
+			     (= (length (analysis-in result 2)) 1))`)
+		qt.New(t).Assert(result.SchemeString(), qt.Equals, "#t")
+	})
+}
+
+func TestDataflowRunAnalysisForwardJoin(t *testing.T) {
+	engine := newBeliefEngine(t)
+
+	eval(t, engine, `
+		(import (wile algebra))
+		(import (wile goast dataflow))
+		(import (wile goast utils))
+
+		(define ssa (go-ssa-build
+		  "github.com/aalpar/wile-goast/examples/goast-query/testdata/pairing"))
+		(define fn (let loop ((fs ssa))
+		  (cond ((null? fs) #f)
+		        ((equal? (nf (car fs) 'name) "UpdateSafe") (car fs))
+		        (else (loop (cdr fs))))))
+
+		(define universe (ssa-instruction-names fn))
+		(define lat (powerset-lattice universe))
+		(define (transfer block state)
+		  (let ((names (filter-map (lambda (i) (nf i 'name)) (block-instrs block))))
+		    (lattice-join lat state names)))
+
+		(define result (run-analysis 'forward lat transfer fn))
+	`)
+
+	t.Run("join block in includes names from both predecessors", func(t *testing.T) {
+		// Block 3 has preds {0, 2}. Its in-state = union of out(0) and out(2).
+		// Names from block 2 should appear in block 3's in even though direct
+		// path 0->3 skips block 2.
+		result := eval(t, engine, `
+			(let ((b2-names (filter-map (lambda (i) (nf i 'name))
+			                  (block-instrs (caddr (nf fn 'blocks)))))
+			      (b3-in (analysis-in result 3)))
+			  (let check ((ns b2-names))
+			    (cond ((null? ns) #t)
+			          ((member (car ns) b3-in) (check (cdr ns)))
+			          (else #f))))`)
+		qt.New(t).Assert(result.SchemeString(), qt.Equals, "#t")
+	})
+}
+
+func TestDataflowRunAnalysisInitialState(t *testing.T) {
+	engine := newBeliefEngine(t)
+
+	eval(t, engine, `
+		(import (wile algebra))
+		(import (wile goast dataflow))
+		(import (wile goast utils))
+
+		(define ssa (go-ssa-build
+		  "github.com/aalpar/wile-goast/examples/goast-query/testdata/checking"))
+		(define fn (let loop ((fs ssa))
+		  (cond ((null? fs) #f)
+		        ((equal? (nf (car fs) 'name) "HandleUnsafe") (car fs))
+		        (else (loop (cdr fs))))))
+
+		(define seeded-universe (cons "SEED" (ssa-instruction-names fn)))
+		(define seeded-lat (powerset-lattice seeded-universe))
+		(define (seeded-transfer block state)
+		  (let ((names (filter-map (lambda (i) (nf i 'name)) (block-instrs block))))
+		    (lattice-join seeded-lat state names)))
+
+		(define result-seeded (run-analysis 'forward seeded-lat seeded-transfer fn
+		                        (list "SEED")))
+	`)
+
+	t.Run("custom initial state propagates to in", func(t *testing.T) {
+		result := eval(t, engine, `(and (member "SEED" (analysis-in result-seeded 0)) #t)`)
+		qt.New(t).Assert(result.SchemeString(), qt.Equals, "#t")
+	})
+
+	t.Run("custom initial state reaches output", func(t *testing.T) {
+		result := eval(t, engine, `(and (member "SEED" (analysis-out result-seeded 0)) #t)`)
+		qt.New(t).Assert(result.SchemeString(), qt.Equals, "#t")
+	})
+}
+
+func TestDataflowRunAnalysisBackward(t *testing.T) {
+	engine := newBeliefEngine(t)
+
+	eval(t, engine, `
+		(import (wile algebra))
+		(import (wile goast dataflow))
+		(import (wile goast utils))
+
+		(define ssa (go-ssa-build
+		  "github.com/aalpar/wile-goast/examples/goast-query/testdata/checking"))
+		(define fn (let loop ((fs ssa))
+		  (cond ((null? fs) #f)
+		        ((equal? (nf (car fs) 'name) "HandleSafeA") (car fs))
+		        (else (loop (cdr fs))))))
+
+		(define universe (ssa-instruction-names fn))
+		(define lat (powerset-lattice universe))
+		(define (transfer block state)
+		  (let ((ops (flat-map
+		               (lambda (i) (or (nf i 'operands) '()))
+		               (block-instrs block))))
+		    (let ((relevant (filter-map (lambda (o) (and (member o universe) o)) ops)))
+		      (lattice-join lat state relevant))))
+
+		(define result (run-analysis 'backward lat transfer fn))
+	`)
+
+	t.Run("exit blocks in-state is bottom", func(t *testing.T) {
+		result := eval(t, engine, `(analysis-in result 1)`)
+		qt.New(t).Assert(result.SchemeString(), qt.Equals, "()")
+	})
+
+	t.Run("entry block accumulates from successors", func(t *testing.T) {
+		result := eval(t, engine, `(> (length (analysis-out result 0)) 0)`)
+		qt.New(t).Assert(result.SchemeString(), qt.Equals, "#t")
+	})
+
+	t.Run("backward propagates usage toward entry", func(t *testing.T) {
+		result := eval(t, engine, `
+			(let ((b0-out (analysis-out result 0))
+			      (b1-in  (analysis-in result 1))
+			      (b2-in  (analysis-in result 2)))
+			  (>= (length b0-out)
+			      (max (length b1-in) (length b2-in))))`)
+		qt.New(t).Assert(result.SchemeString(), qt.Equals, "#t")
+	})
+}
+
+func TestDataflowMonotonicityViolation(t *testing.T) {
+	engine := newBeliefEngine(t)
+
+	eval(t, engine, `
+		(import (wile algebra))
+		(import (wile goast dataflow))
+		(import (wile goast utils))
+
+		(define ssa (go-ssa-build
+		  "github.com/aalpar/wile-goast/examples/goast-query/testdata/checking"))
+		(define fn (let loop ((fs ssa))
+		  (cond ((null? fs) #f)
+		        ((equal? (nf (car fs) 'name) "HandleSafeA") (car fs))
+		        (else (loop (cdr fs))))))
+
+		(define universe (ssa-instruction-names fn))
+		(define lat (powerset-lattice universe))
+
+		(define call-count 0)
+		(define (bad-transfer block state)
+		  (set! call-count (+ call-count 1))
+		  (if (> call-count 1) '() state))
+	`)
+
+	t.Run("no flag means no check", func(t *testing.T) {
+		eval(t, engine, `
+			(set! call-count 0)
+			(run-analysis 'forward lat bad-transfer fn)`)
+		// No error = pass
+	})
+
+	t.Run("check-monotone catches violation", func(t *testing.T) {
+		evalExpectError(t, engine, `
+			(set! call-count 0)
+			(run-analysis 'forward lat bad-transfer fn
+			  (lattice-bottom lat) 'check-monotone)`)
+	})
+}
