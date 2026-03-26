@@ -1,16 +1,12 @@
 ;;; ssa-normalize.scm — algebraic normalization of SSA binop nodes
 ;;;
-;;; Normalizes SSA binary operations by applying algebraic rules:
-;;; commutative operand sorting, identity elimination, and annihilation.
-;;; Rules return a replacement value (string for register/constant, or
-;;; rebuilt ssa-binop node) when they fire, #f when they don't apply.
+;;; Declares algebraic properties for SSA binary operators and delegates
+;;; rule generation to (wile algebra rewrite). Type-scoped to integer
+;;; types for identity/absorbing (IEEE 754 safety). Commutativity is
+;;; type-agnostic.
 
-;; Commutative ops — safe to reorder operands
-(define commutative-ops '(+ * & |\|| ^ == !=))
+;; ─── Domain predicates ──────────────────────
 
-;; Predicate: is this an integer type string?
-;; Go SSA represents byte as uint8 and rune as int32, so those
-;; aliases are covered by the base types in this list.
 (define integer-types
   '("int" "int8" "int16" "int32" "int64"
     "uint" "uint8" "uint16" "uint32" "uint64" "uintptr"))
@@ -18,7 +14,7 @@
 (define (integer-type? s)
   (and (string? s) (member s integer-types) #t))
 
-;; Constant matching for SSA constant strings like "0:int" or just "0"
+;; SSA constant strings: "0", "0:int", "0:uint64", etc.
 (define (constant-zero? s)
   (and (string? s)
        (or (string=? s "0")
@@ -33,91 +29,83 @@
                 (char=? (string-ref s 0) #\1)
                 (char=? (string-ref s 1) #\:)))))
 
-;; Rule: commutative operand sorting
-;; For commutative ops, ensure x <= y lexicographically
-(define (ssa-rule-commutative)
-  (lambda (node)
-    (if (not (tag? node 'ssa-binop)) #f
-      (let ((op (nf node 'op))
-            (x (nf node 'x))
-            (y (nf node 'y)))
-        (if (and op x y
-                 (symbol? op)
-                 (memq op commutative-ops)
-                 (string? x) (string? y)
-                 (string>? x y))
-          ;; Swap x and y, rebuild operands too
-          (cons 'ssa-binop
-                (map (lambda (pair)
-                       (cond
-                         ((eq? (car pair) 'x) (cons 'x y))
-                         ((eq? (car pair) 'y) (cons 'y x))
-                         ((eq? (car pair) 'operands)
-                          (cons 'operands (list y x)))
-                         (else pair)))
-                     (cdr node)))
-          #f)))))
+;; ─── Term protocol for SSA binop nodes ──────
 
-;; Rule: identity elimination (integer types only)
-;; x + 0 -> x, x * 1 -> x, x | 0 -> x, x ^ 0 -> x
-;; Skips float types (IEEE 754: -0.0 + 0.0 = 0.0, not -0.0)
+(define ssa-binop-protocol
+  (make-term-protocol
+    ;; compound-term?: tagged alist nodes are compound terms
+    (lambda (x) (and (pair? x) (symbol? (car x))))
+    ;; get-operator
+    (lambda (node) (nf node 'op))
+    ;; get-operands
+    (lambda (node) (list (nf node 'x) (nf node 'y)))
+    ;; make-term: preserve all fields, replace operands
+    (lambda (node new-args)
+      (cons 'ssa-binop
+            (map (lambda (pair)
+                   (cond
+                     ((eq? (car pair) 'x) (cons 'x (car new-args)))
+                     ((eq? (car pair) 'y) (cons 'y (cadr new-args)))
+                     ((eq? (car pair) 'operands)
+                      (cons 'operands new-args))
+                     (else pair)))
+                 (cdr node))))
+    ;; compare: lexicographic on strings, #f for non-strings
+    (lambda (a b) (and (string? a) (string? b) (string<? a b)))))
+
+;; ─── Theory declarations ────────────────────
+
+(define int-identity-theory
+  (list (make-identity-axiom '+ constant-zero?)
+        (make-identity-axiom '* constant-one?)
+        (make-identity-axiom '|\|| constant-zero?)
+        (make-identity-axiom '^ constant-zero?)))
+
+(define int-absorbing-theory
+  (list (make-absorbing-axiom '* constant-zero?)
+        (make-absorbing-axiom '& constant-zero?)))
+
+(define comm-theory
+  (list (make-commutativity-axiom '+)
+        (make-commutativity-axiom '*)
+        (make-commutativity-axiom '&)
+        (make-commutativity-axiom '|\||)
+        (make-commutativity-axiom '^)
+        (make-commutativity-axiom '==)
+        (make-commutativity-axiom '!=)))
+
+;; ─── Normalizers from theories ──────────────
+
+(define int-identity-rewrite
+  (make-normalizer int-identity-theory ssa-binop-protocol))
+
+(define int-absorbing-rewrite
+  (make-normalizer int-absorbing-theory ssa-binop-protocol))
+
+(define comm-rewrite
+  (make-normalizer comm-theory ssa-binop-protocol))
+
+;; ─── Public API (backward-compatible) ───────
+
+;; Each rule constructor returns (node → value-or-#f).
+;; Identity and absorbing guard on integer type; commutativity is type-agnostic.
+
 (define (ssa-rule-identity)
   (lambda (node)
-    (if (not (tag? node 'ssa-binop)) #f
-      (let ((op (nf node 'op))
-            (x (nf node 'x))
-            (y (nf node 'y))
-            (typ (nf node 'type)))
-        (if (not (and op (symbol? op) (string? x) (string? y)
-                      (integer-type? typ)))
-          #f
-          (cond
-            ;; x + 0 -> x, 0 + x -> x
-            ((and (eq? op '+)
-                  (constant-zero? y)) x)
-            ((and (eq? op '+)
-                  (constant-zero? x)) y)
-            ;; x * 1 -> x, 1 * x -> x
-            ((and (eq? op '*)
-                  (constant-one? y)) x)
-            ((and (eq? op '*)
-                  (constant-one? x)) y)
-            ;; x | 0 -> x, 0 | x -> x
-            ((and (eq? op '|\||)
-                  (constant-zero? y)) x)
-            ((and (eq? op '|\||)
-                  (constant-zero? x)) y)
-            ;; x ^ 0 -> x, 0 ^ x -> x
-            ((and (eq? op '^)
-                  (constant-zero? y)) x)
-            ((and (eq? op '^)
-                  (constant-zero? x)) y)
-            (else #f)))))))
+    (and (tag? node 'ssa-binop)
+         (integer-type? (nf node 'type))
+         (int-identity-rewrite node))))
 
-;; Rule: annihilation (integer types only)
-;; x * 0 -> 0, x & 0 -> 0
 (define (ssa-rule-annihilation)
   (lambda (node)
-    (if (not (tag? node 'ssa-binop)) #f
-      (let ((op (nf node 'op))
-            (x (nf node 'x))
-            (y (nf node 'y))
-            (typ (nf node 'type)))
-        (if (not (and op (symbol? op) (string? x) (string? y)
-                      (integer-type? typ)))
-          #f
-          (cond
-            ;; x * 0 -> 0, 0 * x -> 0  (return the zero constant)
-            ((and (eq? op '*)
-                  (constant-zero? y)) y)
-            ((and (eq? op '*)
-                  (constant-zero? x)) x)
-            ;; x & 0 -> 0, 0 & x -> 0
-            ((and (eq? op '&)
-                  (constant-zero? y)) y)
-            ((and (eq? op '&)
-                  (constant-zero? x)) x)
-            (else #f)))))))
+    (and (tag? node 'ssa-binop)
+         (integer-type? (nf node 'type))
+         (int-absorbing-rewrite node))))
+
+(define (ssa-rule-commutative)
+  (lambda (node)
+    (and (tag? node 'ssa-binop)
+         (comm-rewrite node))))
 
 ;; Compose rules: first non-#f result wins
 (define (ssa-rule-set . rules)
@@ -128,7 +116,7 @@
           (if result result
             (loop (cdr rs))))))))
 
-;; Default rule set
+;; Default rule set: identity → absorbing → commutativity
 (define default-rules
   (ssa-rule-set
     (ssa-rule-identity)

@@ -5,5 +5,6 @@
     ssa-rule-identity
     ssa-rule-commutative
     ssa-rule-annihilation)
-  (import (wile goast utils))
+  (import (wile goast utils)
+          (wile algebra rewrite))
   (include "ssa-normalize.scm"))

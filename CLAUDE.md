@@ -95,7 +95,7 @@ Package-loading primitives (`go-typecheck-package`, `go-ssa-build`, `go-ssa-fiel
 
 ## SSA Normalization — `(wile goast ssa-normalize)`
 
-Algebraic normalization rules for SSA binop nodes. Integer-type scoped to avoid IEEE 754 issues. Extensible via `ssa-rule-set`.
+Algebraic normalization rules for SSA binop nodes. Rules are generated from axiom declarations via `(wile algebra rewrite)` — identity, absorbing, and commutativity properties are declared per-operator, and `make-normalizer` compiles them into rewrite rules through a term protocol that abstracts over SSA node structure. Integer-type scoped for identity/absorbing to avoid IEEE 754 issues. Extensible via `ssa-rule-set`.
 
 | Export | Description |
 |--------|-------------|
