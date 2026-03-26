@@ -91,9 +91,8 @@ func PrimGoCFGToStructured(mc *machine.MachineContext) error {
 
 	// Phase 0b: Forward gotos -> if !cond { ... }.
 	if gc == gotoForwardOnly || gc == gotoMixed {
-		// TODO: Task 8
-		mc.SetValue(values.FalseValue)
-		return nil
+		stmts = restructureForwardGotos(stmts)
+		changed = true
 	}
 
 	// Post-restructuring validation: if any gotos survived the pattern
@@ -299,6 +298,117 @@ func classifyGotos(block *ast.BlockStmt) gotoClass {
 	default:
 		return gotoNone
 	}
+}
+
+// singleGotoTarget returns the label name if the block contains exactly
+// one statement which is a goto. Returns "" otherwise.
+func singleGotoTarget(block *ast.BlockStmt) string {
+	if len(block.List) != 1 {
+		return ""
+	}
+	bs, ok := block.List[0].(*ast.BranchStmt)
+	if !ok || bs.Tok != token.GOTO || bs.Label == nil {
+		return ""
+	}
+	return bs.Label.Name
+}
+
+// negateExpr wraps an expression in !(...). Unwraps double negation.
+func negateExpr(expr ast.Expr) ast.Expr {
+	if unary, ok := expr.(*ast.UnaryExpr); ok && unary.Op == token.NOT {
+		return unary.X
+	}
+	return &ast.UnaryExpr{Op: token.NOT, X: &ast.ParenExpr{X: expr}}
+}
+
+// restructureForwardGotos rewrites forward gotos in a statement list.
+// Pattern: if cond { goto L } ... L: stmt
+// Becomes: if !cond { ... } stmt
+//
+// Runs to fixpoint: each pass rewrites one goto, because wrapping
+// statements shifts indices and may expose or relocate other gotos.
+func restructureForwardGotos(stmts []ast.Stmt) []ast.Stmt {
+	result := make([]ast.Stmt, len(stmts))
+	copy(result, stmts)
+
+	for {
+		rewritten := false
+
+		// Build label index.
+		labelPos := map[string]int{}
+		for j, s := range result {
+			if ls, ok := s.(*ast.LabeledStmt); ok {
+				labelPos[ls.Label.Name] = j
+			}
+		}
+
+		// Find the first forward goto and rewrite it.
+		for i, stmt := range result {
+			ifStmt, ok := stmt.(*ast.IfStmt)
+			if !ok || ifStmt.Else != nil {
+				continue
+			}
+			gotoTarget := singleGotoTarget(ifStmt.Body)
+			if gotoTarget == "" {
+				continue
+			}
+			targetIdx, ok := labelPos[gotoTarget]
+			if !ok || targetIdx <= i {
+				continue
+			}
+
+			// Wrap stmts[i+1..targetIdx-1] in if !cond { ... }.
+			skipped := make([]ast.Stmt, targetIdx-i-1)
+			copy(skipped, result[i+1:targetIdx])
+			negated := negateExpr(ifStmt.Cond)
+			wrapped := &ast.IfStmt{
+				Cond: negated,
+				Body: &ast.BlockStmt{List: skipped},
+			}
+
+			// Only strip the label if no other goto targets it.
+			targetStmt := result[targetIdx]
+			if !hasOtherGoto(result, gotoTarget, i) {
+				if ls, ok := targetStmt.(*ast.LabeledStmt); ok {
+					targetStmt = ls.Stmt
+				}
+			}
+
+			// Rebuild: result[:i] + wrapped + targetStmt + result[targetIdx+1:]
+			var newStmts []ast.Stmt
+			newStmts = append(newStmts, result[:i]...)
+			newStmts = append(newStmts, wrapped)
+			newStmts = append(newStmts, targetStmt)
+			newStmts = append(newStmts, result[targetIdx+1:]...)
+			result = newStmts
+			rewritten = true
+			break // restart from the top
+		}
+
+		if !rewritten {
+			break
+		}
+	}
+
+	return result
+}
+
+// hasOtherGoto returns true if any top-level if-goto in stmts (other than
+// the one at excludeIdx) targets the given label.
+func hasOtherGoto(stmts []ast.Stmt, label string, excludeIdx int) bool {
+	for i, stmt := range stmts {
+		if i == excludeIdx {
+			continue
+		}
+		ifStmt, ok := stmt.(*ast.IfStmt)
+		if !ok || ifStmt.Else != nil {
+			continue
+		}
+		if singleGotoTarget(ifStmt.Body) == label {
+			return true
+		}
+	}
+	return false
 }
 
 // restructureStmts right-folds the statement list. Guard-if statements
