@@ -25,16 +25,20 @@ import (
 )
 
 
-// PrimGoCFGToStructured implements (go-cfg-to-structured block-sexpr).
+// PrimGoCFGToStructured implements (go-cfg-to-structured block [func-type]).
 // Takes a block s-expression. Returns a restructured block where early
-// returns are eliminated (single exit point), or the block unchanged if
-// no early returns, or #f if the block contains control flow it cannot
-// restructure (goto, labeled branches, returns inside switch/select
-// within loops).
+// returns and gotos are eliminated (single exit point), or the block
+// unchanged if no early returns or gotos. Raises errGoRestructureError
+// if the block contains control flow it cannot restructure.
 //
-// Two phases run in sequence:
-//   - Case 2: Returns inside for/range → _ctl<N> = K; break + guard-ifs.
-//   - Case 1: Guard-if-return patterns → nested if/else via right-fold.
+// Optional second argument: a func-type s-expression for result variable
+// synthesis (loop-local returns assigned to _r<N> variables).
+//
+// Four phases run in sequence:
+//   - Phase 0a: Backward gotos → for-loops.
+//   - Phase 0b: Forward gotos → if !cond { ... } wrapping.
+//   - Phase 1: Returns inside for/range → _ctl<N> = K; break + guard-ifs.
+//   - Phase 2: Guard-if-return patterns → nested if/else via right-fold.
 func PrimGoCFGToStructured(mc *machine.MachineContext) error {
 	blockVal := mc.Arg(0)
 
@@ -52,10 +56,12 @@ func PrimGoCFGToStructured(mc *machine.MachineContext) error {
 
 	// Extract result types from optional func-type argument.
 	var resultTypes []*ast.Field
-	if rest, ok := mc.Arg(1).(values.Tuple); ok {
-		if pair, ok := rest.(*values.Pair); ok {
+	if tuple, ok := mc.Arg(1).(values.Tuple); ok {
+		if pair, ok := tuple.(*values.Pair); ok {
 			ftVal := pair.Car()
-			if ftVal != values.FalseValue {
+			if ftVal == values.FalseValue {
+				// Explicit #f means "no func type" — ok.
+			} else {
 				ftNode, err := unmapNode(ftVal)
 				if err != nil {
 					return werr.WrapForeignErrorf(errGoRestructureError,
@@ -70,13 +76,18 @@ func PrimGoCFGToStructured(mc *machine.MachineContext) error {
 					resultTypes = ft.Results.List
 				}
 			}
+			// Reject extra arguments.
+			if cdr, ok := pair.Cdr().(values.Tuple); ok && !values.IsEmptyList(cdr) {
+				return werr.WrapForeignErrorf(errGoRestructureError,
+					"go-cfg-to-structured: expected at most 1 optional argument, got extra")
+			}
 		}
 	}
 
 	gc := classifyGotos(block)
 	if gc == gotoCrossBranch {
-		mc.SetValue(values.FalseValue)
-		return nil
+		return werr.WrapForeignErrorf(errGoRestructureError,
+			"go-cfg-to-structured: cross-branch goto (target label inside nested block)")
 	}
 
 	stmts := block.List
@@ -97,18 +108,19 @@ func PrimGoCFGToStructured(mc *machine.MachineContext) error {
 	// Post-restructuring validation: if any gotos survived the pattern
 	// matchers, bail honestly rather than returning an AST with gotos.
 	if gc != gotoNone && containsGoto(&ast.BlockStmt{List: stmts}) {
-		mc.SetValue(values.FalseValue)
-		return nil
+		return werr.WrapForeignErrorf(errGoRestructureError,
+			"go-cfg-to-structured: goto pattern not recognized after restructuring")
 	}
 
 	// Phase 1: Rewrite returns inside loops (Case 2).
 	if hasLoopReturns(stmts) {
 		ctlCounter := 0
 		labelCounter := 0
-		newStmts, ok := rewriteLoopReturns(stmts, &ctlCounter, &labelCounter, resultTypes)
+		resultVarCounter := 0
+		newStmts, ok := rewriteLoopReturns(stmts, &ctlCounter, &labelCounter, &resultVarCounter, resultTypes)
 		if !ok {
-			mc.SetValue(values.FalseValue)
-			return nil
+			return werr.WrapForeignErrorf(errGoRestructureError,
+				"go-cfg-to-structured: unrewritable return in loop (naked return or multi-value call)")
 		}
 		stmts = newStmts
 		changed = true
@@ -282,8 +294,12 @@ func classifyGotos(block *ast.BlockStmt) gotoClass {
 		}
 		if target > g.stmtIdx {
 			hasForward = true
-		} else {
+		} else if target < g.stmtIdx {
 			hasBackward = true
+		} else {
+			// Self-goto (label and goto at same statement index).
+			// Cannot be restructured — classify as cross-branch.
+			return gotoCrossBranch
 		}
 	}
 
@@ -455,7 +471,12 @@ func restructureBackwardGotos(stmts []ast.Stmt) []ast.Stmt {
 
 		if !isBareGoto {
 			// Conditional: replace goto-if with break-if (negated condition).
-			gotoIf, _ := stmts[gotoIdx].(*ast.IfStmt)
+			gotoIf, ok := stmts[gotoIdx].(*ast.IfStmt)
+			if !ok {
+				// ifHasGoto guarantees *ast.IfStmt; defend against future refactors.
+				result = append(result, stmts[i])
+				continue
+			}
 			loopBody = append(loopBody, &ast.IfStmt{
 				Cond: negateExpr(gotoIf.Cond),
 				Body: &ast.BlockStmt{List: []ast.Stmt{makeBreakStmt()}},
@@ -599,8 +620,12 @@ func hasLoopReturns(stmts []ast.Stmt) bool {
 // break is used instead (break <label>), and the loop is wrapped
 // in a LabeledStmt.
 //
+// When resultTypes is non-nil, result variables (_r<N>) are synthesized
+// for loop-local return values. resultVarCounter is shared across
+// sibling loops to produce unique names.
+//
 // Returns (nil, false) if any loop contains unrewritable returns.
-func rewriteLoopReturns(stmts []ast.Stmt, counter *int, labelCounter *int, resultTypes []*ast.Field) ([]ast.Stmt, bool) {
+func rewriteLoopReturns(stmts []ast.Stmt, counter *int, labelCounter *int, resultVarCounter *int, resultTypes []*ast.Field) ([]ast.Stmt, bool) {
 	var result []ast.Stmt
 	for _, stmt := range stmts {
 		var body *ast.BlockStmt
@@ -616,7 +641,7 @@ func rewriteLoopReturns(stmts []ast.Stmt, counter *int, labelCounter *int, resul
 		}
 
 		// Bottom-up: process inner loops first.
-		innerStmts, ok := rewriteLoopReturns(body.List, counter, labelCounter, resultTypes)
+		innerStmts, ok := rewriteLoopReturns(body.List, counter, labelCounter, resultVarCounter, resultTypes)
 		if !ok {
 			return nil, false
 		}
@@ -636,13 +661,16 @@ func rewriteLoopReturns(stmts []ast.Stmt, counter *int, labelCounter *int, resul
 		retIdx := 0
 		var collected []*ast.ReturnStmt
 		resultVarCount := 0
+		resultVarBase := 0
 		var types []ast.Expr
 		if resultTypes != nil {
 			types = expandResultTypes(resultTypes)
 			resultVarCount = len(types)
+			resultVarBase = *resultVarCounter
+			*resultVarCounter += resultVarCount
 		}
 
-		newBodyStmts, ok := replaceReturnsInStmtsLabeled(innerStmts, ctlName, &retIdx, &collected, loopLabel, resultVarCount)
+		newBodyStmts, ok := replaceReturnsInStmtsLabeled(innerStmts, ctlName, &retIdx, &collected, loopLabel, resultVarCount, resultVarBase)
 		if !ok {
 			return nil, false
 		}
@@ -651,7 +679,7 @@ func rewriteLoopReturns(stmts []ast.Stmt, counter *int, labelCounter *int, resul
 		newBody := &ast.BlockStmt{List: newBodyStmts}
 		result = append(result, makeVarDeclInt(ctlName))
 		for i, ty := range types {
-			result = append(result, makeVarDeclTyped(fmt.Sprintf("_r%d", i), ty))
+			result = append(result, makeVarDeclTyped(fmt.Sprintf("_r%d", resultVarBase+i), ty))
 		}
 		var loopStmt ast.Stmt
 		switch s := stmt.(type) {
@@ -679,7 +707,7 @@ func rewriteLoopReturns(stmts []ast.Stmt, counter *int, labelCounter *int, resul
 // Returns (nil, false) if a return is found inside switch/select
 // (unless loopLabel is set, in which case switch/select are handled
 // via labeled break). When resultVarCount > 0, return values are
-// assigned to _r0, _r1, ... before the break.
+// assigned to _r<resultVarBase+i> before the break.
 func replaceReturnsInStmtsLabeled(
 	stmts []ast.Stmt,
 	ctlName string,
@@ -687,6 +715,7 @@ func replaceReturnsInStmtsLabeled(
 	collected *[]*ast.ReturnStmt,
 	loopLabel string,
 	resultVarCount int,
+	resultVarBase int,
 ) ([]ast.Stmt, bool) {
 	var result []ast.Stmt
 	for _, stmt := range stmts {
@@ -704,14 +733,14 @@ func replaceReturnsInStmtsLabeled(
 				}
 				for i, expr := range s.Results {
 					result = append(result, &ast.AssignStmt{
-						Lhs: []ast.Expr{ast.NewIdent(fmt.Sprintf("_r%d", i))},
+						Lhs: []ast.Expr{ast.NewIdent(fmt.Sprintf("_r%d", resultVarBase+i))},
 						Tok: token.ASSIGN,
 						Rhs: []ast.Expr{expr},
 					})
 				}
 				syntheticResults := make([]ast.Expr, resultVarCount)
 				for i := range resultVarCount {
-					syntheticResults[i] = ast.NewIdent(fmt.Sprintf("_r%d", i))
+					syntheticResults[i] = ast.NewIdent(fmt.Sprintf("_r%d", resultVarBase+i))
 				}
 				*collected = append(*collected, &ast.ReturnStmt{Results: syntheticResults})
 			} else {
@@ -728,13 +757,13 @@ func replaceReturnsInStmtsLabeled(
 				brk,
 			)
 		case *ast.IfStmt:
-			newIf, ok := replaceReturnsInIf(s, ctlName, retIdx, collected, loopLabel, resultVarCount)
+			newIf, ok := replaceReturnsInIf(s, ctlName, retIdx, collected, loopLabel, resultVarCount, resultVarBase)
 			if !ok {
 				return nil, false
 			}
 			result = append(result, newIf)
 		case *ast.BlockStmt:
-			newList, ok := replaceReturnsInStmtsLabeled(s.List, ctlName, retIdx, collected, loopLabel, resultVarCount)
+			newList, ok := replaceReturnsInStmtsLabeled(s.List, ctlName, retIdx, collected, loopLabel, resultVarCount, resultVarBase)
 			if !ok {
 				return nil, false
 			}
@@ -744,7 +773,7 @@ func replaceReturnsInStmtsLabeled(
 				if loopLabel == "" {
 					return nil, false
 				}
-				newClauses, ok := replaceReturnsInClauses(s.Body.List, ctlName, retIdx, collected, loopLabel, resultVarCount)
+				newClauses, ok := replaceReturnsInClauses(s.Body.List, ctlName, retIdx, collected, loopLabel, resultVarCount, resultVarBase)
 				if !ok {
 					return nil, false
 				}
@@ -757,7 +786,7 @@ func replaceReturnsInStmtsLabeled(
 				if loopLabel == "" {
 					return nil, false
 				}
-				newClauses, ok := replaceReturnsInClauses(s.Body.List, ctlName, retIdx, collected, loopLabel, resultVarCount)
+				newClauses, ok := replaceReturnsInClauses(s.Body.List, ctlName, retIdx, collected, loopLabel, resultVarCount, resultVarBase)
 				if !ok {
 					return nil, false
 				}
@@ -770,7 +799,7 @@ func replaceReturnsInStmtsLabeled(
 				if loopLabel == "" {
 					return nil, false
 				}
-				newClauses, ok := replaceReturnsInClauses(s.Body.List, ctlName, retIdx, collected, loopLabel, resultVarCount)
+				newClauses, ok := replaceReturnsInClauses(s.Body.List, ctlName, retIdx, collected, loopLabel, resultVarCount, resultVarBase)
 				if !ok {
 					return nil, false
 				}
@@ -796,18 +825,19 @@ func replaceReturnsInClauses(
 	collected *[]*ast.ReturnStmt,
 	loopLabel string,
 	resultVarCount int,
+	resultVarBase int,
 ) ([]ast.Stmt, bool) {
 	var result []ast.Stmt
 	for _, stmt := range stmts {
 		switch cc := stmt.(type) {
 		case *ast.CaseClause:
-			newBody, ok := replaceReturnsInStmtsLabeled(cc.Body, ctlName, retIdx, collected, loopLabel, resultVarCount)
+			newBody, ok := replaceReturnsInStmtsLabeled(cc.Body, ctlName, retIdx, collected, loopLabel, resultVarCount, resultVarBase)
 			if !ok {
 				return nil, false
 			}
 			result = append(result, &ast.CaseClause{List: cc.List, Body: newBody})
 		case *ast.CommClause:
-			newBody, ok := replaceReturnsInStmtsLabeled(cc.Body, ctlName, retIdx, collected, loopLabel, resultVarCount)
+			newBody, ok := replaceReturnsInStmtsLabeled(cc.Body, ctlName, retIdx, collected, loopLabel, resultVarCount, resultVarBase)
 			if !ok {
 				return nil, false
 			}
@@ -831,8 +861,9 @@ func replaceReturnsInIf(
 	collected *[]*ast.ReturnStmt,
 	loopLabel string,
 	resultVarCount int,
+	resultVarBase int,
 ) (*ast.IfStmt, bool) {
-	newBodyList, ok := replaceReturnsInStmtsLabeled(ifStmt.Body.List, ctlName, retIdx, collected, loopLabel, resultVarCount)
+	newBodyList, ok := replaceReturnsInStmtsLabeled(ifStmt.Body.List, ctlName, retIdx, collected, loopLabel, resultVarCount, resultVarBase)
 	if !ok {
 		return nil, false
 	}
@@ -846,13 +877,13 @@ func replaceReturnsInIf(
 	if ifStmt.Else != nil {
 		switch e := ifStmt.Else.(type) {
 		case *ast.BlockStmt:
-			newList, ok := replaceReturnsInStmtsLabeled(e.List, ctlName, retIdx, collected, loopLabel, resultVarCount)
+			newList, ok := replaceReturnsInStmtsLabeled(e.List, ctlName, retIdx, collected, loopLabel, resultVarCount, resultVarBase)
 			if !ok {
 				return nil, false
 			}
 			newIf.Else = &ast.BlockStmt{List: newList}
 		case *ast.IfStmt:
-			newElse, ok := replaceReturnsInIf(e, ctlName, retIdx, collected, loopLabel, resultVarCount)
+			newElse, ok := replaceReturnsInIf(e, ctlName, retIdx, collected, loopLabel, resultVarCount, resultVarBase)
 			if !ok {
 				return nil, false
 			}
@@ -938,8 +969,8 @@ func expandResultTypes(fields []*ast.Field) []ast.Expr {
 	return types
 }
 
-// cloneTypeExpr shallow-clones a type expression. Handles the common
-// cases: idents, selectors, stars, arrays, maps.
+// cloneTypeExpr shallow-clones a type expression to avoid AST aliasing
+// when fields group multiple names (e.g., x, y int shares one ast.Expr).
 func cloneTypeExpr(expr ast.Expr) ast.Expr {
 	switch e := expr.(type) {
 	case *ast.Ident:
@@ -952,8 +983,20 @@ func cloneTypeExpr(expr ast.Expr) ast.Expr {
 		return &ast.ArrayType{Len: e.Len, Elt: cloneTypeExpr(e.Elt)}
 	case *ast.MapType:
 		return &ast.MapType{Key: cloneTypeExpr(e.Key), Value: cloneTypeExpr(e.Value)}
+	case *ast.ChanType:
+		return &ast.ChanType{Dir: e.Dir, Value: cloneTypeExpr(e.Value)}
+	case *ast.FuncType:
+		return &ast.FuncType{Params: e.Params, Results: e.Results}
+	case *ast.InterfaceType:
+		return &ast.InterfaceType{Methods: e.Methods}
+	case *ast.StructType:
+		return &ast.StructType{Fields: e.Fields}
+	case *ast.Ellipsis:
+		return &ast.Ellipsis{Elt: cloneTypeExpr(e.Elt)}
+	case *ast.IndexExpr:
+		return &ast.IndexExpr{X: cloneTypeExpr(e.X), Index: cloneTypeExpr(e.Index)}
 	default:
-		return expr // fallback: share reference
+		return expr // fallback: share reference (unknown expression type)
 	}
 }
 

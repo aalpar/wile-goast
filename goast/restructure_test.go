@@ -459,6 +459,46 @@ func TestGoCFGToStructured_LoopMultiReturn(t *testing.T) {
 	})
 }
 
+func TestGoCFGToStructured_SiblingLoopsResultVars(t *testing.T) {
+	engine := newEngine(t)
+
+	// Note: eval() here is the test helper that evaluates Scheme expressions
+	// in the Wile interpreter engine, not JavaScript eval().
+	eval(t, engine, `
+		(define source "
+			package p
+			func f(xs []int, ys []int) int {
+				for _, x := range xs {
+					if x < 0 { return x }
+				}
+				for _, y := range ys {
+					if y > 100 { return y }
+				}
+				return 0
+			}")
+		(define file (go-parse-string source))
+		(define decl (car (cdr (assoc 'decls (cdr file)))))
+		(define body (cdr (assoc 'body (cdr decl))))
+		(define ftype (cdr (assoc 'type (cdr decl))))
+		(define result (go-cfg-to-structured body ftype))`)
+
+	t.Run("sibling loops get unique result var names", func(t *testing.T) {
+		result := eval(t, engine, `(go-format result)`)
+		s := result.Internal().(*values.String).Value
+		// First loop uses _r0, second loop uses _r1.
+		qt.New(t).Assert(strings.Contains(s, "var _r0 int"), qt.IsTrue,
+			qt.Commentf("expected _r0, got:\n%s", s))
+		qt.New(t).Assert(strings.Contains(s, "var _r1 int"), qt.IsTrue,
+			qt.Commentf("expected _r1 (unique from _r0), got:\n%s", s))
+		// Both ctl vars present.
+		qt.New(t).Assert(strings.Contains(s, "_ctl0"), qt.IsTrue)
+		qt.New(t).Assert(strings.Contains(s, "_ctl1"), qt.IsTrue)
+		// Returns reference the correct vars.
+		qt.New(t).Assert(strings.Contains(s, "return _r0"), qt.IsTrue)
+		qt.New(t).Assert(strings.Contains(s, "return _r1"), qt.IsTrue)
+	})
+}
+
 func TestGoCFGToStructured_LoopReturnNoFuncType(t *testing.T) {
 	engine := newEngine(t)
 
@@ -543,24 +583,27 @@ func TestGoCFGToStructured_MultipleForwardGotos(t *testing.T) {
 func TestGoCFGToStructured_CrossBranchGoto(t *testing.T) {
 	engine := newEngine(t)
 
-	eval(t, engine, `
-		(define source "
-			package p
-			func f(x int) {
-				goto inner
-				if x > 0 {
-					inner:
-					println(x)
-				}
-			}")
-		(define file (go-parse-string source))
-		(define decls (cdr (assoc 'decls (cdr file))))
-		(define body (cdr (assoc 'body (cdr (car decls)))))
-		(define result (go-cfg-to-structured body))`)
-
-	t.Run("returns false", func(t *testing.T) {
-		result := eval(t, engine, `result`)
-		qt.New(t).Assert(result.Internal(), qt.Equals, values.FalseValue)
+	// Note: eval() here is the test helper that evaluates Scheme expressions
+	// in the Wile interpreter engine, not JavaScript eval().
+	t.Run("raises error", func(t *testing.T) {
+		result := eval(t, engine, `
+			(guard (e (#t (error-object-message e)))
+				(let* ((source "
+					package p
+					func f(x int) {
+						goto inner
+						if x > 0 {
+							inner:
+							println(x)
+						}
+					}")
+					(file (go-parse-string source))
+					(decls (cdr (assoc 'decls (cdr file))))
+					(body (cdr (assoc 'body (cdr (car decls))))))
+					(go-cfg-to-structured body)))`)
+		s := result.Internal().(*values.String).Value
+		qt.New(t).Assert(strings.Contains(s, "cross-branch"), qt.IsTrue,
+			qt.Commentf("expected cross-branch error, got: %s", s))
 	})
 }
 

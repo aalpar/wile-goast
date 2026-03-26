@@ -220,11 +220,20 @@ Four phases run in sequence:
 - **Phase 2 (linear guards):** `if cond { return X }` patterns are folded into
   nested if/else chains via right-fold.
 
-Returns the block unchanged if there are no early returns or gotos. Returns `#f`
-if the block contains control flow it cannot restructure (cross-branch gotos,
-gotos targeting labels inside nested blocks). **Callers must check for `#f`
-before chaining** — passing it to `ast-transform` or `subst-idents` will produce
-wrong results.
+Returns the block unchanged if there are no early returns or gotos. Raises
+`go restructure error` if the block contains control flow it cannot restructure.
+Three distinct error messages identify the failure mode:
+
+- `"cross-branch goto"` — goto targets a label inside a nested block (structurally impossible)
+- `"goto pattern not recognized"` — gotos survived phase 0a/0b pattern matching
+- `"unrewritable return in loop"` — naked return or multi-value call return with func-type
+
+Use `guard` to handle restructuring failures gracefully:
+
+```scheme
+(guard (e (#t #f))  ;; fall back to #f on error
+  (go-cfg-to-structured body))
+```
 
 ```scheme
 ;; Phase 0b: forward goto → if !cond wrapping
@@ -247,8 +256,8 @@ wrong results.
 
 **Limitations:**
 - Top-level only — does not recurse into nested blocks
-- Cross-branch gotos (into/out of if/switch) return `#f`
-- Naked returns and multi-value call returns (`return f()`) bail when func-type is provided
+- Cross-branch gotos and self-gotos raise an error
+- Naked returns and multi-value call returns (`return f()`) raise an error when func-type is provided
 
 ---
 

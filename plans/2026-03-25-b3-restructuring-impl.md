@@ -75,50 +75,12 @@ func hasReturnInSwitch(stmts []ast.Stmt) bool {
 }
 ```
 
-**Step 3: Add `replaceReturnsInClauses` for switch/select case bodies**
-
-```go
-// replaceReturnsInClauses processes case/comm clauses, replacing returns
-// in their bodies with control variable assignment + labeled break.
-func replaceReturnsInClauses(
-	stmts []ast.Stmt,
-	ctlName string,
-	retIdx *int,
-	collected *[]*ast.ReturnStmt,
-	loopLabel string,
-) ([]ast.Stmt, bool) {
-	var result []ast.Stmt
-	for _, stmt := range stmts {
-		switch cc := stmt.(type) {
-		case *ast.CaseClause:
-			newBody, ok := replaceReturnsInStmtsLabeled(cc.Body, ctlName, retIdx, collected, loopLabel)
-			if !ok {
-				return nil, false
-			}
-			result = append(result, &ast.CaseClause{List: cc.List, Body: newBody})
-		case *ast.CommClause:
-			newBody, ok := replaceReturnsInStmtsLabeled(cc.Body, ctlName, retIdx, collected, loopLabel)
-			if !ok {
-				return nil, false
-			}
-			result = append(result, &ast.CommClause{Comm: cc.Comm, Body: newBody})
-		default:
-			result = append(result, stmt)
-		}
-	}
-	return result, true
-}
-```
-
-**Step 4: Run tests to verify helpers compile**
+**Step 3: Run tests to verify helpers compile**
 
 Run: `cd /Users/aalpar/projects/wile-workspace/wile-goast && go build ./goast/...`
 Expected: compile success (helpers are unused but that's fine — they'll be wired in Task 2)
 
-Note: If the compiler warns about unused functions, that's expected. We wire them in the
-next task. If it errors, address the compile error.
-
-**Step 5: Commit**
+**Step 4: Commit**
 
 ```
 feat(restructure): add labeled break AST helpers
@@ -143,6 +105,18 @@ func replaceReturnsInStmtsLabeled(
 	collected *[]*ast.ReturnStmt,
 	loopLabel string,
 ) ([]ast.Stmt, bool) {
+```
+
+Update the `BlockStmt` case to call `replaceReturnsInStmtsLabeled` directly (not the
+wrapper) so that `loopLabel` is threaded through nested blocks:
+
+```go
+		case *ast.BlockStmt:
+			newList, ok := replaceReturnsInStmtsLabeled(s.List, ctlName, retIdx, collected, loopLabel)
+			if !ok {
+				return nil, false
+			}
+			result = append(result, &ast.BlockStmt{List: newList})
 ```
 
 In the `ReturnStmt` case, change `makeBreakStmt()` to:
@@ -225,9 +199,99 @@ func replaceReturnsInStmts(
 
 **Step 3: Update `replaceReturnsInIf` to accept and pass `loopLabel`**
 
-Add `loopLabel string` parameter, thread it through recursive calls to
-`replaceReturnsInStmtsLabeled` and itself. Update the `IfStmt` case in
-`replaceReturnsInStmtsLabeled` to call the new signature.
+Replace the full function with the updated signature. All recursive calls must
+thread `loopLabel` — both the body processing and both else branches:
+
+```go
+func replaceReturnsInIf(
+	ifStmt *ast.IfStmt,
+	ctlName string,
+	retIdx *int,
+	collected *[]*ast.ReturnStmt,
+	loopLabel string,
+) (*ast.IfStmt, bool) {
+	newBodyList, ok := replaceReturnsInStmtsLabeled(ifStmt.Body.List, ctlName, retIdx, collected, loopLabel)
+	if !ok {
+		return nil, false
+	}
+
+	newIf := &ast.IfStmt{
+		Init: ifStmt.Init,
+		Cond: ifStmt.Cond,
+		Body: &ast.BlockStmt{List: newBodyList},
+	}
+
+	if ifStmt.Else != nil {
+		switch e := ifStmt.Else.(type) {
+		case *ast.BlockStmt:
+			newList, ok := replaceReturnsInStmtsLabeled(e.List, ctlName, retIdx, collected, loopLabel)
+			if !ok {
+				return nil, false
+			}
+			newIf.Else = &ast.BlockStmt{List: newList}
+		case *ast.IfStmt:
+			newElse, ok := replaceReturnsInIf(e, ctlName, retIdx, collected, loopLabel)
+			if !ok {
+				return nil, false
+			}
+			newIf.Else = newElse
+		default:
+			return nil, false
+		}
+	}
+
+	return newIf, true
+}
+```
+
+Update the `IfStmt` case in `replaceReturnsInStmtsLabeled` to pass `loopLabel`:
+
+```go
+		case *ast.IfStmt:
+			newIf, ok := replaceReturnsInIf(s, ctlName, retIdx, collected, loopLabel)
+```
+
+**Step 3a: Add `replaceReturnsInClauses` for switch/select case bodies**
+
+This function can now reference `replaceReturnsInStmtsLabeled` which exists in this task.
+The `default` case rejects any non-clause statement that contains a return — this
+prevents silent passthrough of return-containing statements.
+
+```go
+// replaceReturnsInClauses processes case/comm clauses, replacing returns
+// in their bodies with control variable assignment + labeled break.
+func replaceReturnsInClauses(
+	stmts []ast.Stmt,
+	ctlName string,
+	retIdx *int,
+	collected *[]*ast.ReturnStmt,
+	loopLabel string,
+) ([]ast.Stmt, bool) {
+	var result []ast.Stmt
+	for _, stmt := range stmts {
+		switch cc := stmt.(type) {
+		case *ast.CaseClause:
+			newBody, ok := replaceReturnsInStmtsLabeled(cc.Body, ctlName, retIdx, collected, loopLabel)
+			if !ok {
+				return nil, false
+			}
+			result = append(result, &ast.CaseClause{List: cc.List, Body: newBody})
+		case *ast.CommClause:
+			newBody, ok := replaceReturnsInStmtsLabeled(cc.Body, ctlName, retIdx, collected, loopLabel)
+			if !ok {
+				return nil, false
+			}
+			result = append(result, &ast.CommClause{Comm: cc.Comm, Body: newBody})
+		default:
+			if bodyContainsReturn(&ast.BlockStmt{List: []ast.Stmt{stmt}}) {
+				return nil, false
+			}
+			result = append(result, stmt)
+		}
+	}
+	return result, true
+}
+```
 
 **Step 4: Wire label assignment into `rewriteLoopReturns`**
 
@@ -302,7 +366,7 @@ Change it to verify the restructured output:
 func TestGoCFGToStructured_LoopReturnInSwitch(t *testing.T) {
 	engine := newEngine(t)
 
-	scheme_eval(t, engine, `
+	eval(t, engine, `
 		(define source "
 			package p
 			func f(items []int) int {
@@ -320,12 +384,12 @@ func TestGoCFGToStructured_LoopReturnInSwitch(t *testing.T) {
 		(define result (go-cfg-to-structured body))`)
 
 	t.Run("returns a block", func(t *testing.T) {
-		result := scheme_eval(t, engine, `(eq? (car result) 'block)`)
+		result := eval(t, engine, `(eq? (car result) 'block)`)
 		qt.New(t).Assert(result.Internal(), qt.Equals, values.TrueValue)
 	})
 
 	t.Run("has labeled break", func(t *testing.T) {
-		result := scheme_eval(t, engine, `(go-format result)`)
+		result := eval(t, engine, `(go-format result)`)
 		s := result.Internal().(*values.String).Value
 		qt.New(t).Assert(strings.Contains(s, "_loop0"), qt.IsTrue,
 			qt.Commentf("expected loop label, got:\n%s", s))
@@ -334,16 +398,13 @@ func TestGoCFGToStructured_LoopReturnInSwitch(t *testing.T) {
 	})
 
 	t.Run("has guard after loop", func(t *testing.T) {
-		result := scheme_eval(t, engine, `(go-format result)`)
+		result := eval(t, engine, `(go-format result)`)
 		s := result.Internal().(*values.String).Value
 		qt.New(t).Assert(strings.Contains(s, "return -1"), qt.IsTrue,
 			qt.Commentf("expected return in guard, got:\n%s", s))
 	})
 }
 ```
-
-Note: The test helper is called `eval` in the existing tests. Use the same name
-as the existing tests — check `prim_goast_test.go` for the actual helper name.
 
 **Step 2: Add test for type-switch with return in loop**
 
@@ -436,36 +497,40 @@ test(restructure): labeled break for switch/select returns in loops
 
 **Step 1: Change primitive registration to variadic**
 
-In `register.go`, change the `go-cfg-to-structured` entry:
+In `register.go`, change the `go-cfg-to-structured` entry. Use `"rest"` for the
+variadic param name, matching the convention in `go-load` and `go-list-deps`:
 
 ```go
 		{Name: "go-cfg-to-structured", ParamCount: 2, IsVariadic: true, Impl: PrimGoCFGToStructured,
 			Doc:        "Restructures a block with early returns into a single-exit if/else tree. Optional second arg: func-type for result variable synthesis.",
-			ParamNames: []string{"block", "func-type"}, Category: "goast"},
+			ParamNames: []string{"block", "rest"}, Category: "goast"},
 ```
 
 **Step 2: Extract result types from optional func-type in `PrimGoCFGToStructured`**
 
 At the top of `PrimGoCFGToStructured`, after parsing the block, extract result types
-if the second argument is provided:
+from the optional rest-args. The variadic arg arrives as a `values.Tuple`; walk it
+for the first element (matching the `go-load` / `go-list-deps` convention):
 
 ```go
 	var resultTypes []*ast.Field
-	if mc.NArgs() > 1 {
-		ftVal := mc.Arg(1)
-		if !values.IsFalse(ftVal) {
-			ftNode, err := unmapNode(ftVal)
-			if err != nil {
-				return werr.WrapForeignErrorf(errGoRestructureError,
-					"go-cfg-to-structured: func-type: %s", err)
-			}
-			ft, ok := ftNode.(*ast.FuncType)
-			if !ok {
-				return werr.WrapForeignErrorf(errGoRestructureError,
-					"go-cfg-to-structured: expected func-type, got %T", ftNode)
-			}
-			if ft.Results != nil {
-				resultTypes = ft.Results.List
+	if rest, ok := mc.Arg(1).(values.Tuple); ok {
+		if pair, ok := rest.(*values.Pair); ok {
+			ftVal := pair.Car()
+			if ftVal != values.FalseValue {
+				ftNode, err := unmapNode(ftVal)
+				if err != nil {
+					return werr.WrapForeignErrorf(errGoRestructureError,
+						"go-cfg-to-structured: func-type: %s", err)
+				}
+				ft, ok := ftNode.(*ast.FuncType)
+				if !ok {
+					return werr.WrapForeignErrorf(errGoRestructureError,
+						"go-cfg-to-structured: expected func-type, got %T", ftNode)
+				}
+				if ft.Results != nil {
+					resultTypes = ft.Results.List
+				}
 			}
 		}
 	}
@@ -526,6 +591,8 @@ We need one type expression per return position.
 ```go
 // expandResultTypes expands a field list into one type expression per
 // result position. For (x, y int, err error) this returns [int, int, error].
+// Each position gets a cloned type expression to avoid AST aliasing when
+// fields group multiple names (e.g., x, y int shares one ast.Expr).
 func expandResultTypes(fields []*ast.Field) []ast.Expr {
 	var types []ast.Expr
 	for _, f := range fields {
@@ -533,11 +600,34 @@ func expandResultTypes(fields []*ast.Field) []ast.Expr {
 		if n == 0 {
 			n = 1 // unnamed result
 		}
-		for range n {
-			types = append(types, f.Type)
+		for i := range n {
+			if i == 0 {
+				types = append(types, f.Type)
+			} else {
+				types = append(types, cloneTypeExpr(f.Type))
+			}
 		}
 	}
 	return types
+}
+
+// cloneTypeExpr shallow-clones a type expression. Handles the common
+// cases: idents, selectors, stars, arrays, maps.
+func cloneTypeExpr(expr ast.Expr) ast.Expr {
+	switch e := expr.(type) {
+	case *ast.Ident:
+		return ast.NewIdent(e.Name)
+	case *ast.SelectorExpr:
+		return &ast.SelectorExpr{X: cloneTypeExpr(e.X), Sel: ast.NewIdent(e.Sel.Name)}
+	case *ast.StarExpr:
+		return &ast.StarExpr{X: cloneTypeExpr(e.X)}
+	case *ast.ArrayType:
+		return &ast.ArrayType{Len: e.Len, Elt: cloneTypeExpr(e.Elt)}
+	case *ast.MapType:
+		return &ast.MapType{Key: cloneTypeExpr(e.Key), Value: cloneTypeExpr(e.Value)}
+	default:
+		return expr // fallback: share reference
+	}
 }
 ```
 
@@ -573,12 +663,26 @@ After the ctl var declaration, emit result var declarations:
 **Step 4: Modify return replacement to emit assignments**
 
 Add `resultVarCount int` parameter to `replaceReturnsInStmtsLabeled` (and its
-callees). When > 0, emit assignments before the ctl assignment:
+callees: `replaceReturnsInIf`, `replaceReturnsInClauses`). Also update the
+`BlockStmt` case to thread `resultVarCount` through recursive calls. When > 0,
+emit assignments before the ctl assignment.
+
+Guard against mismatched result counts — naked returns (zero results) and
+multi-valued function call returns (`return f()` where `f()` returns multiple
+values) cannot be rewritten safely:
 
 ```go
 		case *ast.ReturnStmt:
 			*retIdx++
 			if resultVarCount > 0 {
+				if len(s.Results) == 0 {
+					// Naked return — cannot synthesize loop-local vars.
+					return nil, false
+				}
+				if len(s.Results) != resultVarCount {
+					// Multi-value call or count mismatch — bail.
+					return nil, false
+				}
 				for i, expr := range s.Results {
 					result = append(result, &ast.AssignStmt{
 						Lhs: []ast.Expr{ast.NewIdent(fmt.Sprintf("_r%d", i))},
@@ -754,19 +858,48 @@ const (
 )
 
 // classifyGotos analyzes goto statements in a block.
+//
+// Assumption: classification is sound for flat function bodies where gotos
+// and their target labels are top-level statements. A goto nested inside
+// an if/switch at statement index N uses N as its source position (structural
+// index, not execution order). Gotos targeting labels not in the top-level
+// list are classified as gotoCrossBranch (conservative).
+//
+// Only labels that are actual goto targets are considered. Labels used
+// solely by break/continue (e.g., `outer: for ...` with `break outer`)
+// are ignored — stripping them would break the output AST.
 func classifyGotos(block *ast.BlockStmt) gotoClass {
-	// Collect label positions (index in top-level statement list).
-	labelPos := map[string]int{}
-	for i, stmt := range block.List {
-		if ls, ok := stmt.(*ast.LabeledStmt); ok {
-			labelPos[ls.Label.Name] = i
-		}
+	// First pass: collect all goto target names.
+	gotoTargets := map[string]bool{}
+	for _, stmt := range block.List {
+		ast.Inspect(stmt, func(n ast.Node) bool {
+			switch v := n.(type) {
+			case *ast.BranchStmt:
+				if v.Tok == token.GOTO && v.Label != nil {
+					gotoTargets[v.Label.Name] = true
+				}
+			case *ast.FuncLit:
+				return false
+			}
+			return true
+		})
 	}
-	if len(labelPos) == 0 {
+	if len(gotoTargets) == 0 {
 		return gotoNone
 	}
 
-	// Collect goto targets with their source position.
+	// Second pass: collect label positions, but only for labels that are
+	// actual goto targets. This excludes break/continue loop labels.
+	labelPos := map[string]int{}
+	for i, stmt := range block.List {
+		if ls, ok := stmt.(*ast.LabeledStmt); ok {
+			if gotoTargets[ls.Label.Name] {
+				labelPos[ls.Label.Name] = i
+			}
+		}
+	}
+
+	// Collect goto source positions.
 	type gotoInfo struct {
 		stmtIdx int
 		label   string
@@ -785,15 +918,13 @@ func classifyGotos(block *ast.BlockStmt) gotoClass {
 			return true
 		})
 	}
-	if len(gotos) == 0 {
-		return gotoNone
-	}
 
 	hasForward := false
 	hasBackward := false
 	for _, g := range gotos {
 		target, ok := labelPos[g.label]
 		if !ok {
+			// Label not at top level — can't restructure.
 			return gotoCrossBranch
 		}
 		if target > g.stmtIdx {
@@ -885,16 +1016,28 @@ func negateExpr(expr ast.Expr) ast.Expr {
 
 **Step 2: Implement `restructureForwardGotos`**
 
+Uses a fixpoint loop: each pass rewrites one forward goto, then repeats until
+no more are found. This correctly handles multiple gotos targeting the same
+label — the first pass wraps statements up to the label, the second pass
+finds the remaining goto (now inside the wrapped block or still top-level)
+and handles it in the next iteration. Label stripping only happens when no
+more gotos target that label.
+
 ```go
 // restructureForwardGotos rewrites forward gotos in a statement list.
 // Pattern: if cond { goto L } ... L: stmt
 // Becomes: if !cond { ... } stmt
+//
+// Runs to fixpoint: each pass rewrites one goto, because wrapping
+// statements shifts indices and may expose or relocate other gotos.
 func restructureForwardGotos(stmts []ast.Stmt) []ast.Stmt {
 	result := make([]ast.Stmt, len(stmts))
 	copy(result, stmts)
 
-	for i := len(result) - 1; i >= 0; i-- {
-		// Rebuild label index each pass (positions shift).
+	for {
+		rewritten := false
+
+		// Build label index.
 		labelPos := map[string]int{}
 		for j, s := range result {
 			if ls, ok := s.(*ast.LabeledStmt); ok {
@@ -902,54 +1045,81 @@ func restructureForwardGotos(stmts []ast.Stmt) []ast.Stmt {
 			}
 		}
 
-		stmt := result[i]
+		// Find the first forward goto and rewrite it.
+		for i, stmt := range result {
+			ifStmt, ok := stmt.(*ast.IfStmt)
+			if !ok || ifStmt.Else != nil {
+				continue
+			}
+			gotoTarget := singleGotoTarget(ifStmt.Body)
+			if gotoTarget == "" {
+				continue
+			}
+			targetIdx, ok := labelPos[gotoTarget]
+			if !ok || targetIdx <= i {
+				continue
+			}
+
+			// Wrap stmts[i+1..targetIdx-1] in if !cond { ... }.
+			skipped := make([]ast.Stmt, targetIdx-i-1)
+			copy(skipped, result[i+1:targetIdx])
+			negated := negateExpr(ifStmt.Cond)
+			wrapped := &ast.IfStmt{
+				Cond: negated,
+				Body: &ast.BlockStmt{List: skipped},
+			}
+
+			// Only strip the label if no other goto targets it.
+			targetStmt := result[targetIdx]
+			if !hasOtherGoto(result, gotoTarget, i) {
+				if ls, ok := targetStmt.(*ast.LabeledStmt); ok {
+					targetStmt = ls.Stmt
+				}
+			}
+
+			// Rebuild: result[:i] + wrapped + targetStmt + result[targetIdx+1:]
+			var newStmts []ast.Stmt
+			newStmts = append(newStmts, result[:i]...)
+			newStmts = append(newStmts, wrapped)
+			newStmts = append(newStmts, targetStmt)
+			newStmts = append(newStmts, result[targetIdx+1:]...)
+			result = newStmts
+			rewritten = true
+			break // restart from the top
+		}
+
+		if !rewritten {
+			break
+		}
+	}
+
+	return result
+}
+
+// hasOtherGoto returns true if any top-level if-goto in stmts (other than
+// the one at excludeIdx) targets the given label.
+func hasOtherGoto(stmts []ast.Stmt, label string, excludeIdx int) bool {
+	for i, stmt := range stmts {
+		if i == excludeIdx {
+			continue
+		}
 		ifStmt, ok := stmt.(*ast.IfStmt)
 		if !ok || ifStmt.Else != nil {
 			continue
 		}
-		gotoTarget := singleGotoTarget(ifStmt.Body)
-		if gotoTarget == "" {
-			continue
+		if singleGotoTarget(ifStmt.Body) == label {
+			return true
 		}
-		targetIdx, ok := labelPos[gotoTarget]
-		if !ok || targetIdx <= i {
-			continue
-		}
-
-		// Wrap stmts[i+1..targetIdx-1] in if !cond { ... }.
-		skipped := make([]ast.Stmt, targetIdx-i-1)
-		copy(skipped, result[i+1:targetIdx])
-		negated := negateExpr(ifStmt.Cond)
-		wrapped := &ast.IfStmt{
-			Cond: negated,
-			Body: &ast.BlockStmt{List: skipped},
-		}
-
-		// Unwrap label at targetIdx.
-		var labelStmt ast.Stmt
-		if ls, ok := result[targetIdx].(*ast.LabeledStmt); ok {
-			labelStmt = ls.Stmt
-		} else {
-			labelStmt = result[targetIdx]
-		}
-
-		// Rebuild: result[:i] + wrapped + labelStmt + result[targetIdx+1:]
-		var newStmts []ast.Stmt
-		newStmts = append(newStmts, result[:i]...)
-		newStmts = append(newStmts, wrapped)
-		newStmts = append(newStmts, labelStmt)
-		newStmts = append(newStmts, result[targetIdx+1:]...)
-		result = newStmts
 	}
-
-	return result
+	return false
 }
 ```
 
 **Step 3: Wire into `PrimGoCFGToStructured`**
 
 Remove the temporary bail-out for forward gotos. Add a new phase before loop
-rewriting:
+rewriting, with post-restructuring validation that catches any gotos that
+survived the pattern matchers:
 
 ```go
 	gc := classifyGotos(block)
@@ -972,6 +1142,14 @@ rewriting:
 	if gc == gotoForwardOnly || gc == gotoMixed {
 		stmts = restructureForwardGotos(stmts)
 		changed = true
+	}
+
+	// Post-restructuring validation: if any gotos survived the pattern
+	// matchers (bare gotos, multi-statement if-bodies, nested gotos),
+	// bail honestly rather than returning an AST that still has gotos.
+	if gc != gotoNone && containsGoto(&ast.BlockStmt{List: stmts}) {
+		mc.SetValue(values.FalseValue)
+		return nil
 	}
 
 	// Phase 1: Rewrite returns inside loops (Case 2).
@@ -1111,8 +1289,11 @@ test(restructure): forward goto elimination
 
 ```go
 // restructureBackwardGotos rewrites backward gotos as for-loops.
-// Pattern: label: stmt ... if cond { goto label }
-// Becomes: for { stmt ... if !cond { break } }
+// Handles two patterns:
+//   - Conditional: label: stmt ... if cond { goto label }
+//     Becomes:     for { stmt ... if !cond { break } }
+//   - Unconditional: label: stmt ... goto label
+//     Becomes:       for { stmt ... }
 func restructureBackwardGotos(stmts []ast.Stmt) []ast.Stmt {
 	var result []ast.Stmt
 
@@ -1125,9 +1306,15 @@ func restructureBackwardGotos(stmts []ast.Stmt) []ast.Stmt {
 
 		label := ls.Label.Name
 		gotoIdx := -1
+		isBareGoto := false
 		for j := i + 1; j < len(stmts); j++ {
 			if ifHasGoto(stmts[j], label) {
 				gotoIdx = j
+				break
+			}
+			if bareGotoTarget(stmts[j]) == label {
+				gotoIdx = j
+				isBareGoto = true
 				break
 			}
 		}
@@ -1142,12 +1329,15 @@ func restructureBackwardGotos(stmts []ast.Stmt) []ast.Stmt {
 		loopBody = append(loopBody, ls.Stmt)
 		loopBody = append(loopBody, stmts[i+1:gotoIdx]...)
 
-		// Replace goto-if with break-if (negated condition).
-		gotoIf := stmts[gotoIdx].(*ast.IfStmt)
-		loopBody = append(loopBody, &ast.IfStmt{
-			Cond: negateExpr(gotoIf.Cond),
-			Body: &ast.BlockStmt{List: []ast.Stmt{makeBreakStmt()}},
-		})
+		if !isBareGoto {
+			// Conditional: replace goto-if with break-if (negated condition).
+			gotoIf, _ := stmts[gotoIdx].(*ast.IfStmt)
+			loopBody = append(loopBody, &ast.IfStmt{
+				Cond: negateExpr(gotoIf.Cond),
+				Body: &ast.BlockStmt{List: []ast.Stmt{makeBreakStmt()}},
+			})
+		}
+		// Bare goto: infinite loop with no break condition.
 
 		result = append(result, &ast.ForStmt{
 			Body: &ast.BlockStmt{List: loopBody},
@@ -1167,11 +1357,23 @@ func ifHasGoto(stmt ast.Stmt, label string) bool {
 	}
 	return singleGotoTarget(ifStmt.Body) == label
 }
+
+// bareGotoTarget returns the label if stmt is a bare `goto label`. Returns "" otherwise.
+func bareGotoTarget(stmt ast.Stmt) string {
+	bs, ok := stmt.(*ast.BranchStmt)
+	if !ok || bs.Tok != token.GOTO || bs.Label == nil {
+		return ""
+	}
+	return bs.Label.Name
+}
 ```
 
 **Step 2: Wire into `PrimGoCFGToStructured`**
 
-Replace the backward goto TODO. Ensure backward runs BEFORE forward when `gotoMixed`:
+Replace the backward goto TODO. Ensure backward runs BEFORE forward when `gotoMixed`.
+Ordering invariant: backward rewriting consumes backward gotos (converting them to
+`for` loops) and cannot introduce new forward gotos. So the initial classification
+remains valid for Phase 0b.
 
 ```go
 	// Phase 0a: Backward gotos -> for loops.
@@ -1184,6 +1386,12 @@ Replace the backward goto TODO. Ensure backward runs BEFORE forward when `gotoMi
 	if gc == gotoForwardOnly || gc == gotoMixed {
 		stmts = restructureForwardGotos(stmts)
 		changed = true
+	}
+
+	// Post-restructuring validation: if any gotos survived, bail.
+	if gc != gotoNone && containsGoto(&ast.BlockStmt{List: stmts}) {
+		mc.SetValue(values.FalseValue)
+		return nil
 	}
 ```
 
@@ -1239,7 +1447,41 @@ func TestGoCFGToStructured_BackwardGoto(t *testing.T) {
 }
 ```
 
-**Step 2: Test mixed forward + backward goto**
+**Step 2: Test bare unconditional backward goto (infinite loop)**
+
+```go
+func TestGoCFGToStructured_BareBackwardGoto(t *testing.T) {
+	engine := newEngine(t)
+
+	eval(t, engine, `
+		(define source "
+			package p
+			func f() {
+				start:
+				work()
+				goto start
+			}")
+		(define file (go-parse-string source))
+		(define decls (cdr (assoc 'decls (cdr file))))
+		(define body (cdr (assoc 'body (cdr (car decls)))))
+		(define result (go-cfg-to-structured body))`)
+
+	t.Run("becomes infinite for loop", func(t *testing.T) {
+		result := eval(t, engine, `(go-format result)`)
+		s := result.Internal().(*values.String).Value
+		qt.New(t).Assert(strings.Contains(s, "goto"), qt.IsFalse,
+			qt.Commentf("should eliminate goto, got:\n%s", s))
+		qt.New(t).Assert(strings.Contains(s, "for {"), qt.IsTrue,
+			qt.Commentf("expected for loop, got:\n%s", s))
+		qt.New(t).Assert(strings.Contains(s, "work()"), qt.IsTrue)
+		// No break — this is an intentional infinite loop.
+		qt.New(t).Assert(strings.Contains(s, "break"), qt.IsFalse,
+			qt.Commentf("should not have break in infinite loop, got:\n%s", s))
+	})
+}
+```
+
+**Step 3: Test mixed forward + backward goto**
 
 ```go
 func TestGoCFGToStructured_MixedGoto(t *testing.T) {
@@ -1273,12 +1515,12 @@ func TestGoCFGToStructured_MixedGoto(t *testing.T) {
 }
 ```
 
-**Step 3: Run all tests**
+**Step 4: Run all tests**
 
 Run: `cd /Users/aalpar/projects/wile-workspace/wile-goast && go test ./goast/ -run TestGoCFGToStructured -v`
 Expected: all pass
 
-**Step 4: Commit**
+**Step 5: Commit**
 
 ```
 test(restructure): backward and mixed goto elimination
