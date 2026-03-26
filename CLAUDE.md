@@ -93,6 +93,22 @@ Package-loading primitives (`go-typecheck-package`, `go-ssa-build`, `go-ssa-fiel
 (go-cfg s "MyFunc")       ;; same SSA program
 ```
 
+## Dataflow Analysis — `(wile goast dataflow)`
+
+Two facilities: def-use reachability (`defuse-reachable?`) and a general worklist-based dataflow analysis framework (`run-analysis`). Both operate on SSA block graphs from `go-ssa-build`.
+
+| Export | Description |
+|--------|-------------|
+| `run-analysis` | Worklist-based forward/backward analysis: `(run-analysis direction lattice transfer ssa-fn [initial-state] ['check-monotone])` |
+| `analysis-in` | Query in-state at block: `(analysis-in result block-idx)` |
+| `analysis-out` | Query out-state at block: `(analysis-out result block-idx)` |
+| `analysis-states` | Full result alist: `((idx in out) ...)` |
+| `block-instrs` | Extract instruction list from SSA block |
+| `defuse-reachable?` | Bounded def-use chain reachability via product lattice fixpoint |
+| `boolean-lattice` | `{#f, #t}` lattice (utility) |
+| `ssa-all-instrs` | Flatten all instructions from SSA function |
+| `ssa-instruction-names` | All named values in SSA function |
+
 ## SSA Normalization — `(wile goast ssa-normalize)`
 
 Algebraic normalization rules for SSA binop nodes. Rules are generated from axiom declarations via `(wile algebra rewrite)` — identity, absorbing, and commutativity properties are declared per-operator, and `make-normalizer` compiles them into rewrite rules through a term protocol that abstracts over SSA node structure. Integer-type scoped for identity/absorbing to avoid IEEE 754 issues. Extensible via `ssa-rule-set`.
@@ -259,7 +275,7 @@ Prompt content lives in `cmd/wile-goast/prompts/*.md` (embedded in binary).
 | `goast{ssa,cfg,cg,lint}/mapper.go` | IR-specific s-expression mappers |
 | `goast{ssa,cfg,cg,lint}/register.go` | Sub-extension registration |
 | `cmd/wile-goast/lib/wile/goast/belief.scm` | Belief DSL implementation (embedded in binary) |
-| `cmd/wile-goast/lib/wile/goast/dataflow.scm` | Def-use reachability via `(wile algebra)` fixpoint (embedded in binary) |
+| `cmd/wile-goast/lib/wile/goast/dataflow.scm` | Def-use reachability + worklist dataflow analysis framework (embedded in binary) |
 | `cmd/wile-goast/lib/wile/goast/utils.scm` | Shared traversal utilities (`nf`, `walk`, `tag?`) and tree rewriters (`ast-transform`, `ast-splice`) |
 | `cmd/wile-goast/lib/wile/goast/ssa-normalize.scm` | SSA algebraic normalization rules (embedded in binary) |
 | `cmd/wile-goast/lib/wile/goast/unify.scm` | AST/SSA diff engine with pluggable classifiers (embedded in binary) |
