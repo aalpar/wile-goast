@@ -5,7 +5,11 @@
     ssa-instruction-names
     make-reachability-transfer
     defuse-reachable?
-    block-instrs)
+    block-instrs
+    run-analysis
+    analysis-in
+    analysis-out
+    analysis-states)
   (import (wile algebra)
           (wile goast utils))
   (include "dataflow.scm"))

@@ -886,3 +886,47 @@ func TestDataflowBlockInstrs(t *testing.T) {
 		qt.New(t).Assert(result.SchemeString(), qt.Equals, "()")
 	})
 }
+
+func TestDataflowRunAnalysisForwardSingleBlock(t *testing.T) {
+	engine := newBeliefEngine(t)
+
+	eval(t, engine, `
+		(import (wile algebra))
+		(import (wile goast dataflow))
+		(import (wile goast belief))
+
+		(define ctx (make-context
+		              "github.com/aalpar/wile-goast/examples/goast-query/testdata/checking"))
+		(define fn (ctx-find-ssa-func ctx
+		  "github.com/aalpar/wile-goast/examples/goast-query/testdata/checking"
+		  "HandleUnsafe"))
+
+		;; Reaching names: powerset lattice over instruction names in function
+		(define universe (ssa-instruction-names fn))
+		(define lat (powerset-lattice universe))
+
+		;; Transfer: union in-state with names defined in block
+		(define (transfer blk in-val)
+		  (let ((names (filter-map
+		                 (lambda (i) (nf i 'name))
+		                 (block-instrs blk))))
+		    (lattice-join lat in-val names)))
+
+		(define result (run-analysis 'forward lat transfer fn))
+	`)
+
+	t.Run("entry in-state is bottom", func(t *testing.T) {
+		result := eval(t, engine, `(analysis-in result 0)`)
+		qt.New(t).Assert(result.SchemeString(), qt.Equals, "()")
+	})
+
+	t.Run("entry out-state has defined names", func(t *testing.T) {
+		result := eval(t, engine, `(> (length (analysis-out result 0)) 0)`)
+		qt.New(t).Assert(result.SchemeString(), qt.Equals, "#t")
+	})
+
+	t.Run("analysis-states returns alist of length 1", func(t *testing.T) {
+		result := eval(t, engine, `(number->string (length (analysis-states result)))`)
+		qt.New(t).Assert(result.SchemeString(), qt.Equals, `"1"`)
+	})
+}
