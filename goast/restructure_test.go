@@ -282,9 +282,87 @@ func TestGoCFGToStructured_LoopReturnInSwitch(t *testing.T) {
 		(define body (cdr (assoc 'body (cdr (car decls)))))
 		(define result (go-cfg-to-structured body))`)
 
-	t.Run("returns false", func(t *testing.T) {
-		result := eval(t, engine, `result`)
-		qt.New(t).Assert(result.Internal(), qt.Equals, values.FalseValue)
+	t.Run("returns a block", func(t *testing.T) {
+		result := eval(t, engine, `(eq? (car result) 'block)`)
+		qt.New(t).Assert(result.Internal(), qt.Equals, values.TrueValue)
+	})
+
+	t.Run("has labeled break", func(t *testing.T) {
+		result := eval(t, engine, `(go-format result)`)
+		s := result.Internal().(*values.String).Value
+		qt.New(t).Assert(strings.Contains(s, "_loop0"), qt.IsTrue,
+			qt.Commentf("expected loop label, got:\n%s", s))
+		qt.New(t).Assert(strings.Contains(s, "break _loop0"), qt.IsTrue,
+			qt.Commentf("expected labeled break, got:\n%s", s))
+	})
+
+	t.Run("has guard after loop", func(t *testing.T) {
+		result := eval(t, engine, `(go-format result)`)
+		s := result.Internal().(*values.String).Value
+		qt.New(t).Assert(strings.Contains(s, "return -1"), qt.IsTrue,
+			qt.Commentf("expected return in guard, got:\n%s", s))
+	})
+}
+
+func TestGoCFGToStructured_LoopReturnInTypeSwitch(t *testing.T) {
+	engine := newEngine(t)
+
+	eval(t, engine, `
+		(define source "
+			package p
+			func f(items []interface{}) int {
+				for _, v := range items {
+					switch v.(type) {
+					case int:
+						return 1
+					case string:
+						return 2
+					}
+				}
+				return 0
+			}")
+		(define file (go-parse-string source))
+		(define decls (cdr (assoc 'decls (cdr file))))
+		(define body (cdr (assoc 'body (cdr (car decls)))))
+		(define result (go-cfg-to-structured body))`)
+
+	t.Run("has labeled break and multiple guards", func(t *testing.T) {
+		result := eval(t, engine, `(go-format result)`)
+		s := result.Internal().(*values.String).Value
+		qt.New(t).Assert(strings.Contains(s, "break _loop0"), qt.IsTrue,
+			qt.Commentf("expected labeled break, got:\n%s", s))
+		qt.New(t).Assert(strings.Contains(s, "return 1"), qt.IsTrue)
+		qt.New(t).Assert(strings.Contains(s, "return 2"), qt.IsTrue)
+	})
+}
+
+func TestGoCFGToStructured_LoopReturnInSelect(t *testing.T) {
+	engine := newEngine(t)
+
+	eval(t, engine, `
+		(define source "
+			package p
+			func f(ch chan int, done chan bool) int {
+				for {
+					select {
+					case v := <-ch:
+						if v < 0 { return v }
+					case <-done:
+						return 0
+					}
+				}
+				return -1
+			}")
+		(define file (go-parse-string source))
+		(define decls (cdr (assoc 'decls (cdr file))))
+		(define body (cdr (assoc 'body (cdr (car decls)))))
+		(define result (go-cfg-to-structured body))`)
+
+	t.Run("has labeled break", func(t *testing.T) {
+		result := eval(t, engine, `(go-format result)`)
+		s := result.Internal().(*values.String).Value
+		qt.New(t).Assert(strings.Contains(s, "break _loop0"), qt.IsTrue,
+			qt.Commentf("expected labeled break, got:\n%s", s))
 	})
 }
 
