@@ -50,7 +50,7 @@ All sub-extensions depend on the base `goast` package for shared mapper/helper i
 | `go-load` | Load packages into a GoSession for reuse |
 | `go-session?` | Type predicate for GoSession |
 | `go-list-deps` | Lightweight transitive dependency discovery |
-| `go-cfg-to-structured` | Restructure early-return block into single-exit if/else tree |
+| `go-cfg-to-structured` | Restructure block into single-exit form: goto elimination, loop return rewriting, guard folding. Optional func-type for result variable synthesis. |
 
 ### goastssa — `(wile goast ssa)`
 | Primitive | Description |
@@ -263,7 +263,7 @@ Prompt content lives in `cmd/wile-goast/prompts/*.md` (embedded in binary).
 | `cmd/wile-goast/lib/wile/goast/utils.scm` | Shared traversal utilities (`nf`, `walk`, `tag?`) and tree rewriters (`ast-transform`, `ast-splice`) |
 | `cmd/wile-goast/lib/wile/goast/ssa-normalize.scm` | SSA algebraic normalization rules (embedded in binary) |
 | `cmd/wile-goast/lib/wile/goast/unify.scm` | AST/SSA diff engine with pluggable classifiers (embedded in binary) |
-| `goast/prim_restructure.go` | Early-return restructuring (`go-cfg-to-structured`) |
+| `goast/prim_restructure.go` | Block restructuring: goto elimination, loop return rewriting, guard folding (`go-cfg-to-structured`) |
 | `goastssa/prim_canonicalize.go` | SSA function canonicalization (`go-ssa-canonicalize`) |
 
 ## Documentation

@@ -673,21 +673,13 @@ func rewriteLoopReturns(stmts []ast.Stmt, counter *int, labelCounter *int, resul
 	return result, true
 }
 
-// replaceReturnsInStmts walks a statement list replacing return-stmts
+// replaceReturnsInStmtsLabeled walks a statement list replacing return-stmts
 // with control variable assignment + break. Recurses into IfStmt and
 // BlockStmt. Skips FuncLit and already-processed ForStmt/RangeStmt.
 // Returns (nil, false) if a return is found inside switch/select
 // (unless loopLabel is set, in which case switch/select are handled
-// via labeled break).
-func replaceReturnsInStmts(
-	stmts []ast.Stmt,
-	ctlName string,
-	retIdx *int,
-	collected *[]*ast.ReturnStmt,
-) ([]ast.Stmt, bool) {
-	return replaceReturnsInStmtsLabeled(stmts, ctlName, retIdx, collected, "", 0)
-}
-
+// via labeled break). When resultVarCount > 0, return values are
+// assigned to _r0, _r1, ... before the break.
 func replaceReturnsInStmtsLabeled(
 	stmts []ast.Stmt,
 	ctlName string,

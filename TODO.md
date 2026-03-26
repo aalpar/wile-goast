@@ -34,11 +34,11 @@ Composes with Case 1 (guard folding) in a single call. Supports nested
 loops (bottom-up) and multiple return sites per loop.
 See `plans/2026-03-25-loop-return-restructuring.md`.
 
-### B3. go-cfg-to-structured improvements (depends on B2)
+### B3. go-cfg-to-structured improvements (depends on B2) — DONE
 
-- [ ] Handle goto / labeled branches (currently returns #f)
-- [ ] Handle switch/select with early returns inside loops (needs labeled break)
-- [ ] Handle multiple return values (_r0, _r1, ...)
+- [x] Handle goto / labeled branches (forward and backward; cross-branch returns #f)
+- [x] Handle switch/select with early returns inside loops (labeled break)
+- [x] Handle multiple return values (_r0, _r1, ...)
 
 ## Track C: Static Analysis Forms (depends on Wile algebra library)
 

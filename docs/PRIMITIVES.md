@@ -30,7 +30,7 @@ source. Optionally type-checks packages via `go/packages`.
 | `(go-load pattern ... . options)` | GoSession | Load packages into a reusable session |
 | `(go-session? v)` | boolean | Type predicate for GoSession |
 | `(go-list-deps pattern ...)` | list of strings | Transitive import path discovery |
-| `(go-cfg-to-structured block)` | block or `#f` | Restructure early returns into single-exit if/else |
+| `(go-cfg-to-structured block [func-type])` | block or `#f` | Restructure block into single-exit form: goto elimination, loop return rewriting, guard folding |
 
 ### Session Management
 
@@ -198,36 +198,57 @@ Interfaces with no methods (e.g. type-constraint interfaces) are rejected.
 ### Transformation
 
 `go-cfg-to-structured` takes a block s-expression and returns a restructured
-block where all early returns are eliminated, producing a single-exit block.
-Every return in the output is at a leaf of an if/else tree.
+block where all early returns and gotos are eliminated, producing a single-exit
+block. Every return in the output is at a leaf of an if/else tree.
 
-Handles two cases in one call:
+Optional second argument: a func-type s-expression. When provided, loop-local
+return values are assigned to synthesized variables (`_r0`, `_r1`, ...) declared
+before the loop, ensuring return values reference variables visible after loop exit.
 
-- **Case 1 (linear guards):** `if cond { return X }` patterns are folded into
-  nested if/else chains via right-fold.
-- **Case 2 (loop returns):** Returns inside `for`/`range` are rewritten as
-  `_ctl<N> = K; break` with guard-if-return statements after the loop.
+Four phases run in sequence:
+
+- **Phase 0a (backward goto):** `label: stmt ... if cond { goto label }` patterns
+  become `for { stmt ... if !cond { break } }`. Bare `goto label` becomes an
+  infinite `for` loop.
+- **Phase 0b (forward goto):** `if cond { goto L } ... L: stmt` patterns become
+  `if !cond { ... } stmt`. Multiple gotos to the same label are handled via
+  fixpoint (last-to-first iteration).
+- **Phase 1 (loop returns):** Returns inside `for`/`range` are rewritten as
+  `_ctl<N> = K; break` with guard-if-return statements after the loop. Returns
+  inside `switch`/`select` within loops use labeled break (`break _loop<N>`).
   Supports nested loops (bottom-up) and multiple return sites per loop.
+- **Phase 2 (linear guards):** `if cond { return X }` patterns are folded into
+  nested if/else chains via right-fold.
 
-Returns the block unchanged if there are no early returns. Returns `#f` if
-the block contains `goto`, labeled statements, or returns inside
-`switch`/`select` within loops. **Callers must check for `#f` before
-chaining** — passing it to `ast-transform` or `subst-idents` will produce
+Returns the block unchanged if there are no early returns or gotos. Returns `#f`
+if the block contains control flow it cannot restructure (cross-branch gotos,
+gotos targeting labels inside nested blocks). **Callers must check for `#f`
+before chaining** — passing it to `ast-transform` or `subst-idents` will produce
 wrong results.
 
 ```scheme
-;; Case 1: linear guards → if/else
-;; if x < lo { return lo }; if x > hi { return hi }; return x
-;;   → if x < lo { return lo } else if x > hi { return hi } else { return x }
+;; Phase 0b: forward goto → if !cond wrapping
+;; if x > 0 { goto end }; println(x); end: println(0)
+;;   → if !(x > 0) { println(x) }; println(0)
 
-;; Case 2: loop returns → _ctl + break + guard
+;; Phase 1: loop returns → _ctl + break + guard
 ;; for _, v := range items { if v < 0 { return v } }; return 0
 ;;   → var _ctl0 int; for ... { _ctl0 = 1; break }; if _ctl0 == 1 { return v } else { return 0 }
+
+;; Phase 1 with func-type: result variable synthesis
+;; (go-cfg-to-structured body ftype)
+;;   → var _ctl0 int; var _r0 int; for ... { _r0 = v; _ctl0 = 1; break }
+;;     if _ctl0 == 1 { return _r0 } else { return 0 }
+
+;; Phase 2: linear guards → if/else
+;; if x < lo { return lo }; if x > hi { return hi }; return x
+;;   → if x < lo { return lo } else if x > hi { return hi } else { return x }
 ```
 
 **Limitations:**
 - Top-level only — does not recurse into nested blocks
-- Returns inside `switch`/`select` within loops not handled (needs labeled break)
+- Cross-branch gotos (into/out of if/switch) return `#f`
+- Naked returns and multi-value call returns (`return f()`) bail when func-type is provided
 
 ---
 
