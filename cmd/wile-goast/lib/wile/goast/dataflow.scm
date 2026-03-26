@@ -72,6 +72,11 @@
                (joined (lattice-join names-lat names new-names)))
           (list joined (or guard guard-hit)))))))
 
+;; ─── Block accessor ────────────────────────
+
+(define (block-instrs block)
+  (or (nf block 'instrs) '()))
+
 ;; ─── Top-level query ────────────────────────
 
 (define (defuse-reachable? ssa-fn start-names found? fuel)

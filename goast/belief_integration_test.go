@@ -859,3 +859,30 @@ func TestDataflowDefuseReachable(t *testing.T) {
 		qt.New(t).Assert(result.SchemeString(), qt.Equals, "#f")
 	})
 }
+
+func TestDataflowBlockInstrs(t *testing.T) {
+	engine := newBeliefEngine(t)
+
+	eval(t, engine, `
+		(import (wile goast dataflow))
+		(import (wile goast belief))
+
+		(define ctx (make-context
+		              "github.com/aalpar/wile-goast/examples/goast-query/testdata/checking"))
+		(define ssa-fn (ctx-find-ssa-func ctx
+		  "github.com/aalpar/wile-goast/examples/goast-query/testdata/checking"
+		  "HandleSafeA"))
+		(define blocks (nf ssa-fn 'blocks))
+		(define b0 (car blocks))
+	`)
+
+	t.Run("block 0 has 2 instructions", func(t *testing.T) {
+		result := eval(t, engine, `(number->string (length (block-instrs b0)))`)
+		qt.New(t).Assert(result.SchemeString(), qt.Equals, `"2"`)
+	})
+
+	t.Run("missing block returns empty list", func(t *testing.T) {
+		result := eval(t, engine, `(block-instrs '(ssa-block (index . 99)))`)
+		qt.New(t).Assert(result.SchemeString(), qt.Equals, "()")
+	})
+}
