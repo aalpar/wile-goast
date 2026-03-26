@@ -50,6 +50,29 @@ func PrimGoCFGToStructured(mc *machine.MachineContext) error {
 			"go-cfg-to-structured: expected block, got %T", node)
 	}
 
+	// Extract result types from optional func-type argument.
+	var resultTypes []*ast.Field
+	if rest, ok := mc.Arg(1).(values.Tuple); ok {
+		if pair, ok := rest.(*values.Pair); ok {
+			ftVal := pair.Car()
+			if ftVal != values.FalseValue {
+				ftNode, err := unmapNode(ftVal)
+				if err != nil {
+					return werr.WrapForeignErrorf(errGoRestructureError,
+						"go-cfg-to-structured: func-type: %s", err)
+				}
+				ft, ok := ftNode.(*ast.FuncType)
+				if !ok {
+					return werr.WrapForeignErrorf(errGoRestructureError,
+						"go-cfg-to-structured: expected func-type, got %T", ftNode)
+				}
+				if ft.Results != nil {
+					resultTypes = ft.Results.List
+				}
+			}
+		}
+	}
+
 	if containsGoto(block) {
 		mc.SetValue(values.FalseValue)
 		return nil
@@ -62,7 +85,7 @@ func PrimGoCFGToStructured(mc *machine.MachineContext) error {
 	if hasLoopReturns(stmts) {
 		ctlCounter := 0
 		labelCounter := 0
-		newStmts, ok := rewriteLoopReturns(stmts, &ctlCounter, &labelCounter)
+		newStmts, ok := rewriteLoopReturns(stmts, &ctlCounter, &labelCounter, resultTypes)
 		if !ok {
 			mc.SetValue(values.FalseValue)
 			return nil
@@ -266,7 +289,7 @@ func hasLoopReturns(stmts []ast.Stmt) bool {
 // in a LabeledStmt.
 //
 // Returns (nil, false) if any loop contains unrewritable returns.
-func rewriteLoopReturns(stmts []ast.Stmt, counter *int, labelCounter *int) ([]ast.Stmt, bool) {
+func rewriteLoopReturns(stmts []ast.Stmt, counter *int, labelCounter *int, resultTypes []*ast.Field) ([]ast.Stmt, bool) {
 	var result []ast.Stmt
 	for _, stmt := range stmts {
 		var body *ast.BlockStmt
@@ -282,7 +305,7 @@ func rewriteLoopReturns(stmts []ast.Stmt, counter *int, labelCounter *int) ([]as
 		}
 
 		// Bottom-up: process inner loops first.
-		innerStmts, ok := rewriteLoopReturns(body.List, counter, labelCounter)
+		innerStmts, ok := rewriteLoopReturns(body.List, counter, labelCounter, resultTypes)
 		if !ok {
 			return nil, false
 		}
