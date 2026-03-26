@@ -198,6 +198,43 @@ func wrapBlock(stmts []ast.Stmt) ast.Stmt {
 	return &ast.BlockStmt{List: stmts}
 }
 
+// hasReturnInSwitch checks whether any switch/select/type-switch
+// statement in the list contains a return in its body.
+func hasReturnInSwitch(stmts []ast.Stmt) bool {
+	found := false
+	for _, stmt := range stmts {
+		ast.Inspect(stmt, func(n ast.Node) bool {
+			if found {
+				return false
+			}
+			switch s := n.(type) {
+			case *ast.SwitchStmt:
+				if bodyContainsReturn(s.Body) {
+					found = true
+					return false
+				}
+			case *ast.TypeSwitchStmt:
+				if bodyContainsReturn(s.Body) {
+					found = true
+					return false
+				}
+			case *ast.SelectStmt:
+				if bodyContainsReturn(s.Body) {
+					found = true
+					return false
+				}
+			case *ast.FuncLit:
+				return false
+			case *ast.ForStmt, *ast.RangeStmt:
+				// Don't look inside nested loops — they get their own labels.
+				return false
+			}
+			return true
+		})
+	}
+	return found
+}
+
 // --- Case 2: Loop return rewriting ---
 
 // hasLoopReturns checks whether any top-level for/range statement
@@ -404,6 +441,11 @@ func makeIntAssign(name string, val int) ast.Stmt {
 // makeBreakStmt creates: break
 func makeBreakStmt() ast.Stmt {
 	return &ast.BranchStmt{Tok: token.BREAK}
+}
+
+// makeLabeledBreak creates: break <label>
+func makeLabeledBreak(label string) ast.Stmt {
+	return &ast.BranchStmt{Tok: token.BREAK, Label: ast.NewIdent(label)}
 }
 
 // makeCtlGuard creates: if <name> == <val> { <retStmt> }
