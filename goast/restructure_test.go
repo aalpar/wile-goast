@@ -563,3 +563,93 @@ func TestGoCFGToStructured_CrossBranchGoto(t *testing.T) {
 		qt.New(t).Assert(result.Internal(), qt.Equals, values.FalseValue)
 	})
 }
+
+func TestGoCFGToStructured_BackwardGoto(t *testing.T) {
+	engine := newEngine(t)
+
+	eval(t, engine, `
+		(define source "
+			package p
+			func f() {
+				start:
+				work()
+				if shouldContinue() { goto start }
+				cleanup()
+			}")
+		(define file (go-parse-string source))
+		(define decls (cdr (assoc 'decls (cdr file))))
+		(define body (cdr (assoc 'body (cdr (car decls)))))
+		(define result (go-cfg-to-structured body))`)
+
+	t.Run("becomes for loop", func(t *testing.T) {
+		result := eval(t, engine, `(go-format result)`)
+		s := result.Internal().(*values.String).Value
+		qt.New(t).Assert(strings.Contains(s, "goto"), qt.IsFalse,
+			qt.Commentf("should eliminate goto, got:\n%s", s))
+		qt.New(t).Assert(strings.Contains(s, "for {"), qt.IsTrue,
+			qt.Commentf("expected for loop, got:\n%s", s))
+		qt.New(t).Assert(strings.Contains(s, "work()"), qt.IsTrue)
+		qt.New(t).Assert(strings.Contains(s, "break"), qt.IsTrue)
+		qt.New(t).Assert(strings.Contains(s, "cleanup()"), qt.IsTrue)
+	})
+}
+
+func TestGoCFGToStructured_BareBackwardGoto(t *testing.T) {
+	engine := newEngine(t)
+
+	eval(t, engine, `
+		(define source "
+			package p
+			func f() {
+				start:
+				work()
+				goto start
+			}")
+		(define file (go-parse-string source))
+		(define decls (cdr (assoc 'decls (cdr file))))
+		(define body (cdr (assoc 'body (cdr (car decls)))))
+		(define result (go-cfg-to-structured body))`)
+
+	t.Run("becomes infinite for loop", func(t *testing.T) {
+		result := eval(t, engine, `(go-format result)`)
+		s := result.Internal().(*values.String).Value
+		qt.New(t).Assert(strings.Contains(s, "goto"), qt.IsFalse,
+			qt.Commentf("should eliminate goto, got:\n%s", s))
+		qt.New(t).Assert(strings.Contains(s, "for {"), qt.IsTrue,
+			qt.Commentf("expected for loop, got:\n%s", s))
+		qt.New(t).Assert(strings.Contains(s, "work()"), qt.IsTrue)
+		// No break — this is an intentional infinite loop.
+		qt.New(t).Assert(strings.Contains(s, "break"), qt.IsFalse,
+			qt.Commentf("should not have break in infinite loop, got:\n%s", s))
+	})
+}
+
+func TestGoCFGToStructured_MixedGoto(t *testing.T) {
+	engine := newEngine(t)
+
+	eval(t, engine, `
+		(define source "
+			package p
+			func f() int {
+				retry:
+				result := try()
+				if result == nil { goto retry }
+				if result.err != nil { goto cleanup }
+				process(result)
+				cleanup:
+				return close()
+			}")
+		(define file (go-parse-string source))
+		(define decls (cdr (assoc 'decls (cdr file))))
+		(define body (cdr (assoc 'body (cdr (car decls)))))
+		(define result (go-cfg-to-structured body))`)
+
+	t.Run("eliminates both gotos", func(t *testing.T) {
+		result := eval(t, engine, `(go-format result)`)
+		s := result.Internal().(*values.String).Value
+		qt.New(t).Assert(strings.Contains(s, "goto"), qt.IsFalse,
+			qt.Commentf("should eliminate both gotos, got:\n%s", s))
+		qt.New(t).Assert(strings.Contains(s, "for {"), qt.IsTrue)
+		qt.New(t).Assert(strings.Contains(s, "close()"), qt.IsTrue)
+	})
+}
