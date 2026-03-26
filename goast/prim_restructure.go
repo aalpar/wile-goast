@@ -84,9 +84,8 @@ func PrimGoCFGToStructured(mc *machine.MachineContext) error {
 
 	// Phase 0a: Backward gotos -> for loops.
 	if gc == gotoBackwardOnly || gc == gotoMixed {
-		// TODO: Task 10
-		mc.SetValue(values.FalseValue)
-		return nil
+		stmts = restructureBackwardGotos(stmts)
+		changed = true
 	}
 
 	// Phase 0b: Forward gotos -> if !cond { ... }.
@@ -411,6 +410,85 @@ func hasOtherGoto(stmts []ast.Stmt, label string, excludeIdx int) bool {
 		}
 	}
 	return false
+}
+
+// restructureBackwardGotos rewrites backward gotos as for-loops.
+// Handles two patterns:
+//   - Conditional: label: stmt ... if cond { goto label }
+//     Becomes:     for { stmt ... if !cond { break } }
+//   - Unconditional: label: stmt ... goto label
+//     Becomes:       for { stmt ... }
+func restructureBackwardGotos(stmts []ast.Stmt) []ast.Stmt {
+	var result []ast.Stmt
+
+	for i := 0; i < len(stmts); i++ {
+		ls, ok := stmts[i].(*ast.LabeledStmt)
+		if !ok {
+			result = append(result, stmts[i])
+			continue
+		}
+
+		label := ls.Label.Name
+		gotoIdx := -1
+		isBareGoto := false
+		for j := i + 1; j < len(stmts); j++ {
+			if ifHasGoto(stmts[j], label) {
+				gotoIdx = j
+				break
+			}
+			if bareGotoTarget(stmts[j]) == label {
+				gotoIdx = j
+				isBareGoto = true
+				break
+			}
+		}
+
+		if gotoIdx == -1 {
+			result = append(result, stmts[i])
+			continue
+		}
+
+		// Build loop body: labeled stmt's inner + stmts between label and goto.
+		var loopBody []ast.Stmt
+		loopBody = append(loopBody, ls.Stmt)
+		loopBody = append(loopBody, stmts[i+1:gotoIdx]...)
+
+		if !isBareGoto {
+			// Conditional: replace goto-if with break-if (negated condition).
+			gotoIf, _ := stmts[gotoIdx].(*ast.IfStmt)
+			loopBody = append(loopBody, &ast.IfStmt{
+				Cond: negateExpr(gotoIf.Cond),
+				Body: &ast.BlockStmt{List: []ast.Stmt{makeBreakStmt()}},
+			})
+		}
+		// Bare goto: infinite loop with no break condition.
+
+		result = append(result, &ast.ForStmt{
+			Body: &ast.BlockStmt{List: loopBody},
+		})
+
+		i = gotoIdx // skip past the goto
+	}
+
+	return result
+}
+
+// ifHasGoto checks if a statement is `if cond { goto label }`.
+func ifHasGoto(stmt ast.Stmt, label string) bool {
+	ifStmt, ok := stmt.(*ast.IfStmt)
+	if !ok || ifStmt.Else != nil {
+		return false
+	}
+	return singleGotoTarget(ifStmt.Body) == label
+}
+
+// bareGotoTarget returns the label if stmt is a bare `goto label`. Returns "" otherwise.
+func bareGotoTarget(stmt ast.Stmt) string {
+	bs, ok := stmt.(*ast.BranchStmt)
+	if !ok || bs.Tok != token.GOTO || bs.Label == nil {
+		return ""
+	}
+	return bs.Label.Name
 }
 
 // restructureStmts right-folds the statement list. Guard-if statements
