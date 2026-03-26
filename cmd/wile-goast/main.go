@@ -145,6 +145,7 @@ func main() {
 func buildEngineOrError(ctx context.Context) (*wile.Engine, error) {
 	return wile.NewEngine(ctx,
 		wile.WithSafeExtensions(),
+		wile.WithSourceFS(wile.StdLibFS),
 		wile.WithSourceFS(embeddedLib),
 		wile.WithLibraryPaths("lib"),
 		wile.WithExtension(goast.Extension),

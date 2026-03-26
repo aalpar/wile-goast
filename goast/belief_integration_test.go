@@ -35,7 +35,7 @@ func newBeliefEngine(t *testing.T) *wile.Engine {
 	t.Helper()
 	engine, err := wile.NewEngine(context.Background(),
 		wile.WithSafeExtensions(),
-		wile.WithLibraryPaths("../cmd/wile-goast/lib"),
+		wile.WithLibraryPaths("../cmd/wile-goast/lib", "../../wile/stdlib/lib"),
 		wile.WithExtension(goast.Extension),
 		wile.WithExtension(goastssa.Extension),
 		wile.WithExtension(goastcg.Extension),
