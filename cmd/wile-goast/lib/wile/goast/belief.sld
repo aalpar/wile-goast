@@ -17,5 +17,6 @@
     checked-before-use custom
     ;; Utils re-export (for custom lambdas)
     nf tag? walk filter-map flat-map member? unique)
-  (import (wile goast utils))
+  (import (wile goast utils)
+          (wile goast dataflow))
   (include "belief.scm"))

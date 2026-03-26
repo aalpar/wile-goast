@@ -673,67 +673,22 @@
             'partial))))))
 
 ;; (checked-before-use value-pattern) — checks whether a value is
-;; tested before use via bounded transitive reachability on the
-;; SSA def-use graph. Starting from value-pattern, each iteration
-;; expands the tracked name set by one hop through instruction
-;; operands, up to max-depth rounds. If any ssa-if is reached,
-;; the value is guarded.
-;; Covers: direct comparison (if err != nil), field access
-;; (if m.Type == x), and any chain up to 4 hops.
+;; tested before use via bounded transitive reachability on the SSA
+;; def-use graph. Uses (wile algebra) fixpoint over a product lattice
+;; (powerset x boolean) for early exit when the guard is found.
 ;; Returns: 'guarded, 'unguarded, or 'missing (SSA lookup failed)
 (define (checked-before-use value-pattern)
-  (define max-depth 4)
+  (define fuel 5) ;; max-hops + 1: fixpoint needs one extra iteration to confirm convergence
   (lambda (site ctx)
     (let* ((fname (nf site 'name))
            (pkg-path (nf site 'pkg-path))
            (ssa-fn (and pkg-path (ctx-find-ssa-func ctx pkg-path fname))))
-      (if (not ssa-fn) 'missing
-        (let* ((blocks (nf ssa-fn 'blocks))
-               (all-instrs (if (pair? blocks)
-                             (flat-map
-                               (lambda (b) (let ((is (nf b 'instrs)))
-                                             (if (pair? is) is '())))
-                               blocks)
-                             '())))
-          ;; Bounded Kleene iteration: expand the tracked name set through
-          ;; the def-use chain. Each round finds instructions whose operands
-          ;; intersect the tracked set, adds their output names, checks for ssa-if.
-          (let chase ((tracked (list value-pattern)) (depth 0))
-            (if (> depth max-depth) 'unguarded
-              (let* ((reached (filter-map
-                                (lambda (instr)
-                                  (let ((ops (nf instr 'operands)))
-                                    (and (pair? ops)
-                                         (let check ((ts tracked))
-                                           (cond ((null? ts) #f)
-                                                 ((member? (car ts) ops) instr)
-                                                 (else (check (cdr ts))))))))
-                                all-instrs))
-                     ;; Check if any reached instruction is an ssa-if.
-                     (found-guard (let loop ((rs reached))
-                                   (cond ((null? rs) #f)
-                                         ((tag? (car rs) 'ssa-if) #t)
-                                         (else (loop (cdr rs))))))
-                     ;; Collect output names for the next iteration.
-                     ;; For stores (no output name), track operands
-                     ;; to follow value-to-address connections.
-                     (new-names (flat-map
-                                  (lambda (instr)
-                                    (let ((nm (nf instr 'name)))
-                                      (cond
-                                        ((and nm (not (member? nm tracked)))
-                                         (list nm))
-                                        ((tag? instr 'ssa-store)
-                                         (filter-map
-                                           (lambda (op)
-                                             (and (not (member? op tracked)) op))
-                                           (or (nf instr 'operands) '())))
-                                        (else '()))))
-                                  reached)))
-                (cond
-                  (found-guard 'guarded)
-                  ((null? new-names) 'unguarded)
-                  (else (chase (append tracked new-names) (+ depth 1))))))))))))
+      (cond
+        ((not ssa-fn) 'missing)
+        ((defuse-reachable? ssa-fn (list value-pattern)
+                            (lambda (i) (tag? i 'ssa-if)) fuel)
+         'guarded)
+        (else 'unguarded)))))
 
 ;; (custom proc) — escape hatch. proc is (lambda (site ctx) -> symbol).
 (define (custom proc) proc)

@@ -765,3 +765,97 @@ func TestBeliefRunBeliefsOutput(t *testing.T) {
 		c.Assert(output, qt.Matches, `.*Deviations found:.*1.*`)
 	})
 }
+
+// ── Dataflow library tests ──────────────────────────────
+
+func TestDataflowBooleanLattice(t *testing.T) {
+	engine := newBeliefEngine(t)
+
+	t.Run("join is or", func(t *testing.T) {
+		result := eval(t, engine, `
+			(import (wile algebra))
+			(import (wile goast dataflow))
+			(let ((L (boolean-lattice)))
+			  (list (lattice-join L #f #f)
+			        (lattice-join L #f #t)
+			        (lattice-join L #t #f)
+			        (lattice-join L #t #t)))`)
+		qt.New(t).Assert(result.SchemeString(), qt.Equals, "(#f #t #t #t)")
+	})
+
+	t.Run("bottom is false", func(t *testing.T) {
+		result := eval(t, engine, `
+			(import (wile algebra))
+			(import (wile goast dataflow))
+			(lattice-bottom (boolean-lattice))`)
+		qt.New(t).Assert(result.SchemeString(), qt.Equals, "#f")
+	})
+}
+
+func TestDataflowSSANames(t *testing.T) {
+	engine := newBeliefEngine(t)
+
+	eval(t, engine, `
+		(import (wile goast dataflow))
+		(import (wile goast belief))
+
+		(define ctx (make-context
+		              "github.com/aalpar/wile-goast/examples/goast-query/testdata/checking"))
+		(define ssa-fn (ctx-find-ssa-func ctx
+		  "github.com/aalpar/wile-goast/examples/goast-query/testdata/checking"
+		  "HandleSafeA"))
+		(define instrs (ssa-all-instrs ssa-fn))
+		(define names (ssa-instruction-names ssa-fn))
+	`)
+
+	t.Run("instrs is non-empty", func(t *testing.T) {
+		result := eval(t, engine, `(> (length instrs) 0)`)
+		qt.New(t).Assert(result.SchemeString(), qt.Equals, "#t")
+	})
+
+	t.Run("names is non-empty", func(t *testing.T) {
+		result := eval(t, engine, `(> (length names) 0)`)
+		qt.New(t).Assert(result.SchemeString(), qt.Equals, "#t")
+	})
+
+	t.Run("names are strings", func(t *testing.T) {
+		result := eval(t, engine, `(string? (car names))`)
+		qt.New(t).Assert(result.SchemeString(), qt.Equals, "#t")
+	})
+}
+
+func TestDataflowDefuseReachable(t *testing.T) {
+	engine := newBeliefEngine(t)
+
+	eval(t, engine, `
+		(import (wile goast dataflow))
+		(import (wile goast belief))
+
+		(define ctx (make-context
+		              "github.com/aalpar/wile-goast/examples/goast-query/testdata/checking"))
+
+		(define ssa-safe (ctx-find-ssa-func ctx
+		  "github.com/aalpar/wile-goast/examples/goast-query/testdata/checking"
+		  "HandleSafeA"))
+		(define safe-result
+		  (defuse-reachable? ssa-safe (list "err")
+		    (lambda (i) (tag? i 'ssa-if)) 4))
+
+		(define ssa-unsafe (ctx-find-ssa-func ctx
+		  "github.com/aalpar/wile-goast/examples/goast-query/testdata/checking"
+		  "HandleUnsafe"))
+		(define unsafe-result
+		  (defuse-reachable? ssa-unsafe (list "err")
+		    (lambda (i) (tag? i 'ssa-if)) 4))
+	`)
+
+	t.Run("safe function is guarded", func(t *testing.T) {
+		result := eval(t, engine, `safe-result`)
+		qt.New(t).Assert(result.SchemeString(), qt.Equals, "#t")
+	})
+
+	t.Run("unsafe function is unguarded", func(t *testing.T) {
+		result := eval(t, engine, `unsafe-result`)
+		qt.New(t).Assert(result.SchemeString(), qt.Equals, "#f")
+	})
+}
