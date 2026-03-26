@@ -60,8 +60,9 @@ func PrimGoCFGToStructured(mc *machine.MachineContext) error {
 
 	// Phase 1: Rewrite returns inside loops (Case 2).
 	if hasLoopReturns(stmts) {
-		counter := 0
-		newStmts, ok := rewriteLoopReturns(stmts, &counter)
+		ctlCounter := 0
+		labelCounter := 0
+		newStmts, ok := rewriteLoopReturns(stmts, &ctlCounter, &labelCounter)
 		if !ok {
 			mc.SetValue(values.FalseValue)
 			return nil
@@ -260,9 +261,12 @@ func hasLoopReturns(stmts []ast.Stmt) bool {
 // returns inside the loop become _ctl<N> = K; break. Guard-if-return
 // statements are emitted after the loop.
 //
-// Returns (nil, false) if any loop contains unrewritable returns
-// (inside switch/select).
-func rewriteLoopReturns(stmts []ast.Stmt, counter *int) ([]ast.Stmt, bool) {
+// When a loop body contains returns inside switch/select, a labeled
+// break is used instead (break <label>), and the loop is wrapped
+// in a LabeledStmt.
+//
+// Returns (nil, false) if any loop contains unrewritable returns.
+func rewriteLoopReturns(stmts []ast.Stmt, counter *int, labelCounter *int) ([]ast.Stmt, bool) {
 	var result []ast.Stmt
 	for _, stmt := range stmts {
 		var body *ast.BlockStmt
@@ -278,7 +282,7 @@ func rewriteLoopReturns(stmts []ast.Stmt, counter *int) ([]ast.Stmt, bool) {
 		}
 
 		// Bottom-up: process inner loops first.
-		innerStmts, ok := rewriteLoopReturns(body.List, counter)
+		innerStmts, ok := rewriteLoopReturns(body.List, counter, labelCounter)
 		if !ok {
 			return nil, false
 		}
@@ -287,10 +291,17 @@ func rewriteLoopReturns(stmts []ast.Stmt, counter *int) ([]ast.Stmt, bool) {
 		ctlName := fmt.Sprintf("_ctl%d", *counter)
 		*counter++
 
+		// Determine if a labeled break is needed (returns inside switch/select).
+		loopLabel := ""
+		if hasReturnInSwitch(innerStmts) {
+			loopLabel = fmt.Sprintf("_loop%d", *labelCounter)
+			*labelCounter++
+		}
+
 		// Replace returns in the (now inner-processed) body.
 		retIdx := 0
 		var collected []*ast.ReturnStmt
-		newBodyStmts, ok := replaceReturnsInStmts(innerStmts, ctlName, &retIdx, &collected)
+		newBodyStmts, ok := replaceReturnsInStmtsLabeled(innerStmts, ctlName, &retIdx, &collected, loopLabel)
 		if !ok {
 			return nil, false
 		}
@@ -298,16 +309,17 @@ func rewriteLoopReturns(stmts []ast.Stmt, counter *int) ([]ast.Stmt, bool) {
 		// Rebuild the loop with the rewritten body.
 		newBody := &ast.BlockStmt{List: newBodyStmts}
 		result = append(result, makeVarDeclInt(ctlName))
+		var loopStmt ast.Stmt
 		switch s := stmt.(type) {
 		case *ast.ForStmt:
-			result = append(result, &ast.ForStmt{
-				Init: s.Init, Cond: s.Cond, Post: s.Post, Body: newBody,
-			})
+			loopStmt = &ast.ForStmt{Init: s.Init, Cond: s.Cond, Post: s.Post, Body: newBody}
 		case *ast.RangeStmt:
-			result = append(result, &ast.RangeStmt{
-				Key: s.Key, Value: s.Value, Tok: s.Tok, X: s.X, Body: newBody,
-			})
+			loopStmt = &ast.RangeStmt{Key: s.Key, Value: s.Value, Tok: s.Tok, X: s.X, Body: newBody}
 		}
+		if loopLabel != "" {
+			loopStmt = &ast.LabeledStmt{Label: ast.NewIdent(loopLabel), Stmt: loopStmt}
+		}
+		result = append(result, loopStmt)
 
 		// Emit guard-ifs for each collected return.
 		for i, ret := range collected {
@@ -320,12 +332,24 @@ func rewriteLoopReturns(stmts []ast.Stmt, counter *int) ([]ast.Stmt, bool) {
 // replaceReturnsInStmts walks a statement list replacing return-stmts
 // with control variable assignment + break. Recurses into IfStmt and
 // BlockStmt. Skips FuncLit and already-processed ForStmt/RangeStmt.
-// Returns (nil, false) if a return is found inside switch/select.
+// Returns (nil, false) if a return is found inside switch/select
+// (unless loopLabel is set, in which case switch/select are handled
+// via labeled break).
 func replaceReturnsInStmts(
 	stmts []ast.Stmt,
 	ctlName string,
 	retIdx *int,
 	collected *[]*ast.ReturnStmt,
+) ([]ast.Stmt, bool) {
+	return replaceReturnsInStmtsLabeled(stmts, ctlName, retIdx, collected, "")
+}
+
+func replaceReturnsInStmtsLabeled(
+	stmts []ast.Stmt,
+	ctlName string,
+	retIdx *int,
+	collected *[]*ast.ReturnStmt,
+	loopLabel string,
 ) ([]ast.Stmt, bool) {
 	var result []ast.Stmt
 	for _, stmt := range stmts {
@@ -333,40 +357,104 @@ func replaceReturnsInStmts(
 		case *ast.ReturnStmt:
 			*retIdx++
 			*collected = append(*collected, s)
+			var brk ast.Stmt
+			if loopLabel != "" {
+				brk = makeLabeledBreak(loopLabel)
+			} else {
+				brk = makeBreakStmt()
+			}
 			result = append(result,
 				makeIntAssign(ctlName, *retIdx),
-				makeBreakStmt(),
+				brk,
 			)
 		case *ast.IfStmt:
-			newIf, ok := replaceReturnsInIf(s, ctlName, retIdx, collected)
+			newIf, ok := replaceReturnsInIf(s, ctlName, retIdx, collected, loopLabel)
 			if !ok {
 				return nil, false
 			}
 			result = append(result, newIf)
 		case *ast.BlockStmt:
-			newList, ok := replaceReturnsInStmts(s.List, ctlName, retIdx, collected)
+			newList, ok := replaceReturnsInStmtsLabeled(s.List, ctlName, retIdx, collected, loopLabel)
 			if !ok {
 				return nil, false
 			}
 			result = append(result, &ast.BlockStmt{List: newList})
 		case *ast.SwitchStmt:
 			if bodyContainsReturn(s.Body) {
-				return nil, false
+				if loopLabel == "" {
+					return nil, false
+				}
+				newClauses, ok := replaceReturnsInClauses(s.Body.List, ctlName, retIdx, collected, loopLabel)
+				if !ok {
+					return nil, false
+				}
+				result = append(result, &ast.SwitchStmt{Init: s.Init, Tag: s.Tag, Body: &ast.BlockStmt{List: newClauses}})
+			} else {
+				result = append(result, stmt)
 			}
-			result = append(result, stmt)
 		case *ast.TypeSwitchStmt:
 			if bodyContainsReturn(s.Body) {
-				return nil, false
+				if loopLabel == "" {
+					return nil, false
+				}
+				newClauses, ok := replaceReturnsInClauses(s.Body.List, ctlName, retIdx, collected, loopLabel)
+				if !ok {
+					return nil, false
+				}
+				result = append(result, &ast.TypeSwitchStmt{Init: s.Init, Assign: s.Assign, Body: &ast.BlockStmt{List: newClauses}})
+			} else {
+				result = append(result, stmt)
 			}
-			result = append(result, stmt)
 		case *ast.SelectStmt:
 			if bodyContainsReturn(s.Body) {
-				return nil, false
+				if loopLabel == "" {
+					return nil, false
+				}
+				newClauses, ok := replaceReturnsInClauses(s.Body.List, ctlName, retIdx, collected, loopLabel)
+				if !ok {
+					return nil, false
+				}
+				result = append(result, &ast.SelectStmt{Body: &ast.BlockStmt{List: newClauses}})
+			} else {
+				result = append(result, stmt)
 			}
-			result = append(result, stmt)
 		default:
 			// ForStmt, RangeStmt (already processed), FuncLit,
 			// and all other statements pass through unchanged.
+			result = append(result, stmt)
+		}
+	}
+	return result, true
+}
+
+// replaceReturnsInClauses processes case/comm clauses, replacing returns
+// in their bodies with control variable assignment + labeled break.
+func replaceReturnsInClauses(
+	stmts []ast.Stmt,
+	ctlName string,
+	retIdx *int,
+	collected *[]*ast.ReturnStmt,
+	loopLabel string,
+) ([]ast.Stmt, bool) {
+	var result []ast.Stmt
+	for _, stmt := range stmts {
+		switch cc := stmt.(type) {
+		case *ast.CaseClause:
+			newBody, ok := replaceReturnsInStmtsLabeled(cc.Body, ctlName, retIdx, collected, loopLabel)
+			if !ok {
+				return nil, false
+			}
+			result = append(result, &ast.CaseClause{List: cc.List, Body: newBody})
+		case *ast.CommClause:
+			newBody, ok := replaceReturnsInStmtsLabeled(cc.Body, ctlName, retIdx, collected, loopLabel)
+			if !ok {
+				return nil, false
+			}
+			result = append(result, &ast.CommClause{Comm: cc.Comm, Body: newBody})
+		default:
+			if bodyContainsReturn(&ast.BlockStmt{List: []ast.Stmt{stmt}}) {
+				return nil, false
+			}
 			result = append(result, stmt)
 		}
 	}
@@ -380,8 +468,9 @@ func replaceReturnsInIf(
 	ctlName string,
 	retIdx *int,
 	collected *[]*ast.ReturnStmt,
+	loopLabel string,
 ) (*ast.IfStmt, bool) {
-	newBodyList, ok := replaceReturnsInStmts(ifStmt.Body.List, ctlName, retIdx, collected)
+	newBodyList, ok := replaceReturnsInStmtsLabeled(ifStmt.Body.List, ctlName, retIdx, collected, loopLabel)
 	if !ok {
 		return nil, false
 	}
@@ -395,17 +484,19 @@ func replaceReturnsInIf(
 	if ifStmt.Else != nil {
 		switch e := ifStmt.Else.(type) {
 		case *ast.BlockStmt:
-			newList, ok := replaceReturnsInStmts(e.List, ctlName, retIdx, collected)
+			newList, ok := replaceReturnsInStmtsLabeled(e.List, ctlName, retIdx, collected, loopLabel)
 			if !ok {
 				return nil, false
 			}
 			newIf.Else = &ast.BlockStmt{List: newList}
 		case *ast.IfStmt:
-			newElse, ok := replaceReturnsInIf(e, ctlName, retIdx, collected)
+			newElse, ok := replaceReturnsInIf(e, ctlName, retIdx, collected, loopLabel)
 			if !ok {
 				return nil, false
 			}
 			newIf.Else = newElse
+		default:
+			return nil, false
 		}
 	}
 
