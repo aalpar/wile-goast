@@ -8,12 +8,13 @@ at the inlining pipeline. See `plans/2026-03-24-transformation-primitives-design
 
 Completed 2026-03-24. GoSession holds loaded packages, lazy SSA/callgraph.
 All 7 package-loading primitives accept GoSession or string. Belief DSL
-creates session in `make-context`. See `plans/2026-03-24-shared-session-impl.md`.
+creates session in `make-context`. See `plans/2026-03-24-shared-session-design.md`.
 
-## Track B: Transformation Primitives
+## Track B: Transformation Primitives — DONE
 
 Scheme-level tree rewriting and Go-level control flow restructuring for
-refactoring operations (inlining, extraction, code motion).
+refactoring operations (inlining, extraction, code motion). All sub-items
+(B1, B2a, B2b, B3) completed 2026-03-25.
 
 ### B1. Scheme utils — DONE
 
@@ -32,9 +33,14 @@ Completed 2026-03-25. Returns inside for/range are rewritten as
 `_ctl<N> = K; break` with guard-if-return statements after the loop.
 Composes with Case 1 (guard folding) in a single call. Supports nested
 loops (bottom-up) and multiple return sites per loop.
-See `plans/2026-03-25-loop-return-restructuring.md`.
+See `plans/2026-03-25-b3-c2-c6-design.md` (B2b/B3 design).
 
 ### B3. go-cfg-to-structured improvements (depends on B2) — DONE
+
+Completed 2026-03-25. Labeled break for switch/select returns in loops,
+result variable synthesis for multiple return values, forward and backward
+goto elimination (cross-branch still returns `#f`).
+See `plans/2026-03-25-b3-c2-c6-design.md` (B3 design).
 
 - [x] Handle goto / labeled branches (forward and backward; cross-branch returns #f)
 - [x] Handle switch/select with early returns inside loops (labeled break)
@@ -47,20 +53,28 @@ wile-goast builds static-analysis combinators on top. Items below are
 wile-goast consumers — they migrate to or are built on the Wile algebra API
 once it exists.
 
-### C1. Migrate existing hand-rolled algebra
+### C1. Migrate existing hand-rolled algebra — DONE
+
+Completed 2026-03-25. `checked-before-use` uses `(wile goast dataflow)` product
+lattice fixpoint. `ssa-normalize` uses `(wile algebra rewrite)` axiom declarations.
+`score-diffs` left as-is (not algebraic structure).
 
 - [x] `checked-before-use` Kleene iteration → fixpoint over product lattice (powerset x boolean) via `(wile goast dataflow)`
 - [x] `ssa-normalize` rewrite rules → migrated to `(wile algebra rewrite)` axiom declarations
 - [x] `score-diffs` similarity accumulation — leave as-is (weighted sum + ratio, not semiring structure)
 
-### C2. Dataflow analysis framework
+### C2. Dataflow analysis framework — DONE
 
-- [ ] Define transfer function interface (per SSA instruction type)
-- [ ] Forward/backward analysis combinator over CFG blocks (reverse postorder)
-- [ ] Worklist algorithm integrated with CFG block ordering
-- [ ] Per-variable analysis via map lattice (vars → lattice values)
-- [ ] Product lattice for combining analysis dimensions
-- [ ] Monotonicity assertion (debug mode) — detect buggy transfer functions
+Completed 2026-03-26. Worklist-based forward/backward analysis over SSA blocks.
+`run-analysis` with per-block transfer, `analysis-in`/`analysis-out` queries,
+`'check-monotone` flag. See `plans/2026-03-26-c2-dataflow-design.md`.
+
+- [x] Define transfer function interface (per-block)
+- [x] Forward/backward analysis combinator over SSA blocks (reverse postorder)
+- [x] Worklist algorithm integrated with block ordering
+- [x] Per-variable analysis via map lattice (vars → lattice values) — uses existing (wile algebra)
+- [x] Product lattice for combining analysis dimensions — uses existing (wile algebra)
+- [x] Monotonicity assertion (debug mode) — detect buggy transfer functions
 
 ### C3. Pre-built abstract domains
 
