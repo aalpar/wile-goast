@@ -1,6 +1,6 @@
 # Procedure Unification Detection — Remaining Work
 
-**Current state**: AST-level prototype validated on crdt (4 zero-cost candidates found). Substitution collapsing implemented and load-bearing. Cross-package comparison working.
+**Current state**: AST-level prototype validated on crdt (4 zero-cost candidates found). Substitution collapsing implemented and load-bearing. Cross-package comparison working. SSA equivalence pass completed (v0.5.1): `go-ssa-canonicalize`, `(wile goast ssa-normalize)` (migrated to `(wile algebra rewrite)` axiom declarations), `(wile goast unify)` diff engine.
 
 **Reference**: `examples/goast-query/unify-detect-pkg.scm`
 

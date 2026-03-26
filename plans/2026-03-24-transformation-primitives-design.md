@@ -1,5 +1,7 @@
 # Transformation Primitives Design
 
+**Status:** COMPLETED. B1 (Scheme utils), B2a (Case 1), B2b (Case 2), B3 (improvements) all implemented.
+
 ## Summary
 
 Add three primitives for AST transformation: `ast-transform` and `ast-splice`

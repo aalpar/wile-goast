@@ -1,5 +1,7 @@
 # Shared Session Design
 
+**Status:** COMPLETED (v0.5.0). GoSession implemented, all 7 primitives accept sessions.
+
 ## Summary
 
 Introduce a first-class `GoSession` object that holds loaded Go packages and

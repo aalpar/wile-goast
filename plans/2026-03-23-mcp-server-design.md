@@ -1,5 +1,7 @@
 # MCP Server Design
 
+**Status:** COMPLETED. `--mcp` flag, eval tool, 3 prompts all shipped.
+
 ## Summary
 
 Add `--mcp` flag to `wile-goast` that starts a stdio JSON-RPC server using

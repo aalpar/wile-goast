@@ -1,5 +1,7 @@
 # (wile algebra rewrite) — Equational Term Rewriting Design
 
+**Status:** COMPLETED (2026-03-25). Library shipped in wile v1.9.10, consumer migration done in wile-goast.
+
 ## Summary
 
 General-purpose term rewriting library for wile's `(wile algebra)` stdlib.

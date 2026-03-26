@@ -1,6 +1,6 @@
 # SSA Equivalence Pass — Design
 
-**Status**: Approved
+**Status**: COMPLETED (v0.5.1). Canonicalization, normalization, and unify libraries shipped.
 **Date**: 2026-03-24
 **Answers**: `plans/UNIFICATION-DETECTION.md` open question — "Does SSA normalization collapse enough to be useful?"
 

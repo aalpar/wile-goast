@@ -1,6 +1,6 @@
 # Consistency-Based Deviation Detection — Remaining Work
 
-**Current state**: All five belief categories validated. Co-mutation (category 5) validated on wile/machine. Categories 1-4 validated against synthetic testdata in v0.5.x. Belief DSL implemented.
+**Current state**: All five belief categories validated. Co-mutation (category 5) validated on wile/machine. Categories 1-4 validated against synthetic testdata in v0.5.x. Belief DSL implemented. `checked-before-use` migrated to `(wile goast dataflow)` algebraic fixpoint (v0.5.4).
 
 **Reference**: `plans/BELIEF-DSL.md`, `examples/goast-query/consistency-comutation.scm`
 
@@ -12,7 +12,7 @@ Categories 1-5 validated against controlled packages in `examples/goast-query/te
 **Validated.** "Operation A always paired with operation B" (Lock/Unlock, Open/Close). DSL verb: `paired-with`.
 
 ### 2. Check Beliefs
-**Validated.** "Value V checked for condition C before use." DSL verb: `checked-before-use`. Partially covered by `errcheck`/`nilness` but the cross-caller comparison is novel. Uses bounded transitive reachability on the SSA def-use graph (up to 4 hops). For `ssa-store` instructions, follows value-to-address connections to traverse struct field access patterns.
+**Validated.** "Value V checked for condition C before use." DSL verb: `checked-before-use`. Partially covered by `errcheck`/`nilness` but the cross-caller comparison is novel. Uses bounded transitive reachability on the SSA def-use graph (up to 4 hops) via `(wile goast dataflow)` — product lattice `(powerset × boolean)` with early exit when guard is found. For `ssa-store` instructions, follows value-to-address connections to traverse struct field access patterns.
 
 ### 3. Handling Beliefs
 **Validated.** "All callers of F handle the result the same way." DSL verbs: `callers-of` + `contains-call`. Bug fixed during validation: `callers-of` now returns AST func-decl nodes (was returning incompatible `(name edge)` pairs).
