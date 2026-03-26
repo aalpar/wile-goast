@@ -73,13 +73,35 @@ func PrimGoCFGToStructured(mc *machine.MachineContext) error {
 		}
 	}
 
-	if containsGoto(block) {
+	gc := classifyGotos(block)
+	if gc == gotoCrossBranch {
 		mc.SetValue(values.FalseValue)
 		return nil
 	}
 
 	stmts := block.List
 	changed := false
+
+	// Phase 0a: Backward gotos -> for loops.
+	if gc == gotoBackwardOnly || gc == gotoMixed {
+		// TODO: Task 10
+		mc.SetValue(values.FalseValue)
+		return nil
+	}
+
+	// Phase 0b: Forward gotos -> if !cond { ... }.
+	if gc == gotoForwardOnly || gc == gotoMixed {
+		// TODO: Task 8
+		mc.SetValue(values.FalseValue)
+		return nil
+	}
+
+	// Post-restructuring validation: if any gotos survived the pattern
+	// matchers, bail honestly rather than returning an AST with gotos.
+	if gc != gotoNone && containsGoto(&ast.BlockStmt{List: stmts}) {
+		mc.SetValue(values.FalseValue)
+		return nil
+	}
 
 	// Phase 1: Rewrite returns inside loops (Case 2).
 	if hasLoopReturns(stmts) {
@@ -178,6 +200,105 @@ func containsGoto(block *ast.BlockStmt) bool {
 		return true
 	})
 	return found
+}
+
+type gotoClass int
+
+const (
+	gotoNone        gotoClass = iota // no gotos
+	gotoForwardOnly                  // all gotos jump to labels later in same block
+	gotoBackwardOnly                 // all gotos jump to labels earlier in same block
+	gotoMixed                        // mix of forward and backward
+	gotoCrossBranch                  // goto into/out of if/switch branches
+)
+
+// classifyGotos analyzes goto statements in a block.
+//
+// Classification is sound for flat function bodies where gotos and their
+// target labels are top-level statements. A goto nested inside an if/switch
+// at statement index N uses N as its source position (structural index, not
+// execution order). Gotos targeting labels not in the top-level list are
+// classified as gotoCrossBranch (conservative).
+//
+// Only labels that are actual goto targets are considered. Labels used
+// solely by break/continue (e.g., `outer: for ...` with `break outer`)
+// are ignored — stripping them would break the output AST.
+func classifyGotos(block *ast.BlockStmt) gotoClass {
+	// First pass: collect all goto target names.
+	gotoTargets := map[string]bool{}
+	for _, stmt := range block.List {
+		ast.Inspect(stmt, func(n ast.Node) bool {
+			switch v := n.(type) {
+			case *ast.BranchStmt:
+				if v.Tok == token.GOTO && v.Label != nil {
+					gotoTargets[v.Label.Name] = true
+				}
+			case *ast.FuncLit:
+				return false
+			}
+			return true
+		})
+	}
+	if len(gotoTargets) == 0 {
+		return gotoNone
+	}
+
+	// Second pass: collect label positions, but only for labels that are
+	// actual goto targets. This excludes break/continue loop labels.
+	labelPos := map[string]int{}
+	for i, stmt := range block.List {
+		if ls, ok := stmt.(*ast.LabeledStmt); ok {
+			if gotoTargets[ls.Label.Name] {
+				labelPos[ls.Label.Name] = i
+			}
+		}
+	}
+
+	// Collect goto source positions.
+	type gotoInfo struct {
+		stmtIdx int
+		label   string
+	}
+	var gotos []gotoInfo
+	for i, stmt := range block.List {
+		ast.Inspect(stmt, func(n ast.Node) bool {
+			switch v := n.(type) {
+			case *ast.BranchStmt:
+				if v.Tok == token.GOTO && v.Label != nil {
+					gotos = append(gotos, gotoInfo{i, v.Label.Name})
+				}
+			case *ast.FuncLit:
+				return false
+			}
+			return true
+		})
+	}
+
+	hasForward := false
+	hasBackward := false
+	for _, g := range gotos {
+		target, ok := labelPos[g.label]
+		if !ok {
+			// Label not at top level — can't restructure.
+			return gotoCrossBranch
+		}
+		if target > g.stmtIdx {
+			hasForward = true
+		} else {
+			hasBackward = true
+		}
+	}
+
+	switch {
+	case hasForward && hasBackward:
+		return gotoMixed
+	case hasForward:
+		return gotoForwardOnly
+	case hasBackward:
+		return gotoBackwardOnly
+	default:
+		return gotoNone
+	}
 }
 
 // restructureStmts right-folds the statement list. Guard-if statements
