@@ -50,8 +50,8 @@ once it exists.
 ### C1. Migrate existing hand-rolled algebra
 
 - [x] `checked-before-use` Kleene iteration → fixpoint over product lattice (powerset x boolean) via `(wile goast dataflow)`
-- [ ] `ssa-normalize` rewrite rules (commutativity, identity, annihilation) → monoid/ring axiom application
-- [ ] `score-diffs` similarity accumulation (`unify.scm`) → semiring-like weighted scoring
+- [x] `ssa-normalize` rewrite rules — leave as-is (pattern rewrites, not value algebra; no scaling need)
+- [x] `score-diffs` similarity accumulation — leave as-is (weighted sum + ratio, not semiring structure)
 
 ### C2. Dataflow analysis framework
 
