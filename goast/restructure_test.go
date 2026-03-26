@@ -485,7 +485,7 @@ func TestGoCFGToStructured_LoopReturnNoFuncType(t *testing.T) {
 	})
 }
 
-func TestGoCFGToStructured_GotoReturnsFalse(t *testing.T) {
+func TestGoCFGToStructured_ForwardGoto(t *testing.T) {
 	engine := newEngine(t)
 
 	eval(t, engine, `
@@ -496,6 +496,62 @@ func TestGoCFGToStructured_GotoReturnsFalse(t *testing.T) {
 				println(x)
 				end:
 				println(0)
+			}")
+		(define file (go-parse-string source))
+		(define decls (cdr (assoc 'decls (cdr file))))
+		(define body (cdr (assoc 'body (cdr (car decls)))))
+		(define result (go-cfg-to-structured body))`)
+
+	t.Run("eliminates goto", func(t *testing.T) {
+		result := eval(t, engine, `(go-format result)`)
+		s := result.Internal().(*values.String).Value
+		qt.New(t).Assert(strings.Contains(s, "goto"), qt.IsFalse,
+			qt.Commentf("should eliminate goto, got:\n%s", s))
+		qt.New(t).Assert(strings.Contains(s, "println(x)"), qt.IsTrue)
+		qt.New(t).Assert(strings.Contains(s, "println(0)"), qt.IsTrue)
+	})
+}
+
+func TestGoCFGToStructured_MultipleForwardGotos(t *testing.T) {
+	engine := newEngine(t)
+
+	eval(t, engine, `
+		(define source "
+			package p
+			func f(x, y int) {
+				if x > 0 { goto cleanup }
+				if y > 0 { goto cleanup }
+				work()
+				cleanup:
+				close()
+			}")
+		(define file (go-parse-string source))
+		(define decls (cdr (assoc 'decls (cdr file))))
+		(define body (cdr (assoc 'body (cdr (car decls)))))
+		(define result (go-cfg-to-structured body))`)
+
+	t.Run("nests conditions", func(t *testing.T) {
+		result := eval(t, engine, `(go-format result)`)
+		s := result.Internal().(*values.String).Value
+		qt.New(t).Assert(strings.Contains(s, "goto"), qt.IsFalse,
+			qt.Commentf("should eliminate goto, got:\n%s", s))
+		qt.New(t).Assert(strings.Contains(s, "work()"), qt.IsTrue)
+		qt.New(t).Assert(strings.Contains(s, "close()"), qt.IsTrue)
+	})
+}
+
+func TestGoCFGToStructured_CrossBranchGoto(t *testing.T) {
+	engine := newEngine(t)
+
+	eval(t, engine, `
+		(define source "
+			package p
+			func f(x int) {
+				goto inner
+				if x > 0 {
+					inner:
+					println(x)
+				}
 			}")
 		(define file (go-parse-string source))
 		(define decls (cdr (assoc 'decls (cdr file))))

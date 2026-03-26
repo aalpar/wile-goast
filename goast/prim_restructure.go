@@ -342,8 +342,10 @@ func restructureForwardGotos(stmts []ast.Stmt) []ast.Stmt {
 			}
 		}
 
-		// Find the first forward goto and rewrite it.
-		for i, stmt := range result {
+		// Find the last forward goto and rewrite it. Processing from the
+		// bottom avoids burying unprocessed gotos inside wrapped blocks.
+		for i := len(result) - 1; i >= 0; i-- {
+			stmt := result[i]
 			ifStmt, ok := stmt.(*ast.IfStmt)
 			if !ok || ifStmt.Else != nil {
 				continue
