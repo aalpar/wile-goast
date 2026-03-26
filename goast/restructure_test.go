@@ -399,6 +399,92 @@ func TestGoCFGToStructured_GuardPlusLoop(t *testing.T) {
 	})
 }
 
+func TestGoCFGToStructured_LoopReturnLocalVar(t *testing.T) {
+	engine := newEngine(t)
+
+	eval(t, engine, `
+		(define source "
+			package p
+			func f(items []int) int {
+				for _, v := range items {
+					if v < 0 { return v }
+				}
+				return 0
+			}")
+		(define file (go-parse-string source))
+		(define decl (car (cdr (assoc 'decls (cdr file)))))
+		(define body (cdr (assoc 'body (cdr decl))))
+		(define ftype (cdr (assoc 'type (cdr decl))))
+		(define result (go-cfg-to-structured body ftype))`)
+
+	t.Run("has result variable", func(t *testing.T) {
+		result := eval(t, engine, `(go-format result)`)
+		s := result.Internal().(*values.String).Value
+		qt.New(t).Assert(strings.Contains(s, "var _r0 int"), qt.IsTrue,
+			qt.Commentf("expected _r0 declaration, got:\n%s", s))
+		qt.New(t).Assert(strings.Contains(s, "_r0 = v"), qt.IsTrue,
+			qt.Commentf("expected _r0 assignment, got:\n%s", s))
+		qt.New(t).Assert(strings.Contains(s, "return _r0"), qt.IsTrue,
+			qt.Commentf("expected return _r0 in guard, got:\n%s", s))
+	})
+}
+
+func TestGoCFGToStructured_LoopMultiReturn(t *testing.T) {
+	engine := newEngine(t)
+
+	eval(t, engine, `
+		(define source "
+			package p
+			func f(items []int) (int, error) {
+				for _, v := range items {
+					if v < 0 { return v, errNeg }
+				}
+				return 0, nil
+			}")
+		(define file (go-parse-string source))
+		(define decl (car (cdr (assoc 'decls (cdr file)))))
+		(define body (cdr (assoc 'body (cdr decl))))
+		(define ftype (cdr (assoc 'type (cdr decl))))
+		(define result (go-cfg-to-structured body ftype))`)
+
+	t.Run("has two result variables", func(t *testing.T) {
+		result := eval(t, engine, `(go-format result)`)
+		s := result.Internal().(*values.String).Value
+		qt.New(t).Assert(strings.Contains(s, "var _r0 int"), qt.IsTrue,
+			qt.Commentf("expected _r0 int, got:\n%s", s))
+		qt.New(t).Assert(strings.Contains(s, "var _r1 error"), qt.IsTrue,
+			qt.Commentf("expected _r1 error, got:\n%s", s))
+		qt.New(t).Assert(strings.Contains(s, "return _r0, _r1"), qt.IsTrue,
+			qt.Commentf("expected return _r0, _r1 in guard, got:\n%s", s))
+	})
+}
+
+func TestGoCFGToStructured_LoopReturnNoFuncType(t *testing.T) {
+	engine := newEngine(t)
+
+	eval(t, engine, `
+		(define source "
+			package p
+			func f(items []int) error {
+				for _, v := range items {
+					if v < 0 { return errNeg }
+				}
+				return nil
+			}")
+		(define file (go-parse-string source))
+		(define decls (cdr (assoc 'decls (cdr file))))
+		(define body (cdr (assoc 'body (cdr (car decls)))))
+		(define result (go-cfg-to-structured body))`)
+
+	t.Run("still works without func-type", func(t *testing.T) {
+		result := eval(t, engine, `(go-format result)`)
+		s := result.Internal().(*values.String).Value
+		qt.New(t).Assert(strings.Contains(s, "errNeg"), qt.IsTrue)
+		qt.New(t).Assert(strings.Contains(s, "_r0"), qt.IsFalse,
+			qt.Commentf("should not synthesize _r vars without func-type, got:\n%s", s))
+	})
+}
+
 func TestGoCFGToStructured_GotoReturnsFalse(t *testing.T) {
 	engine := newEngine(t)
 
