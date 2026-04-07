@@ -20,6 +20,7 @@
 (define *beliefs* '())
 
 (define (reset-beliefs!)
+  "Clear all registered beliefs.\n\nCategory: goast-belief\n\nSee also: `run-beliefs'."
   (set! *beliefs* '()))
 
 (define (register-belief! name sites-fn expect-fn min-adherence min-sites)
@@ -58,6 +59,7 @@
 ;;    (results . ((belief-name . (adherence-sites deviation-sites)) ...)))
 
 (define (make-context target)
+  "Create a lazy-loading analysis context for TARGET package pattern.\nThe context loads AST, SSA, call graph, and field index on demand.\n\nParameters:\n  target : string\nReturns: list\nCategory: goast-belief\n\nSee also: `ctx-pkgs', `ctx-ssa', `ctx-callgraph'."
   (let ((session (go-load target)))
     (list (cons 'target target)
           (cons 'session session)
@@ -80,24 +82,28 @@
 (define (ctx-session ctx) (ctx-ref ctx 'session))
 
 (define (ctx-pkgs ctx)
+  "Return the type-checked package ASTs from CTX, loading if needed.\n\nParameters:\n  ctx : list\nReturns: list\nCategory: goast-belief\n\nSee also: `make-context', `ctx-ssa'."
   (or (ctx-ref ctx 'pkgs)
       (let ((pkgs (go-typecheck-package (ctx-session ctx))))
         (ctx-set! ctx 'pkgs pkgs)
         pkgs)))
 
 (define (ctx-ssa ctx)
+  "Return the SSA functions from CTX, building if needed.\n\nParameters:\n  ctx : list\nReturns: list\nCategory: goast-belief\n\nSee also: `make-context', `ctx-pkgs', `ctx-find-ssa-func'."
   (or (ctx-ref ctx 'ssa)
       (let ((ssa (go-ssa-build (ctx-session ctx))))
         (ctx-set! ctx 'ssa ssa)
         ssa)))
 
 (define (ctx-callgraph ctx)
+  "Return the call graph from CTX, building with RTA if needed.\n\nParameters:\n  ctx : list\nReturns: list\nCategory: goast-belief\n\nSee also: `make-context', `callers-of'."
   (or (ctx-ref ctx 'callgraph)
       (let ((cg (go-callgraph (ctx-session ctx) 'static)))
         (ctx-set! ctx 'callgraph cg)
         cg)))
 
 (define (ctx-field-index ctx)
+  "Return the SSA field access index from CTX, building if needed.\n\nParameters:\n  ctx : list\nReturns: list\nCategory: goast-belief\n\nSee also: `make-context', `stores-to-fields'."
   (or (ctx-ref ctx 'field-index)
       (let ((idx (go-ssa-field-index (ctx-session ctx))))
         (ctx-set! ctx 'field-index idx)
@@ -187,6 +193,7 @@
 ;; Returns the SSA function for the given package path and short name,
 ;; or #f if not found.
 (define (ctx-find-ssa-func ctx pkg-path name)
+  "Look up an SSA function by package path and short name.\nBuilds an index on first call for O(1) subsequent lookups.\n\nParameters:\n  ctx : list\n  pkg-path : string\n  name : string\nReturns: any\nCategory: goast-belief\n\nSee also: `ctx-ssa', `make-context'."
   (let ((pkg-entry (assoc pkg-path (ctx-ssa-index ctx))))
     (and pkg-entry
          (let ((entry (assoc name (cdr pkg-entry))))
@@ -214,6 +221,7 @@
 ;; Each func-decl is annotated with (pkg-path . <import-path>) from its
 ;; parent package, enabling cross-package SSA/CFG disambiguation.
 (define (all-func-decls pkgs)
+  "Extract all func-decl nodes from a list of typed package ASTs.\n\nParameters:\n  pkgs : list\nReturns: list\nCategory: goast-belief\n\nSee also: `functions-matching'."
   (flat-map
     (lambda (pkg)
       (let ((pkg-path (nf pkg 'path)))
@@ -234,6 +242,7 @@
 ;; (functions-matching pred ...) -> (lambda (ctx) -> list-of-func-decls)
 ;; All predicates must return #t for a function to be included.
 (define (functions-matching . preds)
+  "Site selector: functions matching all predicates.\nReturns a procedure (lambda (ctx) -> list-of-func-decls).\n\nParameters:\n  preds : procedure\nReturns: procedure\nCategory: goast-belief\n\nExamples:\n  (functions-matching (contains-call \"Lock\"))\n  (functions-matching (has-receiver \"*Server\") (contains-call \"Close\"))\n\nSee also: `callers-of', `methods-of', `has-params', `contains-call'."
   (lambda (ctx)
     (let ((funcs (all-func-decls (ctx-pkgs ctx))))
       (filter-map
@@ -269,6 +278,7 @@
 ;; each caller's AST func-decl from the loaded packages. Callers
 ;; without an AST func-decl (e.g., generated code) are skipped.
 (define (callers-of func-name)
+  "Site selector: all callers of a function.\nReturns a procedure (lambda (ctx) -> list-of-func-decls).\nUses the call graph to resolve callers, then maps back to AST func-decls.\n\nParameters:\n  func-name : string\nReturns: procedure\nCategory: goast-belief\n\nExamples:\n  (callers-of \"handleRequest\")\n\nSee also: `functions-matching', `go-callgraph-callers'."
   (lambda (ctx)
     (let* ((cg (ctx-callgraph ctx))
            (funcs (all-func-decls (ctx-pkgs ctx)))
@@ -292,11 +302,13 @@
 ;; (methods-of type-name) -> (lambda (ctx) -> list-of-func-decls)
 ;; Matches methods whose receiver type contains type-name.
 (define (methods-of type-name)
+  "Site selector: all methods on a receiver type.\nShorthand for (functions-matching (has-receiver TYPE-NAME)).\n\nParameters:\n  type-name : string\nReturns: procedure\nCategory: goast-belief\n\nExamples:\n  (methods-of \"*Server\")\n\nSee also: `functions-matching', `has-receiver'."
   (functions-matching (has-receiver type-name)))
 
 ;; (implementors-of iface-name) -> (lambda (ctx) -> list-of-func-decls)
 ;; Returns all func-decls whose receiver type implements the named interface.
 (define (implementors-of iface-name)
+  "Site selector: methods of all types implementing an interface.\nFinds concrete implementors via go-interface-implementors, then collects\ntheir methods.\n\nParameters:\n  iface-name : string\nReturns: procedure\nCategory: goast-belief\n\nExamples:\n  (implementors-of \"Storage\")\n\nSee also: `interface-methods', `go-interface-implementors'."
   (lambda (ctx)
     (let* ((info (ctx-interface-info ctx iface-name))
            (implementors (nf info 'implementors))
@@ -318,6 +330,7 @@
 ;; Each returned func-decl is annotated with (impl-type . type-name) for
 ;; type-qualified display names in deviation reports.
 (define (interface-methods iface-name . args)
+  "Site selector: methods of interface implementors, optionally filtered by name.\nWith one arg, returns all methods. With two, filters to methods matching\nthe given name.\n\nParameters:\n  iface-name : string\n  args : any\nReturns: procedure\nCategory: goast-belief\n\nExamples:\n  (interface-methods \"Storage\")\n  (interface-methods \"Storage\" \"Save\")\n\nSee also: `implementors-of'."
   (let ((method-name (if (pair? args) (car args) #f)))
     (lambda (ctx)
       (let* ((info (ctx-interface-info ctx iface-name))
@@ -350,6 +363,7 @@
 ;; Retrieves results from a previously evaluated belief.
 ;; Default: adherence sites.
 (define (sites-from belief-name . opts)
+  "Site selector: reuse results from a previously evaluated belief.\nOPTS control filtering: 'adherence or 'deviation, and optionally\na specific result symbol.\n\nParameters:\n  belief-name : string\n  opts : any\nReturns: procedure\nCategory: goast-belief\n\nExamples:\n  (sites-from \"lock-unlock\" 'deviation)\n  (sites-from \"lock-unlock\" 'adherence 'paired-defer)\n\nSee also: `run-beliefs'."
   (let ((which (if (and (pair? opts) (pair? (cdr opts))
                         (eq? (car opts) 'which))
                  (cadr opts)
@@ -395,6 +409,7 @@
 ;; its short source-level name (e.g., "klog.Logger" matches both
 ;; "k8s.io/klog/v2.Logger" and "klog.Logger").
 (define (has-params . type-strings)
+  "Predicate: function signature contains these parameter types.\nReturns a procedure (lambda (func-decl) -> boolean).\n\nParameters:\n  type-strings : string\nReturns: procedure\nCategory: goast-belief\n\nExamples:\n  (has-params \"context.Context\" \"*http.Request\")\n\nSee also: `has-receiver', `name-matches', `functions-matching'."
   (lambda (fn ctx)
     (let* ((ftype (nf fn 'type))
            (params (and ftype (nf ftype 'params)))
@@ -422,6 +437,7 @@
 ;; or short name, so "MyType" matches "pkg.MyType", "*pkg.MyType",
 ;; and versioned paths like "pkg/v2.MyType".
 (define (has-receiver type-str)
+  "Predicate: method receiver matches type string.\nMatches against both the type name and pointer variants.\n\nParameters:\n  type-str : string\nReturns: procedure\nCategory: goast-belief\n\nExamples:\n  (has-receiver \"*Server\")\n\nSee also: `has-params', `methods-of', `functions-matching'."
   (lambda (fn ctx)
     (let* ((recv (nf fn 'recv))
            (recv-list (and recv (if (pair? recv) recv '())))
@@ -442,6 +458,7 @@
 
 ;; (name-matches pattern) — function name matches substring.
 (define (name-matches pattern)
+  "Predicate: function name contains PATTERN as a substring.\n\nParameters:\n  pattern : string\nReturns: procedure\nCategory: goast-belief\n\nExamples:\n  (name-matches \"Test\")\n\nSee also: `has-params', `functions-matching'."
   (lambda (fn ctx)
     (let ((name (nf fn 'name)))
       (and name (string-contains name pattern)))))
@@ -470,6 +487,7 @@
 ;;   As a predicate: (lambda (func-decl ctx) -> #t/#f)
 ;;   As a checker:   runner normalizes #t -> 'present, #f -> 'absent
 (define (contains-call . func-names)
+  "Predicate and property checker: function body calls any of FUNC-NAMES.\nAs a predicate for functions-matching, returns #t/#f.\nAs a property checker for expect, returns 'present or 'absent.\n\nParameters:\n  func-names : string\nReturns: procedure\nCategory: goast-belief\n\nExamples:\n  (contains-call \"Lock\" \"RLock\")\n\nSee also: `functions-matching', `paired-with'."
   (define (call-matches? node)
     (and (tag? node 'call-expr)
          (let ((fn (nf node 'fun)))
@@ -487,6 +505,7 @@
 ;; (stores-to-fields struct-name field ...) — SSA: function stores to
 ;; these fields. Uses the pre-built field index from Go.
 (define (stores-to-fields struct-name . field-names)
+  "Predicate: SSA function stores to the named fields of STRUCT-NAME.\nDisambiguates receivers against the full struct field set.\n\nParameters:\n  struct-name : string\n  field-names : string\nReturns: procedure\nCategory: goast-belief\n\nExamples:\n  (stores-to-fields \"Config\" \"Host\" \"Port\")\n\nSee also: `co-mutated', `go-ssa-field-index'."
   (lambda (fn ctx)
     (let* ((fname (nf fn 'name))
            (pkg-path (nf fn 'pkg-path))
@@ -499,6 +518,7 @@
 
 ;; (all-of pred ...) — all predicates must match
 (define (all-of . preds)
+  "Predicate combinator: all predicates must match.\n\nParameters:\n  preds : procedure\nReturns: procedure\nCategory: goast-belief\n\nExamples:\n  (all-of (has-receiver \"*Server\") (contains-call \"Close\"))\n\nSee also: `any-of', `none-of'."
   (lambda (fn ctx)
     (let loop ((ps preds))
       (cond ((null? ps) #t)
@@ -507,6 +527,7 @@
 
 ;; (any-of pred ...) — at least one predicate must match
 (define (any-of . preds)
+  "Predicate combinator: at least one predicate must match.\n\nParameters:\n  preds : procedure\nReturns: procedure\nCategory: goast-belief\n\nSee also: `all-of', `none-of'."
   (lambda (fn ctx)
     (let loop ((ps preds))
       (cond ((null? ps) #f)
@@ -515,6 +536,7 @@
 
 ;; (none-of pred ...) — no predicate matches
 (define (none-of . preds)
+  "Predicate combinator: no predicate matches.\n\nParameters:\n  preds : procedure\nReturns: procedure\nCategory: goast-belief\n\nSee also: `all-of', `any-of'."
   (lambda (fn ctx)
     (not ((apply any-of preds) fn ctx))))
 
@@ -554,6 +576,7 @@
 ;; operations, with preference for defer pairing.
 ;; Returns: 'paired-defer, 'paired-call, or 'unpaired
 (define (paired-with op-a op-b)
+  "Property checker: verify that calls to OP-A are paired with OP-B.\nReturns 'paired-defer if paired via defer, 'paired-call if paired\nvia regular call, or 'unpaired.\n\nParameters:\n  op-a : string\n  op-b : string\nReturns: procedure\nCategory: goast-belief\n\nExamples:\n  (paired-with \"Lock\" \"Unlock\")\n  (paired-with \"Open\" \"Close\")\n\nSee also: `contains-call', `ordered'."
   (lambda (site ctx)
     (let* ((body (or (nf site 'body) '()))
            (has-defer-b
@@ -585,6 +608,7 @@
 ;; Uses SSA representation (blocks have instrs + idom). Does not require go-cfg.
 ;; Returns: 'a-dominates-b, 'b-dominates-a, 'same-block, 'unordered, or 'missing
 (define (ordered op-a op-b)
+  "Property checker: verify that OP-A's SSA block dominates OP-B's block.\nReturns 'a-dominates-b, 'b-dominates-a, 'same-block, or 'unordered.\n\nParameters:\n  op-a : string\n  op-b : string\nReturns: procedure\nCategory: goast-belief\n\nExamples:\n  (ordered \"Validate\" \"Execute\")\n\nSee also: `paired-with', `checked-before-use'."
   (lambda (site ctx)
     (let* ((fname (nf site 'name))
            (pkg-path (nf site 'pkg-path))
@@ -662,6 +686,7 @@
 ;; together in the function. Uses the pre-built field index from Go.
 ;; Returns: 'co-mutated, 'partial, or 'missing
 (define (co-mutated . field-names)
+  "Property checker: verify that all named fields are stored together.\nReturns 'co-mutated if all fields written, 'partial otherwise.\nSkips receiver disambiguation -- stores-to-fields already filtered.\n\nParameters:\n  field-names : string\nReturns: procedure\nCategory: goast-belief\n\nExamples:\n  (co-mutated \"Host\" \"Port\" \"Scheme\")\n\nSee also: `stores-to-fields'."
   (lambda (site ctx)
     (let* ((fname (nf site 'name))
            (pkg-path (nf site 'pkg-path))
@@ -678,6 +703,7 @@
 ;; (powerset x boolean) for early exit when the guard is found.
 ;; Returns: 'guarded, 'unguarded, or 'missing (SSA lookup failed)
 (define (checked-before-use value-pattern)
+  "Property checker: verify that a value matching VALUE-PATTERN is tested\nbefore use. Uses bounded def-use reachability (fuel=5) to check whether\nthe value flows through a comparison before reaching a non-guard use.\nReturns 'guarded or 'unguarded.\n\nParameters:\n  value-pattern : string\nReturns: procedure\nCategory: goast-belief\n\nExamples:\n  (checked-before-use \"err\")\n\nSee also: `ordered', `defuse-reachable?'."
   (define fuel 5) ;; max-hops + 1: fixpoint needs one extra iteration to confirm convergence
   (lambda (site ctx)
     (let* ((fname (nf site 'name))
@@ -691,7 +717,9 @@
         (else 'unguarded)))))
 
 ;; (custom proc) — escape hatch. proc is (lambda (site ctx) -> symbol).
-(define (custom proc) proc)
+(define (custom proc)
+  "Property checker: escape hatch for user-defined checks.\nPROC receives (site ctx) and returns a symbol categorizing the result.\n\nParameters:\n  proc : procedure\nReturns: procedure\nCategory: goast-belief"
+  proc)
 
 ;; ── Statistical comparison ──────────────────────────────
 ;;
@@ -811,6 +839,7 @@
 ;; Main entry point.
 ;; Evaluates all registered beliefs against the target package.
 (define (run-beliefs target)
+  "Evaluate all registered beliefs against the target package pattern.\nPrints results showing adherence and deviation sites per belief.\nBeliefs are registered via define-belief.\n\nParameters:\n  target : string\nReturns: any\nCategory: goast-belief\n\nExamples:\n  (run-beliefs \"my/package/...\")\n\nSee also: `reset-beliefs!'."
   (let ((ctx (make-context target)))
     (print-header)
     (let loop ((beliefs *beliefs*)
