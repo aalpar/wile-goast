@@ -91,24 +91,28 @@
 ;; Identity and absorbing guard on integer type; commutativity is type-agnostic.
 
 (define (ssa-rule-identity)
+  "Construct a normalization rule for identity operations.\nRewrites x+0->x, x*1->x, x|0->x, x^0->x for integer types.\nReturns a rule: (lambda (node) -> node-or-#f).\n\nReturns: procedure\nCategory: goast-ssa-normalize\n\nSee also: `ssa-rule-annihilation', `ssa-rule-set', `ssa-normalize'."
   (lambda (node)
     (and (tag? node 'ssa-binop)
          (integer-type? (nf node 'type))
          (int-identity-rewrite node))))
 
 (define (ssa-rule-annihilation)
+  "Construct a normalization rule for absorbing operations.\nRewrites x*0->0, x&0->0 for integer types.\nReturns a rule: (lambda (node) -> node-or-#f).\n\nReturns: procedure\nCategory: goast-ssa-normalize\n\nSee also: `ssa-rule-identity', `ssa-rule-set', `ssa-normalize'."
   (lambda (node)
     (and (tag? node 'ssa-binop)
          (integer-type? (nf node 'type))
          (int-absorbing-rewrite node))))
 
 (define (ssa-rule-commutative)
+  "Construct a normalization rule for commutative operations.\nSorts operands lexicographically so a+b and b+a produce identical output.\nReturns a rule: (lambda (node) -> node-or-#f).\n\nReturns: procedure\nCategory: goast-ssa-normalize\n\nSee also: `ssa-rule-identity', `ssa-rule-set', `ssa-normalize'."
   (lambda (node)
     (and (tag? node 'ssa-binop)
          (comm-rewrite node))))
 
 ;; Compose rules: first non-#f result wins
 (define (ssa-rule-set . rules)
+  "Compose multiple normalization rules into one.\nApplies rules in order; first non-#f result wins.\n\nParameters:\n  rules : procedure\nReturns: procedure\nCategory: goast-ssa-normalize\n\nExamples:\n  (ssa-rule-set (ssa-rule-identity) (ssa-rule-commutative))\n\nSee also: `ssa-normalize'."
   (lambda (node)
     (let loop ((rs rules))
       (if (null? rs) #f
@@ -128,5 +132,7 @@
 ;; When rules return #f (no normalization needed), return the original node.
 (define ssa-normalize
   (case-lambda
-    ((node) (let ((r (default-rules node))) (if r r node)))
+    ((node)
+     "Normalize an SSA binop node using default algebraic rules.\nWith one arg, applies identity + annihilation + commutativity rules.\nWith two args, applies the given rule set instead.\n\nParameters:\n  node : list\nReturns: any\nCategory: goast-ssa-normalize\n\nExamples:\n  (ssa-normalize binop-node)\n  (ssa-normalize binop-node (ssa-rule-set (ssa-rule-identity)))\n\nSee also: `ssa-rule-set', `ssa-rule-identity', `go-ssa-canonicalize'."
+     (let ((r (default-rules node))) (if r r node)))
     ((node rules) (let ((r (rules node))) (if r r node)))))

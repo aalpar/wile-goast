@@ -49,11 +49,18 @@
 ;; Result accessors
 ;; ══════════════════════════════════════════════════════════
 
-(define (diff-result-shared r) (car r))
-(define (diff-result-diff-count r) (cadr r))
-(define (diff-result-diffs r) (caddr r))
+(define (diff-result-shared r)
+  "Extract the shared-node count from a diff result.\n\nParameters:\n  r : list\nReturns: integer\nCategory: goast-unify\n\nSee also: `diff-result-diff-count', `diff-result-similarity'."
+  (car r))
+(define (diff-result-diff-count r)
+  "Extract the diff count from a diff result.\n\nParameters:\n  r : list\nReturns: integer\nCategory: goast-unify\n\nSee also: `diff-result-shared', `diff-result-diffs'."
+  (cadr r))
+(define (diff-result-diffs r)
+  "Extract the list of classified diffs from a diff result.\nEach diff is (category path val-a val-b).\n\nParameters:\n  r : list\nReturns: list\nCategory: goast-unify\n\nSee also: `diff-result-diff-count', `score-diffs'."
+  (caddr r))
 
 (define (diff-result-similarity r)
+  "Extract the raw similarity ratio from a diff result.\nReturns shared/(shared+diffs) as an exact rational.\n\nParameters:\n  r : list\nReturns: number\nCategory: goast-unify\n\nSee also: `score-diffs', `unifiable?'."
   (let ((total (+ (car r) (cadr r))))
     (if (> total 0)
       (exact->inexact (/ (car r) total))
@@ -75,6 +82,7 @@
       (else (loop (cdr xs))))))
 
 (define (classify-ast-diff tag field str-a str-b path)
+  "Classify an AST diff by path position.\nReturns a category symbol: 'type, 'identifier, 'literal, or 'structural.\n\nParameters:\n  tag : symbol\n  field : symbol\n  str-a : string\n  str-b : string\n  path : list\nReturns: symbol\nCategory: goast-unify\n\nSee also: `ast-diff', `classify-ssa-diff'."
   (cond
     ((and (symbol? field) (memq field ast-type-fields))        'type-name)
     ((and (symbol? field) (eq? field 'name)
@@ -91,6 +99,7 @@
 (define ssa-identity-name-tags '(ssa-func ssa-param))
 
 (define (classify-ssa-diff tag field str-a str-b path)
+  "Classify an SSA diff by node tag.\nReturns a category symbol: 'type, 'register, or 'structural.\n\nParameters:\n  tag : symbol\n  field : symbol\n  str-a : string\n  str-b : string\n  path : list\nReturns: symbol\nCategory: goast-unify\n\nSee also: `ssa-diff', `classify-ast-diff'."
   (cond
     ((and (symbol? field) (memq field '(type asserted-type)))  'type-name)
     ((and (symbol? field) (eq? field 'op))                     'operator)
@@ -204,12 +213,15 @@
 ;; ══════════════════════════════════════════════════════════
 
 (define (tree-diff node-a node-b classifier)
+  "Generic structural diff of two s-expression trees.\nCLASSIFIER categorizes each leaf difference. Returns a diff-result\nwith shared count, diff count, and classified diff list.\n\nParameters:\n  node-a : list\n  node-b : list\n  classifier : procedure\nReturns: list\nCategory: goast-unify\n\nSee also: `ast-diff', `ssa-diff'."
   (tree-diff-walk node-a node-b #f '() classifier))
 
 (define (ast-diff node-a node-b)
+  "Diff two AST nodes using path-based classification.\nConvenience wrapper around tree-diff with classify-ast-diff.\n\nParameters:\n  node-a : list\n  node-b : list\nReturns: list\nCategory: goast-unify\n\nExamples:\n  (ast-diff func-a func-b)\n\nSee also: `ssa-diff', `tree-diff', `unifiable?'."
   (tree-diff node-a node-b classify-ast-diff))
 
 (define (ssa-diff node-a node-b)
+  "Diff two SSA nodes using tag-based classification.\nConvenience wrapper around tree-diff with classify-ssa-diff.\n\nParameters:\n  node-a : list\n  node-b : list\nReturns: list\nCategory: goast-unify\n\nExamples:\n  (ssa-diff (go-ssa-canonicalize fn-a) (go-ssa-canonicalize fn-b))\n\nSee also: `ast-diff', `tree-diff', `unifiable?'."
   (tree-diff node-a node-b classify-ssa-diff))
 
 ;; ══════════════════════════════════════════════════════════
@@ -259,6 +271,7 @@
       (loop (cdr ps) (insert (car ps) acc)))))
 
 (define (find-root-substitutions pairs)
+  "Find root substitution pairs from a list of (val-a . val-b) diffs.\nRoot substitutions are the minimal set from which others are derivable.\n\nParameters:\n  pairs : list\nReturns: list\nCategory: goast-unify\n\nSee also: `collapse-diffs', `score-diffs'."
   (let ((sorted (sort-by-length (unique pairs))))
     (let loop ((ps sorted) (roots '()))
       (if (null? ps) roots
@@ -268,6 +281,7 @@
             (loop (cdr ps) (cons (cons a b) roots))))))))
 
 (define (collapse-diffs diffs roots)
+  "Remove diffs that are derivable from root substitutions.\nA diff is derivable if applying the root substitutions to val-a\nproduces val-b.\n\nParameters:\n  diffs : list\n  roots : list\nReturns: list\nCategory: goast-unify\n\nSee also: `find-root-substitutions', `score-diffs'."
   (map (lambda (d)
          (if (and (eq? (car d) 'type-name)
                   (string? (caddr d))
@@ -299,6 +313,7 @@
     (if entry (cdr entry) 10)))
 
 (define (score-diffs shared-count diff-count diffs)
+  "Compute effective similarity with substitution collapsing.\nFinds root substitutions, collapses derivable diffs, and returns\nthe adjusted similarity as a weighted score.\n\nParameters:\n  shared-count : integer\n  diff-count : integer\n  diffs : list\nReturns: number\nCategory: goast-unify\n\nSee also: `find-root-substitutions', `collapse-diffs', `unifiable?'."
   (let* ((type-pairs
            (filter-map
              (lambda (d)
@@ -346,6 +361,7 @@
 ;; ══════════════════════════════════════════════════════════
 
 (define (unifiable? result threshold)
+  "Determine whether two nodes are similar enough to unify.\nReturns #t when effective similarity >= THRESHOLD and all remaining\ndiffs are type/register (not structural).\n\nParameters:\n  result : list\n  threshold : number\nReturns: boolean\nCategory: goast-unify\n\nExamples:\n  (unifiable? (ast-diff fn-a fn-b) 0.85)\n\nSee also: `ast-diff', `ssa-diff', `score-diffs'."
   (let* ((shared-count (diff-result-shared result))
          (diff-count (diff-result-diff-count result))
          (diffs (diff-result-diffs result))

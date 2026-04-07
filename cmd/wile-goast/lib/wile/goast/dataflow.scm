@@ -6,6 +6,7 @@
 ;; ─── Boolean lattice {#f, #t} ───────────────
 
 (define (boolean-lattice)
+  "Construct a boolean lattice: bottom=#f, join=or, equal?=eq?.\nReturns an alist suitable for run-analysis.\n\nReturns: list\nCategory: goast-dataflow\n\nSee also: `run-analysis'."
   (make-lattice
     (lambda (a b) (or a b))         ; join
     (lambda (a b) (and a b))        ; meet
@@ -16,6 +17,7 @@
 ;; ─── SSA instruction extraction ─────────────
 
 (define (ssa-all-instrs ssa-fn)
+  "Flatten all instructions from all blocks of an SSA function.\n\nParameters:\n  ssa-fn : list\nReturns: list\nCategory: goast-dataflow\n\nSee also: `ssa-instruction-names', `block-instrs'."
   (let ((blocks (nf ssa-fn 'blocks)))
     (if (pair? blocks)
       (flat-map
@@ -26,6 +28,7 @@
       '())))
 
 (define (ssa-instruction-names ssa-fn)
+  "Extract all named values (registers) from an SSA function.\n\nParameters:\n  ssa-fn : list\nReturns: list\nCategory: goast-dataflow\n\nSee also: `ssa-all-instrs'."
   (let ((instrs (ssa-all-instrs ssa-fn)))
     (unique
       (flat-map
@@ -40,6 +43,7 @@
 ;; ─── Reachability transfer function ─────────
 
 (define (make-reachability-transfer all-instrs found? names-lat)
+  "Build a transfer function for def-use reachability analysis.\nALL-INSTRS is the flat instruction list. FOUND? is a predicate\nthat recognizes the target instruction. NAMES-LAT is a powerset\nlattice over instruction names.\n\nParameters:\n  all-instrs : list\n  found? : procedure\n  names-lat : list\nReturns: procedure\nCategory: goast-dataflow\n\nSee also: `defuse-reachable?'."
   (lambda (state)
     (let ((names (car state)) (guard (cadr state)))
       (if guard state
@@ -75,6 +79,7 @@
 ;; ─── Block accessor ────────────────────────
 
 (define (block-instrs block)
+  "Extract the instruction list from an SSA block.\n\nParameters:\n  block : list\nReturns: list\nCategory: goast-dataflow\n\nSee also: `ssa-all-instrs'."
   (or (nf block 'instrs) '()))
 
 ;; ─── Reverse postorder (internal) ──────────
@@ -96,6 +101,7 @@
 ;; ─── Top-level query ────────────────────────
 
 (define (defuse-reachable? ssa-fn start-names found? fuel)
+  "Test whether any START-NAMES value reaches an instruction matching FOUND?\nvia def-use chains within FUEL iterations. Uses product lattice fixpoint.\n\nParameters:\n  ssa-fn : list\n  start-names : list\n  found? : procedure\n  fuel : integer\nReturns: boolean\nCategory: goast-dataflow\n\nExamples:\n  (defuse-reachable? fn '(\"t0\") (lambda (i) (tag? i 'ssa-if)) 5)\n\nSee also: `run-analysis', `make-reachability-transfer'."
   (let* ((instrs (ssa-all-instrs ssa-fn))
          (universe (ssa-instruction-names ssa-fn))
          (names-lat (powerset-lattice universe))
@@ -109,19 +115,23 @@
 ;; ─── Block-level analysis result accessors ─
 
 (define (analysis-in result block-idx)
+  "Query the in-state at a block from a run-analysis result.\n\nParameters:\n  result : list\n  block-idx : integer\nReturns: any\nCategory: goast-dataflow\n\nSee also: `analysis-out', `analysis-states', `run-analysis'."
   (let ((entry (assv block-idx result)))
     (and entry (cadr entry))))
 
 (define (analysis-out result block-idx)
+  "Query the out-state at a block from a run-analysis result.\n\nParameters:\n  result : list\n  block-idx : integer\nReturns: any\nCategory: goast-dataflow\n\nSee also: `analysis-in', `analysis-states', `run-analysis'."
   (let ((entry (assv block-idx result)))
     (and entry (caddr entry))))
 
 (define (analysis-states result)
+  "Return the full result alist from run-analysis: ((idx in out) ...).\n\nParameters:\n  result : list\nReturns: list\nCategory: goast-dataflow\n\nSee also: `analysis-in', `analysis-out', `run-analysis'."
   result)
 
 ;; ─── Block-level worklist analysis ─────────
 
 (define (run-analysis direction lattice transfer ssa-fn . args)
+  "Run worklist-based dataflow analysis on an SSA function.\nDIRECTION is 'forward or 'backward. LATTICE is an alist with 'bottom,\n'join, and 'equal? entries. TRANSFER is (lambda (block state) -> state).\nOptional args: initial state value, 'check-monotone flag for debugging.\n\nParameters:\n  direction : symbol\n  lattice : list\n  transfer : procedure\n  ssa-fn : list\nReturns: list\nCategory: goast-dataflow\n\nExamples:\n  (run-analysis 'forward (boolean-lattice) my-transfer fn)\n  (run-analysis 'forward lat xfer fn init-state 'check-monotone)\n\nSee also: `analysis-in', `analysis-out', `analysis-states', `boolean-lattice'."
   ;; Parse optional args: [initial-state] ['check-monotone]
   (let* ((initial-state (if (and (pair? args) (not (symbol? (car args))))
                             (car args)
