@@ -52,7 +52,7 @@ type ssaBlockData struct {
 
 // PrimGoSSACanonicalize canonicalizes an SSA function s-expression:
 // dominator-order blocks, alpha-renamed registers.
-func PrimGoSSACanonicalize(mc *machine.MachineContext) error {
+func PrimGoSSACanonicalize(mc machine.CallContext) error {
 	arg := mc.Arg(0)
 	node, ok := arg.(*values.Pair)
 	if !ok {

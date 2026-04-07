@@ -72,7 +72,7 @@ func parseOpts(rest values.Value, fset *token.FileSet) (*mapperOpts, parser.Mode
 
 // PrimGoParseFile implements (go-parse-file filename . options).
 // Parses a Go source file from disk and returns an s-expression AST.
-func PrimGoParseFile(mc *machine.MachineContext) error {
+func PrimGoParseFile(mc machine.CallContext) error {
 	filename, err := helpers.RequireArg[*values.String](mc, 0, werr.ErrNotAString, "go-parse-file")
 	if err != nil {
 		return err
@@ -105,7 +105,7 @@ func PrimGoParseFile(mc *machine.MachineContext) error {
 
 // PrimGoParseString implements (go-parse-string source . options).
 // Parses a Go source string as a file and returns an s-expression AST.
-func PrimGoParseString(mc *machine.MachineContext) error {
+func PrimGoParseString(mc machine.CallContext) error {
 	source, err := helpers.RequireArg[*values.String](mc, 0, werr.ErrNotAString, "go-parse-string")
 	if err != nil {
 		return err
@@ -129,7 +129,7 @@ func PrimGoParseString(mc *machine.MachineContext) error {
 
 // PrimGoParseExpr implements (go-parse-expr source).
 // Parses a single Go expression and returns an s-expression AST.
-func PrimGoParseExpr(mc *machine.MachineContext) error {
+func PrimGoParseExpr(mc machine.CallContext) error {
 	source, err := helpers.RequireArg[*values.String](mc, 0, werr.ErrNotAString, "go-parse-expr")
 	if err != nil {
 		return err
@@ -148,7 +148,7 @@ func PrimGoParseExpr(mc *machine.MachineContext) error {
 
 // PrimGoFormat implements (go-format ast).
 // Converts an s-expression AST back to formatted Go source.
-func PrimGoFormat(mc *machine.MachineContext) error {
+func PrimGoFormat(mc machine.CallContext) error {
 	astVal := mc.Arg(0)
 
 	n, err := unmapNode(astVal)
@@ -193,7 +193,7 @@ func PrimGoFormat(mc *machine.MachineContext) error {
 
 // PrimGoNodeType implements (go-node-type ast).
 // Returns the tag symbol of an AST node.
-func PrimGoNodeType(mc *machine.MachineContext) error {
+func PrimGoNodeType(mc machine.CallContext) error {
 	astVal := mc.Arg(0)
 
 	pair, ok := astVal.(*values.Pair)
@@ -235,7 +235,7 @@ func mapPackage(pkg *packages.Package, baseOpts *mapperOpts) values.Value {
 // target is a package pattern string or a GoSession from go-load.
 // Loads a Go package using go/packages (module-aware via go list), type-checks it,
 // and returns a list of annotated (package ...) s-expression nodes.
-func PrimGoTypecheckPackage(mc *machine.MachineContext) error {
+func PrimGoTypecheckPackage(mc machine.CallContext) error {
 	arg := mc.Arg(0)
 	switch v := arg.(type) {
 	case *GoSession:
@@ -248,7 +248,7 @@ func PrimGoTypecheckPackage(mc *machine.MachineContext) error {
 	}
 }
 
-func typecheckFromSession(mc *machine.MachineContext, session *GoSession) error {
+func typecheckFromSession(mc machine.CallContext, session *GoSession) error {
 	baseOpts, _, optErr := parseOpts(mc.Arg(1), session.FileSet())
 	if optErr != nil {
 		return optErr
@@ -261,7 +261,7 @@ func typecheckFromSession(mc *machine.MachineContext, session *GoSession) error 
 	return nil
 }
 
-func typecheckFromPattern(mc *machine.MachineContext, pattern *values.String) error {
+func typecheckFromPattern(mc machine.CallContext, pattern *values.String) error {
 	// packages.Load internally spawns "go list" to perform module-aware import
 	// resolution and type information collection. That subprocess can read
 	// arbitrary source files and download modules from the network, so the
@@ -322,7 +322,7 @@ func typecheckFromPattern(mc *machine.MachineContext, pattern *values.String) er
 // target is a package pattern string or a GoSession from go-load.
 // Finds all concrete types implementing the named interface within the loaded packages.
 // Returns a tagged alist: (interface-info (name . X) (pkg . Y) (methods . (...)) (implementors . (...))).
-func PrimInterfaceImplementors(mc *machine.MachineContext) error {
+func PrimInterfaceImplementors(mc machine.CallContext) error {
 	ifaceName, err := helpers.RequireArg[*values.String](mc, 0, werr.ErrNotAString, "go-interface-implementors")
 	if err != nil {
 		return err
@@ -340,11 +340,11 @@ func PrimInterfaceImplementors(mc *machine.MachineContext) error {
 	}
 }
 
-func implementorsFromSession(mc *machine.MachineContext, ifaceName string, session *GoSession) error {
+func implementorsFromSession(mc machine.CallContext, ifaceName string, session *GoSession) error {
 	return findImplementors(mc, ifaceName, session.Packages())
 }
 
-func implementorsFromPattern(mc *machine.MachineContext, ifaceName string, pattern *values.String) error {
+func implementorsFromPattern(mc machine.CallContext, ifaceName string, pattern *values.String) error {
 	err := security.CheckWithAuthorizer(mc.Authorizer(), security.AccessRequest{
 		Resource: security.ResourceProcess,
 		Action:   security.ActionLoad,
@@ -378,7 +378,7 @@ func implementorsFromPattern(mc *machine.MachineContext, ifaceName string, patte
 	return findImplementors(mc, ifaceName, pkgs)
 }
 
-func findImplementors(mc *machine.MachineContext, name string, pkgs []*packages.Package) error {
+func findImplementors(mc machine.CallContext, name string, pkgs []*packages.Package) error {
 	qualified := strings.Contains(name, ".")
 
 	type ifaceMatch struct {

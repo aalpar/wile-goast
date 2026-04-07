@@ -75,7 +75,7 @@ var (
 // PrimGoAnalyze implements (go-analyze target analyzer-name ...).
 // target is a package pattern string or a GoSession from go-load.
 // If given a GoSession loaded without 'lint mode, falls back to fresh loading.
-func PrimGoAnalyze(mc *machine.MachineContext) error {
+func PrimGoAnalyze(mc machine.CallContext) error {
 	arg := mc.Arg(0)
 
 	analyzers, err := parseAnalyzerNames(mc.Arg(1))
@@ -103,7 +103,7 @@ func PrimGoAnalyze(mc *machine.MachineContext) error {
 	}
 }
 
-func analyzeFromSession(mc *machine.MachineContext, session *goast.GoSession, analyzers []*analysis.Analyzer) error {
+func analyzeFromSession(mc machine.CallContext, session *goast.GoSession, analyzers []*analysis.Analyzer) error {
 	graph, analyzeErr := checker.Analyze(analyzers, session.Packages(), nil)
 	if analyzeErr != nil {
 		return werr.WrapForeignErrorf(errLintRunError,
@@ -112,7 +112,7 @@ func analyzeFromSession(mc *machine.MachineContext, session *goast.GoSession, an
 	return collectDiagnostics(mc, graph, session.FileSet())
 }
 
-func analyzeFromPattern(mc *machine.MachineContext, patterns []string, analyzers []*analysis.Analyzer) error {
+func analyzeFromPattern(mc machine.CallContext, patterns []string, analyzers []*analysis.Analyzer) error {
 	err := security.CheckWithAuthorizer(mc.Authorizer(), security.AccessRequest{
 		Resource: security.ResourceProcess,
 		Action:   security.ActionLoad,
@@ -158,7 +158,7 @@ func analyzeFromPattern(mc *machine.MachineContext, patterns []string, analyzers
 	return collectDiagnostics(mc, graph, fset)
 }
 
-func collectDiagnostics(mc *machine.MachineContext, graph *checker.Graph, fset *token.FileSet) error {
+func collectDiagnostics(mc machine.CallContext, graph *checker.Graph, fset *token.FileSet) error {
 	var result []values.Value
 	for _, act := range graph.Roots {
 		if act.Err != nil {
@@ -182,7 +182,7 @@ func collectDiagnostics(mc *machine.MachineContext, graph *checker.Graph, fset *
 }
 
 // PrimGoAnalyzeList returns a sorted list of available analyzer name strings.
-func PrimGoAnalyzeList(mc *machine.MachineContext) error {
+func PrimGoAnalyzeList(mc machine.CallContext) error {
 	names := make([]string, 0, len(analyzerRegistry))
 	for name := range analyzerRegistry {
 		names = append(names, name)

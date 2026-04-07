@@ -175,7 +175,7 @@ func findFunction(prog *ssa.Program, ssaPkg *ssa.Package, name string) *ssa.Func
 
 // PrimGoCFG implements (go-cfg target func-name . options).
 // target is a package pattern string or a GoSession from go-load.
-func PrimGoCFG(mc *machine.MachineContext) error {
+func PrimGoCFG(mc machine.CallContext) error {
 	arg := mc.Arg(0)
 	funcName, err := helpers.RequireArg[*values.String](mc, 1, werr.ErrNotAString, "go-cfg")
 	if err != nil {
@@ -193,7 +193,7 @@ func PrimGoCFG(mc *machine.MachineContext) error {
 	}
 }
 
-func cfgFromSession(mc *machine.MachineContext, session *goast.GoSession, funcName string) error {
+func cfgFromSession(mc machine.CallContext, session *goast.GoSession, funcName string) error {
 	mapper, err := parseCFGOpts(mc.Arg(2), session.FileSet())
 	if err != nil {
 		return err
@@ -214,7 +214,7 @@ func cfgFromSession(mc *machine.MachineContext, session *goast.GoSession, funcNa
 		"go-cfg: function %q not found in session", funcName)
 }
 
-func cfgFromPattern(mc *machine.MachineContext, pattern *values.String, funcName string) error {
+func cfgFromPattern(mc machine.CallContext, pattern *values.String, funcName string) error {
 	err := security.CheckWithAuthorizer(mc.Authorizer(), security.AccessRequest{
 		Resource: security.ResourceProcess,
 		Action:   security.ActionLoad,
@@ -285,7 +285,7 @@ func cfgFromPattern(mc *machine.MachineContext, pattern *values.String, funcName
 // PrimGoCFGDominators implements (go-cfg-dominators cfg).
 // Takes the cfg-block list from go-cfg and returns a list of dom-node
 // s-expressions (the dominator tree, rooted at the entry block).
-func PrimGoCFGDominators(mc *machine.MachineContext) error {
+func PrimGoCFGDominators(mc machine.CallContext) error {
 	blocks := parseCFGBlocks(mc.Arg(0))
 	if len(blocks) == 0 {
 		mc.SetValue(values.EmptyList)
@@ -325,7 +325,7 @@ func PrimGoCFGDominators(mc *machine.MachineContext) error {
 
 // PrimGoCFGDominates implements (go-cfg-dominates? dom-tree a b).
 // Returns #t if block a dominates block b (a is an ancestor of b in dom-tree).
-func PrimGoCFGDominates(mc *machine.MachineContext) error {
+func PrimGoCFGDominates(mc machine.CallContext) error {
 	aVal, err := helpers.RequireArg[*values.Integer](mc, 1, werr.ErrNotANumber, "go-cfg-dominates?")
 	if err != nil {
 		return err
@@ -391,7 +391,7 @@ const maxCFGPaths = 1024
 // PrimGoCFGPaths implements (go-cfg-paths cfg from to).
 // Returns a list of simple paths (lists of block indices) from block `from`
 // to block `to`. Capped at maxCFGPaths to bound cost.
-func PrimGoCFGPaths(mc *machine.MachineContext) error {
+func PrimGoCFGPaths(mc machine.CallContext) error {
 	fromVal, err := helpers.RequireArg[*values.Integer](mc, 1, werr.ErrNotANumber, "go-cfg-paths")
 	if err != nil {
 		return err

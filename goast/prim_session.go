@@ -31,7 +31,7 @@ import (
 
 // PrimGoLoad implements (go-load pattern ... . options).
 // Loads Go packages and returns a GoSession for reuse across primitives.
-func PrimGoLoad(mc *machine.MachineContext) error {
+func PrimGoLoad(mc machine.CallContext) error {
 	first, err := helpers.RequireArg[*values.String](mc, 0, werr.ErrNotAString, "go-load")
 	if err != nil {
 		return err
@@ -118,7 +118,7 @@ func PrimGoLoad(mc *machine.MachineContext) error {
 }
 
 // PrimGoSessionP implements (go-session? v).
-func PrimGoSessionP(mc *machine.MachineContext) error {
+func PrimGoSessionP(mc machine.CallContext) error {
 	_, ok := mc.Arg(0).(*GoSession)
 	if ok {
 		mc.SetValue(values.TrueValue)
@@ -131,7 +131,7 @@ func PrimGoSessionP(mc *machine.MachineContext) error {
 // PrimGoListDeps implements (go-list-deps pattern ...).
 // Lightweight dependency discovery — returns the transitive closure of
 // import paths without type checking or syntax loading.
-func PrimGoListDeps(mc *machine.MachineContext) error {
+func PrimGoListDeps(mc machine.CallContext) error {
 	first, err := helpers.RequireArg[*values.String](mc, 0, werr.ErrNotAString, "go-list-deps")
 	if err != nil {
 		return err

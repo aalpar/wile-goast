@@ -39,7 +39,7 @@ import (
 //   - Phase 0b: Forward gotos → if !cond { ... } wrapping.
 //   - Phase 1: Returns inside for/range → _ctl<N> = K; break + guard-ifs.
 //   - Phase 2: Guard-if-return patterns → nested if/else via right-fold.
-func PrimGoCFGToStructured(mc *machine.MachineContext) error {
+func PrimGoCFGToStructured(mc machine.CallContext) error {
 	blockVal := mc.Arg(0)
 
 	node, err := unmapNode(blockVal)

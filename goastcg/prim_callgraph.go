@@ -52,7 +52,7 @@ var validAlgorithms = map[string]bool{
 
 // PrimGoCallgraph implements (go-callgraph target algorithm).
 // target is a package pattern string or a GoSession from go-load.
-func PrimGoCallgraph(mc *machine.MachineContext) error {
+func PrimGoCallgraph(mc machine.CallContext) error {
 	arg := mc.Arg(0)
 
 	algo, err := helpers.RequireArg[*values.Symbol](mc, 1, werr.ErrNotASymbol, "go-callgraph")
@@ -76,7 +76,7 @@ func PrimGoCallgraph(mc *machine.MachineContext) error {
 	}
 }
 
-func callgraphFromSession(mc *machine.MachineContext, session *goast.GoSession, algorithm string) error {
+func callgraphFromSession(mc machine.CallContext, session *goast.GoSession, algorithm string) error {
 	prog := session.SSAAllPackages()
 
 	cg, cgErr := dispatchCallgraph(prog, algorithm)
@@ -89,7 +89,7 @@ func callgraphFromSession(mc *machine.MachineContext, session *goast.GoSession, 
 	return nil
 }
 
-func callgraphFromPattern(mc *machine.MachineContext, pattern *values.String, algorithm string) error {
+func callgraphFromPattern(mc machine.CallContext, pattern *values.String, algorithm string) error {
 	err := security.CheckWithAuthorizer(mc.Authorizer(), security.AccessRequest{
 		Resource: security.ResourceProcess,
 		Action:   security.ActionLoad,
@@ -218,7 +218,7 @@ func findCGNode(graph values.Value, name string) values.Value {
 }
 
 // PrimGoCallgraphCallers implements (go-callgraph-callers graph func-name).
-func PrimGoCallgraphCallers(mc *machine.MachineContext) error {
+func PrimGoCallgraphCallers(mc machine.CallContext) error {
 	graph := mc.Arg(0)
 	funcName, err := helpers.RequireArg[*values.String](mc, 1, werr.ErrNotAString, "go-callgraph-callers")
 	if err != nil {
@@ -246,7 +246,7 @@ func PrimGoCallgraphCallers(mc *machine.MachineContext) error {
 }
 
 // PrimGoCallgraphCallees implements (go-callgraph-callees graph func-name).
-func PrimGoCallgraphCallees(mc *machine.MachineContext) error {
+func PrimGoCallgraphCallees(mc machine.CallContext) error {
 	graph := mc.Arg(0)
 	funcName, err := helpers.RequireArg[*values.String](mc, 1, werr.ErrNotAString, "go-callgraph-callees")
 	if err != nil {
@@ -378,7 +378,7 @@ func computeReachable(nodeMap map[string]values.Value, rootName string) map[stri
 }
 
 // PrimGoCallgraphReachable implements (go-callgraph-reachable graph root-name).
-func PrimGoCallgraphReachable(mc *machine.MachineContext) error {
+func PrimGoCallgraphReachable(mc machine.CallContext) error {
 	graph := mc.Arg(0)
 	rootName, err := helpers.RequireArg[*values.String](mc, 1, werr.ErrNotAString, "go-callgraph-reachable")
 	if err != nil {

@@ -14,7 +14,10 @@
 
 package goastlint
 
-import "github.com/aalpar/wile/registry"
+import (
+	"github.com/aalpar/wile/registry"
+	"github.com/aalpar/wile/values"
+)
 
 // lintExtension wraps Extension to implement LibraryNamer.
 type lintExtension struct {
@@ -41,17 +44,29 @@ func addPrimitives(r *registry.Registry) error {
 	r.AddPrimitives([]registry.PrimitiveSpec{
 		{
 			Name: "go-analyze", ParamCount: 2, IsVariadic: true,
-			Impl:       PrimGoAnalyze,
-			Doc:        "Runs named go/analysis passes on a Go package and returns diagnostics.",
+			Impl: PrimGoAnalyze,
+			Doc: "Runs named go/analysis passes on a Go package and returns diagnostics.\n" +
+				"First arg is a package pattern or GoSession. Remaining args are\n" +
+				"analyzer names (strings). Use go-analyze-list for available names.\n\n" +
+				"Examples:\n" +
+				"  (go-analyze \"./...\" \"nilness\" \"shadow\")\n" +
+				"  (go-analyze (go-load \"./...\") \"unusedresult\")\n\n" +
+				"See also: `go-analyze-list'.",
 			ParamNames: []string{"pattern", "analyzer-names"},
 			Category:   "goast-lint",
+			ReturnType: values.TypeList,
 		},
 		{
 			Name: "go-analyze-list", ParamCount: 0,
-			Impl:       PrimGoAnalyzeList,
-			Doc:        "Returns a sorted list of available analyzer names.",
+			Impl: PrimGoAnalyzeList,
+			Doc: "Returns a sorted list of available analyzer names.\n" +
+				"These names are valid arguments to go-analyze.\n\n" +
+				"Examples:\n" +
+				"  (go-analyze-list)  ; => (\"appends\" \"asmdecl\" ...)\n\n" +
+				"See also: `go-analyze'.",
 			ParamNames: []string{},
 			Category:   "goast-lint",
+			ReturnType: values.TypeList,
 		},
 	}, registry.PhaseRuntime)
 	return nil

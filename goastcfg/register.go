@@ -14,7 +14,10 @@
 
 package goastcfg
 
-import "github.com/aalpar/wile/registry"
+import (
+	"github.com/aalpar/wile/registry"
+	"github.com/aalpar/wile/values"
+)
 
 // cfgExtension wraps Extension to implement LibraryNamer.
 type cfgExtension struct {
@@ -40,17 +43,38 @@ var AddToRegistry = Builder.AddToRegistry
 func addPrimitives(r *registry.Registry) error {
 	r.AddPrimitives([]registry.PrimitiveSpec{
 		{Name: "go-cfg", ParamCount: 3, IsVariadic: true, Impl: PrimGoCFG,
-			Doc:        "Builds the CFG for a named function in a Go package.",
-			ParamNames: []string{"pattern", "func-name", "options"}, Category: "goast-cfg"},
+			Doc: "Builds the control flow graph for a named function in a Go package.\n" +
+				"First arg is a package pattern or GoSession.\n\n" +
+				"Examples:\n" +
+				"  (go-cfg \"./...\" \"MyFunc\")\n" +
+				"  (go-cfg (go-load \"./...\") \"MyFunc\")\n\n" +
+				"See also: `go-cfg-dominators', `go-cfg-paths', `go-cfg-to-structured'.",
+			ParamNames: []string{"pattern", "func-name", "options"}, Category: "goast-cfg",
+			ReturnType: values.TypeList},
 		{Name: "go-cfg-dominators", ParamCount: 1, Impl: PrimGoCFGDominators,
-			Doc:        "Builds a dominator tree from a cfg-block list returned by go-cfg.",
-			ParamNames: []string{"cfg"}, Category: "goast-cfg"},
+			Doc: "Builds a dominator tree from a cfg-block list returned by go-cfg.\n" +
+				"Uses the Lengauer-Tarjan algorithm via golang.org/x/tools.\n\n" +
+				"Examples:\n" +
+				"  (go-cfg-dominators (go-cfg \"./...\" \"MyFunc\"))\n\n" +
+				"See also: `go-cfg', `go-cfg-dominates?'.",
+			ParamNames: []string{"cfg"}, Category: "goast-cfg",
+			ParamTypes: []values.ValueType{values.TypeList},
+			ReturnType: values.TypeList},
 		{Name: "go-cfg-dominates?", ParamCount: 3, Impl: PrimGoCFGDominates,
-			Doc:        "Returns #t if block a dominates block b in the dominator tree.",
-			ParamNames: []string{"dom-tree", "a", "b"}, Category: "goast-cfg"},
+			Doc: "Returns #t if block A dominates block B in the dominator tree.\n\n" +
+				"Examples:\n" +
+				"  (go-cfg-dominates? dom-tree 0 3)\n\n" +
+				"See also: `go-cfg-dominators', `go-cfg'.",
+			ParamNames: []string{"dom-tree", "a", "b"}, Category: "goast-cfg",
+			ReturnType: values.TypeBoolean},
 		{Name: "go-cfg-paths", ParamCount: 3, Impl: PrimGoCFGPaths,
-			Doc:        "Enumerates simple paths between two blocks in the CFG. Capped at 1024 paths.",
-			ParamNames: []string{"cfg", "from", "to"}, Category: "goast-cfg"},
+			Doc: "Enumerates simple paths between two blocks in the CFG.\n" +
+				"Capped at 1024 paths to bound computation.\n\n" +
+				"Examples:\n" +
+				"  (go-cfg-paths cfg 0 5)\n\n" +
+				"See also: `go-cfg', `go-cfg-dominators'.",
+			ParamNames: []string{"cfg", "from", "to"}, Category: "goast-cfg",
+			ReturnType: values.TypeList},
 	}, registry.PhaseRuntime)
 	return nil
 }

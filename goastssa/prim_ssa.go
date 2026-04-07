@@ -72,7 +72,7 @@ func parseSSAOpts(rest values.Value, fset *token.FileSet) (*ssaMapper, error) {
 
 // PrimGoSSABuild implements (go-ssa-build target . options).
 // target is a package pattern string or a GoSession from go-load.
-func PrimGoSSABuild(mc *machine.MachineContext) error {
+func PrimGoSSABuild(mc machine.CallContext) error {
 	arg := mc.Arg(0)
 	switch v := arg.(type) {
 	case *goast.GoSession:
@@ -85,7 +85,7 @@ func PrimGoSSABuild(mc *machine.MachineContext) error {
 	}
 }
 
-func ssaBuildFromSession(mc *machine.MachineContext, session *goast.GoSession) error {
+func ssaBuildFromSession(mc machine.CallContext, session *goast.GoSession) error {
 	mapper, err := parseSSAOpts(mc.Arg(1), session.FileSet())
 	if err != nil {
 		return err
@@ -94,7 +94,7 @@ func ssaBuildFromSession(mc *machine.MachineContext, session *goast.GoSession) e
 	return collectSSAFuncs(mc, mapper, prog, ssaPkgs)
 }
 
-func ssaBuildFromPattern(mc *machine.MachineContext, pattern *values.String) error {
+func ssaBuildFromPattern(mc machine.CallContext, pattern *values.String) error {
 	err := security.CheckWithAuthorizer(mc.Authorizer(), security.AccessRequest{
 		Resource: security.ResourceProcess,
 		Action:   security.ActionLoad,
@@ -150,7 +150,7 @@ func ssaBuildFromPattern(mc *machine.MachineContext, pattern *values.String) err
 	return collectSSAFuncs(mc, mapper, prog, ssaPkgs)
 }
 
-func collectSSAFuncs(mc *machine.MachineContext, mapper *ssaMapper, prog *ssa.Program, ssaPkgs []*ssa.Package) error {
+func collectSSAFuncs(mc machine.CallContext, mapper *ssaMapper, prog *ssa.Program, ssaPkgs []*ssa.Package) error {
 	var funcs []values.Value
 	for _, ssaPkg := range ssaPkgs {
 		if ssaPkg == nil {
@@ -191,7 +191,7 @@ func collectSSAFuncs(mc *machine.MachineContext, mapper *ssaMapper, prog *ssa.Pr
 // target is a package pattern string or a GoSession from go-load.
 // Returns a list of ssa-field-summary nodes with per-function field
 // access data (struct type, field name, receiver, read/write mode).
-func PrimGoSSAFieldIndex(mc *machine.MachineContext) error {
+func PrimGoSSAFieldIndex(mc machine.CallContext) error {
 	arg := mc.Arg(0)
 	switch v := arg.(type) {
 	case *goast.GoSession:
@@ -204,7 +204,7 @@ func PrimGoSSAFieldIndex(mc *machine.MachineContext) error {
 	}
 }
 
-func fieldIndexFromSession(mc *machine.MachineContext, session *goast.GoSession) error {
+func fieldIndexFromSession(mc machine.CallContext, session *goast.GoSession) error {
 	_, ssaPkgs := session.SSA()
 	var summaries []values.Value
 	for _, ssaPkg := range ssaPkgs {
@@ -217,7 +217,7 @@ func fieldIndexFromSession(mc *machine.MachineContext, session *goast.GoSession)
 	return nil
 }
 
-func fieldIndexFromPattern(mc *machine.MachineContext, pattern *values.String) error {
+func fieldIndexFromPattern(mc machine.CallContext, pattern *values.String) error {
 	err := security.CheckWithAuthorizer(mc.Authorizer(), security.AccessRequest{
 		Resource: security.ResourceProcess,
 		Action:   security.ActionLoad,
