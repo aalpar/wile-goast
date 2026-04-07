@@ -287,11 +287,13 @@ Prompt content lives in `cmd/wile-goast/prompts/*.md` (embedded in binary).
 | Document | Purpose |
 |----------|---------|
 | [`README.md`](README.md) | Project overview, motivation |
+| [`docs/CLAUDE.md`](docs/CLAUDE.md) | Documentation conventions: notation, citations, organization |
 | [`docs/PRIMITIVES.md`](docs/PRIMITIVES.md) | Complete primitive reference for all layers + belief DSL |
 | [`docs/AST-NODES.md`](docs/AST-NODES.md) | AST node field reference (types, optionality for all tags) |
 | [`docs/EXAMPLES.md`](docs/EXAMPLES.md) | Annotated walkthroughs of example scripts |
 | [`docs/GO-STATIC-ANALYSIS.md`](docs/GO-STATIC-ANALYSIS.md) | Usage guide with cross-layer examples |
 | [`BIBLIOGRAPHY.md`](BIBLIOGRAPHY.md) | Static analysis references |
+| [`plans/CLAUDE.md`](plans/CLAUDE.md) | Active plan files, naming conventions, pre-work checklist |
 | [`plans/UNIFICATION-DETECTION.md`](plans/UNIFICATION-DETECTION.md) | Remaining: SSA equivalence v2 pass |
 | [`plans/CONSISTENCY-DEVIATION.md`](plans/CONSISTENCY-DEVIATION.md) | Belief categories 1-4: validation results, bug fixes, known limitations |
 | [`plans/BELIEF-DSL.md`](plans/BELIEF-DSL.md) | Remaining: graduation --emit mode, suppression |
