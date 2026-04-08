@@ -16,6 +16,7 @@ package goast_test
 
 import (
 	"context"
+	"os"
 	"testing"
 
 	"github.com/aalpar/wile"
@@ -35,7 +36,9 @@ func newBeliefEngine(t *testing.T) *wile.Engine {
 	t.Helper()
 	engine, err := wile.NewEngine(context.Background(),
 		wile.WithSafeExtensions(),
-		wile.WithLibraryPaths("../cmd/wile-goast/lib", "../../wile/stdlib/lib"),
+		wile.WithSourceFS(wile.StdLibFS),
+		wile.WithSourceFS(os.DirFS("../cmd/wile-goast")),
+		wile.WithLibraryPaths("lib"),
 		wile.WithExtension(goast.Extension),
 		wile.WithExtension(goastssa.Extension),
 		wile.WithExtension(goastcg.Extension),
