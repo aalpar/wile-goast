@@ -39,6 +39,7 @@
 | `2026-04-06-structured-docstrings-design.md` | Structured docstrings for Go primitives and Scheme procedures | Approved |
 | `2026-04-06-structured-docstrings-impl.md` | Implementation plan: 93 docstrings across 10 files in 11 tasks | Open |
 | `2026-04-08-false-boundary-detection-design.md` | FCA-based false boundary detection: discover natural struct groupings from field access patterns | Approved |
+| `2026-04-08-false-boundary-detection-impl.md` | Implementation plan: 9 tasks, FCA core + bridge + boundary detection + integration test | Open |
 
 ## Documentation (outside plans/)
 
