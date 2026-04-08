@@ -260,6 +260,25 @@ Prompt content lives in `cmd/wile-goast/prompts/*.md` (embedded in binary).
 {"mcpServers": {"wile-goast": {"command": "wile-goast", "args": ["--mcp"]}}}
 ```
 
+## False Boundary Detection — `(wile goast fca)`
+
+Formal Concept Analysis (Ganter & Wille, 1999) applied to Go struct field access patterns. Discovers natural field groupings from SSA data, then compares against actual struct boundaries. Mismatches are false boundary candidates — boundaries whose removal enables unification or simplifies state.
+
+| Export | Description |
+|--------|-------------|
+| `make-context` | Build formal context from objects, attributes, incidence function |
+| `context-from-alist` | Convenience: context from `((obj attr ...) ...)` entries |
+| `context-objects` | Extract object set from context |
+| `context-attributes` | Extract attribute set from context |
+| `field-index->context` | Convert `go-ssa-field-index` output to formal context (modes: `'write-only`, `'read-write`, `'type-only`) |
+| `intent` | Galois connection: objects → shared attributes |
+| `extent` | Galois connection: attributes → objects having all |
+| `concept-lattice` | Compute all formal concepts via NextClosure (Ganter 1984) |
+| `concept-extent` | Extract extent (object set) from concept |
+| `concept-intent` | Extract intent (attribute set) from concept |
+| `cross-boundary-concepts` | Filter concepts spanning multiple struct types (opts: `'min-extent`, `'min-intent`, `'min-types`) |
+| `boundary-report` | Structured alist report for cross-boundary concepts |
+
 ## Key Files
 
 | File | Purpose |
@@ -279,6 +298,7 @@ Prompt content lives in `cmd/wile-goast/prompts/*.md` (embedded in binary).
 | `cmd/wile-goast/lib/wile/goast/utils.scm` | Shared traversal utilities (`nf`, `walk`, `tag?`) and tree rewriters (`ast-transform`, `ast-splice`) |
 | `cmd/wile-goast/lib/wile/goast/ssa-normalize.scm` | SSA algebraic normalization rules (embedded in binary) |
 | `cmd/wile-goast/lib/wile/goast/unify.scm` | AST/SSA diff engine with pluggable classifiers (embedded in binary) |
+| `cmd/wile-goast/lib/wile/goast/fca.scm` | Formal Concept Analysis: false boundary detection via concept lattices (embedded in binary) |
 | `goast/prim_restructure.go` | Block restructuring: goto elimination, loop return rewriting, guard folding (`go-cfg-to-structured`) |
 | `goastssa/prim_canonicalize.go` | SSA function canonicalization (`go-ssa-canonicalize`) |
 
