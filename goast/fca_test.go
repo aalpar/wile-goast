@@ -249,6 +249,120 @@ func TestFCA_CrossBoundaryConcepts(t *testing.T) {
 	})
 }
 
+// ── Task 8: Full pipeline integration ──────────────────
+
+func TestFCA_FullPipeline(t *testing.T) {
+	engine := newBeliefEngine(t)
+
+	// Load the falseboundary testdata and run the full pipeline:
+	// go-load → go-ssa-field-index → field-index→context → concept-lattice
+	// → cross-boundary-concepts → boundary-report
+	eval(t, engine, `
+		(import (wile goast fca))
+
+		(define s (go-load
+		  "github.com/aalpar/wile-goast/examples/goast-query/testdata/falseboundary"))
+		(define idx (go-ssa-field-index s))
+		(define ctx (field-index->context idx 'write-only))
+		(define lat (concept-lattice ctx))
+		(define xb  (cross-boundary-concepts lat))
+		(define rpt (boundary-report xb))
+	`)
+
+	t.Run("at least one cross-boundary concept", func(t *testing.T) {
+		result := eval(t, engine, `(>= (length xb) 1)`)
+		qt.New(t).Assert(result.SchemeString(), qt.Equals, "#t")
+	})
+
+	t.Run("cross-boundary concept spans Cache and Index", func(t *testing.T) {
+		// The boundary report extracts types. Check that at least one
+		// report entry spans both Cache and Index.
+		result := eval(t, engine, `
+			(let loop ((rs rpt))
+			  (if (null? rs) #f
+			    (let* ((r (car rs))
+			           (types (cdr (assoc 'types r))))
+			      (if (and (member "Cache" types)
+			               (member "Index" types))
+			        #t
+			        (loop (cdr rs))))))
+		`)
+		qt.New(t).Assert(result.SchemeString(), qt.Equals, "#t")
+	})
+
+	t.Run("cross-boundary concept backed by exactly 3 functions", func(t *testing.T) {
+		result := eval(t, engine, `
+			(let loop ((rs rpt))
+			  (if (null? rs) #f
+			    (let* ((r (car rs))
+			           (types (cdr (assoc 'types r))))
+			      (if (and (member "Cache" types)
+			               (member "Index" types))
+			        (cdr (assoc 'extent-size r))
+			        (loop (cdr rs))))))
+		`)
+		qt.New(t).Assert(result.SchemeString(), qt.Equals, "3")
+	})
+
+	t.Run("cross-boundary extent contains the 3 expected functions", func(t *testing.T) {
+		pkg := "github.com/aalpar/wile-goast/examples/goast-query/testdata/falseboundary"
+		result := eval(t, engine, `
+			(let loop ((rs rpt))
+			  (if (null? rs) #f
+			    (let* ((r (car rs))
+			           (types (cdr (assoc 'types r))))
+			      (if (and (member "Cache" types)
+			               (member "Index" types))
+			        (let ((fns (cdr (assoc 'functions r))))
+			          (and (member "`+pkg+`.UpdateBoth" fns)
+			               (member "`+pkg+`.Invalidate" fns)
+			               (member "`+pkg+`.Rebuild" fns)
+			               #t))
+			        (loop (cdr rs))))))
+		`)
+		qt.New(t).Assert(result.SchemeString(), qt.Equals, "#t")
+	})
+
+	t.Run("boundary report has correct structure", func(t *testing.T) {
+		// Each report alist must have types, fields, functions, extent-size keys.
+		result := eval(t, engine, `
+			(let loop ((rs rpt))
+			  (if (null? rs) #f
+			    (let* ((r (car rs))
+			           (types (cdr (assoc 'types r))))
+			      (if (and (member "Cache" types)
+			               (member "Index" types))
+			        (and (assoc 'types r)
+			             (assoc 'fields r)
+			             (assoc 'functions r)
+			             (assoc 'extent-size r)
+			             #t)
+			        (loop (cdr rs))))))
+		`)
+		qt.New(t).Assert(result.SchemeString(), qt.Equals, "#t")
+	})
+
+	t.Run("boundary report functions are fully qualified", func(t *testing.T) {
+		// Verify functions are import-path qualified, not short names.
+		result := eval(t, engine, `
+			(let loop ((rs rpt))
+			  (if (null? rs) #f
+			    (let* ((r (car rs))
+			           (types (cdr (assoc 'types r))))
+			      (if (and (member "Cache" types)
+			               (member "Index" types))
+			        (let ((fns (cdr (assoc 'functions r))))
+			          ;; Short names must NOT appear (they're import-path qualified).
+			          (and (not (member "UpdateBoth" fns))
+			               (not (member "Invalidate" fns))
+			               (not (member "Rebuild" fns))
+			               #t))
+			        (loop (cdr rs))))))
+		`)
+		qt.New(t).Assert(result.SchemeString(), qt.Equals, "#t")
+	})
+}
+
 func TestFCA_CrossBoundaryMinExtent(t *testing.T) {
 	engine := newBeliefEngine(t)
 
