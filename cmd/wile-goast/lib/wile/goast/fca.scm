@@ -156,13 +156,105 @@
             (loop next (cons concept acc))
             (reverse (cons concept acc))))))))
 
-;;; ── Stubs for future tasks ────────────────────────────────
+;;; ── SSA bridge ───────────────────────────────────────────
 
-(define (field-index->context . args)
-  (error "field-index->context not yet implemented"))
+;; Find the index of char c in string s, or #f if not found.
+(define (string-index-of s c)
+  (let ((len (string-length s)))
+    (let loop ((i 0))
+      (cond ((>= i len) #f)
+            ((char=? (string-ref s i) c) i)
+            (else (loop (+ i 1)))))))
 
-(define (cross-boundary-concepts . args)
-  (error "cross-boundary-concepts not yet implemented"))
+;; Build an attribute string from a field-access node based on mode.
+;; Returns a string or #f if the access doesn't match the mode filter.
+(define (field-access-attr access mode)
+  (let* ((struct-name (nf access 'struct))
+         (field-name (nf access 'field))
+         (access-mode (nf access 'mode))
+         (base (string-append struct-name "." field-name)))
+    (case mode
+      ((write-only)
+       (and (eq? access-mode 'write) base))
+      ((read-write)
+       (string-append base (if (eq? access-mode 'write) ":w" ":r")))
+      ((type-only)
+       struct-name)
+      (else (error "field-index->context: unknown mode" mode)))))
 
-(define (boundary-report . args)
-  (error "boundary-report not yet implemented"))
+;; Convert go-ssa-field-index output to an FCA context.
+;; mode: 'write-only, 'read-write, or 'type-only.
+(define (field-index->context index mode)
+  (let* ((entries
+           (filter-map
+             (lambda (summary)
+               (let* ((func-name (nf summary 'func))
+                      (pkg (nf summary 'pkg))
+                      (qualified (string-append pkg "." func-name))
+                      (fields (nf summary 'fields))
+                      (attrs (unique
+                               (filter-map
+                                 (lambda (acc) (field-access-attr acc mode))
+                                 (if (pair? fields) fields '())))))
+                 (if (null? attrs) #f
+                   (cons qualified attrs))))
+             index)))
+    (context-from-alist entries)))
+
+;;; ── Cross-boundary detection ─────────────────────────────
+
+;; Extract struct name from "Struct.Field" or "Struct.Field:r" attribute.
+(define (attr-struct-name attr)
+  (let ((dot (string-index-of attr #\.)))
+    (if dot (substring attr 0 dot) attr)))
+
+;; Look up a key in a symbol-keyed plist, returning default if absent.
+;; Plist form: (key1 val1 key2 val2 ...).
+(define (plist-ref plist key default)
+  (cond ((null? plist) default)
+        ((null? (cdr plist)) default)
+        ((eq? (car plist) key) (cadr plist))
+        (else (plist-ref (cddr plist) key default))))
+
+;; Group attribute strings by struct name.
+;; Returns ((struct-name attr ...) ...).
+(define (group-fields-by-struct attrs)
+  (let loop ((as attrs) (groups '()))
+    (if (null? as)
+      (map (lambda (g) (cons (car g) (reverse (cdr g))))
+           (reverse groups))
+      (let* ((attr (car as))
+             (sname (attr-struct-name attr))
+             (existing (assoc sname groups)))
+        (if existing
+          (begin (set-cdr! existing (cons attr (cdr existing)))
+                 (loop (cdr as) groups))
+          (loop (cdr as) (cons (list sname attr) groups)))))))
+
+;; Filter concepts whose intent spans multiple distinct struct types.
+;; Optional plist args: 'min-extent N, 'min-intent N, 'min-types N.
+(define (cross-boundary-concepts lattice . opts)
+  (let ((min-ext (plist-ref opts 'min-extent 2))
+        (min-int (plist-ref opts 'min-intent 2))
+        (min-typ (plist-ref opts 'min-types 2)))
+    (filter-map
+      (lambda (concept)
+        (let* ((ext (concept-extent concept))
+               (int (concept-intent concept))
+               (types (unique (map attr-struct-name int))))
+          (and (>= (length ext) min-ext)
+               (>= (length int) min-int)
+               (>= (length types) min-typ)
+               concept)))
+      lattice)))
+
+;; Build a structured report for a single cross-boundary concept.
+(define (boundary-report concept)
+  (let* ((ext (concept-extent concept))
+         (int (concept-intent concept))
+         (types (unique (map attr-struct-name int)))
+         (grouped (group-fields-by-struct int)))
+    (list (cons 'types types)
+          (cons 'fields grouped)
+          (cons 'functions ext)
+          (cons 'extent-size (length ext)))))

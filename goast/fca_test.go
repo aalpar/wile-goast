@@ -191,3 +191,80 @@ func TestFCA_ConceptLattice_NoCrossing(t *testing.T) {
 		qt.New(t).Assert(result.SchemeString(), qt.Equals, "4")
 	})
 }
+
+// ── Task 6: field-index->context bridge ─────────────────
+
+func TestFCA_FieldIndexToContext(t *testing.T) {
+	engine := newBeliefEngine(t)
+
+	eval(t, engine, `(import (wile goast fca))`)
+
+	eval(t, engine, `
+		(define s (go-load
+		  "github.com/aalpar/wile-goast/examples/goast-query/testdata/falseboundary"))
+		(define idx (go-ssa-field-index s))
+		(define ctx (field-index->context idx 'write-only))`)
+
+	t.Run("5 functions", func(t *testing.T) {
+		result := eval(t, engine, `(length (context-objects ctx))`)
+		qt.New(t).Assert(result.SchemeString(), qt.Equals, "5")
+	})
+
+	t.Run("qualified attributes", func(t *testing.T) {
+		result := eval(t, engine, `
+			(let ((attrs (context-attributes ctx)))
+			  (and (member "Cache.Entries" attrs)
+			       (member "Index.Keys" attrs)
+			       #t))`)
+		qt.New(t).Assert(result.SchemeString(), qt.Equals, "#t")
+	})
+}
+
+// ── Task 7: Cross-boundary detection ────────────────────
+
+func TestFCA_CrossBoundaryConcepts(t *testing.T) {
+	engine := newBeliefEngine(t)
+
+	eval(t, engine, `(import (wile goast fca))`)
+
+	eval(t, engine, `
+		(define ctx (context-from-alist
+		  '(("F1" "A.x" "A.y" "B.z")
+		    ("F2" "A.x" "A.y" "B.z")
+		    ("F3" "A.x" "A.y"))))
+		(define lat (concept-lattice ctx))`)
+
+	t.Run("one cross-boundary concept", func(t *testing.T) {
+		result := eval(t, engine, `
+			(let ((xb (cross-boundary-concepts lat)))
+			  (length xb))`)
+		qt.New(t).Assert(result.SchemeString(), qt.Equals, "1")
+	})
+
+	t.Run("extent is F1 and F2", func(t *testing.T) {
+		result := eval(t, engine, `
+			(let ((xb (cross-boundary-concepts lat)))
+			  (concept-extent (car xb)))`)
+		qt.New(t).Assert(result.SchemeString(), qt.Equals, `("F1" "F2")`)
+	})
+}
+
+func TestFCA_CrossBoundaryMinExtent(t *testing.T) {
+	engine := newBeliefEngine(t)
+
+	eval(t, engine, `(import (wile goast fca))`)
+
+	eval(t, engine, `
+		(define ctx (context-from-alist
+		  '(("F1" "A.x" "A.y" "B.z")
+		    ("F2" "A.x" "A.y" "B.z")
+		    ("F3" "A.x" "A.y"))))
+		(define lat (concept-lattice ctx))`)
+
+	t.Run("min-extent 3 filters it out", func(t *testing.T) {
+		result := eval(t, engine, `
+			(let ((xb (cross-boundary-concepts lat 'min-extent 3)))
+			  (length xb))`)
+		qt.New(t).Assert(result.SchemeString(), qt.Equals, "0")
+	})
+}
