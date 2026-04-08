@@ -47,10 +47,18 @@ func addPrimitives(r *registry.Registry) error {
 			Impl: PrimGoAnalyze,
 			Doc: "Runs named go/analysis passes on a Go package and returns diagnostics.\n" +
 				"First arg is a package pattern or GoSession. Remaining args are\n" +
-				"analyzer names (strings). Use go-analyze-list for available names.\n\n" +
+				"analyzer names (strings). Use go-analyze-list for available names.\n" +
+				"Returns a list of diagnostic alists, each with: analyzer, pos,\n" +
+				"message, and category.\n\n" +
 				"Examples:\n" +
-				"  (go-analyze \"./...\" \"nilness\" \"shadow\")\n" +
-				"  (go-analyze (go-load \"./...\") \"unusedresult\")\n\n" +
+				"  (import (wile goast utils))\n" +
+				"  (define diags (go-analyze \"./...\" \"nilness\" \"shadow\"))\n" +
+				"  (for-each\n" +
+				"    (lambda (d)\n" +
+				"      (display (nf d 'pos))       ; => \"file.go:10:5\"\n" +
+				"      (display (nf d 'message))   ; => \"nil dereference\"\n" +
+				"      (display (nf d 'analyzer))) ; => \"nilness\"\n" +
+				"    diags)\n\n" +
 				"See also: `go-analyze-list'.",
 			ParamNames: []string{"pattern", "analyzer-names"},
 			Category:   "goast-lint",
@@ -59,10 +67,11 @@ func addPrimitives(r *registry.Registry) error {
 		{
 			Name: "go-analyze-list", ParamCount: 0,
 			Impl: PrimGoAnalyzeList,
-			Doc: "Returns a sorted list of available analyzer names.\n" +
+			Doc: "Returns a sorted list of available analyzer names as strings.\n" +
 				"These names are valid arguments to go-analyze.\n\n" +
 				"Examples:\n" +
-				"  (go-analyze-list)  ; => (\"appends\" \"asmdecl\" ...)\n\n" +
+				"  (go-analyze-list)  ; => (\"appends\" \"asmdecl\" \"assign\" ...)\n" +
+				"  (length (go-analyze-list))  ; => ~40 analyzers\n\n" +
 				"See also: `go-analyze'.",
 			ParamNames: []string{},
 			Category:   "goast-lint",
