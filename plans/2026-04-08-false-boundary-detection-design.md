@@ -7,7 +7,7 @@ DSL's role), discover what the *natural* boundaries are from access patterns,
 then compare against actual code structure. Mismatches are false boundary
 candidates.
 
-**Status:** Design approved. Not yet implemented.
+**Status:** Phase 1 implemented (v0.5.4). Dataflow coupling and future phases designed.
 
 ## Motivation
 
@@ -90,13 +90,181 @@ is then compared against actual code boundaries.
 
 | Phase | Boundary | Objects | Attributes | Status |
 |-------|----------|---------|------------|--------|
-| 1 | Struct | Functions | Struct fields accessed | This design |
-| 2 | Interface | Implementations | Method bodies (via unification similarity) | Future |
-| 3 | Function | Code blocks within functions | Variables/fields referenced | Future |
-| 4 | Subsequent | Call-site pairs (f then g) | Fields written by f's tail ∩ read by g's head | Future |
-| 5 | Package | Packages | Dependencies imported | Future (low priority — mostly covered by structural analysis) |
+| 1 | Struct | Functions | Struct fields accessed | Complete (v0.5.4) |
+| 2 | Dataflow | Call edges (A→B) | Cross-function field flows | Designed |
+| 3 | Intra-function ordering | Functions | Ordered field access pairs | Designed |
+| 4 | Interface | Implementations | Method bodies (via unification similarity) | Future |
+| 5 | Function | Code blocks within functions | Variables/fields referenced | Future |
+| 6 | Subsequent | Call-site pairs (f then g) | Fields written by f's tail ∩ read by g's head | Future |
+| 7 | Package | Packages | Dependencies imported | Future (low priority — mostly covered by structural analysis) |
 
 All phases reuse the same `concept-lattice` with different context construction.
+
+## Coupling FCA with Dataflow Analysis
+
+Phase 1 treats field access as a binary relation: function f accesses field x,
+yes or no. This misses temporal structure — it can't distinguish "f writes A
+then reads B" from "f reads B then writes A." Three levels of temporal
+enrichment are possible, all scriptable with existing wile-goast primitives.
+No new Go code required.
+
+### Finding: Existing Primitives Suffice
+
+Investigation of the SSA mapper (`goastssa/mapper.go`) and field index builder
+(`goastssa/prim_ssa.go:buildFuncSummary`) confirms:
+
+- SSA blocks expose `instrs` lists where instruction position gives ordering
+- `ssa-field-addr` nodes carry `name`, `field`, `x` (receiver) — enough to
+  identify which struct field is targeted
+- `ssa-store` nodes carry `addr` matching the field-addr `name` — enough to
+  distinguish reads from writes
+- `block-instrs` from `(wile goast dataflow)` extracts instruction lists
+- `go-callgraph-callers`/`go-callgraph-callees` expose call edges
+- `run-analysis` provides worklist-based dataflow with custom transfer functions
+
+The gap `go-ssa-field-index` fills (field access summary) discards position
+information. The raw SSA from `go-ssa-build` retains it. Each level below
+works from the raw SSA, not the summary.
+
+### Phase 2: Cross-Function Field Flow (highest signal-to-effort)
+
+**What it detects:** "Caller A writes Cache.Entries, then calls callee B
+which reads Cache.Entries." This directly addresses the subsequent boundary
+type — where the tail of one function and the head of the next form a
+coherent unit.
+
+**Primitives used:** `go-ssa-field-index` (function-level read/write
+summaries), `go-callgraph` + `go-callgraph-callers`/`go-callgraph-callees`
+(call edges).
+
+**Context construction:**
+
+```scheme
+;; Objects: call edges, represented as "caller→callee"
+;; Attributes: cross-function flows, "writes:Type.Field→reads:Type.Field"
+;; Incidence: caller writes a field that the callee reads
+
+;; 1. Build field index and call graph
+(define s (go-load "my/pkg/..."))
+(define idx (go-ssa-field-index s))
+(define cg (go-callgraph s 'rta))
+
+;; 2. For each function, extract write-set and read-set from field index
+;; 3. For each call edge (A → B):
+;;    - intersect A's write-set with B's read-set
+;;    - each match is an attribute: "Type.Field" (written by caller, read by callee)
+;; 4. Build FCA context: objects = call edges, attributes = shared fields
+;; 5. Concepts reveal groups of call edges that share the same field flow pattern
+```
+
+**Effort:** ~50 lines of Scheme. Pure composition of existing primitives.
+
+**What it reveals:** Call edges that share the same write→read field flow
+pattern cluster into concepts. A concept with many call edges sharing the
+same field flow suggests the flowing data wants to be a single unit — the
+function boundary between caller and callee is a false boundary separating
+coupled state.
+
+### Phase 3: Intra-Function Ordered Field Access
+
+**What it detects:** "Cache.Entries is always written before Index.Keys
+within the same function." Enriches Phase 1's binary relation with temporal
+ordering.
+
+**Primitives used:** `go-ssa-build` (full SSA with blocks and instructions),
+`block-instrs` from `(wile goast dataflow)`.
+
+**Extraction from raw SSA:**
+
+```scheme
+;; Walk each block's instruction list, correlate FieldAddr with Store
+(let* ((instrs (block-instrs block))
+       (field-addrs (filter (lambda (i) (tag? i 'ssa-field-addr)) instrs))
+       (store-addrs (map (lambda (i) (nf i 'addr))
+                         (filter (lambda (i) (tag? i 'ssa-store)) instrs))))
+  ;; A field-addr whose name appears in store-addrs is a write
+  (filter-map
+    (lambda (fa)
+      (let ((field-name (nf fa 'field))
+            (mode (if (member? (nf fa 'name) store-addrs) 'write 'read)))
+        (list field-name mode)))
+    field-addrs))
+```
+
+This mirrors `buildFuncSummary` (prim_ssa.go:331-356) but preserves
+instruction position. SSA dominance (block ordering) determines "A before B"
+across blocks within the same function.
+
+**Context construction:**
+
+```scheme
+;; Objects: functions
+;; Attributes: ordered pairs "Type.Field₁→Type.Field₂" (field₁ accessed before field₂)
+;; Concepts reveal functions that share the same field access ordering
+```
+
+**Effort:** ~30 lines for the extraction, ~20 lines for context construction.
+
+**What it reveals:** Functions that always access fields in the same order
+suggest those fields participate in a protocol — a temporal coupling that
+the static struct boundary doesn't capture. If `Cache.Entries` is always
+written before `Index.Keys` across 8 functions, those fields are coupled
+in time, not just in presence.
+
+### Phase 3b: Dataflow-Sensitive Ordering (full analysis)
+
+**What it detects:** "The value written to Cache.Entries in block 2 reaches
+the read in block 5 through all paths." Stronger than instruction ordering —
+proves the data actually flows.
+
+**Primitives used:** `run-analysis` from `(wile goast dataflow)` with a
+custom transfer function.
+
+```scheme
+;; Lattice: map lattice over struct fields → {unwritten, written, read-after-write}
+;; Transfer: scan block instructions, update field states
+;; Direction: forward
+;; Query: after fixpoint, fields in 'read-after-write state are temporally coupled
+
+(define field-state-lattice
+  (map-lattice field-names
+    (flat-lattice '(unwritten written read-after-write))))
+
+(define (field-transfer block state)
+  ;; Walk instructions, update state for field accesses
+  ...)
+
+(define result
+  (run-analysis 'forward field-state-lattice field-transfer ssa-fn))
+```
+
+**Effort:** ~80-100 lines. Requires understanding the dataflow framework's
+transfer function interface and the SSA instruction structure.
+
+**What it reveals:** True data dependencies between fields, not just
+co-occurrence or ordering. If field A's value flows into the computation
+that determines field B's value, they are *semantically* coupled, not just
+*temporally* coupled. This is the strongest signal but the most expensive
+to compute.
+
+### Practical Notes
+
+**Optional Go-side enhancement:** Adding `block-index` and `instr-index`
+fields to each `ssa-field-access` node in `go-ssa-field-index` (~6 lines
+of Go) would let Phase 3 work from the summary instead of re-walking raw
+SSA. Convenience, not a blocker.
+
+**Exponential lattice risk:** Cross-function flow (Phase 2) uses call edges
+as objects. In a large codebase the call graph may have thousands of edges.
+The concept lattice is bounded by 2^min(|G|,|M|) in the worst case, but
+real call graphs are sparse — most edges share few field flows. Monitor
+lattice size on real targets before assuming scalability.
+
+**Composition:** Phases 2 and 3 produce different FCA contexts that can be
+analyzed independently or combined. A function pair that shows up in both
+a Phase 1 cross-boundary concept (static co-access) and a Phase 2 concept
+(dynamic field flow) has stronger evidence for being a false boundary than
+either signal alone.
 
 ## API
 
@@ -303,14 +471,17 @@ No new Go primitives. No new dependencies.
 
 ## Relationship to Other Tracks
 
+- **Dataflow (C2):** Phases 2 and 3 compose FCA with `run-analysis` and
+  call graph primitives. The dataflow framework provides the temporal
+  dimension that Phase 1's binary relation lacks. All primitives exist;
+  the coupling is pure Scheme scripting.
 - **Belief DSL (C6):** Confirmed false boundaries can graduate to beliefs.
   "These fields should always be co-mutated" becomes a `define-belief` that
   enforces the discovered coupling. FCA discovers; beliefs enforce.
-- **Unification detector:** Interface boundary detection (Phase 2) combines
+- **Unification detector:** Interface boundary detection (Phase 4) combines
   FCA with the existing `ast-diff`/`ssa-diff` — FCA finds implementations
   that cluster together, unification scoring confirms they're type-substitution
   clones.
-- **Dataflow (C2):** Phase 4 (subsequent detection) may use dataflow analysis
-  to track field state across function call boundaries.
-- **C4 (path algebra on call graphs):** Package boundary detection (Phase 5)
+- **C4 (path algebra on call graphs):** Package boundary detection (Phase 7)
   could use call graph reachability as an additional signal alongside FCA.
+  Phase 2 already uses call graph edges as FCA objects.
