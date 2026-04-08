@@ -96,9 +96,10 @@
         ssa)))
 
 (define (ctx-callgraph ctx)
-  "Return the call graph from CTX, building with RTA if needed.\n\nParameters:\n  ctx : list\nReturns: list\nCategory: goast-belief\n\nSee also: `make-context', `callers-of'."
+  "Return the call graph from CTX. Tries RTA (most precise for programs\nwith a main function), falls back to CHA for library packages.\n\nParameters:\n  ctx : list\nReturns: list\nCategory: goast-belief\n\nSee also: `make-context', `callers-of'."
   (or (ctx-ref ctx 'callgraph)
-      (let ((cg (go-callgraph (ctx-session ctx) 'static)))
+      (let ((cg (guard (exn (#t (go-callgraph (ctx-session ctx) 'cha)))
+                  (go-callgraph (ctx-session ctx) 'rta))))
         (ctx-set! ctx 'callgraph cg)
         cg)))
 
@@ -282,22 +283,23 @@
   (lambda (ctx)
     (let* ((cg (ctx-callgraph ctx))
            (funcs (all-func-decls (ctx-pkgs ctx)))
-           (qualified (cg-resolve-name cg func-name))
-           (edges (if qualified
-                    (go-callgraph-callers cg qualified)
-                    #f)))
-      (if (and edges (pair? edges))
-        (filter-map
-          (lambda (e)
-            (let ((caller (nf e 'caller)))
-              (and caller
-                   (let ((short (ssa-short-name caller)))
-                     (let loop ((fs funcs))
-                       (cond ((null? fs) #f)
-                             ((equal? (nf (car fs) 'name) short) (car fs))
-                             (else (loop (cdr fs)))))))))
-          edges)
-        '()))))
+           (qualified (cg-resolve-name cg func-name)))
+      (when (not qualified)
+        (error (string-append "callers-of: \"" func-name
+                              "\" not found in call graph")))
+      (let ((edges (go-callgraph-callers cg qualified)))
+        (if (and edges (pair? edges))
+          (filter-map
+            (lambda (e)
+              (let ((caller (nf e 'caller)))
+                (and caller
+                     (let ((short (ssa-short-name caller)))
+                       (let loop ((fs funcs))
+                         (cond ((null? fs) #f)
+                               ((equal? (nf (car fs) 'name) short) (car fs))
+                               (else (loop (cdr fs)))))))))
+            edges)
+          '())))))
 
 ;; (methods-of type-name) -> (lambda (ctx) -> list-of-func-decls)
 ;; Matches methods whose receiver type contains type-name.
@@ -855,37 +857,51 @@
           (display "  Deviations found:    ") (display total-deviations) (newline))
         ;; Evaluate next belief
         (let* ((belief (car beliefs))
-               (result (evaluate-belief belief ctx)))
-          (if (not result)
-            ;; No sites found
-            (begin
-              (display "── Belief: ") (display (belief-name belief)) (display " ──")
-              (newline)
-              (display "  (no sites found)") (newline) (newline)
-              (loop (cdr beliefs) (+ evaluated 1) strong total-deviations))
-            (let* ((name (list-ref result 0))
-                   (ratio (list-ref result 2))
-                   (total (list-ref result 3))
-                   (adherence (list-ref result 4))
-                   (deviations (list-ref result 5))
-                   (min-adh (belief-min-adherence belief))
-                   (min-n (belief-min-sites belief))
-                   (is-strong (and (>= ratio min-adh) (>= total min-n))))
-              ;; Store results for bootstrapping
-              (ctx-store-result! ctx name
-                adherence
-                (map car deviations))
-              (if is-strong
-                (begin
-                  (print-belief-result result)
-                  (loop (cdr beliefs)
-                        (+ evaluated 1) (+ strong 1)
-                        (+ total-deviations (length deviations))))
-                (begin
-                  (display "── Belief: ") (display name) (display " ──")
-                  (newline)
-                  (display "  (weak: ") (display ratio)
-                  (display " adherence, ") (display total)
-                  (display " sites — below threshold)") (newline) (newline)
-                  (loop (cdr beliefs)
-                        (+ evaluated 1) strong total-deviations))))))))))
+               (result
+                 (guard (exn
+                          (#t (display "── Belief: ")
+                              (display (belief-name belief))
+                              (display " ──") (newline)
+                              (display "  (error: ")
+                              (if (error-object? exn)
+                                (display (error-object-message exn))
+                                (display exn))
+                              (display ")") (newline) (newline)
+                              'error))
+                   (evaluate-belief belief ctx))))
+          (cond
+            ((eq? result 'error)
+             (loop (cdr beliefs) (+ evaluated 1) strong total-deviations))
+            ((not result)
+             ;; No sites found
+             (display "── Belief: ") (display (belief-name belief)) (display " ──")
+             (newline)
+             (display "  (no sites found)") (newline) (newline)
+             (loop (cdr beliefs) (+ evaluated 1) strong total-deviations))
+            (else
+             (let* ((name (list-ref result 0))
+                    (ratio (list-ref result 2))
+                    (total (list-ref result 3))
+                    (adherence (list-ref result 4))
+                    (deviations (list-ref result 5))
+                    (min-adh (belief-min-adherence belief))
+                    (min-n (belief-min-sites belief))
+                    (is-strong (and (>= ratio min-adh) (>= total min-n))))
+               ;; Store results for bootstrapping
+               (ctx-store-result! ctx name
+                 adherence
+                 (map car deviations))
+               (if is-strong
+                 (begin
+                   (print-belief-result result)
+                   (loop (cdr beliefs)
+                         (+ evaluated 1) (+ strong 1)
+                         (+ total-deviations (length deviations))))
+                 (begin
+                   (display "── Belief: ") (display name) (display " ──")
+                   (newline)
+                   (display "  (weak: ") (display ratio)
+                   (display " adherence, ") (display total)
+                   (display " sites — below threshold)") (newline) (newline)
+                   (loop (cdr beliefs)
+                         (+ evaluated 1) strong total-deviations)))))))))))
