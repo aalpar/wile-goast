@@ -194,7 +194,7 @@
 ;; Returns the SSA function for the given package path and short name,
 ;; or #f if not found.
 (define (ctx-find-ssa-func ctx pkg-path name)
-  "Look up an SSA function by package path and short name.\nBuilds an index on first call for O(1) subsequent lookups.\n\nParameters:\n  ctx : list\n  pkg-path : string\n  name : string\nReturns: any\nCategory: goast-belief\n\nSee also: `ctx-ssa', `make-context'."
+  "Look up an SSA function by package path and short name.\nBuilds an index on first call for O(1) subsequent lookups.\nReturns an ssa-func node or #f if not found.\nThe ssa-func has: name, signature, params, free-vars, blocks, pkg.\nUse (nf ssa-func 'blocks) to access SSA basic blocks.\n\nParameters:\n  ctx : list\n  pkg-path : string\n  name : string\nReturns: any\nCategory: goast-belief\n\nExamples:\n  (define ssa-fn (ctx-find-ssa-func ctx \"my/pkg\" \"handleRequest\"))\n  (when ssa-fn\n    (nf ssa-fn 'name)       ; => \"handleRequest\"\n    (nf ssa-fn 'blocks)     ; => list of ssa-block nodes\n    (nf ssa-fn 'signature)) ; => \"func(w http.ResponseWriter, r *http.Request)\"\n\nSee also: `ctx-ssa', `make-context', `custom'."
   (let ((pkg-entry (assoc pkg-path (ctx-ssa-index ctx))))
     (and pkg-entry
          (let ((entry (assoc name (cdr pkg-entry))))
@@ -222,7 +222,7 @@
 ;; Each func-decl is annotated with (pkg-path . <import-path>) from its
 ;; parent package, enabling cross-package SSA/CFG disambiguation.
 (define (all-func-decls pkgs)
-  "Extract all func-decl nodes from a list of typed package ASTs.\n\nParameters:\n  pkgs : list\nReturns: list\nCategory: goast-belief\n\nSee also: `functions-matching'."
+  "Extract all func-decl nodes from a list of typed package ASTs.\nEach func-decl is annotated with (pkg-path . import-path).\nCommon fields: name, type, recv, body, pkg-path.\n\nParameters:\n  pkgs : list\nReturns: list\nCategory: goast-belief\n\nExamples:\n  (define funcs (all-func-decls (ctx-pkgs ctx)))\n  (nf (car funcs) 'name)      ; => \"handleRequest\"\n  (nf (car funcs) 'pkg-path)  ; => \"my/pkg\"\n  (nf (car funcs) 'recv)      ; => receiver list or #f\n\nSee also: `functions-matching', `custom'."
   (flat-map
     (lambda (pkg)
       (let ((pkg-path (nf pkg 'path)))
@@ -529,7 +529,7 @@
 
 ;; (any-of pred ...) — at least one predicate must match
 (define (any-of . preds)
-  "Predicate combinator: at least one predicate must match.\n\nParameters:\n  preds : procedure\nReturns: procedure\nCategory: goast-belief\n\nSee also: `all-of', `none-of'."
+  "Predicate combinator: at least one predicate must match.\n\nParameters:\n  preds : procedure\nReturns: procedure\nCategory: goast-belief\n\nExamples:\n  (any-of (name-matches \"Get\") (name-matches \"Fetch\"))\n\nSee also: `all-of', `none-of'."
   (lambda (fn ctx)
     (let loop ((ps preds))
       (cond ((null? ps) #f)
@@ -538,7 +538,7 @@
 
 ;; (none-of pred ...) — no predicate matches
 (define (none-of . preds)
-  "Predicate combinator: no predicate matches.\n\nParameters:\n  preds : procedure\nReturns: procedure\nCategory: goast-belief\n\nSee also: `all-of', `any-of'."
+  "Predicate combinator: no predicate matches.\n\nParameters:\n  preds : procedure\nReturns: procedure\nCategory: goast-belief\n\nExamples:\n  (none-of (name-matches \"Test\") (name-matches \"Benchmark\"))\n\nSee also: `all-of', `any-of'."
   (lambda (fn ctx)
     (not ((apply any-of preds) fn ctx))))
 
@@ -720,7 +720,7 @@
 
 ;; (custom proc) — escape hatch. proc is (lambda (site ctx) -> symbol).
 (define (custom proc)
-  "Property checker: escape hatch for user-defined checks.\nPROC receives (site ctx) and returns a symbol categorizing the result.\n\nParameters:\n  proc : procedure\nReturns: procedure\nCategory: goast-belief"
+  "Property checker: escape hatch for user-defined checks.\nPROC receives (site ctx) and returns a symbol categorizing the result.\nSite is a func-decl AST node (tagged alist). Common fields:\n  (nf site 'name)      => function name string\n  (nf site 'body)      => function body AST (list of statements)\n  (nf site 'recv)      => receiver list (methods) or #f (functions)\n  (nf site 'type)      => function type node with params, results\n  (nf site 'pkg-path)  => import path of the containing package\nCtx is the analysis context. Use ctx-pkgs, ctx-ssa, ctx-callgraph,\nctx-find-ssa-func to access loaded analysis data.\n\nParameters:\n  proc : procedure\nReturns: procedure\nCategory: goast-belief\n\nExamples:\n  (custom (lambda (site ctx)\n    (if (nf site 'recv) 'is-method 'is-function)))\n  (custom (lambda (site ctx)\n    (let ((ssa (ctx-find-ssa-func ctx (nf site 'pkg-path) (nf site 'name))))\n      (if ssa 'has-ssa 'no-ssa))))\n\nSee also: `functions-matching', `ctx-find-ssa-func', `nf'."
   proc)
 
 ;; ── Statistical comparison ──────────────────────────────
