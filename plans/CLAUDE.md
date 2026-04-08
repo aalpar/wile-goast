@@ -38,6 +38,7 @@
 | `2026-03-26-c3-domains-impl.md` | C3 abstract domains implementation plan | Open |
 | `2026-04-06-structured-docstrings-design.md` | Structured docstrings for Go primitives and Scheme procedures | Approved |
 | `2026-04-06-structured-docstrings-impl.md` | Implementation plan: 93 docstrings across 10 files in 11 tasks | Open |
+| `2026-04-08-false-boundary-detection-design.md` | FCA-based false boundary detection: discover natural struct groupings from field access patterns | Approved |
 
 ## Documentation (outside plans/)
 

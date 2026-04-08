@@ -117,3 +117,43 @@ Raghavan Komondoor and Susan Horwitz.
 In *Proceedings of the 8th International Symposium on Static Analysis (SAS '01)*,
 Lecture Notes in Computer Science, vol. 2126, pp. 40--56. Springer, 2001.
 https://doi.org/10.1007/3-540-47764-0_3
+
+## 8. Formal Concept Analysis and Boundary Discovery
+
+Bernhard Ganter and Rudolf Wille.
+*Formal Concept Analysis: Mathematical Foundations*.
+Springer, 1999.
+ISBN 978-3-540-62771-5.
+https://doi.org/10.1007/978-3-642-59830-2
+
+The foundational text for FCA. Defines formal contexts, concept lattices,
+derivation operators (Galois connections), and the NextClosure algorithm for
+efficient lattice enumeration. Applied in wile-goast to discover natural
+field groupings from function access patterns.
+
+Bernhard Ganter.
+"Two Basic Algorithms in Concept Analysis."
+In *Formal Concept Analysis: 8th International Conference (ICFCA 2010)*,
+Lecture Notes in Computer Science, vol. 5986, pp. 312--340. Springer, 2010.
+https://doi.org/10.1007/978-3-642-11928-6_22
+
+Describes NextClosure and Close-by-One algorithms. NextClosure generates
+concepts in lexicographic order without redundancy — O(|G|·|M|·|L|).
+
+Gail C. Murphy, David Notkin, and Kevin J. Sullivan.
+"Software Reflexion Models: Bridging the Gap between Design and Implementation."
+*IEEE Transactions on Software Engineering*, 27(4):364--380, April 2001.
+https://doi.org/10.1109/32.917525
+
+Reflexion models compare intended architecture against actual dependencies.
+Divergences (actual coupling crossing intended boundaries) correspond to
+false boundaries in wile-goast's sense.
+
+David L. Parnas.
+"On the Criteria To Be Used in Decomposing Systems into Modules."
+*Communications of the ACM*, 15(12):1053--1058, December 1972.
+https://doi.org/10.1145/361598.361623
+
+The original argument for information hiding. A module boundary is justified
+iff it hides a design decision that could change. A false boundary hides
+nothing — the "secret" is routinely exposed to the other side.
