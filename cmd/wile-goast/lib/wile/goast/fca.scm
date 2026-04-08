@@ -248,13 +248,16 @@
                concept)))
       lattice)))
 
-;; Build a structured report for a single cross-boundary concept.
-(define (boundary-report concept)
-  (let* ((ext (concept-extent concept))
-         (int (concept-intent concept))
-         (types (unique (map attr-struct-name int)))
-         (grouped (group-fields-by-struct int)))
-    (list (cons 'types types)
-          (cons 'fields grouped)
-          (cons 'functions ext)
-          (cons 'extent-size (length ext)))))
+;; Build a structured report for a list of cross-boundary concepts.
+;; Returns a list of alists, one per concept.
+(define (boundary-report concepts)
+  (map (lambda (concept)
+         (let* ((ext (concept-extent concept))
+                (int (concept-intent concept))
+                (types (unique (map attr-struct-name int)))
+                (grouped (group-fields-by-struct int)))
+           (list (cons 'types types)
+                 (cons 'fields grouped)
+                 (cons 'functions ext)
+                 (cons 'extent-size (length ext)))))
+       concepts))
