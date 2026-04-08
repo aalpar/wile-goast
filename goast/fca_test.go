@@ -125,3 +125,69 @@ func TestFCA_Extent(t *testing.T) {
 		qt.New(t).Assert(result.SchemeString(), qt.Equals, `("F1" "F2" "F3")`)
 	})
 }
+
+// ── Task 4: Concept lattice ──────────────────────────────
+
+func TestFCA_ConceptLattice(t *testing.T) {
+	engine := newBeliefEngine(t)
+
+	// Same 3-function context.
+	// Expected concepts:
+	//   ({F1,F2,F3}, {A.x, A.y})   — all 3 share A.x, A.y
+	//   ({F1,F2},    {A.x, A.y, B.z}) — F1+F2 share all three
+	eval(t, engine, `
+		(import (wile goast fca))
+
+		(define ctx (context-from-alist
+		  '(("F1" "A.x" "A.y" "B.z")
+		    ("F2" "A.x" "A.y" "B.z")
+		    ("F3" "A.x" "A.y"))))
+
+		(define lattice (concept-lattice ctx))
+	`)
+
+	t.Run("2 concepts", func(t *testing.T) {
+		result := eval(t, engine, `(length lattice)`)
+		qt.New(t).Assert(result.SchemeString(), qt.Equals, "2")
+	})
+
+	t.Run("3-attribute intent exists", func(t *testing.T) {
+		// One concept should have intent {A.x, A.y, B.z}.
+		result := eval(t, engine, `
+			(let loop ((cs lattice))
+			  (cond ((null? cs) #f)
+			        ((= (length (concept-intent (car cs))) 3) #t)
+			        (else (loop (cdr cs)))))
+		`)
+		qt.New(t).Assert(result.SchemeString(), qt.Equals, "#t")
+	})
+}
+
+func TestFCA_ConceptLattice_NoCrossing(t *testing.T) {
+	engine := newBeliefEngine(t)
+
+	// Disjoint access patterns:
+	//   F1, F2: {A.x, A.y}
+	//   F3:     {B.z, B.w}
+	// Expected concepts:
+	//   top:    ({F1,F2,F3}, {})         — closure of {} gives all objects, empty intent
+	//   group1: ({F1,F2},   {A.x, A.y})
+	//   group2: ({F3},      {B.w, B.z})
+	eval(t, engine, `
+		(import (wile goast fca))
+
+		(define ctx (context-from-alist
+		  '(("F1" "A.x" "A.y")
+		    ("F2" "A.x" "A.y")
+		    ("F3" "B.z" "B.w"))))
+
+		(define lattice (concept-lattice ctx))
+	`)
+
+	t.Run("4 concepts", func(t *testing.T) {
+		// top({F1,F2,F3}, {}), group1({F1,F2}, {A.x,A.y}),
+		// group2({F3}, {B.w,B.z}), bottom({}, {A.x,A.y,B.w,B.z})
+		result := eval(t, engine, `(length lattice)`)
+		qt.New(t).Assert(result.SchemeString(), qt.Equals, "4")
+	})
+}
