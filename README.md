@@ -31,7 +31,7 @@ wile-goast --list-scripts
 wile-goast -f my-analysis.scm
 ```
 
-## Six Layers
+## Seven Layers
 
 | Library | Import | What it answers |
 |---------|--------|-----------------|
@@ -41,6 +41,7 @@ wile-goast -f my-analysis.scm
 | CFG | `(wile goast cfg)` | Must this check happen before that return? |
 | Lint | `(wile goast lint)` | What do standard analyzers report? |
 | Belief DSL | `(wile goast belief)` | What implicit conventions are being violated? |
+| FCA | `(wile goast fca)` | Are these the right boundaries? |
 
 All layers share one node format — tagged alists `(tag (key . val) ...)` —
 queryable with standard Scheme list operations.
@@ -186,6 +187,26 @@ type substitutions that explain all derived differences.
 
 See [`docs/EXAMPLES.md`](docs/EXAMPLES.md) for annotated walkthroughs.
 
+### False boundary detection
+
+Discover struct boundaries that prevent simplification. FCA builds a concept
+lattice from field access patterns and compares against actual type boundaries:
+
+```scheme
+(import (wile goast fca))
+
+(let* ((s   (go-load "my/pkg/..."))
+       (idx (go-ssa-field-index s))
+       (ctx (field-index->context idx 'write-only 'cross-type-only))
+       (lat (concept-lattice ctx))
+       (xb  (cross-boundary-concepts lat 'min-extent 3)))
+  (boundary-report xb))
+```
+
+Returns structured evidence: which struct types are coupled, which fields,
+and which functions treat them as a unit. The user decides whether to
+colocate, extract a new type, or leave as-is.
+
 ## MCP Server
 
 `wile-goast --mcp` starts a stdio MCP server (JSON-RPC). One persistent Wile
@@ -256,5 +277,5 @@ make ci          # Full CI: lint + build + test + covercheck + verify-mod
 
 ## Version
 
-v0.5.2
+v0.5.5 — see [`CHANGELOG.md`](CHANGELOG.md) for release history.
 Zero external consumers. API may change without notice.
