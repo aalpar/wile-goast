@@ -1,196 +1,63 @@
 # wile-goast
 
-Cross-layer static analysis of Go source code, scripted in Scheme. Exposes
-Go's compiler toolchain — AST, SSA, call graph, control flow graph, and
-lint diagnostics — as composable Scheme primitives.
+Questions about Go code that grep, gopls, and golangci-lint cannot answer:
+
+- Does every function that acquires a lock also release it — on all control flow paths, across call boundaries?
+- Do these 30 functions follow the same calling convention? Which ones deviate?
+- Are these two functions structurally identical except for types?
+- Which struct boundaries are contradicted by actual field access patterns?
+- Must this nil check happen before that dereference?
+
+wile-goast exposes Go's compiler internals (AST, SSA, call graph, CFG, lint) as composable Scheme primitives. Short scripts query code structure directly.
 
 Built on [Wile](https://github.com/aalpar/wile), an R7RS Scheme interpreter.
 
-## Installation
+## Why Scheme
 
-```bash
-go install github.com/aalpar/wile-goast/cmd/wile-goast@latest
+Go's AST is already a tree. S-expressions are trees. No marshaling, no schema, no custom query grammar — the representation *is* the query language.
+
+The Go expression `x + 1` parses to:
+
+```scheme
+(binary-expr (op . +) (x ident (name . "x")) (y lit (kind . INT) (value . "1")))
 ```
 
-The binary is self-contained — all Scheme libraries and built-in scripts are
-embedded.
+Queryable with `car`, `cdr`, `assoc`, `case`. The same tagged-alist format `(tag (key . val) ...)` is shared across all layers — AST, SSA, CFG, call graph, lint results. Learn one representation, query everything.
 
-## Quick Start
+The mapping is bidirectional: `go-parse-string` produces s-expressions, `go-format` converts them back to Go source. Transform code by transforming lists.
 
-```bash
-# Evaluate a Scheme expression
-wile-goast '(go-parse-expr "1 + 2")'
+## Cross-function lock/unlock analysis
 
-# Run a built-in script
-wile-goast --run goast-query
-
-# List available scripts
-wile-goast --list-scripts
-
-# Run a script file
-wile-goast -f my-analysis.scm
-```
-
-## Seven Layers
-
-| Library | Import | What it answers |
-|---------|--------|-----------------|
-| AST | `(wile goast)` | What is the shape of this code? |
-| SSA | `(wile goast ssa)` | Where does this value flow? |
-| Call Graph | `(wile goast callgraph)` | Who calls whom? |
-| CFG | `(wile goast cfg)` | Must this check happen before that return? |
-| Lint | `(wile goast lint)` | What do standard analyzers report? |
-| Belief DSL | `(wile goast belief)` | What implicit conventions are being violated? |
-| FCA | `(wile goast fca)` | Are these the right boundaries? |
-
-All layers share one node format — tagged alists `(tag (key . val) ...)` —
-queryable with standard Scheme list operations.
-
-## Primitives
-
-### AST — `(wile goast)`
-
-| Primitive | Description |
-|-----------|-------------|
-| `(go-parse-file path . options)` | Parse a `.go` file to s-expression AST |
-| `(go-parse-string source . options)` | Parse Go source string |
-| `(go-parse-expr source)` | Parse a single Go expression |
-| `(go-format ast)` | Convert s-expression AST back to Go source |
-| `(go-node-type ast)` | Return the tag symbol of an AST node |
-| `(go-typecheck-package pattern . options)` | Load and type-check a package |
-| `(go-interface-implementors name target)` | Find types implementing an interface |
-| `(go-load pattern ... . options)` | Load packages into a reusable session |
-| `(go-session? v)` | Type predicate for GoSession |
-| `(go-list-deps pattern ...)` | Transitive import path discovery |
-| `(go-cfg-to-structured block)` | Restructure early returns into if/else tree |
-
-Options: `'positions` (include source positions), `'comments` (include doc comments).
-
-### SSA — `(wile goast ssa)`
-
-| Primitive | Description |
-|-----------|-------------|
-| `(go-ssa-build pattern . options)` | Build SSA; returns list of `ssa-func` nodes |
-| `(go-ssa-field-index pattern)` | Pre-correlated per-function field access index |
-| `(go-ssa-canonicalize ssa-func)` | Canonicalize blocks and registers for structural comparison |
-
-### Call Graph — `(wile goast callgraph)`
-
-| Primitive | Description |
-|-----------|-------------|
-| `(go-callgraph pattern algorithm)` | Build call graph (`'static`, `'cha`, `'rta`, `'vta`) |
-| `(go-callgraph-callers graph func-name)` | Direct callers of a function |
-| `(go-callgraph-callees graph func-name)` | Direct callees of a function |
-| `(go-callgraph-reachable graph root-name)` | Transitive closure from a root |
-
-### CFG — `(wile goast cfg)`
-
-| Primitive | Description |
-|-----------|-------------|
-| `(go-cfg pattern func-name . options)` | Build CFG for a named function |
-| `(go-cfg-dominators cfg)` | Build dominator tree |
-| `(go-cfg-dominates? dom-tree a b)` | Does block `a` dominate block `b`? |
-| `(go-cfg-paths cfg from to)` | Enumerate simple paths between blocks |
-
-### Lint — `(wile goast lint)`
-
-| Primitive | Description |
-|-----------|-------------|
-| `(go-analyze pattern name ...)` | Run named analyzers on a package |
-| `(go-analyze-list)` | List available analyzer names (~25 built-in) |
-
-### Belief DSL — `(wile goast belief)`
+Lint tools check lock/unlock pairing within a single function body. But what about when `Lock` is called in one function and `Unlock` is the caller's responsibility? That is cross-function analysis — it requires the call graph.
 
 ```scheme
 (import (wile goast belief))
 
-(define-belief "lock-unlock-pairing"
+;; Which functions that call Lock also pair it with Unlock?
+(define-belief "lock-unlock-direct"
   (sites (functions-matching (contains-call "Lock")))
   (expect (paired-with "Lock" "Unlock"))
   (threshold 0.90 5))
 
-(run-beliefs "./...")
+;; Deviations: functions that Lock without Unlock.
+;; Do their callers handle the Unlock instead?
+(define-belief "lock-unlock-callers"
+  (sites (sites-from "lock-unlock-direct" 'which 'deviation))
+  (expect (contains-call "Unlock"))
+  (threshold 0.75 3))
+
+(run-beliefs "my/package/...")
 ```
 
-Site selectors: `functions-matching`, `callers-of`, `methods-of`, `sites-from`,
-`implementors-of`, `interface-methods`, `all-func-decls`
+The first belief finds direct pairing: of all functions that call `Lock`, which ones also call `Unlock` (via defer, explicit call, or any path)? The threshold says: if at least 90% do, and at least 5 sites exist, report the deviations.
 
-Predicates: `has-params`, `has-receiver`, `name-matches`, `contains-call`,
-`stores-to-fields`, `all-of`/`any-of`/`none-of`
+The second belief chains off the first. It takes those deviations — functions that `Lock` without `Unlock` — and checks one level up the call stack. Do their callers handle the `Unlock` instead? The `sites-from` selector with `'which 'deviation` feeds the non-conforming sites from the first belief into the second.
 
-Property checkers: `contains-call`, `paired-with`, `ordered`, `co-mutated`,
-`checked-before-use`, `custom`
+This is not "find Lock calls" (grep does that). It is "find the 10% of Lock callers that break the convention, then trace responsibility up the call chain." The threshold model makes it statistical: conventions are extracted from the codebase itself, and deviations are reported against that baseline.
 
-See [`docs/PRIMITIVES.md`](docs/PRIMITIVES.md) for the complete reference.
+## False boundary detection
 
-## Examples
-
-### Parse and query Go source
-
-```scheme
-(define file (go-parse-string
-  "package demo
-   func Add(a, b int) int { return a + b }
-   func helper() {}"))
-
-(define names
-  (filter-map
-    (lambda (decl)
-      (and (eq? (car decl) 'func-decl)
-           (cdr (assoc 'name (cdr decl)))))
-    (cdr (assoc 'decls (cdr file)))))
-
-names ; => ("Add" "helper")
-```
-
-### Build a call graph
-
-```scheme
-(import (wile goast callgraph))
-
-(define cg (go-callgraph "." 'cha))
-(go-callgraph-callers cg "(*Server).Handle")
-(go-callgraph-reachable cg "command-line-arguments.main")
-```
-
-### Check control flow dominance
-
-```scheme
-(import (wile goast cfg))
-
-(define cfg (go-cfg "." "ProcessRequest"))
-(define dom (go-cfg-dominators cfg))
-(go-cfg-dominates? dom 0 3)  ; does entry dominate block 3?
-```
-
-### Run lint analyzers
-
-```scheme
-(import (wile goast lint))
-
-(define diags (go-analyze "./..." "nilness" "shadow"))
-```
-
-### Module-wide unification detection
-
-The built-in `unify-detect-pkg` script scans an entire Go module for
-function pairs that are candidates for unification — functions with the
-same structure differing only in types, identifiers, or literals:
-
-```bash
-cd /path/to/go/module
-wile-goast --run unify-detect-pkg
-```
-
-Uses recursive AST diff with substitution collapsing to find minimal root
-type substitutions that explain all derived differences.
-
-See [`docs/EXAMPLES.md`](docs/EXAMPLES.md) for annotated walkthroughs.
-
-### False boundary detection
-
-Discover struct boundaries that prevent simplification. FCA builds a concept
-lattice from field access patterns and compares against actual type boundaries:
+Formal Concept Analysis (Ganter & Wille, 1999) applied to Go struct field access patterns:
 
 ```scheme
 (import (wile goast fca))
@@ -203,19 +70,27 @@ lattice from field access patterns and compares against actual type boundaries:
   (boundary-report xb))
 ```
 
-Returns structured evidence: which struct types are coupled, which fields,
-and which functions treat them as a unit. The user decides whether to
-colocate, extract a new type, or leave as-is.
+The pipeline builds a concept lattice from SSA field-store data, discovers natural field groupings, and compares them against actual struct boundaries. A concept that spans multiple struct types means those types share a field access pattern — functions that write to fields in type A also write to fields in type B, treating them as a unit. Those are candidates for restructuring: colocate the fields, extract a shared type, or confirm the coupling is intentional.
+
+The output is a structured report: which struct types are coupled, which fields form the shared pattern, and which functions participate. No novelty claim — the technique is textbook FCA. The value is that it is a composable primitive in the same toolkit as AST queries, SSA analysis, CFG traversal, and the belief DSL.
+
+See [docs/PRIMITIVES.md](docs/PRIMITIVES.md) for the complete primitive reference.
+
+## Installation
+
+```bash
+go install github.com/aalpar/wile-goast/cmd/wile-goast@latest
+```
+
+The binary is self-contained — all Scheme libraries and built-in scripts are embedded.
 
 ## MCP Server
 
-`wile-goast --mcp` starts a stdio MCP server (JSON-RPC). One persistent Wile
-engine serves all tool calls within the session.
+`wile-goast --mcp` starts a stdio MCP server (JSON-RPC). One persistent Wile engine serves all tool calls within the session.
 
 **Tool:** `eval` — takes a `code` string (Scheme expression), returns the result.
 
-**Prompts:** `goast-analyze`, `goast-beliefs`, `goast-refactor` — guided workflows
-for structural analysis, belief DSL, and unification detection.
+**Prompts:** `goast-analyze`, `goast-beliefs`, `goast-refactor` — guided workflows for structural analysis, belief DSL, and unification detection.
 
 ```json
 {"mcpServers": {"wile-goast": {"command": "wile-goast", "args": ["--mcp"]}}}
@@ -223,8 +98,7 @@ for structural analysis, belief DSL, and unification detection.
 
 ## Shared Sessions
 
-`go-load` creates a GoSession holding loaded packages with lazy SSA/callgraph.
-All package-loading primitives accept either a pattern string or a GoSession:
+`go-load` creates a GoSession holding loaded packages with lazy SSA/callgraph.  All package-loading primitives accept either a pattern string or a GoSession:
 
 ```scheme
 (define s (go-load "my/pkg/a" "my/pkg/b"))
@@ -277,5 +151,4 @@ make ci          # Full CI: lint + build + test + covercheck + verify-mod
 
 ## Version
 
-v0.5.5 — see [`CHANGELOG.md`](CHANGELOG.md) for release history.
-Zero external consumers. API may change without notice.
+v0.5.6 — see [`CHANGELOG.md`](CHANGELOG.md) for release history.
