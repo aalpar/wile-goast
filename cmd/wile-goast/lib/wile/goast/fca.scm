@@ -45,25 +45,30 @@
 
 ;; Build an FCA context from objects, attributes, and an incidence function.
 ;; incidence: (lambda (obj attr) -> boolean)
+;; Lookup tables are hash tables for O(1) access in intent/extent.
 (define (make-context objects attributes incidence)
   (let* ((objs (sort-strings objects))
          (attrs (sort-strings attributes))
-         (obj->attrs
-           (map (lambda (o)
-                  (cons o (let loop ((as attrs))
-                            (cond ((null? as) '())
-                                  ((incidence o (car as))
-                                   (cons (car as) (loop (cdr as))))
-                                  (else (loop (cdr as)))))))
-                objs))
-         (attr->objs
-           (map (lambda (a)
-                  (cons a (let loop ((os objs))
-                            (cond ((null? os) '())
-                                  ((incidence (car os) a)
-                                   (cons (car os) (loop (cdr os))))
-                                  (else (loop (cdr os)))))))
-                attrs)))
+         (obj->attrs (make-hashtable))
+         (attr->objs (make-hashtable)))
+    (for-each
+      (lambda (o)
+        (hashtable-set! obj->attrs o
+          (let loop ((as attrs))
+            (cond ((null? as) '())
+                  ((incidence o (car as))
+                   (cons (car as) (loop (cdr as))))
+                  (else (loop (cdr as)))))))
+      objs)
+    (for-each
+      (lambda (a)
+        (hashtable-set! attr->objs a
+          (let loop ((os objs))
+            (cond ((null? os) '())
+                  ((incidence (car os) a)
+                   (cons (car os) (loop (cdr os))))
+                  (else (loop (cdr os)))))))
+      attrs)
     (list 'fca-context
           (cons 'objects objs)
           (cons 'attributes attrs)
@@ -95,28 +100,24 @@
 (define (intent ctx object-set)
   (if (null? object-set)
     (context-attributes ctx)
-    (let* ((lookup (nf ctx 'obj->attrs))
-           (first-entry (assoc (car object-set) lookup))
-           (first-attrs (if first-entry (cdr first-entry) '())))
-      (let loop ((rest (cdr object-set)) (acc first-attrs))
+    (let ((ht (nf ctx 'obj->attrs)))
+      (let loop ((rest (cdr object-set))
+                 (acc (hashtable-ref ht (car object-set) '())))
         (if (null? rest) acc
-          (let* ((entry (assoc (car rest) lookup))
-                 (attrs (if entry (cdr entry) '())))
-            (loop (cdr rest) (set-intersect acc attrs))))))))
+          (loop (cdr rest)
+                (set-intersect acc (hashtable-ref ht (car rest) '()))))))))
 
 ;; Objects having ALL attributes in attribute-set.
 ;; Empty attribute-set → all objects (vacuous truth).
 (define (extent ctx attribute-set)
   (if (null? attribute-set)
     (context-objects ctx)
-    (let* ((lookup (nf ctx 'attr->objs))
-           (first-entry (assoc (car attribute-set) lookup))
-           (first-objs (if first-entry (cdr first-entry) '())))
-      (let loop ((rest (cdr attribute-set)) (acc first-objs))
+    (let ((ht (nf ctx 'attr->objs)))
+      (let loop ((rest (cdr attribute-set))
+                 (acc (hashtable-ref ht (car attribute-set) '())))
         (if (null? rest) acc
-          (let* ((entry (assoc (car rest) lookup))
-                 (objs (if entry (cdr entry) '())))
-            (loop (cdr rest) (set-intersect acc objs))))))))
+          (loop (cdr rest)
+                (set-intersect acc (hashtable-ref ht (car rest) '()))))))))
 
 ;;; ── Concept lattice (NextClosure, Ganter 1984) ───────────
 
@@ -184,10 +185,18 @@
        struct-name)
       (else (error "field-index->context: unknown mode" mode)))))
 
+;; Count distinct struct types in an attribute list.
+(define (attr-type-count attrs)
+  (length (unique (map attr-struct-name attrs))))
+
 ;; Convert go-ssa-field-index output to an FCA context.
 ;; mode: 'write-only, 'read-write, or 'type-only.
-(define (field-index->context index mode)
-  (let* ((entries
+;; Optional: pass 'cross-type-only after mode to keep only functions
+;; that access fields from 2+ struct types. This pre-filter dramatically
+;; reduces context size for large codebases.
+(define (field-index->context index mode . opts)
+  (let* ((cross-only (and (pair? opts) (eq? (car opts) 'cross-type-only)))
+         (entries
            (filter-map
              (lambda (summary)
                (let* ((func-name (nf summary 'func))
@@ -199,7 +208,9 @@
                                  (lambda (acc) (field-access-attr acc mode))
                                  (if (pair? fields) fields '())))))
                  (if (null? attrs) #f
-                   (cons qualified attrs))))
+                   (if (and cross-only (< (attr-type-count attrs) 2))
+                     #f
+                     (cons qualified attrs)))))
              index)))
     (context-from-alist entries)))
 
