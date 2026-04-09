@@ -131,9 +131,11 @@
 ;; Next closure in lectic order.
 ;; Returns the next closed set after current, or #f if done.
 (define (next-closure current attrs close)
-  (let loop ((i (- (length attrs) 1)))
-    (if (< i 0) #f
-      (let ((ai (list-ref attrs i)))
+  (let ((attr-vec (list->vector attrs))
+        (n (length attrs)))
+    (let loop ((i (- n 1)))
+      (if (< i 0) #f
+        (let ((ai (vector-ref attr-vec i)))
         (if (set-member? ai current)
           (loop (- i 1))
           (let* ((prefix (set-before ai current))
@@ -141,7 +143,7 @@
                  (c (close b-prime)))
             (if (equal? (set-before ai c) prefix)
               c
-              (loop (- i 1)))))))))
+              (loop (- i 1))))))))))
 
 ;; Build the full concept lattice.
 ;; Returns a list of concepts (extent . intent) in lectic order.
