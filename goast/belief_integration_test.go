@@ -302,23 +302,20 @@ func TestBeliefInterfaceMethods(t *testing.T) {
 	})
 
 	t.Run("display name is type-qualified", func(t *testing.T) {
-		// site-display-name should produce "TypeName.MethodName" for interface-methods sites.
+		// Form 3 names already contain the receiver type, e.g.
+		// "(*pkg.MemoryStore).Get", "(pkg.SimpleStore).Get".
 		result := eval(t, engine, `
 			(import (wile goast belief))
 
 			(let* ((ctx (make-context "github.com/aalpar/wile-goast/goast/testdata/iface"))
 			       (selector (interface-methods "Store" "Get"))
 			       (sites (selector ctx))
-			       (names (map (lambda (s)
-			                     (let ((impl-type (nf s 'impl-type))
-			                           (name (nf s 'name)))
-			                       (string-append impl-type "." name)))
-			                   sites)))
+			       (names (map (lambda (s) (nf s 'name)) sites)))
 			  names)
 		`)
 		s := result.SchemeString()
-		c.Assert(s, qt.Matches, `.*MemoryStore\.Get.*`)
-		c.Assert(s, qt.Matches, `.*SimpleStore\.Get.*`)
+		c.Assert(s, qt.Matches, `.*MemoryStore\)\.Get.*`)
+		c.Assert(s, qt.Matches, `.*SimpleStore\)\.Get.*`)
 	})
 }
 
@@ -371,7 +368,7 @@ func TestBeliefCategory4_Ordering(t *testing.T) {
 			(let ((devs (filter-map (lambda (p) (and (not (eq? (cdr p) 'a-dominates-b)) p)) classified)))
 			  (car (car devs)))
 		`)
-		qt.New(t).Assert(devName.SchemeString(), qt.Equals, `"PipelineReversed"`)
+		qt.New(t).Assert(devName.SchemeString(), qt.Equals, `"github.com/aalpar/wile-goast/examples/goast-query/testdata/ordering.PipelineReversed"`)
 	})
 }
 
@@ -421,7 +418,7 @@ func TestBeliefCategory3_Handling(t *testing.T) {
 			(let ((devs (filter-map (lambda (p) (and (not (cdr p)) p)) classified)))
 			  (car (car devs)))
 		`)
-		qt.New(t).Assert(devName.SchemeString(), qt.Equals, `"CallerBad"`)
+		qt.New(t).Assert(devName.SchemeString(), qt.Equals, `"github.com/aalpar/wile-goast/examples/goast-query/testdata/handling.CallerBad"`)
 	})
 }
 
@@ -470,7 +467,7 @@ func TestBeliefCategory2_Check(t *testing.T) {
 			(let ((devs (filter-map (lambda (p) (and (eq? (cdr p) 'unguarded) p)) classified)))
 			  (car (car devs)))
 		`)
-		qt.New(t).Assert(devName.SchemeString(), qt.Equals, `"HandleUnsafe"`)
+		qt.New(t).Assert(devName.SchemeString(), qt.Equals, `"github.com/aalpar/wile-goast/examples/goast-query/testdata/checking.HandleUnsafe"`)
 	})
 }
 
@@ -495,7 +492,7 @@ func TestBeliefCategory4_SameBlockOrdering(t *testing.T) {
 	t.Run("FooFirst is a-dominates-b", func(t *testing.T) {
 		result := eval(t, engine, `
 			(cdr (car (filter-map
-			  (lambda (p) (and (equal? (car p) "FooFirst") p))
+			  (lambda (p) (and (equal? (car p) "github.com/aalpar/wile-goast/examples/goast-query/testdata/sameblock.FooFirst") p))
 			  classified)))
 		`)
 		qt.New(t).Assert(result.SchemeString(), qt.Equals, "a-dominates-b")
@@ -504,7 +501,7 @@ func TestBeliefCategory4_SameBlockOrdering(t *testing.T) {
 	t.Run("BarFirst is b-dominates-a", func(t *testing.T) {
 		result := eval(t, engine, `
 			(cdr (car (filter-map
-			  (lambda (p) (and (equal? (car p) "BarFirst") p))
+			  (lambda (p) (and (equal? (car p) "github.com/aalpar/wile-goast/examples/goast-query/testdata/sameblock.BarFirst") p))
 			  classified)))
 		`)
 		qt.New(t).Assert(result.SchemeString(), qt.Equals, "b-dominates-a")
@@ -594,7 +591,7 @@ func TestBeliefCategory1_Pairing(t *testing.T) {
 			(let ((devs (filter-map (lambda (p) (and (not (eq? (cdr p) 'paired-defer)) p)) classified)))
 			  (car (car devs)))
 		`)
-		qt.New(t).Assert(devName.SchemeString(), qt.Equals, `"ReadUnsafe"`)
+		qt.New(t).Assert(devName.SchemeString(), qt.Equals, `"(*github.com/aalpar/wile-goast/examples/goast-query/testdata/pairing.Service).ReadUnsafe"`)
 	})
 }
 
@@ -645,7 +642,7 @@ func TestBeliefCategory5_CoMutation(t *testing.T) {
 			(let ((devs (filter-map (lambda (p) (and (eq? (cdr p) 'partial) p)) classified)))
 			  (car (car devs)))
 		`)
-		qt.New(t).Assert(devName.SchemeString(), qt.Equals, `"SetServer"`)
+		qt.New(t).Assert(devName.SchemeString(), qt.Equals, `"(*github.com/aalpar/wile-goast/examples/goast-query/testdata/comutation.Config).SetServer"`)
 	})
 }
 

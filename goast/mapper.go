@@ -30,6 +30,7 @@ type mapperOpts struct {
 	positions bool
 	comments  bool
 	typeInfo  *types.Info // nil when type-checking was not requested
+	pkgPath   string      // empty for untyped ASTs
 }
 
 // mapNode dispatches on ast.Node type to the appropriate mapper function.
@@ -203,13 +204,35 @@ func mapFile(f *ast.File, opts *mapperOpts) values.Value {
 
 // --- Declarations ---
 
+// qualifiedRecvType resolves an AST receiver expression to its fully-qualified
+// type string using type info. Falls back to types.ExprString when type info
+// is unavailable or the expression has no type entry.
+func qualifiedRecvType(expr ast.Expr, opts *mapperOpts) string {
+	if opts.typeInfo == nil {
+		return types.ExprString(expr)
+	}
+	tv, ok := opts.typeInfo.Types[expr]
+	if !ok {
+		return types.ExprString(expr)
+	}
+	return types.TypeString(tv.Type, nil)
+}
+
 func mapFuncDecl(f *ast.FuncDecl, opts *mapperOpts) values.Value {
+	funcName := f.Name.Name
+	if opts.pkgPath != "" && f.Recv != nil && len(f.Recv.List) > 0 {
+		recvType := qualifiedRecvType(f.Recv.List[0].Type, opts)
+		funcName = "(" + recvType + ")." + f.Name.Name
+	} else if opts.pkgPath != "" {
+		funcName = opts.pkgPath + "." + f.Name.Name
+	}
+
 	var fields []values.Value
 	if opts.comments {
 		fields = append(fields, Field("doc", commentGroupToStrings(f.Doc)))
 	}
 	fields = append(fields,
-		Field("name", Str(f.Name.Name)),
+		Field("name", Str(funcName)),
 		Field("recv", mapFieldListOrFalse(f.Recv, opts)),
 		Field("type", mapFuncType(f.Type, opts)),
 		Field("body", mapStmt(f.Body, opts)),

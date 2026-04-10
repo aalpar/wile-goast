@@ -219,6 +219,7 @@ func mapPackage(pkg *packages.Package, baseOpts *mapperOpts) values.Value {
 		positions: baseOpts.positions,
 		comments:  baseOpts.comments,
 		typeInfo:  pkg.TypesInfo,
+		pkgPath:   pkg.PkgPath,
 	}
 	files := make([]values.Value, len(pkg.Syntax))
 	for i, f := range pkg.Syntax {
