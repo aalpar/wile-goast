@@ -17,7 +17,6 @@ package goastcg
 import (
 	"go/token"
 	"sort"
-	"strings"
 
 	"golang.org/x/tools/go/callgraph"
 	"golang.org/x/tools/go/callgraph/cha"
@@ -31,7 +30,6 @@ import (
 	"github.com/aalpar/wile-goast/goast"
 	"github.com/aalpar/wile/machine"
 	"github.com/aalpar/wile/registry/helpers"
-	"github.com/aalpar/wile/security"
 	"github.com/aalpar/wile/values"
 	"github.com/aalpar/wile/werr"
 )
@@ -90,44 +88,16 @@ func callgraphFromSession(mc machine.CallContext, session *goast.GoSession, algo
 }
 
 func callgraphFromPattern(mc machine.CallContext, pattern *values.String, algorithm string) error {
-	err := security.CheckWithAuthorizer(mc.Authorizer(), security.AccessRequest{
-		Resource: security.ResourceProcess,
-		Action:   security.ActionLoad,
-		Target:   "go",
-	})
+	fset := token.NewFileSet()
+
+	pkgs, err := goast.LoadPackagesChecked(mc,
+		packages.NeedName|packages.NeedFiles|packages.NeedSyntax|
+			packages.NeedTypes|packages.NeedTypesInfo|
+			packages.NeedImports|packages.NeedDeps,
+		fset, errCGBuildError, "go-callgraph",
+		pattern.Value)
 	if err != nil {
 		return err
-	}
-
-	fset := token.NewFileSet()
-	cfg := &packages.Config{
-		Mode: packages.NeedName |
-			packages.NeedFiles |
-			packages.NeedSyntax |
-			packages.NeedTypes |
-			packages.NeedTypesInfo |
-			packages.NeedImports |
-			packages.NeedDeps,
-		Context: mc.Context(),
-		Fset:    fset,
-	}
-
-	pkgs, loadErr := packages.Load(cfg, pattern.Value)
-	if loadErr != nil {
-		return werr.WrapForeignErrorf(errCGBuildError,
-			"go-callgraph: %s: %s", pattern.Value, loadErr)
-	}
-
-	var errs []string
-	for _, pkg := range pkgs {
-		for _, e := range pkg.Errors {
-			errs = append(errs, e.Error())
-		}
-	}
-	if len(errs) > 0 {
-		return werr.WrapForeignErrorf(errCGBuildError,
-			"go-callgraph: %s: %s", pattern.Value,
-			strings.Join(errs, "; "))
 	}
 
 	prog, _ := ssautil.Packages(pkgs, ssa.SanityCheckFunctions|ssa.InstantiateGenerics)

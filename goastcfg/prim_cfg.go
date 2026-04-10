@@ -17,7 +17,6 @@ package goastcfg
 import (
 	"go/token"
 	"go/types"
-	"strings"
 
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/go/ssa"
@@ -26,7 +25,6 @@ import (
 	"github.com/aalpar/wile-goast/goast"
 	"github.com/aalpar/wile/machine"
 	"github.com/aalpar/wile/registry/helpers"
-	"github.com/aalpar/wile/security"
 	"github.com/aalpar/wile/values"
 	"github.com/aalpar/wile/werr"
 )
@@ -215,48 +213,20 @@ func cfgFromSession(mc machine.CallContext, session *goast.GoSession, funcName s
 }
 
 func cfgFromPattern(mc machine.CallContext, pattern *values.String, funcName string) error {
-	err := security.CheckWithAuthorizer(mc.Authorizer(), security.AccessRequest{
-		Resource: security.ResourceProcess,
-		Action:   security.ActionLoad,
-		Target:   "go",
-	})
-	if err != nil {
-		return err
-	}
-
 	fset := token.NewFileSet()
 	mapper, err := parseCFGOpts(mc.Arg(2), fset)
 	if err != nil {
 		return err
 	}
 
-	cfg := &packages.Config{
-		Mode: packages.NeedName |
-			packages.NeedFiles |
-			packages.NeedSyntax |
-			packages.NeedTypes |
-			packages.NeedTypesInfo |
-			packages.NeedImports |
-			packages.NeedDeps,
-		Context: mc.Context(),
-		Fset:    fset,
-	}
-
-	pkgs, loadErr := packages.Load(cfg, pattern.Value)
-	if loadErr != nil {
-		return werr.WrapForeignErrorf(errCFGBuildError,
-			"go-cfg: %s: %s", pattern.Value, loadErr)
-	}
-
-	var errs []string
-	for _, pkg := range pkgs {
-		for _, e := range pkg.Errors {
-			errs = append(errs, e.Error())
-		}
-	}
-	if len(errs) > 0 {
-		return werr.WrapForeignErrorf(errCFGBuildError,
-			"go-cfg: %s: %s", pattern.Value, strings.Join(errs, "; "))
+	pkgs, err := goast.LoadPackagesChecked(mc,
+		packages.NeedName|packages.NeedFiles|packages.NeedSyntax|
+			packages.NeedTypes|packages.NeedTypesInfo|
+			packages.NeedImports|packages.NeedDeps,
+		fset, errCFGBuildError, "go-cfg",
+		pattern.Value)
+	if err != nil {
+		return err
 	}
 
 	prog, ssaPkgs := ssautil.Packages(pkgs, ssa.SanityCheckFunctions|ssa.InstantiateGenerics)

@@ -17,7 +17,6 @@ package goastlint
 import (
 	"go/token"
 	"sort"
-	"strings"
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/checker"
@@ -25,7 +24,6 @@ import (
 
 	"github.com/aalpar/wile-goast/goast"
 	"github.com/aalpar/wile/machine"
-	"github.com/aalpar/wile/security"
 	"github.com/aalpar/wile/values"
 	"github.com/aalpar/wile/werr"
 )
@@ -113,41 +111,14 @@ func analyzeFromSession(mc machine.CallContext, session *goast.GoSession, analyz
 }
 
 func analyzeFromPattern(mc machine.CallContext, patterns []string, analyzers []*analysis.Analyzer) error {
-	err := security.CheckWithAuthorizer(mc.Authorizer(), security.AccessRequest{
-		Resource: security.ResourceProcess,
-		Action:   security.ActionLoad,
-		Target:   "go",
-	})
+	fset := token.NewFileSet()
+
+	pkgs, err := goast.LoadPackagesChecked(mc,
+		packages.LoadAllSyntax,
+		fset, errLintBuildError, "go-analyze",
+		patterns...)
 	if err != nil {
 		return err
-	}
-
-	fset := token.NewFileSet()
-	cfg := &packages.Config{
-		Mode:    packages.LoadAllSyntax,
-		Context: mc.Context(),
-		Fset:    fset,
-	}
-
-	pkgs, loadErr := packages.Load(cfg, patterns...)
-	if loadErr != nil {
-		return werr.WrapForeignErrorf(errLintBuildError,
-			"go-analyze: %s", loadErr)
-	}
-	if len(pkgs) == 0 {
-		return werr.WrapForeignErrorf(errLintBuildError,
-			"go-analyze: no packages found")
-	}
-
-	var errs []string
-	for _, pkg := range pkgs {
-		for _, e := range pkg.Errors {
-			errs = append(errs, e.Error())
-		}
-	}
-	if len(errs) > 0 {
-		return werr.WrapForeignErrorf(errLintBuildError,
-			"go-analyze: %s", strings.Join(errs, "; "))
 	}
 
 	graph, analyzeErr := checker.Analyze(analyzers, pkgs, nil)
