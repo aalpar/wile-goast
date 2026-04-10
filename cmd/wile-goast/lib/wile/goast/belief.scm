@@ -122,23 +122,12 @@
         info))))
 
 ;; Find the field summary for a function by package path and name.
-;; Match field-index func name (SSA-qualified, e.g. "pkg.Func" or
-;; "(*pkg.Type).Method") against func-name which may be short (Form 1)
-;; or fully qualified (Form 3). Exact match handles Form 3 = Form 3.
-(define (ssa-name-matches? ssa-name func-name)
-  (let ((slen (string-length ssa-name))
-        (nlen (string-length func-name)))
-    (or (string=? ssa-name func-name)
-        (and (> slen nlen)
-             (string=? (substring ssa-name (- slen nlen) slen) func-name)
-             (let ((prev (string-ref ssa-name (- slen nlen 1))))
-               (or (char=? prev #\.) (char=? prev #\))))))))
-
+;; Both field-index func and func-name are Form 3 — exact match.
 (define (find-field-summary index pkg-path func-name)
   (let loop ((entries (if (pair? index) index '())))
     (if (null? entries) #f
       (let ((entry (car entries)))
-        (if (and (ssa-name-matches? (nf entry 'func) func-name)
+        (if (and (equal? (nf entry 'func) func-name)
                  (equal? (nf entry 'pkg) pkg-path))
           entry
           (loop (cdr entries)))))))
@@ -163,8 +152,10 @@
           ((member? (car rs) available) (loop (cdr rs)))
           (else #f))))
 
-;; Extract short name from SSA qualified name.
-;; "(*Debugger).Continue" -> "Continue", "init" -> "init"
+;; Extract method name from Form 3 qualified name.
+;; Used for interface method matching where go-interface-implementors
+;; returns short method names (e.g., "Close", "Read").
+;; "(*pkg.Debugger).Continue" -> "Continue", "pkg.init" -> "init"
 (define (ssa-short-name full-name)
   (let ((len (string-length full-name)))
     (let loop ((i (- len 1)))
@@ -173,27 +164,16 @@
              (substring full-name (+ i 1) len))
             (else (loop (- i 1)))))))
 
-;; SSA name lookup index — two-level, keyed by (pkg-path, short-name).
-;; First level: package path -> alist of (short-name . ssa-func).
-;; Methods like (*Debugger).Continue are indexed as "Continue" within
-;; their package's sub-index.
+;; SSA name lookup index — flat alist keyed by Form 3 name.
+;; Form 3 is globally unique, so no two-level (pkg, short) structure needed.
 (define (build-ssa-index ssa-funcs)
   (let loop ((fns (if (pair? ssa-funcs) ssa-funcs '()))
              (index '()))
     (if (null? fns) index
       (let* ((fn (car fns))
-             (name (nf fn 'name))
-             (pkg (nf fn 'pkg))
-             (short (and name (ssa-short-name name))))
-        (if (and short pkg)
-          (let ((pkg-entry (assoc pkg index)))
-            (if pkg-entry
-              (begin
-                (set-cdr! pkg-entry
-                  (cons (cons short fn) (cdr pkg-entry)))
-                (loop (cdr fns) index))
-              (loop (cdr fns)
-                    (cons (list pkg (cons short fn)) index))))
+             (name (nf fn 'name)))
+        (if name
+          (loop (cdr fns) (cons (cons name fn) index))
           (loop (cdr fns) index))))))
 
 (define (ctx-ssa-index ctx)
@@ -202,16 +182,13 @@
         (ctx-set! ctx 'ssa-index index)
         index)))
 
-;; Package-qualified SSA function lookup.
-;; Accepts short ("Func") or Form 3 ("pkg.Func") names — extracts
-;; the short name via ssa-short-name for index lookup.
+;; SSA function lookup by Form 3 name.
+;; Form 3 is globally unique — pkg-path is kept in the signature
+;; for backward compatibility but not used for lookup.
 (define (ctx-find-ssa-func ctx pkg-path name)
-  "Look up an SSA function by package path and name.\nAccepts short or fully-qualified (Form 3) names.\nBuilds an index on first call for O(1) subsequent lookups.\nReturns an ssa-func node or #f if not found.\nThe ssa-func has: name, signature, params, free-vars, blocks, pkg.\nUse (nf ssa-func 'blocks) to access SSA basic blocks.\n\nParameters:\n  ctx : list\n  pkg-path : string\n  name : string\nReturns: any\nCategory: goast-belief\n\nExamples:\n  (define ssa-fn (ctx-find-ssa-func ctx \"my/pkg\" \"handleRequest\"))\n  (when ssa-fn\n    (nf ssa-fn 'name)       ; => \"handleRequest\"\n    (nf ssa-fn 'blocks)     ; => list of ssa-block nodes\n    (nf ssa-fn 'signature)) ; => \"func(w http.ResponseWriter, r *http.Request)\"\n\nSee also: `ctx-ssa', `make-context', `custom'."
-  (let* ((short (ssa-short-name name))
-         (pkg-entry (assoc pkg-path (ctx-ssa-index ctx))))
-    (and pkg-entry
-         (let ((entry (assoc short (cdr pkg-entry))))
-           (and entry (cdr entry))))))
+  "Look up an SSA function by Form 3 name.\nBuilds an index on first call for O(1) subsequent lookups.\nReturns an ssa-func node or #f if not found.\nThe ssa-func has: name, signature, params, free-vars, blocks, pkg.\nUse (nf ssa-func 'blocks) to access SSA basic blocks.\n\nParameters:\n  ctx : list\n  pkg-path : string\n  name : string\nReturns: any\nCategory: goast-belief\n\nExamples:\n  (define ssa-fn (ctx-find-ssa-func ctx \"my/pkg\" \"my/pkg.handleRequest\"))\n  (when ssa-fn\n    (nf ssa-fn 'name)       ; => \"my/pkg.handleRequest\"\n    (nf ssa-fn 'blocks)     ; => list of ssa-block nodes\n    (nf ssa-fn 'signature)) ; => \"func(w http.ResponseWriter, r *http.Request)\"\n\nSee also: `ctx-ssa', `make-context', `custom'."
+  (let ((entry (assoc name (ctx-ssa-index ctx))))
+    (and entry (cdr entry))))
 
 ;; Store belief results for bootstrapping via sites-from.
 (define (ctx-store-result! ctx name adherence-sites deviation-sites)
@@ -308,7 +285,7 @@
                 (and caller
                      (let loop ((fs funcs))
                        (cond ((null? fs) #f)
-                             ((ssa-name-matches? caller (nf (car fs) 'name)) (car fs))
+                             ((equal? caller (nf (car fs) 'name)) (car fs))
                              (else (loop (cdr fs))))))))
             edges)
           '())))))

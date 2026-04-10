@@ -81,17 +81,17 @@ func TestBeliefSSALookup(t *testing.T) {
 	engine := newBeliefEngine(t)
 
 	// Build SSA for the goast package. Look up a known function
-	// by package path + short name. Should return the SSA function.
+	// by package path + Form 3 name. Should return the SSA function.
 	result := eval(t, engine, `
 		(import (wile goast belief))
 
 		(let ((ctx (make-context "github.com/aalpar/wile-goast/goast")))
 		  ;; Trigger SSA build
 		  (ctx-ssa ctx)
-		  ;; Look up PrimGoParseFile by package path + short name
+		  ;; Look up PrimGoParseFile by Form 3 name
 		  (let ((fn (ctx-find-ssa-func ctx
 		              "github.com/aalpar/wile-goast/goast"
-		              "PrimGoParseFile")))
+		              "github.com/aalpar/wile-goast/goast.PrimGoParseFile")))
 		    (and fn (nf fn 'name))))
 	`)
 	c := qt.New(t)
@@ -803,7 +803,7 @@ func TestDataflowSSANames(t *testing.T) {
 		              "github.com/aalpar/wile-goast/examples/goast-query/testdata/checking"))
 		(define ssa-fn (ctx-find-ssa-func ctx
 		  "github.com/aalpar/wile-goast/examples/goast-query/testdata/checking"
-		  "HandleSafeA"))
+		  "github.com/aalpar/wile-goast/examples/goast-query/testdata/checking.HandleSafeA"))
 		(define instrs (ssa-all-instrs ssa-fn))
 		(define names (ssa-instruction-names ssa-fn))
 	`)
@@ -836,14 +836,14 @@ func TestDataflowDefuseReachable(t *testing.T) {
 
 		(define ssa-safe (ctx-find-ssa-func ctx
 		  "github.com/aalpar/wile-goast/examples/goast-query/testdata/checking"
-		  "HandleSafeA"))
+		  "github.com/aalpar/wile-goast/examples/goast-query/testdata/checking.HandleSafeA"))
 		(define safe-result
 		  (defuse-reachable? ssa-safe (list "err")
 		    (lambda (i) (tag? i 'ssa-if)) 4))
 
 		(define ssa-unsafe (ctx-find-ssa-func ctx
 		  "github.com/aalpar/wile-goast/examples/goast-query/testdata/checking"
-		  "HandleUnsafe"))
+		  "github.com/aalpar/wile-goast/examples/goast-query/testdata/checking.HandleUnsafe"))
 		(define unsafe-result
 		  (defuse-reachable? ssa-unsafe (list "err")
 		    (lambda (i) (tag? i 'ssa-if)) 4))
@@ -871,7 +871,7 @@ func TestDataflowBlockInstrs(t *testing.T) {
 		              "github.com/aalpar/wile-goast/examples/goast-query/testdata/checking"))
 		(define ssa-fn (ctx-find-ssa-func ctx
 		  "github.com/aalpar/wile-goast/examples/goast-query/testdata/checking"
-		  "HandleSafeA"))
+		  "github.com/aalpar/wile-goast/examples/goast-query/testdata/checking.HandleSafeA"))
 		(define blocks (nf ssa-fn 'blocks))
 		(define b0 (car blocks))
 	`)
@@ -899,7 +899,7 @@ func TestDataflowRunAnalysisForwardSingleBlock(t *testing.T) {
 		              "github.com/aalpar/wile-goast/examples/goast-query/testdata/checking"))
 		(define fn (ctx-find-ssa-func ctx
 		  "github.com/aalpar/wile-goast/examples/goast-query/testdata/checking"
-		  "HandleUnsafe"))
+		  "github.com/aalpar/wile-goast/examples/goast-query/testdata/checking.HandleUnsafe"))
 
 		;; Reaching names: powerset lattice over instruction names in function
 		(define universe (ssa-instruction-names fn))
@@ -943,7 +943,7 @@ func TestDataflowRunAnalysisForwardBranching(t *testing.T) {
 		  "github.com/aalpar/wile-goast/examples/goast-query/testdata/checking"))
 		(define fn (let loop ((fs ssa))
 		  (cond ((null? fs) #f)
-		        ((equal? (nf (car fs) 'name) "HandleSafeA") (car fs))
+		        ((equal? (nf (car fs) 'name) "github.com/aalpar/wile-goast/examples/goast-query/testdata/checking.HandleSafeA") (car fs))
 		        (else (loop (cdr fs))))))
 
 		(define universe (ssa-instruction-names fn))
@@ -993,7 +993,7 @@ func TestDataflowRunAnalysisForwardJoin(t *testing.T) {
 		  "github.com/aalpar/wile-goast/examples/goast-query/testdata/pairing"))
 		(define fn (let loop ((fs ssa))
 		  (cond ((null? fs) #f)
-		        ((equal? (nf (car fs) 'name) "UpdateSafe") (car fs))
+		        ((equal? (nf (car fs) 'name) "(*github.com/aalpar/wile-goast/examples/goast-query/testdata/pairing.Service).UpdateSafe") (car fs))
 		        (else (loop (cdr fs))))))
 
 		(define universe (ssa-instruction-names fn))
@@ -1033,7 +1033,7 @@ func TestDataflowRunAnalysisInitialState(t *testing.T) {
 		  "github.com/aalpar/wile-goast/examples/goast-query/testdata/checking"))
 		(define fn (let loop ((fs ssa))
 		  (cond ((null? fs) #f)
-		        ((equal? (nf (car fs) 'name) "HandleUnsafe") (car fs))
+		        ((equal? (nf (car fs) 'name) "github.com/aalpar/wile-goast/examples/goast-query/testdata/checking.HandleUnsafe") (car fs))
 		        (else (loop (cdr fs))))))
 
 		(define seeded-universe (cons "SEED" (ssa-instruction-names fn)))
@@ -1069,7 +1069,7 @@ func TestDataflowRunAnalysisBackward(t *testing.T) {
 		  "github.com/aalpar/wile-goast/examples/goast-query/testdata/checking"))
 		(define fn (let loop ((fs ssa))
 		  (cond ((null? fs) #f)
-		        ((equal? (nf (car fs) 'name) "HandleSafeA") (car fs))
+		        ((equal? (nf (car fs) 'name) "github.com/aalpar/wile-goast/examples/goast-query/testdata/checking.HandleSafeA") (car fs))
 		        (else (loop (cdr fs))))))
 
 		(define universe (ssa-instruction-names fn))
@@ -1117,7 +1117,7 @@ func TestDataflowMonotonicityViolation(t *testing.T) {
 		  "github.com/aalpar/wile-goast/examples/goast-query/testdata/checking"))
 		(define fn (let loop ((fs ssa))
 		  (cond ((null? fs) #f)
-		        ((equal? (nf (car fs) 'name) "HandleSafeA") (car fs))
+		        ((equal? (nf (car fs) 'name) "github.com/aalpar/wile-goast/examples/goast-query/testdata/checking.HandleSafeA") (car fs))
 		        (else (loop (cdr fs))))))
 
 		(define universe (ssa-instruction-names fn))
