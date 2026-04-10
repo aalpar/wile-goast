@@ -312,7 +312,7 @@ func buildFuncSummary(fn *ssa.Function, pkgPath string) values.Value {
 		accesses = append(accesses, fieldAccessNode(info, "read"))
 	}
 
-	funcName := fn.Name()
+	funcName := fn.String()
 	return goast.Node("ssa-field-summary",
 		goast.Field("func", goast.Str(funcName)),
 		goast.Field("pkg", goast.Str(pkgPath)),

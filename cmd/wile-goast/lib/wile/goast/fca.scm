@@ -199,9 +199,7 @@
          (entries
            (filter-map
              (lambda (summary)
-               (let* ((func-name (nf summary 'func))
-                      (pkg (nf summary 'pkg))
-                      (qualified (string-append pkg "." func-name))
+               (let* ((qualified (nf summary 'func))
                       (fields (nf summary 'fields))
                       (attrs (unique
                                (filter-map

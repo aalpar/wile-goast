@@ -122,11 +122,21 @@
         info))))
 
 ;; Find the field summary for a function by package path and name.
+;; Match field-index func name (SSA-qualified, e.g. "pkg.Func" or
+;; "(*pkg.Type).Method") against short AST func-name (e.g. "Func").
+(define (ssa-name-matches? ssa-name short-name)
+  (let ((slen (string-length ssa-name))
+        (nlen (string-length short-name)))
+    (and (> slen nlen)
+         (string=? (substring ssa-name (- slen nlen) slen) short-name)
+         (let ((prev (string-ref ssa-name (- slen nlen 1))))
+           (or (char=? prev #\.) (char=? prev #\)))))))
+
 (define (find-field-summary index pkg-path func-name)
   (let loop ((entries (if (pair? index) index '())))
     (if (null? entries) #f
       (let ((entry (car entries)))
-        (if (and (equal? (nf entry 'func) func-name)
+        (if (and (ssa-name-matches? (nf entry 'func) func-name)
                  (equal? (nf entry 'pkg) pkg-path))
           entry
           (loop (cdr entries)))))))
