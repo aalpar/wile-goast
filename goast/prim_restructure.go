@@ -677,7 +677,7 @@ func rewriteLoopReturns(stmts []ast.Stmt, counter *int, labelCounter *int, resul
 
 		// Rebuild the loop with the rewritten body.
 		newBody := &ast.BlockStmt{List: newBodyStmts}
-		result = append(result, makeVarDeclInt(ctlName))
+		result = append(result, makeVarDeclTyped(ctlName, ast.NewIdent("int")))
 		for i, ty := range types {
 			result = append(result, makeVarDeclTyped(fmt.Sprintf("_r%d", resultVarBase+i), ty))
 		}
@@ -897,21 +897,6 @@ func replaceReturnsInIf(
 }
 
 // --- AST constructors for loop rewriting ---
-
-// makeVarDeclInt creates: var <name> int
-func makeVarDeclInt(name string) ast.Stmt {
-	return &ast.DeclStmt{
-		Decl: &ast.GenDecl{
-			Tok: token.VAR,
-			Specs: []ast.Spec{
-				&ast.ValueSpec{
-					Names: []*ast.Ident{ast.NewIdent(name)},
-					Type:  ast.NewIdent("int"),
-				},
-			},
-		},
-	}
-}
 
 // makeIntAssign creates: <name> = <val>
 func makeIntAssign(name string, val int) ast.Stmt {
