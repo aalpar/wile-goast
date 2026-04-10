@@ -17,7 +17,6 @@ package goastssa
 import (
 	"go/token"
 	"go/types"
-	"strings"
 
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/go/ssa"
@@ -25,7 +24,6 @@ import (
 
 	"github.com/aalpar/wile-goast/goast"
 	"github.com/aalpar/wile/machine"
-	"github.com/aalpar/wile/security"
 	"github.com/aalpar/wile/values"
 	"github.com/aalpar/wile/werr"
 )
@@ -95,49 +93,20 @@ func ssaBuildFromSession(mc machine.CallContext, session *goast.GoSession) error
 }
 
 func ssaBuildFromPattern(mc machine.CallContext, pattern *values.String) error {
-	err := security.CheckWithAuthorizer(mc.Authorizer(), security.AccessRequest{
-		Resource: security.ResourceProcess,
-		Action:   security.ActionLoad,
-		Target:   "go",
-	})
-	if err != nil {
-		return err
-	}
-
 	fset := token.NewFileSet()
 	mapper, err := parseSSAOpts(mc.Arg(1), fset)
 	if err != nil {
 		return err
 	}
 
-	cfg := &packages.Config{
-		Mode: packages.NeedName |
-			packages.NeedFiles |
-			packages.NeedSyntax |
-			packages.NeedTypes |
-			packages.NeedTypesInfo |
-			packages.NeedImports |
-			packages.NeedDeps,
-		Context: mc.Context(),
-		Fset:    fset,
-	}
-
-	pkgs, loadErr := packages.Load(cfg, pattern.Value)
-	if loadErr != nil {
-		return werr.WrapForeignErrorf(errSSABuildError,
-			"go-ssa-build: %s: %s", pattern.Value, loadErr)
-	}
-
-	var errs []string
-	for _, pkg := range pkgs {
-		for _, e := range pkg.Errors {
-			errs = append(errs, e.Error())
-		}
-	}
-	if len(errs) > 0 {
-		return werr.WrapForeignErrorf(errSSABuildError,
-			"go-ssa-build: %s: %s", pattern.Value,
-			strings.Join(errs, "; "))
+	pkgs, err := goast.LoadPackagesChecked(mc,
+		packages.NeedName|packages.NeedFiles|packages.NeedSyntax|
+			packages.NeedTypes|packages.NeedTypesInfo|
+			packages.NeedImports|packages.NeedDeps,
+		fset, errSSABuildError, "go-ssa-build",
+		pattern.Value)
+	if err != nil {
+		return err
 	}
 
 	prog, ssaPkgs := ssautil.Packages(pkgs, ssa.SanityCheckFunctions|ssa.InstantiateGenerics)
@@ -218,44 +187,16 @@ func fieldIndexFromSession(mc machine.CallContext, session *goast.GoSession) err
 }
 
 func fieldIndexFromPattern(mc machine.CallContext, pattern *values.String) error {
-	err := security.CheckWithAuthorizer(mc.Authorizer(), security.AccessRequest{
-		Resource: security.ResourceProcess,
-		Action:   security.ActionLoad,
-		Target:   "go",
-	})
+	fset := token.NewFileSet()
+
+	pkgs, err := goast.LoadPackagesChecked(mc,
+		packages.NeedName|packages.NeedFiles|packages.NeedSyntax|
+			packages.NeedTypes|packages.NeedTypesInfo|
+			packages.NeedImports|packages.NeedDeps,
+		fset, errSSAFieldIndexError, "go-ssa-field-index",
+		pattern.Value)
 	if err != nil {
 		return err
-	}
-
-	fset := token.NewFileSet()
-	cfg := &packages.Config{
-		Mode: packages.NeedName |
-			packages.NeedFiles |
-			packages.NeedSyntax |
-			packages.NeedTypes |
-			packages.NeedTypesInfo |
-			packages.NeedImports |
-			packages.NeedDeps,
-		Context: mc.Context(),
-		Fset:    fset,
-	}
-
-	pkgs, loadErr := packages.Load(cfg, pattern.Value)
-	if loadErr != nil {
-		return werr.WrapForeignErrorf(errSSAFieldIndexError,
-			"go-ssa-field-index: %s: %s", pattern.Value, loadErr)
-	}
-
-	var errs []string
-	for _, pkg := range pkgs {
-		for _, e := range pkg.Errors {
-			errs = append(errs, e.Error())
-		}
-	}
-	if len(errs) > 0 {
-		return werr.WrapForeignErrorf(errSSAFieldIndexError,
-			"go-ssa-field-index: %s: %s", pattern.Value,
-			strings.Join(errs, "; "))
 	}
 
 	_, ssaPkgs := ssautil.Packages(pkgs, ssa.SanityCheckFunctions|ssa.InstantiateGenerics)
