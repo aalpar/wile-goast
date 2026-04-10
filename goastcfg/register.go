@@ -72,7 +72,7 @@ func addPrimitives(r *registry.Registry) error {
 				"  (nf (car dom) 'idom)      ; => #f  (root)\n\n" +
 				"See also: `go-cfg', `go-cfg-dominates?'.",
 			ParamNames: []string{"cfg"}, Category: "goast-cfg",
-			ParamTypes: []values.ValueType{values.TypeList},
+			ParamTypes: []values.TypeConstraint{values.TypeList},
 			ReturnType: values.TypeList},
 		{Name: "go-cfg-dominates?", ParamCount: 3, Impl: PrimGoCFGDominates,
 			Doc: "Returns #t if block A dominates block B in the dominator tree.\n" +

@@ -91,7 +91,7 @@ func addPrimitives(r *registry.Registry) error {
 				"  ;; Two structurally equivalent functions produce identical output.\n\n" +
 				"See also: `go-ssa-build'.",
 			ParamNames: []string{"ssa-func"}, Category: "goast-ssa",
-			ParamTypes: []values.ValueType{values.TypeList},
+			ParamTypes: []values.TypeConstraint{values.TypeList},
 			ReturnType: values.TypeList},
 	}, registry.PhaseRuntime)
 	return nil

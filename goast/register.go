@@ -68,7 +68,7 @@ func addPrimitives(r *registry.Registry) error {
 				"  (nf expr 'x)         ; => (ident (name . \"x\"))\n\n" +
 				"See also: `go-parse-file', `go-node-type'.",
 			ParamNames: []string{"source"}, Category: "goast",
-			ParamTypes: []values.ValueType{values.TypeString},
+			ParamTypes: []values.TypeConstraint{values.TypeString},
 			ReturnType: values.TypeList},
 		{Name: "go-format", ParamCount: 1, Impl: PrimGoFormat,
 			Doc: "Converts an s-expression AST back to Go source code.\n" +
@@ -80,7 +80,7 @@ func addPrimitives(r *registry.Registry) error {
 				"  (go-format (go-parse-file \"main.go\"))\n\n" +
 				"See also: `go-parse-file', `go-parse-string'.",
 			ParamNames: []string{"ast"}, Category: "goast",
-			ParamTypes: []values.ValueType{values.TypeList},
+			ParamTypes: []values.TypeConstraint{values.TypeList},
 			ReturnType: values.TypeString},
 		{Name: "go-node-type", ParamCount: 1, Impl: PrimGoNodeType,
 			Doc: "Returns the tag symbol of an AST node.\n" +
@@ -93,7 +93,7 @@ func addPrimitives(r *registry.Registry) error {
 				"  (tag? node 'func-decl)  ; preferred for dispatch\n\n" +
 				"See also: `go-parse-file', `nf', `tag?'.",
 			ParamNames: []string{"ast"}, Category: "goast",
-			ParamTypes: []values.ValueType{values.TypeList}},
+			ParamTypes: []values.TypeConstraint{values.TypeList}},
 		{Name: "go-typecheck-package", ParamCount: 2, IsVariadic: true, Impl: PrimGoTypecheckPackage,
 			Doc: "Loads a Go package with full type information and returns annotated ASTs.\n" +
 				"First arg is a package pattern or GoSession. Options: 'debug.\n" +
