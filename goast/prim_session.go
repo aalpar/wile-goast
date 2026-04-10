@@ -17,13 +17,11 @@ package goast
 import (
 	"go/token"
 	"sort"
-	"strings"
 
 	"golang.org/x/tools/go/packages"
 
 	"github.com/aalpar/wile/machine"
 	"github.com/aalpar/wile/registry/helpers"
-	"github.com/aalpar/wile/security"
 	"github.com/aalpar/wile/values"
 	"github.com/aalpar/wile/werr"
 )
@@ -33,15 +31,6 @@ import (
 // Loads Go packages and returns a GoSession for reuse across primitives.
 func PrimGoLoad(mc machine.CallContext) error {
 	first, err := helpers.RequireArg[*values.String](mc, 0, werr.ErrNotAString, "go-load")
-	if err != nil {
-		return err
-	}
-
-	err = security.CheckWithAuthorizer(mc.Authorizer(), security.AccessRequest{
-		Resource: security.ResourceProcess,
-		Action:   security.ActionLoad,
-		Target:   "go",
-	})
 	if err != nil {
 		return err
 	}
@@ -90,27 +79,10 @@ func PrimGoLoad(mc machine.CallContext) error {
 		mode = packages.LoadAllSyntax
 	}
 
-	cfg := &packages.Config{
-		Mode:    mode,
-		Context: mc.Context(),
-		Fset:    fset,
-	}
-
-	pkgs, loadErr := packages.Load(cfg, patterns...)
-	if loadErr != nil {
-		return werr.WrapForeignErrorf(errGoLoadError,
-			"go-load: %s", loadErr)
-	}
-
-	var errs []string
-	for _, pkg := range pkgs {
-		for _, e := range pkg.Errors {
-			errs = append(errs, e.Error())
-		}
-	}
-	if len(errs) > 0 {
-		return werr.WrapForeignErrorf(errGoLoadError,
-			"go-load: %s", strings.Join(errs, "; "))
+	pkgs, err := LoadPackagesChecked(mc, mode, fset,
+		errGoLoadError, "go-load", patterns...)
+	if err != nil {
+		return err
 	}
 
 	mc.SetValue(NewGoSession(patterns, pkgs, fset, lintMode))
@@ -133,15 +105,6 @@ func PrimGoSessionP(mc machine.CallContext) error {
 // import paths without type checking or syntax loading.
 func PrimGoListDeps(mc machine.CallContext) error {
 	first, err := helpers.RequireArg[*values.String](mc, 0, werr.ErrNotAString, "go-list-deps")
-	if err != nil {
-		return err
-	}
-
-	err = security.CheckWithAuthorizer(mc.Authorizer(), security.AccessRequest{
-		Resource: security.ResourceProcess,
-		Action:   security.ActionLoad,
-		Target:   "go",
-	})
 	if err != nil {
 		return err
 	}
@@ -169,15 +132,12 @@ func PrimGoListDeps(mc machine.CallContext) error {
 		}
 	}
 
-	cfg := &packages.Config{
-		Mode:    packages.NeedName | packages.NeedImports,
-		Context: mc.Context(),
-	}
-
-	pkgs, loadErr := packages.Load(cfg, patterns...)
-	if loadErr != nil {
-		return werr.WrapForeignErrorf(errGoLoadError,
-			"go-list-deps: %s", loadErr)
+	pkgs, err := LoadPackagesChecked(mc,
+		packages.NeedName|packages.NeedImports,
+		nil, errGoLoadError, "go-list-deps",
+		patterns...)
+	if err != nil {
+		return err
 	}
 
 	// BFS to collect transitive import paths.

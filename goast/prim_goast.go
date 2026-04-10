@@ -262,52 +262,19 @@ func typecheckFromSession(mc machine.CallContext, session *GoSession) error {
 }
 
 func typecheckFromPattern(mc machine.CallContext, pattern *values.String) error {
-	// packages.Load internally spawns "go list" to perform module-aware import
-	// resolution and type information collection. That subprocess can read
-	// arbitrary source files and download modules from the network, so the
-	// correct security gate is ResourceProcess/ActionLoad targeting "go" — not
-	// ResourceFile/ActionRead. File reads are an internal implementation detail
-	// of go list, not paths directly supplied by the Scheme caller.
-	err := security.CheckWithAuthorizer(mc.Authorizer(), security.AccessRequest{
-		Resource: security.ResourceProcess,
-		Action:   security.ActionLoad,
-		Target:   "go",
-	})
-	if err != nil {
-		return err
-	}
-
 	fset := token.NewFileSet()
 	baseOpts, _, optErr := parseOpts(mc.Arg(1), fset)
 	if optErr != nil {
 		return optErr
 	}
 
-	cfg := &packages.Config{
-		Mode: packages.NeedName |
-			packages.NeedFiles |
-			packages.NeedSyntax |
-			packages.NeedTypes |
-			packages.NeedTypesInfo,
-		Context: mc.Context(),
-		Fset:    fset,
-	}
-
-	pkgs, loadErr := packages.Load(cfg, pattern.Value)
-	if loadErr != nil {
-		return werr.WrapForeignErrorf(errGoPackageLoadError,
-			"go-typecheck-package: %s: %s", pattern.Value, loadErr)
-	}
-
-	var errs []string
-	for _, pkg := range pkgs {
-		for _, e := range pkg.Errors {
-			errs = append(errs, e.Error())
-		}
-	}
-	if len(errs) > 0 {
-		return werr.WrapForeignErrorf(errGoPackageLoadError,
-			"go-typecheck-package: %s: %s", pattern.Value, strings.Join(errs, "; "))
+	pkgs, err := LoadPackagesChecked(mc,
+		packages.NeedName|packages.NeedFiles|packages.NeedSyntax|
+			packages.NeedTypes|packages.NeedTypesInfo,
+		fset, errGoPackageLoadError, "go-typecheck-package",
+		pattern.Value)
+	if err != nil {
+		return err
 	}
 
 	result := make([]values.Value, len(pkgs))
@@ -345,36 +312,13 @@ func implementorsFromSession(mc machine.CallContext, ifaceName string, session *
 }
 
 func implementorsFromPattern(mc machine.CallContext, ifaceName string, pattern *values.String) error {
-	err := security.CheckWithAuthorizer(mc.Authorizer(), security.AccessRequest{
-		Resource: security.ResourceProcess,
-		Action:   security.ActionLoad,
-		Target:   "go",
-	})
+	pkgs, err := LoadPackagesChecked(mc,
+		packages.NeedName|packages.NeedTypes,
+		nil, errGoPackageLoadError, "go-interface-implementors",
+		pattern.Value)
 	if err != nil {
 		return err
 	}
-
-	cfg := &packages.Config{
-		Mode:    packages.NeedName | packages.NeedTypes,
-		Context: mc.Context(),
-	}
-	pkgs, loadErr := packages.Load(cfg, pattern.Value)
-	if loadErr != nil {
-		return werr.WrapForeignErrorf(errGoPackageLoadError,
-			"go-interface-implementors: %s: %s", pattern.Value, loadErr)
-	}
-
-	var errs []string
-	for _, pkg := range pkgs {
-		for _, e := range pkg.Errors {
-			errs = append(errs, e.Error())
-		}
-	}
-	if len(errs) > 0 {
-		return werr.WrapForeignErrorf(errGoPackageLoadError,
-			"go-interface-implementors: %s: %s", pattern.Value, strings.Join(errs, "; "))
-	}
-
 	return findImplementors(mc, ifaceName, pkgs)
 }
 
