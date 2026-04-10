@@ -245,50 +245,29 @@
                fn))
         funcs))))
 
-;; Resolve a short function name to its fully-qualified call graph name.
-;; Walks the call graph nodes looking for an exact match or a name ending
-;; with ".func-name". Returns the qualified name, or #f if not found.
-(define (cg-resolve-name cg func-name)
-  (let ((suffix (string-append "." func-name)))
-    (let loop ((nodes (if (pair? cg) cg '())))
-      (cond ((null? nodes) #f)
-            (else
-              (let ((name (nf (car nodes) 'name)))
-                (if (and name
-                         (or (equal? name func-name)
-                             (let ((nlen (string-length name))
-                                   (slen (string-length suffix)))
-                               (and (>= nlen slen)
-                                    (equal? (substring name (- nlen slen) nlen)
-                                            suffix)))))
-                  name
-                  (loop (cdr nodes)))))))))
-
 ;; (callers-of func-name) -> (lambda (ctx) -> list-of-func-decls)
 ;; Finds all callers of func-name via the call graph, then looks up
 ;; each caller's AST func-decl from the loaded packages. Callers
 ;; without an AST func-decl (e.g., generated code) are skipped.
+;; Accepts Form 1 short names or Form 3 qualified names — the call
+;; graph primitive handles resolution.
 (define (callers-of func-name)
-  "Site selector: all callers of a function.\nReturns a procedure (lambda (ctx) -> list-of-func-decls).\nUses the call graph to resolve callers, then maps back to AST func-decls.\n\nParameters:\n  func-name : string\nReturns: procedure\nCategory: goast-belief\n\nExamples:\n  (callers-of \"handleRequest\")\n\nSee also: `functions-matching', `go-callgraph-callers'."
+  "Site selector: all callers of a function.\nReturns a procedure (lambda (ctx) -> list-of-func-decls).\nUses the call graph to resolve callers, then maps back to AST func-decls.\nAccepts short names (\"Step\") or qualified names (\"(*pkg.raft).Step\").\n\nParameters:\n  func-name : string\nReturns: procedure\nCategory: goast-belief\n\nExamples:\n  (callers-of \"handleRequest\")\n\nSee also: `functions-matching', `go-callgraph-callers'."
   (lambda (ctx)
     (let* ((cg (ctx-callgraph ctx))
            (funcs (all-func-decls (ctx-pkgs ctx)))
-           (qualified (cg-resolve-name cg func-name)))
-      (when (not qualified)
-        (error (string-append "callers-of: \"" func-name
-                              "\" not found in call graph")))
-      (let ((edges (go-callgraph-callers cg qualified)))
-        (if (and edges (pair? edges))
-          (filter-map
-            (lambda (e)
-              (let ((caller (nf e 'caller)))
-                (and caller
-                     (let loop ((fs funcs))
-                       (cond ((null? fs) #f)
-                             ((equal? caller (nf (car fs) 'name)) (car fs))
-                             (else (loop (cdr fs))))))))
-            edges)
-          '())))))
+           (edges (go-callgraph-callers cg func-name)))
+      (if (and edges (pair? edges))
+        (filter-map
+          (lambda (e)
+            (let ((caller (nf e 'caller)))
+              (and caller
+                   (let loop ((fs funcs))
+                     (cond ((null? fs) #f)
+                           ((equal? caller (nf (car fs) 'name)) (car fs))
+                           (else (loop (cdr fs))))))))
+          edges)
+        '()))))
 
 ;; (methods-of type-name) -> (lambda (ctx) -> list-of-func-decls)
 ;; Matches methods whose receiver type contains type-name.

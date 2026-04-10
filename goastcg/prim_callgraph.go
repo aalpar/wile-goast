@@ -17,6 +17,7 @@ package goastcg
 import (
 	"go/token"
 	"sort"
+	"strings"
 
 	"golang.org/x/tools/go/callgraph"
 	"golang.org/x/tools/go/callgraph/cha"
@@ -152,9 +153,13 @@ func dispatchCallgraph(prog *ssa.Program, algorithm string) (*callgraph.Graph, e
 }
 
 // findCGNode walks a list of cg-node s-expressions and returns the
-// node whose "name" field exactly matches the given function name.
+// node whose "name" field matches the given function name.
+// Accepts Form 3 qualified names (exact match) or Form 1 short names
+// (suffix match: "." + name or ")." + name at end of node name).
 // Returns nil if not found.
 func findCGNode(graph values.Value, name string) values.Value {
+	isQualified := strings.Contains(name, ".") || strings.Contains(name, "(")
+
 	tuple, ok := graph.(values.Tuple)
 	if !ok {
 		return nil
@@ -173,7 +178,7 @@ func findCGNode(graph values.Value, name string) values.Value {
 			nameVal, found := goast.GetField(np.Cdr(), "name")
 			if found {
 				s, ok := nameVal.(*values.String)
-				if ok && s.Value == name {
+				if ok && cgNameMatches(s.Value, name, isQualified) {
 					return node
 				}
 			}
@@ -185,6 +190,28 @@ func findCGNode(graph values.Value, name string) values.Value {
 		}
 	}
 	return nil
+}
+
+// cgNameMatches tests whether a CG node name matches the search name.
+// Qualified names (Form 3) require exact match. Short names (Form 1)
+// match if the node name ends with ".name" or ").name".
+func cgNameMatches(nodeName, searchName string, isQualified bool) bool {
+	if isQualified {
+		return nodeName == searchName
+	}
+	if nodeName == searchName {
+		return true
+	}
+	nLen := len(nodeName)
+	sLen := len(searchName)
+	if nLen <= sLen {
+		return false
+	}
+	if nodeName[nLen-sLen:] != searchName {
+		return false
+	}
+	prev := nodeName[nLen-sLen-1]
+	return prev == '.' || prev == ')'
 }
 
 // PrimGoCallgraphCallers implements (go-callgraph-callers graph func-name).

@@ -9,6 +9,26 @@ For the full guide with architecture and design rationale, see
 
 ---
 
+## Function Name Convention
+
+All `name` fields on typed AST, SSA, call graph, and field index nodes carry
+the **SSA-qualified name** — the same string `ssa.Function.String()` produces:
+
+- Top-level function: `"go.etcd.io/etcd/raft/v3.newRaft"`
+- Pointer receiver method: `"(*go.etcd.io/etcd/raft/v3.raft).Step"`
+- Value receiver method: `"(go.etcd.io/etcd/raft/v3.Config).validate"`
+
+Untyped AST nodes (`go-parse-file`, `go-parse-string`) carry the short Go
+name (e.g. `"Step"`) since no package or type information is available.
+
+Primitives that accept function names as arguments (`go-cfg`,
+`go-callgraph-callers`, `go-callgraph-callees`) accept both short names
+and SSA-qualified names. Short names are resolved within the loaded package;
+SSA-qualified names match exactly. This means function names from any layer
+can be passed directly to any primitive without manual normalization.
+
+---
+
 ## AST Layer -- `(wile goast)`
 
 **Go package:** `goast`

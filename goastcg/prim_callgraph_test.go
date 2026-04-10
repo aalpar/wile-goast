@@ -149,6 +149,31 @@ func TestGoCallgraphCallees(t *testing.T) {
 	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
 }
 
+func TestGoCallgraphCallers_ShortName(t *testing.T) {
+	c := qt.New(t)
+	engine := newEngine(t)
+
+	eval(t, engine,
+		`(define cg (go-callgraph "github.com/aalpar/wile-goast/goast" 'static))`)
+
+	// Form 1 short name should resolve via suffix matching.
+	result := eval(t, engine,
+		`(list? (go-callgraph-callers cg "PrimGoParseExpr"))`)
+	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
+}
+
+func TestGoCallgraphCallees_ShortName(t *testing.T) {
+	c := qt.New(t)
+	engine := newEngine(t)
+
+	eval(t, engine,
+		`(define cg (go-callgraph "github.com/aalpar/wile-goast/goast" 'static))`)
+
+	result := eval(t, engine,
+		`(pair? (go-callgraph-callees cg "PrimGoParseExpr"))`)
+	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
+}
+
 func TestGoCallgraphCallers_NotFound(t *testing.T) {
 	c := qt.New(t)
 	engine := newEngine(t)
