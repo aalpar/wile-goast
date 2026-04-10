@@ -17,6 +17,7 @@ package goastcfg
 import (
 	"go/token"
 	"go/types"
+	"strings"
 
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/go/ssa"
@@ -146,8 +147,36 @@ func parseCFGOpts(rest values.Value, fset *token.FileSet) (*cfgMapper, error) {
 }
 
 // findFunction looks up a function by name across all members and methods
-// in an SSA package. Returns nil if not found.
+// in an SSA package. Accepts both Form 1 short names ("Step") and Form 3
+// qualified names ("(*pkg.raft).Step"). Returns nil if not found.
 func findFunction(prog *ssa.Program, ssaPkg *ssa.Package, name string) *ssa.Function {
+	// Form 3: qualified name — try exact match via fn.String()
+	if strings.Contains(name, ".") || strings.Contains(name, "(") {
+		for _, mem := range ssaPkg.Members {
+			if fn, ok := mem.(*ssa.Function); ok && fn.String() == name {
+				return fn
+			}
+		}
+		// Also search methods on named types.
+		for _, mem := range ssaPkg.Members {
+			typ, ok := mem.(*ssa.Type)
+			if !ok {
+				continue
+			}
+			for _, recvType := range []types.Type{types.NewPointer(typ.Type()), typ.Type()} {
+				mset := prog.MethodSets.MethodSet(recvType)
+				for sel := range mset.Methods() {
+					fn := prog.MethodValue(sel)
+					if fn != nil && fn.String() == name {
+						return fn
+					}
+				}
+			}
+		}
+		return nil
+	}
+
+	// Form 1: short name — existing logic
 	fn := ssaPkg.Func(name)
 	if fn != nil {
 		return fn
