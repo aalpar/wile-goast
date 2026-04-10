@@ -40,6 +40,8 @@
 | `2026-04-06-structured-docstrings-impl.md` | Implementation plan: 93 docstrings across 10 files in 11 tasks | Open |
 | `2026-04-08-false-boundary-detection-design.md` | FCA-based false boundary detection: discover natural struct groupings from field access patterns | Approved |
 | `2026-04-08-false-boundary-detection-impl.md` | Implementation plan: 9 tasks, FCA core + bridge + boundary detection + integration test | Open |
+| `2026-04-09-fca-findings-goast.md` | FCA self-analysis findings: 7 cross-boundary concepts, AccessRequest×Config extraction (9 sites), makeVarDeclInt inline | Complete |
+| `2026-04-09-function-name-forms.md` | Five function name forms across layers, mismatch bugs, reduction plan (target: 2 forms + pkg metadata) | Open |
 
 ## Documentation (outside plans/)
 
