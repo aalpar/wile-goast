@@ -249,6 +249,15 @@ func TestGoCFG_WithSession(t *testing.T) {
 	qt.New(t).Assert(result.Internal(), qt.Equals, values.TrueValue)
 }
 
+func TestGoCFG_WithSessionForm3Name(t *testing.T) {
+	engine := newSessionEngine(t)
+	testutil.RunScheme(t, engine, `(define s (go-load "github.com/aalpar/wile-goast/goast"))`)
+	// Form 3 qualified name should also work.
+	result := testutil.RunScheme(t, engine,
+		`(pair? (go-cfg s "github.com/aalpar/wile-goast/goast.PrimGoParseExpr"))`)
+	qt.New(t).Assert(result.Internal(), qt.Equals, values.TrueValue)
+}
+
 func TestGoCFG_Errors(t *testing.T) {
 	engine := newEngine(t)
 	tcs := []struct {
@@ -259,6 +268,8 @@ func TestGoCFG_Errors(t *testing.T) {
 		{name: "wrong func-name type", code: `(go-cfg "pkg" 42)`},
 		{name: "nonexistent package", code: `(go-cfg "github.com/aalpar/wile/does-not-exist-xyz" "Foo")`},
 		{name: "nonexistent function", code: `(go-cfg "github.com/aalpar/wile-goast/goast" "NoSuchFunction")`},
+		{name: "nonexistent function form3", code: `(go-cfg "github.com/aalpar/wile-goast/goast" "github.com/aalpar/wile-goast/goast.NoSuchFunction")`},
+		{name: "nonexistent method form3", code: `(go-cfg "github.com/aalpar/wile-goast/goast" "(*github.com/aalpar/wile-goast/goast.GoSession).NoSuchMethod")`},
 	}
 	for _, tc := range tcs {
 		t.Run(tc.name, func(t *testing.T) {
