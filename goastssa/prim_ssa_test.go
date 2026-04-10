@@ -87,12 +87,14 @@ func TestGoSSABuild_FunctionStructure(t *testing.T) {
 	eval(t, engine, `(define funcs (go-ssa-build "github.com/aalpar/wile-goast/goast"))`)
 
 	t.Run("function has name", func(t *testing.T) {
-		// Find a known function: PrimGoParseExpr
+		// Find a known function: PrimGoParseExpr — name is now fn.String() (Form 3).
+		// Top-level functions use "pkg/path.FuncName" format.
 		result := eval(t, engine, `
 			(let loop ((fs funcs))
 				(cond
 					((null? fs) #f)
-					((equal? (cdr (assoc 'name (cdr (car fs)))) "PrimGoParseExpr")
+					((equal? (cdr (assoc 'name (cdr (car fs))))
+					         "github.com/aalpar/wile-goast/goast.PrimGoParseExpr")
 					 (car fs))
 					(else (loop (cdr fs)))))`)
 		// Should find the function (not #f).

@@ -53,7 +53,7 @@ func (p *ssaMapper) mapFunction(fn *ssa.Function) values.Value {
 	}
 
 	fields := []values.Value{
-		goast.Field("name", goast.Str(fn.Name())),
+		goast.Field("name", goast.Str(fn.String())),
 		goast.Field("signature", goast.Str(fn.Signature.String())),
 		goast.Field("params", goast.ValueList(params)),
 		goast.Field("free-vars", goast.ValueList(freeVars)),
