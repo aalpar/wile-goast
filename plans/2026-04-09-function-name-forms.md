@@ -1,8 +1,8 @@
 # Function Name Forms in wile-goast
 
-**Goal:** Document every function name form, where each is produced and consumed, and identify which can be eliminated.
+**Goal:** Document every function name form, where each is produced and consumed, identify which can be eliminated, and converge on a design where Form 1 never escapes into cross-referencing contexts.
 
-**Status:** Findings documented. Reduction plan proposed.
+**Status:** Findings documented. Reduction plan finalized.
 
 ## The Five Forms
 
@@ -68,11 +68,11 @@ stepLeader                  (top-level function — same as Form 1)
 (*raft).stepLeader           (method — includes receiver but not package)
 ```
 
-**Source:** `ssa.Function.RelString(pkg)` where `pkg` is the function's own package.
+**Source:** `ssa.Function.RelString(pkg)` where `pkg` is the function's own package. Can also be constructed from AST: `f.Recv` (receiver type) + `f.Name.Name`.
 
-**Used by:** Not currently used in wile-goast, but available via Go's API.
+**Used by:** Not currently used in wile-goast.
 
-**Properties:** Unique within a package. Shorter than Form 3. Distinguishes methods on different receiver types (unlike Form 1). Not unique across packages.
+**Properties:** Unique within a package. Shorter than Form 3. Distinguishes methods on different receiver types (unlike Form 1). Not unique across packages. Proper suffix of Form 3.
 
 ### Form 5: Package path only
 
@@ -128,89 +128,173 @@ Form 2 ≠ Form 3 for methods.
 
 3. **Belief DSL has three normalization functions.** `ssa-short-name` (3→1), `cg-resolve-name` (1→3), `ssa-name-matches?` (3≈1). These exist solely to bridge the form mismatch.
 
+## Root Cause
+
+Every site that produces a Form 1 name has a caller with enough context to produce a more qualified form. But the functions don't require that context as a parameter, so they default to the weakest form. The result: Form 1 names escape into fields that get cross-referenced, and normalizers proliferate downstream to compensate.
+
+| Production site | Context available at caller | Could produce |
+|----------------|---------------------------|---------------|
+| AST mapper (`mapFuncDecl`) | `mapperOpts` has `typeInfo`; caller has `pkgPath` | Form 3 (typed) or Form 4 (untyped) |
+| SSA mapper (`mapFunction`) | Has `ssa.Function` directly | Form 3 via `fn.String()` |
+| SSA field index (`buildFuncSummary`) | Has `ssa.Function` directly | Form 3 — **already fixed** |
+| CFG lookup (`findFunction`) | Has `ssa.Function` for comparison | Form 3 via `fn.String()` |
+| Belief DSL (`all-func-decls`) | Has `pkg-path` from package traversal | Form 3 (if receiver type qualified) |
+
+No site is forced to produce Form 1 because of missing context. The context exists — it's just not required as a parameter.
+
 ## Reduction Plan
 
-**Target state:** Three forms, each aligned to the layer that naturally produces it:
-- Form 1 (short name) — user-facing convenience, accepted as input
-- Form 4 (package-relative) — AST layer identity, replaces Form 1 in `func-decl.name`
-- Form 3 (SSA qualified) — SSA/CG/field-index identity, the canonical machine form
+**Design principle:** Require context at production sites so Form 1 never escapes into cross-referencing fields. Form 1 is a valid local representation (e.g. inside `findFunction` for SSA package lookup), but it should never be stored in a node field that downstream layers will match against.
 
-Form 2 eliminated (was an accidental invention). Form 5 stays as package metadata.
+**Target state:** Two forms in exposed node fields:
+- Form 3 (SSA qualified) — all fields that carry function identity: `func-decl.name` (typed), `ssa-function.name`, `ssa-field-summary.func`, `cg-node.name`, `cg-edge.caller/callee`
+- Form 1 (short name) — only accepted as user-facing input (convenience); primitives resolve it internally
 
-### Step 1a: AST mapper — produce Form 4 in `func-decl.name`
+Form 2 eliminated (already done). Form 4 is no longer needed as a separate target — typed ASTs can produce Form 3 directly, and untyped ASTs don't participate in cross-referencing. Form 5 stays as package metadata.
 
-`mapFuncDecl` has `f.Name.Name` and `f.Recv`. For methods, combine them into Form 4. For top-level functions, Form 4 == Form 1.
+### Step 1: Thread `pkgPath` through `mapperOpts`
+
+Add `pkgPath string` to `mapperOpts`. Every caller that maps typed ASTs already has it:
+- `mapPackage` in the typecheck pipeline → `pkg.PkgPath`
+- `PrimGoLoad` → from the loaded `packages.Package`
+
+Untyped AST callers (`go-parse-file`, `go-parse-string`) pass `""` — these ASTs aren't cross-referenced.
+
+**File:** `goast/mapper.go:28-33`
+
+```go
+type mapperOpts struct {
+    fset      *token.FileSet
+    positions bool
+    comments  bool
+    typeInfo  *types.Info
+    pkgPath   string      // empty for untyped ASTs
+}
+```
+
+### Step 2: `mapFuncDecl` produces Form 3 (typed) or Form 1 (untyped)
+
+When `typeInfo` and `pkgPath` are available, build the fully qualified name. The receiver type can be resolved via `typeInfo.TypeOf(recv)` to get the package-qualified type name, matching what `ssa.Function.String()` produces.
+
+When `typeInfo` is nil (untyped AST), keep Form 1. These ASTs are for formatting/display, not cross-referencing.
 
 **File:** `goast/mapper.go:206-218`
 
 ```go
-// Current:
-Field("name", Str(f.Name.Name)),
-
-// Proposed: build package-relative name from receiver + name
-funcName := f.Name.Name
-if f.Recv != nil && len(f.Recv.List) > 0 {
-    recvType := types.ExprString(f.Recv.List[0].Type)
-    funcName = "(" + recvType + ")." + f.Name.Name
+func mapFuncDecl(f *ast.FuncDecl, opts *mapperOpts) values.Value {
+    funcName := f.Name.Name
+    if opts.pkgPath != "" {
+        if f.Recv != nil && len(f.Recv.List) > 0 {
+            recvType := qualifiedRecvType(f.Recv.List[0].Type, opts)
+            funcName = "(" + recvType + ")." + f.Name.Name
+        } else {
+            funcName = opts.pkgPath + "." + f.Name.Name
+        }
+    }
+    // ...
+    Field("name", Str(funcName)),
 }
-Field("name", Str(funcName)),
 ```
 
-This makes `func-decl.name` unique within a package. `(*raft).Step` and `(*RawNode).Step` are now distinguishable. Top-level functions are unchanged.
+`qualifiedRecvType` uses `opts.typeInfo` to resolve the receiver's type to its full import path. For `*raft` in package `go.etcd.io/etcd/raft/v3`, this produces `*go.etcd.io/etcd/raft/v3.raft`, matching the SSA convention.
 
-**Impact:** Any code that matches `func-decl.name` against a bare short name (Form 1) will break for methods. The belief DSL's `name-matches` predicate and `all-func-decls` traversal need updating. This is the biggest blast radius step.
+```go
+func qualifiedRecvType(expr ast.Expr, opts *mapperOpts) string {
+    if opts.typeInfo == nil {
+        return types.ExprString(expr)  // fallback: unqualified
+    }
+    tv, ok := opts.typeInfo.Types[expr]
+    if !ok {
+        return types.ExprString(expr)
+    }
+    return types.TypeString(tv.Type, nil)  // nil qualifier → full path
+}
+```
 
-### Step 1b: SSA mapper — add Form 3
+**The form tracks information fidelity:** typed ASTs produce Form 3 (globally unique). Untyped ASTs produce Form 1 (honest about what they don't know). No normalizers needed downstream because the form is determined at production time based on available context.
 
-Add an `ssa-name` field to `ssa-function` nodes with `fn.String()` (Form 3), alongside the existing `name` field (Form 1). The `name` field stays for readability; `ssa-name` is for cross-referencing.
+### Step 3: SSA mapper uses Form 3
+
+Change `ssa-function.name` from `fn.Name()` to `fn.String()`. The `ssa.Function` is right there — no context threading needed.
 
 **File:** `goastssa/mapper.go:56`
 
 ```go
-// Current:
+// Before:
 goast.Field("name", goast.Str(fn.Name())),
 
-// Proposed:
-goast.Field("name", goast.Str(fn.Name())),
-goast.Field("ssa-name", goast.Str(fn.String())),
+// After:
+goast.Field("name", goast.Str(fn.String())),
 ```
 
-This lets users cross-reference SSA functions with call graph nodes without normalization.
+Now `ssa-function.name` matches `cg-node.name` — direct equality, no normalization.
 
-### Step 2: CFG primitive — accept Form 3
+### Step 4: CFG primitive accepts both forms
 
-`go-cfg` currently uses `findFunction` which matches by `fn.Name()`. Add a fast path: if the user's argument contains `"."` or `"("`, treat it as Form 3 and match via `fn.String()` instead.
+`go-cfg` keeps accepting Form 1 as a convenience. Internally, `findFunction` first tries exact match via `fn.String()` (Form 3), then falls back to `fn.Name()` match (Form 1). No change to user-facing API, but Form 3 input works too.
 
 **File:** `goastcfg/prim_cfg.go:150-172`
 
-### Step 3: Eliminate belief DSL normalizers
+```go
+func findFunction(prog *ssa.Program, ssaPkg *ssa.Package, name string) *ssa.Function {
+    // Fast path: try Form 3 exact match on all functions
+    if strings.Contains(name, ".") || strings.Contains(name, "(") {
+        for _, mem := range ssaPkg.Members {
+            if fn, ok := mem.(*ssa.Function); ok && fn.String() == name {
+                return fn
+            }
+        }
+        return nil
+    }
+    // Form 1: existing short-name lookup
+    fn := ssaPkg.Func(name)
+    if fn != nil {
+        return fn
+    }
+    // ... method search by fn.Name() ...
+}
+```
 
-Once SSA functions carry `ssa-name` (Form 3):
-- `find-field-summary`: match by `(equal? (nf entry 'func) ssa-name)` directly — no suffix matching
-- `cg-resolve-name`: look up `ssa-name` from the site's SSA function — no search
-- `ssa-short-name`: still useful for display, but no longer needed for correctness
+### Step 5: Eliminate belief DSL normalizers
 
-### Step 4: Document the convention
+With `func-decl.name` carrying Form 3 (for typed ASTs) and `ssa-field-summary.func` already carrying Form 3:
+
+- **`find-field-summary`**: `(equal? (nf entry 'func) (nf site 'name))` — exact match. Delete `ssa-name-matches?`.
+- **`cg-resolve-name`**: `(nf site 'name)` is already Form 3. Use it directly with `go-callgraph-callers`. Delete `cg-resolve-name`.
+- **`ssa-short-name`**: Keep for display/logging only. Remove from matching paths.
+- **`build-ssa-index`**: Index by Form 3 directly. No extraction step needed.
+
+**Files:** `cmd/wile-goast/lib/wile/goast/belief.scm`
+
+### Step 6: Document the convention
 
 Add to `docs/PRIMITIVES.md`:
 
-> **Function names:** Primitives that accept function names accept two forms: short name (`"Step"`) or SSA-qualified name (`"(*pkg.Type).Step"`). Short names are matched within the loaded package. SSA-qualified names are matched exactly. The call graph always uses SSA-qualified names. When cross-referencing between layers, use the `ssa-name` field.
+> **Function names in node fields:** All `name` fields on typed AST, SSA, call graph, and field index nodes carry the SSA-qualified name (e.g. `"(*go.etcd.io/etcd/raft/v3.raft).Step"` for methods, `"go.etcd.io/etcd/raft/v3.stepLeader"` for top-level functions). Untyped AST nodes (`go-parse-file`, `go-parse-string`) carry the short Go name.
+>
+> **User-facing arguments:** Primitives that accept function names (`go-cfg`, `go-callgraph-callers`, etc.) accept both short names (`"Step"`) and SSA-qualified names. Short names are resolved within the loaded package; SSA-qualified names match exactly.
+
+## Blast Radius
+
+### What breaks
+
+1. **Scheme scripts comparing `func-decl.name` against short strings.** Example: `(equal? (nf fn 'name) "Step")` on a typed AST will fail — now it's `"(*go.etcd.io/etcd/raft/v3.raft).Step"`. Fix: use `name-matches` predicate or match the full name.
+
+2. **Belief DSL `name-matches` predicate.** Currently does substring match on Form 1. Needs to handle Form 3 names — either match against the method suffix or use exact match.
+
+3. **Any test asserting `func-decl.name` is a short string** for typed ASTs. Must be updated to expect Form 3.
+
+### What doesn't break
+
+- Untyped ASTs (`go-parse-file`, `go-parse-string`) — still Form 1, no change.
+- `go-format` (AST → Go source) — reads `f.Name.Name` from the AST node, not the mapped `name` field.
+- Call graph, field index, FCA — already use Form 3.
+- `go-cfg` — accepts both forms after Step 4.
 
 ## Trade-offs
 
-**Why not just use Form 3 everywhere?** Form 3 is verbose for interactive use. `(go-cfg session "Step")` is much friendlier than `(go-cfg session "(*go.etcd.io/etcd/raft/v3.raft).Step")`. The user-facing API should accept Form 1 as a convenience.
+**Why not Form 4 at the AST layer instead of Form 3?** If `typeInfo` is available, we can produce Form 3 directly. Form 4 would be the right choice only if we didn't have `typeInfo` but did have the receiver. Since every typed AST has both `typeInfo` and `pkgPath`, Form 3 is achievable and eliminates all normalization — not just within-package normalization. Form 4 would still require a package-prefix step to match Form 3.
 
-**Form 4 deserves a role.** Earlier draft dismissed Form 4 (`(*raft).stepLeader`) as unused. Wrong — it's the natural form the AST layer can produce. `mapFuncDecl` has `f.Recv` (the receiver type) and `f.Name.Name` (the method name). It doesn't have the package path, so it can't produce Form 2 or 3. But it *can* produce Form 4 by combining receiver + name. Form 4 is unique within a package and is a proper suffix of Form 3, making cross-layer matching unambiguous. This eliminates the belief DSL's reliance on Form 1 suffix matching (`ssa-name-matches?`) which can collide when two types have methods with the same short name.
+**Why keep Form 1 as user-facing input?** Ergonomics. `(go-cfg session "Step")` is what a human types. The primitive resolves it internally. Form 1 is valid as a *query* — it's invalid as a *stored identity* that other layers will match against.
 
-**Layer-form alignment:**
-
-| Layer | Natural form | Why |
-|-------|-------------|-----|
-| AST | Form 4 (`(*raft).Step`) | Has receiver + name, no package path |
-| SSA | Form 3 (`(*pkg.raft).Step`) | `fn.String()` — fully qualified |
-| CG | Form 3 | Same SSA functions |
-| User-facing | Form 1 (`Step`) | Convenience; ambiguity resolved by context |
-
-The insight: Form 4 is the *strongest form the AST layer can produce*. Using it instead of Form 1 in `func-decl.name` would eliminate the ambiguity that requires normalizers. Form 3 is a package-qualified Form 4 — matching Form 4 as a suffix of Form 3 is always correct.
-
-**Why keep Form 5 (pkg) on field-summary?** The `pkg` field enables filtering by package without parsing Form 3. Useful for multi-package analysis where you want summaries from specific packages.
+**Why keep Form 5 (pkg)?** Filtering. When analyzing multiple packages, `pkg` enables `(filter (lambda (s) (equal? (nf s 'pkg) "my/pkg")) summaries)` without parsing Form 3.
