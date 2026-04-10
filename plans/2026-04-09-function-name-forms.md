@@ -130,9 +130,37 @@ Form 2 ≠ Form 3 for methods.
 
 ## Reduction Plan
 
-**Target state:** Two forms — Form 1 (short name, user-facing) and Form 3 (SSA qualified, machine-facing). Eliminate Form 2 entirely. Form 4 is unused, keep it out. Form 5 stays as package metadata.
+**Target state:** Three forms, each aligned to the layer that naturally produces it:
+- Form 1 (short name) — user-facing convenience, accepted as input
+- Form 4 (package-relative) — AST layer identity, replaces Form 1 in `func-decl.name`
+- Form 3 (SSA qualified) — SSA/CG/field-index identity, the canonical machine form
 
-### Step 1: SSA mapper — add Form 3
+Form 2 eliminated (was an accidental invention). Form 5 stays as package metadata.
+
+### Step 1a: AST mapper — produce Form 4 in `func-decl.name`
+
+`mapFuncDecl` has `f.Name.Name` and `f.Recv`. For methods, combine them into Form 4. For top-level functions, Form 4 == Form 1.
+
+**File:** `goast/mapper.go:206-218`
+
+```go
+// Current:
+Field("name", Str(f.Name.Name)),
+
+// Proposed: build package-relative name from receiver + name
+funcName := f.Name.Name
+if f.Recv != nil && len(f.Recv.List) > 0 {
+    recvType := types.ExprString(f.Recv.List[0].Type)
+    funcName = "(" + recvType + ")." + f.Name.Name
+}
+Field("name", Str(funcName)),
+```
+
+This makes `func-decl.name` unique within a package. `(*raft).Step` and `(*RawNode).Step` are now distinguishable. Top-level functions are unchanged.
+
+**Impact:** Any code that matches `func-decl.name` against a bare short name (Form 1) will break for methods. The belief DSL's `name-matches` predicate and `all-func-decls` traversal need updating. This is the biggest blast radius step.
+
+### Step 1b: SSA mapper — add Form 3
 
 Add an `ssa-name` field to `ssa-function` nodes with `fn.String()` (Form 3), alongside the existing `name` field (Form 1). The `name` field stays for readability; `ssa-name` is for cross-referencing.
 
@@ -172,6 +200,17 @@ Add to `docs/PRIMITIVES.md`:
 
 **Why not just use Form 3 everywhere?** Form 3 is verbose for interactive use. `(go-cfg session "Step")` is much friendlier than `(go-cfg session "(*go.etcd.io/etcd/raft/v3.raft).Step")`. The user-facing API should accept Form 1 as a convenience.
 
-**Why not use Form 4 (package-relative)?** It's a middle ground — `(*raft).Step` — but it's neither user-friendly (still has receiver syntax) nor machine-unique (not unique across packages). It doesn't eliminate any normalization.
+**Form 4 deserves a role.** Earlier draft dismissed Form 4 (`(*raft).stepLeader`) as unused. Wrong — it's the natural form the AST layer can produce. `mapFuncDecl` has `f.Recv` (the receiver type) and `f.Name.Name` (the method name). It doesn't have the package path, so it can't produce Form 2 or 3. But it *can* produce Form 4 by combining receiver + name. Form 4 is unique within a package and is a proper suffix of Form 3, making cross-layer matching unambiguous. This eliminates the belief DSL's reliance on Form 1 suffix matching (`ssa-name-matches?`) which can collide when two types have methods with the same short name.
+
+**Layer-form alignment:**
+
+| Layer | Natural form | Why |
+|-------|-------------|-----|
+| AST | Form 4 (`(*raft).Step`) | Has receiver + name, no package path |
+| SSA | Form 3 (`(*pkg.raft).Step`) | `fn.String()` — fully qualified |
+| CG | Form 3 | Same SSA functions |
+| User-facing | Form 1 (`Step`) | Convenience; ambiguity resolved by context |
+
+The insight: Form 4 is the *strongest form the AST layer can produce*. Using it instead of Form 1 in `func-decl.name` would eliminate the ambiguity that requires normalizers. Form 3 is a package-qualified Form 4 — matching Form 4 as a suffix of Form 3 is always correct.
 
 **Why keep Form 5 (pkg) on field-summary?** The `pkg` field enables filtering by package without parsing Form 3. Useful for multi-package analysis where you want summaries from specific packages.
