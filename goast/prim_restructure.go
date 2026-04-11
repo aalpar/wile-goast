@@ -635,19 +635,35 @@ func hasLoopReturns(stmts []ast.Stmt) bool {
 // Shared counters are incremented across sibling loops to produce unique
 // names. Per-loop fields are reset by rewriteLoops for each loop.
 type loopRewriter struct {
-	// Shared across sibling loops (incremented monotonically).
-	ctlCounter       int
-	labelCounter     int
+	// ctlCounter allocates unique _ctl<N> control variable names.
+	ctlCounter int
+	// labelCounter allocates unique _loop<N> labeled-break labels.
+	labelCounter int
+	// resultVarCounter allocates unique _r<N> result variable names
+	// across sibling loops.
 	resultVarCounter int
-	resultTypes      []*ast.Field
+	// resultTypes holds the function's result field list for
+	// synthesizing loop-local result variables. Nil when the
+	// function has no results.
+	resultTypes []*ast.Field
 
-	// Per-loop state (reset by rewriteLoops for each loop).
-	ctlName        string
-	retIdx         int
-	collected      []*ast.ReturnStmt
-	loopLabel      string
+	// ctlName is the control variable name for the current loop.
+	ctlName string
+	// retIdx counts return sites within the current loop (1-based
+	// after increment; used as the control variable value).
+	retIdx int
+	// collected gathers the original (or synthetic) ReturnStmts
+	// replaced in the current loop, emitted as guard-ifs afterward.
+	collected []*ast.ReturnStmt
+	// loopLabel is the labeled-break label for the current loop.
+	// Empty when no switch/select requires a labeled break.
+	loopLabel string
+	// resultVarCount is the number of result variables for the
+	// current loop (len of expanded result types).
 	resultVarCount int
-	resultVarBase  int
+	// resultVarBase is the starting index into the _r<N> namespace
+	// for the current loop's result variables.
+	resultVarBase int
 }
 
 // rewriteLoops processes a statement list, rewriting for/range loops
