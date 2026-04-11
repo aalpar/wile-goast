@@ -114,10 +114,8 @@ func PrimGoCFGToStructured(mc machine.CallContext) error {
 
 	// Phase 1: Rewrite returns inside loops (Case 2).
 	if hasLoopReturns(stmts) {
-		ctlCounter := 0
-		labelCounter := 0
-		resultVarCounter := 0
-		newStmts, ok := rewriteLoopReturns(stmts, &ctlCounter, &labelCounter, &resultVarCounter, resultTypes)
+		lw := loopRewriter{resultTypes: resultTypes}
+		newStmts, ok := lw.rewriteLoops(stmts)
 		if !ok {
 			return werr.WrapForeignErrorf(errGoRestructureError,
 				"go-cfg-to-structured: unrewritable return in loop (naked return or multi-value call)")
@@ -633,21 +631,36 @@ func hasLoopReturns(stmts []ast.Stmt) bool {
 	return false
 }
 
-// rewriteLoopReturns processes a statement list, rewriting for/range
-// loops that contain returns. Each loop gets a _ctl<N> int variable;
-// returns inside the loop become _ctl<N> = K; break. Guard-if-return
-// statements are emitted after the loop.
+// loopRewriter holds state for rewriting returns inside for/range loops.
+// Shared counters are incremented across sibling loops to produce unique
+// names. Per-loop fields are reset by rewriteLoops for each loop.
+type loopRewriter struct {
+	// Shared across sibling loops (incremented monotonically).
+	ctlCounter       int
+	labelCounter     int
+	resultVarCounter int
+	resultTypes      []*ast.Field
+
+	// Per-loop state (reset by rewriteLoops for each loop).
+	ctlName        string
+	retIdx         int
+	collected      []*ast.ReturnStmt
+	loopLabel      string
+	resultVarCount int
+	resultVarBase  int
+}
+
+// rewriteLoops processes a statement list, rewriting for/range loops
+// that contain returns. Each loop gets a _ctl<N> int variable; returns
+// inside the loop become _ctl<N> = K; break. Guard-if-return statements
+// are emitted after the loop.
 //
 // When a loop body contains returns inside switch/select, a labeled
 // break is used instead (break <label>), and the loop is wrapped
 // in a LabeledStmt.
 //
-// When resultTypes is non-nil, result variables (_r<N>) are synthesized
-// for loop-local return values. resultVarCounter is shared across
-// sibling loops to produce unique names.
-//
 // Returns (nil, false) if any loop contains unrewritable returns.
-func rewriteLoopReturns(stmts []ast.Stmt, counter *int, labelCounter *int, resultVarCounter *int, resultTypes []*ast.Field) ([]ast.Stmt, bool) {
+func (lw *loopRewriter) rewriteLoops(stmts []ast.Stmt) ([]ast.Stmt, bool) {
 	var result []ast.Stmt
 	for _, stmt := range stmts {
 		var body *ast.BlockStmt
@@ -663,45 +676,43 @@ func rewriteLoopReturns(stmts []ast.Stmt, counter *int, labelCounter *int, resul
 		}
 
 		// Bottom-up: process inner loops first.
-		innerStmts, ok := rewriteLoopReturns(body.List, counter, labelCounter, resultVarCounter, resultTypes)
+		innerStmts, ok := lw.rewriteLoops(body.List)
 		if !ok {
 			return nil, false
 		}
 
-		// Allocate a control variable for this loop.
-		ctlName := fmt.Sprintf("_ctl%d", *counter)
-		*counter++
+		// Allocate control variable and set per-loop state.
+		lw.ctlName = fmt.Sprintf("_ctl%d", lw.ctlCounter)
+		lw.ctlCounter++
 
-		// Determine if a labeled break is needed (returns inside switch/select).
-		loopLabel := ""
+		lw.loopLabel = ""
 		if hasReturnInSwitch(innerStmts) {
-			loopLabel = fmt.Sprintf("_loop%d", *labelCounter)
-			*labelCounter++
+			lw.loopLabel = fmt.Sprintf("_loop%d", lw.labelCounter)
+			lw.labelCounter++
 		}
 
-		// Replace returns in the (now inner-processed) body.
-		retIdx := 0
-		var collected []*ast.ReturnStmt
-		resultVarCount := 0
-		resultVarBase := 0
+		lw.retIdx = 0
+		lw.collected = nil
+		lw.resultVarCount = 0
+		lw.resultVarBase = 0
 		var types []ast.Expr
-		if resultTypes != nil {
-			types = expandResultTypes(resultTypes)
-			resultVarCount = len(types)
-			resultVarBase = *resultVarCounter
-			*resultVarCounter += resultVarCount
+		if lw.resultTypes != nil {
+			types = expandResultTypes(lw.resultTypes)
+			lw.resultVarCount = len(types)
+			lw.resultVarBase = lw.resultVarCounter
+			lw.resultVarCounter += lw.resultVarCount
 		}
 
-		newBodyStmts, ok := replaceReturnsInStmtsLabeled(innerStmts, ctlName, &retIdx, &collected, loopLabel, resultVarCount, resultVarBase)
+		newBodyStmts, ok := lw.replaceInStmts(innerStmts)
 		if !ok {
 			return nil, false
 		}
 
 		// Rebuild the loop with the rewritten body.
 		newBody := &ast.BlockStmt{List: newBodyStmts}
-		result = append(result, makeVarDeclTyped(ctlName, ast.NewIdent("int")))
+		result = append(result, makeVarDeclTyped(lw.ctlName, ast.NewIdent("int")))
 		for i, ty := range types {
-			result = append(result, makeVarDeclTyped(fmt.Sprintf("_r%d", resultVarBase+i), ty))
+			result = append(result, makeVarDeclTyped(fmt.Sprintf("_r%d", lw.resultVarBase+i), ty))
 		}
 		var loopStmt ast.Stmt
 		switch s := stmt.(type) {
@@ -710,82 +721,74 @@ func rewriteLoopReturns(stmts []ast.Stmt, counter *int, labelCounter *int, resul
 		case *ast.RangeStmt:
 			loopStmt = &ast.RangeStmt{Key: s.Key, Value: s.Value, Tok: s.Tok, X: s.X, Body: newBody}
 		}
-		if loopLabel != "" {
-			loopStmt = &ast.LabeledStmt{Label: ast.NewIdent(loopLabel), Stmt: loopStmt}
+		if lw.loopLabel != "" {
+			loopStmt = &ast.LabeledStmt{Label: ast.NewIdent(lw.loopLabel), Stmt: loopStmt}
 		}
 		result = append(result, loopStmt)
 
 		// Emit guard-ifs for each collected return.
-		for i, ret := range collected {
-			result = append(result, makeCtlGuard(ctlName, i+1, ret))
+		for i, ret := range lw.collected {
+			result = append(result, makeCtlGuard(lw.ctlName, i+1, ret))
 		}
 	}
 	return result, true
 }
 
-// replaceReturnsInStmtsLabeled walks a statement list replacing return-stmts
-// with control variable assignment + break. Recurses into IfStmt and
+// replaceInStmts walks a statement list replacing return-stmts with
+// control variable assignment + break. Recurses into IfStmt and
 // BlockStmt. Skips FuncLit and already-processed ForStmt/RangeStmt.
 // Returns (nil, false) if a return is found inside switch/select
 // (unless loopLabel is set, in which case switch/select are handled
 // via labeled break). When resultVarCount > 0, return values are
 // assigned to _r<resultVarBase+i> before the break.
-func replaceReturnsInStmtsLabeled(
-	stmts []ast.Stmt,
-	ctlName string,
-	retIdx *int,
-	collected *[]*ast.ReturnStmt,
-	loopLabel string,
-	resultVarCount int,
-	resultVarBase int,
-) ([]ast.Stmt, bool) {
+func (lw *loopRewriter) replaceInStmts(stmts []ast.Stmt) ([]ast.Stmt, bool) {
 	var result []ast.Stmt
 	for _, stmt := range stmts {
 		switch s := stmt.(type) {
 		case *ast.ReturnStmt:
-			*retIdx++
-			if resultVarCount > 0 {
+			lw.retIdx++
+			if lw.resultVarCount > 0 {
 				if len(s.Results) == 0 {
 					// Naked return — cannot synthesize loop-local vars.
 					return nil, false
 				}
-				if len(s.Results) != resultVarCount {
+				if len(s.Results) != lw.resultVarCount {
 					// Multi-value call or count mismatch — bail.
 					return nil, false
 				}
 				for i, expr := range s.Results {
 					result = append(result, &ast.AssignStmt{
-						Lhs: []ast.Expr{ast.NewIdent(fmt.Sprintf("_r%d", resultVarBase+i))},
+						Lhs: []ast.Expr{ast.NewIdent(fmt.Sprintf("_r%d", lw.resultVarBase+i))},
 						Tok: token.ASSIGN,
 						Rhs: []ast.Expr{expr},
 					})
 				}
-				syntheticResults := make([]ast.Expr, resultVarCount)
-				for i := range resultVarCount {
-					syntheticResults[i] = ast.NewIdent(fmt.Sprintf("_r%d", resultVarBase+i))
+				syntheticResults := make([]ast.Expr, lw.resultVarCount)
+				for i := range lw.resultVarCount {
+					syntheticResults[i] = ast.NewIdent(fmt.Sprintf("_r%d", lw.resultVarBase+i))
 				}
-				*collected = append(*collected, &ast.ReturnStmt{Results: syntheticResults})
+				lw.collected = append(lw.collected, &ast.ReturnStmt{Results: syntheticResults})
 			} else {
-				*collected = append(*collected, s)
+				lw.collected = append(lw.collected, s)
 			}
 			var brk ast.Stmt
-			if loopLabel != "" {
-				brk = makeLabeledBreak(loopLabel)
+			if lw.loopLabel != "" {
+				brk = makeLabeledBreak(lw.loopLabel)
 			} else {
 				brk = makeBreakStmt()
 			}
 			result = append(result,
-				makeIntAssign(ctlName, *retIdx),
+				makeIntAssign(lw.ctlName, lw.retIdx),
 				brk,
 			)
 		case *ast.IfStmt:
-			newIf, ok := replaceReturnsInIf(s, ctlName, retIdx, collected, loopLabel, resultVarCount, resultVarBase)
+			newIf, ok := lw.replaceInIf(s)
 			if !ok {
 				return nil, false
 			}
 			result = append(result, newIf)
 		case *ast.BlockStmt:
-			newList, ok := replaceReturnsInStmtsLabeled(s.List, ctlName, retIdx, collected, loopLabel, resultVarCount, resultVarBase)
+			newList, ok := lw.replaceInStmts(s.List)
 			if !ok {
 				return nil, false
 			}
@@ -793,10 +796,10 @@ func replaceReturnsInStmtsLabeled(
 		default:
 			body, isBranching := branchingBody(stmt)
 			if isBranching && bodyContainsReturn(body) {
-				if loopLabel == "" {
+				if lw.loopLabel == "" {
 					return nil, false
 				}
-				newClauses, ok := replaceReturnsInClauses(body.List, ctlName, retIdx, collected, loopLabel, resultVarCount, resultVarBase)
+				newClauses, ok := lw.replaceInClauses(body.List)
 				if !ok {
 					return nil, false
 				}
@@ -812,28 +815,20 @@ func replaceReturnsInStmtsLabeled(
 	return result, true
 }
 
-// replaceReturnsInClauses processes case/comm clauses, replacing returns
+// replaceInClauses processes case/comm clauses, replacing returns
 // in their bodies with control variable assignment + labeled break.
-func replaceReturnsInClauses(
-	stmts []ast.Stmt,
-	ctlName string,
-	retIdx *int,
-	collected *[]*ast.ReturnStmt,
-	loopLabel string,
-	resultVarCount int,
-	resultVarBase int,
-) ([]ast.Stmt, bool) {
+func (lw *loopRewriter) replaceInClauses(stmts []ast.Stmt) ([]ast.Stmt, bool) {
 	var result []ast.Stmt
 	for _, stmt := range stmts {
 		switch cc := stmt.(type) {
 		case *ast.CaseClause:
-			newBody, ok := replaceReturnsInStmtsLabeled(cc.Body, ctlName, retIdx, collected, loopLabel, resultVarCount, resultVarBase)
+			newBody, ok := lw.replaceInStmts(cc.Body)
 			if !ok {
 				return nil, false
 			}
 			result = append(result, &ast.CaseClause{List: cc.List, Body: newBody})
 		case *ast.CommClause:
-			newBody, ok := replaceReturnsInStmtsLabeled(cc.Body, ctlName, retIdx, collected, loopLabel, resultVarCount, resultVarBase)
+			newBody, ok := lw.replaceInStmts(cc.Body)
 			if !ok {
 				return nil, false
 			}
@@ -848,18 +843,10 @@ func replaceReturnsInClauses(
 	return result, true
 }
 
-// replaceReturnsInIf processes an IfStmt, replacing returns in body
+// replaceInIf processes an IfStmt, replacing returns in body
 // and else branches.
-func replaceReturnsInIf(
-	ifStmt *ast.IfStmt,
-	ctlName string,
-	retIdx *int,
-	collected *[]*ast.ReturnStmt,
-	loopLabel string,
-	resultVarCount int,
-	resultVarBase int,
-) (*ast.IfStmt, bool) {
-	newBodyList, ok := replaceReturnsInStmtsLabeled(ifStmt.Body.List, ctlName, retIdx, collected, loopLabel, resultVarCount, resultVarBase)
+func (lw *loopRewriter) replaceInIf(ifStmt *ast.IfStmt) (*ast.IfStmt, bool) {
+	newBodyList, ok := lw.replaceInStmts(ifStmt.Body.List)
 	if !ok {
 		return nil, false
 	}
@@ -873,13 +860,13 @@ func replaceReturnsInIf(
 	if ifStmt.Else != nil {
 		switch e := ifStmt.Else.(type) {
 		case *ast.BlockStmt:
-			newList, ok := replaceReturnsInStmtsLabeled(e.List, ctlName, retIdx, collected, loopLabel, resultVarCount, resultVarBase)
+			newList, ok := lw.replaceInStmts(e.List)
 			if !ok {
 				return nil, false
 			}
 			newIf.Else = &ast.BlockStmt{List: newList}
 		case *ast.IfStmt:
-			newElse, ok := replaceReturnsInIf(e, ctlName, retIdx, collected, loopLabel, resultVarCount, resultVarBase)
+			newElse, ok := lw.replaceInIf(e)
 			if !ok {
 				return nil, false
 			}
