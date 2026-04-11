@@ -9,7 +9,5 @@
     ast-condition->symbolic)
   (import (wile goast utils)
           (wile algebra boolean)
-          (wile algebra lattice)
-          (wile algebra symbolic)
-          (wile algebra rewrite))
+          (wile algebra symbolic))
   (include "boolean-simplify.scm"))

@@ -11,6 +11,13 @@
     concept-extent
     concept-intent
     cross-boundary-concepts
-    boundary-report)
+    boundary-report
+    ;; Sorted string set operations (used by fca-algebra, fca-recommend)
+    set-intersect
+    set-member?
+    set-add
+    set-before
+    set-union
+    set-subset?)
   (import (wile goast utils))
   (include "fca.scm"))

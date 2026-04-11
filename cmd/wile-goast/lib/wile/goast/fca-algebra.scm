@@ -5,44 +5,9 @@
 ;;; annotations (subconcept, superconcept, incomparable) are available
 ;;; for boundary reports.
 
-;;; ── Local helpers ───────────────────────────────────────
-
-(define (keep pred lst)
-  (let loop ((xs lst) (acc '()))
-    (if (null? xs) (reverse acc)
-      (loop (cdr xs)
-            (if (pred (car xs)) (cons (car xs) acc) acc)))))
-
-;;; ── Sorted string set helpers (local) ───────────────────
-
-(define (sset-subset? a b)
-  ;; #t if every element of sorted list a is in sorted list b.
-  (cond ((null? a) #t)
-        ((null? b) #f)
-        ((string<? (car a) (car b)) #f)
-        ((string=? (car a) (car b)) (sset-subset? (cdr a) (cdr b)))
-        (else (sset-subset? a (cdr b)))))
-
-(define (sset-intersect a b)
-  (cond ((null? a) '())
-        ((null? b) '())
-        ((string<? (car a) (car b)) (sset-intersect (cdr a) b))
-        ((string<? (car b) (car a)) (sset-intersect a (cdr b)))
-        (else (cons (car a) (sset-intersect (cdr a) (cdr b))))))
-
-(define (sset-union a b)
-  (cond ((null? a) b)
-        ((null? b) a)
-        ((string<? (car a) (car b))
-         (cons (car a) (sset-union (cdr a) b)))
-        ((string<? (car b) (car a))
-         (cons (car b) (sset-union a (cdr b))))
-        (else (cons (car a) (sset-union (cdr a) (cdr b))))))
-
 ;;; ── Concept lattice → algebra lattice ───────────────────
 
-;; Find the concept in the lattice matching the given intent,
-;; or construct one from the context if not present.
+;; Find the concept in the lattice matching the given intent.
 (define (find-concept-by-intent lattice int)
   (let loop ((cs lattice))
     (cond ((null? cs) #f)
@@ -53,13 +18,16 @@
 ;; ctx: the FCA context (needed for Galois connection operations)
 ;; concepts: the list of concepts from (concept-lattice ctx)
 ;;
-;; Lattice ordering: C1 ≤ C2 iff E1 ⊆ E2 (equiv. I2 ⊆ I1)
+;; Lattice ordering: C1 <= C2 iff E1 ⊆ E2 (equiv. I2 ⊆ I1)
 ;; Join: concept whose intent = closure(I1 ∩ I2)
 ;; Meet: concept whose intent = closure(I1 ∪ I2)
 (define (concept-lattice->algebra-lattice ctx concepts)
-  (let* (;; Top: largest extent = concept with empty or smallest intent
+  "Construct a (wile algebra lattice) from an FCA concept lattice.\nCTX is the FCA context, CONCEPTS is the list from (concept-lattice ctx).\nThe resulting lattice has join/meet via the Galois connection.\n\nParameters:\n  ctx : list\n  concepts : list\nReturns: any\nCategory: goast-fca\n\nSee also: `concept-relationship', `annotated-boundary-report'."
+  (if (null? concepts)
+    (error "concept-lattice->algebra-lattice: concepts list is empty"))
+  (let* (;; Top: largest extent = concept with smallest intent
          (top-concept
-           (let loop ((cs concepts) (best (car concepts)))
+           (let loop ((cs (cdr concepts)) (best (car concepts)))
              (if (null? cs) best
                (loop (cdr cs)
                      (if (> (length (concept-extent (car cs)))
@@ -67,25 +35,23 @@
                        (car cs) best)))))
          ;; Bottom: smallest extent = concept with largest intent
          (bottom-concept
-           (let loop ((cs concepts) (best (car concepts)))
+           (let loop ((cs (cdr concepts)) (best (car concepts)))
              (if (null? cs) best
                (loop (cdr cs)
                      (if (< (length (concept-extent (car cs)))
                             (length (concept-extent best)))
                        (car cs) best))))))
     (make-lattice
-      ;; join: least upper bound
-      ;; Intent of join = closure of (I1 ∩ I2)
+      ;; join: least upper bound — intent = closure of (I1 ∩ I2)
       (lambda (c1 c2)
-        (let* ((i-isect (sset-intersect (concept-intent c1) (concept-intent c2)))
+        (let* ((i-isect (set-intersect (concept-intent c1) (concept-intent c2)))
                (ext (extent ctx i-isect))
                (int (intent ctx ext)))
           (or (find-concept-by-intent concepts int)
               (cons ext int))))
-      ;; meet: greatest lower bound
-      ;; Intent of meet = closure of (I1 ∪ I2)
+      ;; meet: greatest lower bound — intent = closure of (I1 ∪ I2)
       (lambda (c1 c2)
-        (let* ((i-union (sset-union (concept-intent c1) (concept-intent c2)))
+        (let* ((i-union (set-union (concept-intent c1) (concept-intent c2)))
                (ext (extent ctx i-union))
                (int (intent ctx ext)))
           (or (find-concept-by-intent concepts int)
@@ -94,27 +60,28 @@
       bottom-concept
       ;; top
       top-concept
-      ;; leq: C1 ≤ C2 iff I2 ⊆ I1 (more attributes = lower in lattice)
+      ;; leq: C1 <= C2 iff I2 ⊆ I1 (more attributes = lower in lattice)
       (lambda (c1 c2)
-        (sset-subset? (concept-intent c2) (concept-intent c1))))))
+        (set-subset? (concept-intent c2) (concept-intent c1))))))
 
 ;;; ── Concept relationship ────────────────────────────────
 
 ;; Determine the relationship between two concepts.
 ;; Returns one of: 'subconcept, 'superconcept, 'equal, 'incomparable
 (define (concept-relationship c1 c2)
+  "Classify the lattice relationship between two concepts.\nReturns: subconcept (C1 <= C2), superconcept (C1 >= C2), equal, or incomparable.\n\nParameters:\n  c1 : list\n  c2 : list\nReturns: symbol\nCategory: goast-fca\n\nSee also: `concept-lattice->algebra-lattice', `annotated-boundary-report'."
   (let ((i1 (concept-intent c1))
         (i2 (concept-intent c2)))
-    (let ((i2-sub-i1 (sset-subset? i2 i1))
-          (i1-sub-i2 (sset-subset? i1 i2)))
+    (let ((i2-sub-i1 (set-subset? i2 i1))
+          (i1-sub-i2 (set-subset? i1 i2)))
       (cond ((and i1-sub-i2 i2-sub-i1) 'equal)
-            (i2-sub-i1 'subconcept)    ;; I2 ⊆ I1 means E1 ⊆ E2, C1 ≤ C2
-            (i1-sub-i2 'superconcept)  ;; I1 ⊆ I2 means E2 ⊆ E1, C2 ≤ C1
+            (i2-sub-i1 'subconcept)    ;; I2 ⊆ I1 means E1 ⊆ E2, C1 <= C2
+            (i1-sub-i2 'superconcept)  ;; I1 ⊆ I2 means E2 ⊆ E1, C2 <= C1
             (else 'incomparable)))))
 
 ;;; ── Annotated boundary report ───────────────────────────
 
-;; Summarize a concept for annotation (short description from intent).
+;; Summarize a concept for annotation (short description from intent types).
 (define (concept-summary concept)
   (let ((types (unique (filter-map
                          (lambda (attr)
@@ -136,9 +103,9 @@
 ;; Extends boundary-report with lattice relationship annotations
 ;; between each cross-boundary concept and all other concepts.
 (define (annotated-boundary-report cross-concepts all-concepts)
+  "Annotate cross-boundary concepts with lattice relationships.\nEach entry includes subconcept-of, superconcept-of, and incomparable-with\nlists describing how the concept relates to all other concepts.\n\nParameters:\n  cross-concepts : list\n  all-concepts : list\nReturns: list\nCategory: goast-fca\n\nSee also: `concept-relationship', `concept-lattice->algebra-lattice'."
   (map (lambda (xb-concept)
-         (let* ((ext (concept-extent xb-concept))
-                (int (concept-intent xb-concept))
+         (let* ((int (concept-intent xb-concept))
                 ;; Classify relationship to every other concept
                 (relations
                   (filter-map
@@ -151,17 +118,23 @@
                     all-concepts))
                 ;; Group by relationship type
                 (subconcepts
-                  (keep (lambda (r) (eq? (cdr (assoc 'relationship r)) 'subconcept))
-                          relations))
+                  (filter-map
+                    (lambda (r)
+                      (and (eq? (cdr (assoc 'relationship r)) 'subconcept) r))
+                    relations))
                 (superconcepts
-                  (keep (lambda (r) (eq? (cdr (assoc 'relationship r)) 'superconcept))
-                          relations))
+                  (filter-map
+                    (lambda (r)
+                      (and (eq? (cdr (assoc 'relationship r)) 'superconcept) r))
+                    relations))
                 (incomparables
-                  (keep (lambda (r) (eq? (cdr (assoc 'relationship r)) 'incomparable))
-                          relations)))
-           (list (cons 'extent ext)
+                  (filter-map
+                    (lambda (r)
+                      (and (eq? (cdr (assoc 'relationship r)) 'incomparable) r))
+                    relations)))
+           (list (cons 'extent (concept-extent xb-concept))
                  (cons 'intent int)
-                 (cons 'extent-size (length ext))
+                 (cons 'extent-size (length (concept-extent xb-concept)))
                  (cons 'summary (concept-summary xb-concept))
                  (cons 'subconcept-of
                    (map (lambda (r) (cdr (assoc 'concept-summary r))) subconcepts))

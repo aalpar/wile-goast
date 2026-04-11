@@ -34,6 +34,24 @@
         ((string=? elem (car sorted)) #t)
         (else (set-member? elem (cdr sorted)))))
 
+;; Union of two sorted string lists.
+(define (set-union a b)
+  (cond ((null? a) b)
+        ((null? b) a)
+        ((string<? (car a) (car b))
+         (cons (car a) (set-union (cdr a) b)))
+        ((string<? (car b) (car a))
+         (cons (car b) (set-union a (cdr b))))
+        (else (cons (car a) (set-union (cdr a) (cdr b))))))
+
+;; Subset test on sorted string lists.
+(define (set-subset? a b)
+  (cond ((null? a) #t)
+        ((null? b) #f)
+        ((string<? (car a) (car b)) #f)
+        ((string=? (car a) (car b)) (set-subset? (cdr a) (cdr b)))
+        (else (set-subset? a (cdr b)))))
+
 ;; Elements strictly before a given element in sorted order.
 (define (set-before elem sorted)
   (cond ((null? sorted) '())

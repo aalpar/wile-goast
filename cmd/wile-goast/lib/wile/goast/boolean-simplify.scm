@@ -23,13 +23,16 @@
         (sb (let ((p (open-output-string))) (write b p) (get-output-string p))))
     (string<? sa sb)))
 
+;; Initialize the normalizer. Checks *bool-normalizer* (the last thing set)
+;; so that a partial failure leaves the guard open for retry.
 (define (ensure-normalizer!)
-  (unless *bool-theory*
+  (unless *bool-normalizer*
     (let* ((B (powerset-boolean '(_)))
            (th (boolean->theory B 'or 'and 'not))
-           (proto (sexp-term-protocol atom-compare)))
-      (set! *bool-theory* th)
-      (set! *bool-normalizer* (make-recursive-normalizer th proto)))))
+           (proto (sexp-term-protocol atom-compare))
+           (norm (make-recursive-normalizer th proto)))
+      (set! *bool-normalizer* norm)
+      (set! *bool-theory* th))))
 
 ;;; ── Core normalization ──────────────────────────────────
 
@@ -57,49 +60,56 @@
 ;; symbolic boolean term suitable for normalization.
 ;;
 ;; Compound selectors map to boolean operators:
-;;   (all-of p1 p2 ...)   → (and p1' p2' ...)  (nested binary)
-;;   (any-of p1 p2 ...)   → (or p1' p2' ...)
-;;   (none-of p1 p2 ...)  → (not (or p1' p2' ...))
+;;   (all-of p1 p2 ...)   -> (and p1' p2' ...)  (nested binary)
+;;   (any-of p1 p2 ...)   -> (or p1' p2' ...)
+;;   (none-of p1 p2 ...)  -> (not (or p1' p2' ...))
 ;;
 ;; Atomic selectors map to opaque terms:
-;;   (contains-call "F")       → (calls "F")
-;;   (has-params "T" ...)      → (has-params "T" ...)
-;;   (has-receiver "T")        → (has-receiver "T")
-;;   (name-matches "P")        → (name-matches "P")
-;;   (stores-to-fields ...)    → (stores-to ...)
-;;   anything else             → kept as-is (opaque)
+;;   (contains-call "F")       -> (calls "F")
+;;   (has-params "T" ...)      -> (has-params "T" ...)
+;;   (has-receiver "T")        -> (has-receiver "T")
+;;   (name-matches "P")        -> (name-matches "P")
+;;   (stores-to-fields ...)    -> (stores-to ...)
+;;   anything else             -> kept as-is (opaque)
 (define (selector->symbolic expr)
   "Project a quoted belief selector expression into a symbolic boolean term.\n\nParameters:\n  expr : list\nReturns: any\nCategory: goast-boolean\n\nExamples:\n  (selector->symbolic '(all-of (contains-call \"Lock\") (contains-call \"Unlock\")))\n  ; => (and (calls \"Lock\") (calls \"Unlock\"))\n\nSee also: `boolean-equivalent?', `boolean-normalize'."
   (if (not (pair? expr)) expr
     (let ((head (car expr)))
       (cond
-        ;; Compound boolean combinators
+        ;; Compound boolean combinators — require at least one predicate
         ((eq? head 'all-of)
          (let ((args (map selector->symbolic (cdr expr))))
-           (if (= (length args) 1) (car args)
-             (let loop ((rest (cdr args)) (acc (car args)))
-               (if (null? rest) acc
-                 (loop (cdr rest) (list 'and acc (car rest))))))))
+           (cond ((null? args) (error "selector->symbolic: (all-of) requires at least one predicate"))
+                 ((= (length args) 1) (car args))
+                 (else (let loop ((rest (cdr args)) (acc (car args)))
+                         (if (null? rest) acc
+                           (loop (cdr rest) (list 'and acc (car rest)))))))))
         ((eq? head 'any-of)
          (let ((args (map selector->symbolic (cdr expr))))
-           (if (= (length args) 1) (car args)
-             (let loop ((rest (cdr args)) (acc (car args)))
-               (if (null? rest) acc
-                 (loop (cdr rest) (list 'or acc (car rest))))))))
+           (cond ((null? args) (error "selector->symbolic: (any-of) requires at least one predicate"))
+                 ((= (length args) 1) (car args))
+                 (else (let loop ((rest (cdr args)) (acc (car args)))
+                         (if (null? rest) acc
+                           (loop (cdr rest) (list 'or acc (car rest)))))))))
         ((eq? head 'none-of)
-         (list 'not (selector->symbolic (cons 'any-of (cdr expr)))))
-        ;; Atomic selectors → named atoms
+         (if (null? (cdr expr))
+           (error "selector->symbolic: (none-of) requires at least one predicate")
+           (list 'not (selector->symbolic (cons 'any-of (cdr expr))))))
+        ;; Atomic selectors — require argument, fall through to opaque if missing
         ((eq? head 'contains-call)
-         (list 'calls (cadr expr)))
+         (if (null? (cdr expr)) expr
+           (list 'calls (cadr expr))))
         ((eq? head 'has-params)
          (cons 'has-params (cdr expr)))
         ((eq? head 'has-receiver)
-         (list 'has-receiver (cadr expr)))
+         (if (null? (cdr expr)) expr
+           (list 'has-receiver (cadr expr))))
         ((eq? head 'name-matches)
-         (list 'name-matches (cadr expr)))
+         (if (null? (cdr expr)) expr
+           (list 'name-matches (cadr expr))))
         ((eq? head 'stores-to-fields)
          (cons 'stores-to (cdr expr)))
-        ;; Unknown → opaque
+        ;; Unknown -> opaque
         (else expr)))))
 
 ;;; ── Go AST condition projection ─────────────────────────
@@ -108,14 +118,14 @@
 ;; into a symbolic boolean term.
 ;;
 ;; Go AST boolean operators:
-;;   (binary-expr (op . &&) (x . left) (y . right))  → (and left' right')
-;;   (binary-expr (op . ||) (x . left) (y . right))  → (or left' right')
-;;   (unary-expr  (op . !)  (x . operand))            → (not operand')
+;;   (binary-expr (op . &&) (x . left) (y . right))  -> (and left' right')
+;;   (binary-expr (op . ||) (x . left) (y . right))  -> (or left' right')
+;;   (unary-expr  (op . !)  (x . operand))            -> (not operand')
 ;;
 ;; Comparison operators become opaque atoms:
-;;   (binary-expr (op . ==) (x . a) (y . b))          → (eq a' b')
-;;   (binary-expr (op . !=) (x . a) (y . b))          → (neq a' b')
-;;   (binary-expr (op . <)  (x . a) (y . b))          → (lt a' b')
+;;   (binary-expr (op . ==) (x . a) (y . b))          -> (eq a' b')
+;;   (binary-expr (op . !=) (x . a) (y . b))          -> (neq a' b')
+;;   (binary-expr (op . <)  (x . a) (y . b))          -> (lt a' b')
 ;;   etc.
 ;;
 ;; All other AST nodes become opaque atoms (identifiers, literals, etc.).
@@ -125,43 +135,47 @@
     (let ((tag (car node)))
       (cond
         ((eq? tag 'binary-expr)
-         (let* ((op (nf node 'op))
-                (op-name (if (symbol? op) (symbol->string op) ""))
-                (x (nf node 'x))
-                (y (nf node 'y)))
-           (cond
-             ((string=? op-name "&&") (list 'and
-                                        (ast-condition->symbolic x)
-                                        (ast-condition->symbolic y)))
-             ((string=? op-name "||") (list 'or
-                                        (ast-condition->symbolic x)
-                                        (ast-condition->symbolic y)))
-             ;; Comparisons → opaque atoms preserving structure
-             ((string=? op-name "==") (list 'eq (ast-condition->symbolic x) (ast-condition->symbolic y)))
-             ((string=? op-name "!=") (list 'neq (ast-condition->symbolic x) (ast-condition->symbolic y)))
-             ((string=? op-name "<")  (list 'lt (ast-condition->symbolic x) (ast-condition->symbolic y)))
-             ((string=? op-name ">")  (list 'gt (ast-condition->symbolic x) (ast-condition->symbolic y)))
-             ((string=? op-name "<=") (list 'le (ast-condition->symbolic x) (ast-condition->symbolic y)))
-             ((string=? op-name ">=") (list 'ge (ast-condition->symbolic x) (ast-condition->symbolic y)))
-             ;; Other binary ops → opaque
-             (else (list op (ast-condition->symbolic x) (ast-condition->symbolic y))))))
+         (let ((op (nf node 'op))
+               (x (nf node 'x))
+               (y (nf node 'y)))
+           ;; Guard: if any required field is missing, treat as opaque
+           (if (not (and op x y)) node
+             (let ((op-name (if (symbol? op) (symbol->string op) "")))
+               (cond
+                 ((string=? op-name "&&") (list 'and
+                                            (ast-condition->symbolic x)
+                                            (ast-condition->symbolic y)))
+                 ((string=? op-name "||") (list 'or
+                                            (ast-condition->symbolic x)
+                                            (ast-condition->symbolic y)))
+                 ;; Comparisons -> opaque atoms preserving structure
+                 ((string=? op-name "==") (list 'eq (ast-condition->symbolic x) (ast-condition->symbolic y)))
+                 ((string=? op-name "!=") (list 'neq (ast-condition->symbolic x) (ast-condition->symbolic y)))
+                 ((string=? op-name "<")  (list 'lt (ast-condition->symbolic x) (ast-condition->symbolic y)))
+                 ((string=? op-name ">")  (list 'gt (ast-condition->symbolic x) (ast-condition->symbolic y)))
+                 ((string=? op-name "<=") (list 'le (ast-condition->symbolic x) (ast-condition->symbolic y)))
+                 ((string=? op-name ">=") (list 'ge (ast-condition->symbolic x) (ast-condition->symbolic y)))
+                 ;; Other binary ops -> opaque
+                 (else (list op (ast-condition->symbolic x) (ast-condition->symbolic y))))))))
         ((eq? tag 'unary-expr)
-         (let* ((op (nf node 'op))
-                (op-name (if (symbol? op) (symbol->string op) ""))
-                (x (nf node 'x)))
-           (if (string=? op-name "!")
-             (list 'not (ast-condition->symbolic x))
-             (list op (ast-condition->symbolic x)))))
+         (let ((op (nf node 'op))
+               (x (nf node 'x)))
+           (if (not (and op x)) node
+             (let ((op-name (if (symbol? op) (symbol->string op) "")))
+               (if (string=? op-name "!")
+                 (list 'not (ast-condition->symbolic x))
+                 (list op (ast-condition->symbolic x)))))))
         ;; Identifiers
         ((eq? tag 'ident)
          (let ((name (nf node 'name)))
            (if name (string->symbol name) node)))
-        ;; Literals: (lit (kind . INT) (value . "0")) → the value string as symbol
+        ;; Literals: (lit (kind . INT) (value . "0")) -> the value string as symbol
         ((eq? tag 'lit)
          (let ((val (nf node 'value)))
            (if val (string->symbol val) node)))
         ;; Paren expression — unwrap
         ((eq? tag 'paren-expr)
-         (ast-condition->symbolic (nf node 'x)))
-        ;; Everything else → opaque
+         (let ((x (nf node 'x)))
+           (if x (ast-condition->symbolic x) node)))
+        ;; Everything else -> opaque
         (else node)))))
