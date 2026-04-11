@@ -556,6 +556,34 @@ func wrapBlock(stmts []ast.Stmt) ast.Stmt {
 	return &ast.BlockStmt{List: stmts}
 }
 
+// branchingBody returns the Body block from switch/type-switch/select
+// statements. Returns nil, false for all other node types.
+func branchingBody(n ast.Node) (*ast.BlockStmt, bool) {
+	switch s := n.(type) {
+	case *ast.SwitchStmt:
+		return s.Body, true
+	case *ast.TypeSwitchStmt:
+		return s.Body, true
+	case *ast.SelectStmt:
+		return s.Body, true
+	}
+	return nil, false
+}
+
+// rebuildBranching reconstructs a switch/type-switch/select statement
+// with a new body, preserving all other fields.
+func rebuildBranching(stmt ast.Stmt, newBody *ast.BlockStmt) ast.Stmt {
+	switch s := stmt.(type) {
+	case *ast.SwitchStmt:
+		return &ast.SwitchStmt{Init: s.Init, Tag: s.Tag, Body: newBody}
+	case *ast.TypeSwitchStmt:
+		return &ast.TypeSwitchStmt{Init: s.Init, Assign: s.Assign, Body: newBody}
+	case *ast.SelectStmt:
+		return &ast.SelectStmt{Body: newBody}
+	}
+	return stmt
+}
+
 // hasReturnInSwitch checks whether any switch/select/type-switch
 // statement in the list contains a return in its body.
 func hasReturnInSwitch(stmts []ast.Stmt) bool {
@@ -565,22 +593,14 @@ func hasReturnInSwitch(stmts []ast.Stmt) bool {
 			if found {
 				return false
 			}
-			switch s := n.(type) {
-			case *ast.SwitchStmt:
-				if bodyContainsReturn(s.Body) {
+			body, isBranching := branchingBody(n)
+			if isBranching {
+				if bodyContainsReturn(body) {
 					found = true
-					return false
 				}
-			case *ast.TypeSwitchStmt:
-				if bodyContainsReturn(s.Body) {
-					found = true
-					return false
-				}
-			case *ast.SelectStmt:
-				if bodyContainsReturn(s.Body) {
-					found = true
-					return false
-				}
+				return false
+			}
+			switch n.(type) {
 			case *ast.FuncLit:
 				return false
 			case *ast.ForStmt, *ast.RangeStmt:
@@ -770,49 +790,23 @@ func replaceReturnsInStmtsLabeled(
 				return nil, false
 			}
 			result = append(result, &ast.BlockStmt{List: newList})
-		case *ast.SwitchStmt:
-			if bodyContainsReturn(s.Body) {
-				if loopLabel == "" {
-					return nil, false
-				}
-				newClauses, ok := replaceReturnsInClauses(s.Body.List, ctlName, retIdx, collected, loopLabel, resultVarCount, resultVarBase)
-				if !ok {
-					return nil, false
-				}
-				result = append(result, &ast.SwitchStmt{Init: s.Init, Tag: s.Tag, Body: &ast.BlockStmt{List: newClauses}})
-			} else {
-				result = append(result, stmt)
-			}
-		case *ast.TypeSwitchStmt:
-			if bodyContainsReturn(s.Body) {
-				if loopLabel == "" {
-					return nil, false
-				}
-				newClauses, ok := replaceReturnsInClauses(s.Body.List, ctlName, retIdx, collected, loopLabel, resultVarCount, resultVarBase)
-				if !ok {
-					return nil, false
-				}
-				result = append(result, &ast.TypeSwitchStmt{Init: s.Init, Assign: s.Assign, Body: &ast.BlockStmt{List: newClauses}})
-			} else {
-				result = append(result, stmt)
-			}
-		case *ast.SelectStmt:
-			if bodyContainsReturn(s.Body) {
-				if loopLabel == "" {
-					return nil, false
-				}
-				newClauses, ok := replaceReturnsInClauses(s.Body.List, ctlName, retIdx, collected, loopLabel, resultVarCount, resultVarBase)
-				if !ok {
-					return nil, false
-				}
-				result = append(result, &ast.SelectStmt{Body: &ast.BlockStmt{List: newClauses}})
-			} else {
-				result = append(result, stmt)
-			}
 		default:
-			// ForStmt, RangeStmt (already processed), FuncLit,
-			// and all other statements pass through unchanged.
-			result = append(result, stmt)
+			body, isBranching := branchingBody(stmt)
+			if isBranching && bodyContainsReturn(body) {
+				if loopLabel == "" {
+					return nil, false
+				}
+				newClauses, ok := replaceReturnsInClauses(body.List, ctlName, retIdx, collected, loopLabel, resultVarCount, resultVarBase)
+				if !ok {
+					return nil, false
+				}
+				result = append(result, rebuildBranching(stmt, &ast.BlockStmt{List: newClauses}))
+			} else {
+				// ForStmt, RangeStmt (already processed), FuncLit,
+				// switch/select without returns, and all other
+				// statements pass through unchanged.
+				result = append(result, stmt)
+			}
 		}
 	}
 	return result, true
