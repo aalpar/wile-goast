@@ -24,6 +24,7 @@ MODULE="github.com/aalpar/wile-goast"
 EXCLUDED_PKGS=(
 	"cmd/wile-goast"
 	"testutil"
+	"ruleguard"
 )
 
 is_excluded() {

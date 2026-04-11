@@ -49,7 +49,6 @@ func newBeliefEngine(t *testing.T) *wile.Engine {
 	return engine
 }
 
-
 func TestBeliefImport(t *testing.T) {
 	engine := newBeliefEngine(t)
 

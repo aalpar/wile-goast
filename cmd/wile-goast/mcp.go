@@ -25,6 +25,7 @@ import (
 	"github.com/mark3labs/mcp-go/server"
 
 	"github.com/aalpar/wile"
+	"github.com/aalpar/wile/werr"
 )
 
 // BuildVersion is set by -ldflags at build time.
@@ -32,6 +33,8 @@ var BuildVersion string
 
 // BuildSHA is set by -ldflags at build time.
 var BuildSHA string
+
+var errMCPServer = werr.NewStaticError("mcp server error")
 
 type mcpServer struct {
 	engine     *wile.Engine
@@ -67,8 +70,9 @@ func doMCP(ctx context.Context) error {
 		ms.handleEval,
 	)
 
-	if err := ms.registerPrompts(s); err != nil {
-		return fmt.Errorf("registering prompts: %w", err)
+	err := ms.registerPrompts(s)
+	if err != nil {
+		return werr.WrapForeignErrorf(errMCPServer, "registering prompts: %s", err)
 	}
 
 	return server.ServeStdio(s)
@@ -158,7 +162,7 @@ func (ms *mcpServer) registerPrompts(s *server.MCPServer) error {
 	for _, p := range prompts {
 		content, err := fs.ReadFile(embeddedPrompts, p.file)
 		if err != nil {
-			return fmt.Errorf("reading %s: %w", p.file, err)
+			return werr.WrapForeignErrorf(errMCPServer, "reading %s: %s", p.file, err)
 		}
 		text := string(content)
 		promptOpts := append([]mcp.PromptOption{mcp.WithPromptDescription(p.description)}, p.args...)

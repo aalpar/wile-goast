@@ -7,6 +7,7 @@ require (
 	github.com/frankban/quicktest v1.14.6
 	github.com/jessevdk/go-flags v1.6.1
 	github.com/mark3labs/mcp-go v0.45.0
+	github.com/quasilyte/go-ruleguard/dsl v0.3.23
 	golang.org/x/tools v0.42.0
 )
 

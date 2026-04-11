@@ -398,7 +398,8 @@ func findImplementors(mc machine.CallContext, name string, pkgs []*packages.Pack
 				continue
 			}
 			t := tn.Type()
-			if _, isIface := t.Underlying().(*types.Interface); isIface {
+			_, isIface := t.Underlying().(*types.Interface)
+			if isIface {
 				continue
 			}
 			ptr := types.NewPointer(t)

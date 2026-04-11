@@ -26,7 +26,6 @@ import (
 	"github.com/aalpar/wile/werr"
 )
 
-
 // PrimGoLoad implements (go-load pattern ... . options).
 // Loads Go packages and returns a GoSession for reuse across primitives.
 func PrimGoLoad(mc machine.CallContext) error {

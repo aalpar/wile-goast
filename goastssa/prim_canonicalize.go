@@ -71,7 +71,8 @@ func PrimGoSSACanonicalize(mc machine.CallContext) error {
 		return err
 	}
 
-	if err := canonicalizeBlockOrder(&fd); err != nil {
+	err = canonicalizeBlockOrder(&fd)
+	if err != nil {
 		return err
 	}
 	renameRegisters(&fd)
@@ -474,7 +475,8 @@ func remapIntField(node *values.Pair, key string, oldToNew map[int64]int64) valu
 	if !ok {
 		return node
 	}
-	if newIdx, mapped := oldToNew[intVal.Value]; mapped {
+	newIdx, mapped := oldToNew[intVal.Value]
+	if mapped {
 		return replaceField(node, key, values.NewInteger(newIdx))
 	}
 	return node
@@ -501,7 +503,8 @@ func renameRegisters(fd *ssaFuncData) {
 		for _, instr := range b.instrs {
 			name := instrName(instr)
 			if name != "" {
-				if _, exists := nameMap[name]; !exists {
+				_, exists := nameMap[name]
+				if !exists {
 					nameMap[name] = "r" + strconv.FormatInt(int64(rIdx), 10)
 					rIdx++
 				}
@@ -532,7 +535,8 @@ func renameFreeVars(freeVars values.Value, nameMap map[string]string) values.Val
 			oldName := ""
 			nameVal, found := goast.GetField(node.Cdr(), "name")
 			if found {
-				if s, ok := nameVal.(*values.String); ok {
+				s, ok := nameVal.(*values.String)
+				if ok {
 					oldName = s.Value
 				}
 			}
@@ -571,7 +575,8 @@ func instrName(instr values.Value) string {
 func renameInstrStrings(v values.Value, nameMap map[string]string) values.Value {
 	switch val := v.(type) {
 	case *values.String:
-		if replacement, ok := nameMap[val.Value]; ok {
+		replacement, ok := nameMap[val.Value]
+		if ok {
 			return goast.Str(replacement)
 		}
 		return v

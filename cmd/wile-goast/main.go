@@ -38,6 +38,7 @@ import (
 	goflags "github.com/jessevdk/go-flags"
 
 	"github.com/aalpar/wile"
+	"github.com/aalpar/wile/werr"
 
 	"github.com/aalpar/wile-goast/goast"
 	"github.com/aalpar/wile-goast/goastcfg"
@@ -45,6 +46,8 @@ import (
 	"github.com/aalpar/wile-goast/goastlint"
 	"github.com/aalpar/wile-goast/goastssa"
 )
+
+var errCLI = werr.NewStaticError("cli error")
 
 // Options defines the command-line flags, matching wile's style.
 type Options struct {
@@ -79,7 +82,8 @@ func main() {
 			fmt.Fprintln(os.Stderr, "Error: --mcp cannot be combined with -e, -f, --run, or --list-scripts")
 			os.Exit(1)
 		}
-		if err := doMCP(ctx); err != nil {
+		err = doMCP(ctx)
+		if err != nil {
 			fmt.Fprintf(os.Stderr, "MCP server error: %v\n", err)
 			os.Exit(1)
 		}
@@ -109,22 +113,30 @@ func main() {
 		return
 	}
 
+	err = runWithEngine(ctx)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+func runWithEngine(ctx context.Context) error {
 	engine := buildEngine(ctx)
 	defer func() { _ = engine.Close() }()
 
 	// Load files (-f or positional)
 	for _, filename := range opts.File {
-		if err := loadFile(ctx, engine, filename); err != nil {
-			fmt.Fprintf(os.Stderr, "Error loading %s: %v\n", filename, err)
-			os.Exit(1)
+		err := loadFile(ctx, engine, filename)
+		if err != nil {
+			return werr.WrapForeignErrorf(errCLI, "loading %s: %s", filename, err)
 		}
 	}
 
 	// Evaluate -e expressions
 	for _, expr := range opts.Eval {
-		if err := evalAndPrint(ctx, engine, expr); err != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-			os.Exit(1)
+		err := evalAndPrint(ctx, engine, expr)
+		if err != nil {
+			return err
 		}
 	}
 
@@ -132,14 +144,15 @@ func main() {
 	if len(opts.File) == 0 && len(opts.Eval) == 0 && stdinIsPipe() {
 		data, err := io.ReadAll(os.Stdin)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error reading stdin: %v\n", err)
-			os.Exit(1)
+			return werr.WrapForeignErrorf(errCLI, "reading stdin: %s", err)
 		}
-		if err := evalAndPrint(ctx, engine, string(data)); err != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-			os.Exit(1)
+		err = evalAndPrint(ctx, engine, string(data))
+		if err != nil {
+			return err
 		}
 	}
+
+	return nil
 }
 
 func buildEngineOrError(ctx context.Context) (*wile.Engine, error) {
@@ -219,17 +232,25 @@ func doRunScript(ctx context.Context, name string) {
 		os.Exit(1)
 	}
 
+	err = runScript(ctx, data)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+func runScript(ctx context.Context, data []byte) error {
 	engine := buildEngine(ctx)
 	defer func() { _ = engine.Close() }()
 
-	val, evalErr := engine.EvalMultiple(ctx, string(data))
-	if evalErr != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", evalErr)
-		os.Exit(1)
+	val, err := engine.EvalMultiple(ctx, string(data))
+	if err != nil {
+		return err
 	}
 	if val != nil && !val.IsVoid() {
 		fmt.Println(val.SchemeString())
 	}
+	return nil
 }
 
 func stdinIsPipe() bool {

@@ -17,8 +17,9 @@ package goast_test
 import (
 	"testing"
 
-	"github.com/aalpar/wile/values"
 	qt "github.com/frankban/quicktest"
+
+	"github.com/aalpar/wile/values"
 )
 
 func TestUnify_ASTDiffIdentical(t *testing.T) {

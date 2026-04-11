@@ -24,7 +24,6 @@ import (
 	"github.com/aalpar/wile/werr"
 )
 
-
 // PrimGoCFGToStructured implements (go-cfg-to-structured block [func-type]).
 // Takes a block s-expression. Returns a restructured block where early
 // returns and gotos are eliminated (single exit point), or the block
@@ -56,19 +55,19 @@ func PrimGoCFGToStructured(mc machine.CallContext) error {
 
 	// Extract result types from optional func-type argument.
 	var resultTypes []*ast.Field
-	if tuple, ok := mc.Arg(1).(values.Tuple); ok {
-		if pair, ok := tuple.(*values.Pair); ok {
+	tuple, ok := mc.Arg(1).(values.Tuple)
+	if ok {
+		pair, pok := tuple.(*values.Pair)
+		if pok {
 			ftVal := pair.Car()
-			if ftVal == values.FalseValue {
-				// Explicit #f means "no func type" — ok.
-			} else {
+			if ftVal != values.FalseValue {
 				ftNode, err := unmapNode(ftVal)
 				if err != nil {
 					return werr.WrapForeignErrorf(errGoRestructureError,
 						"go-cfg-to-structured: func-type: %s", err)
 				}
-				ft, ok := ftNode.(*ast.FuncType)
-				if !ok {
+				ft, ftOk := ftNode.(*ast.FuncType)
+				if !ftOk {
 					return werr.WrapForeignErrorf(errGoRestructureError,
 						"go-cfg-to-structured: expected func-type, got %T", ftNode)
 				}
@@ -77,7 +76,8 @@ func PrimGoCFGToStructured(mc machine.CallContext) error {
 				}
 			}
 			// Reject extra arguments.
-			if cdr, ok := pair.Cdr().(values.Tuple); ok && !values.IsEmptyList(cdr) {
+			cdr, cdrok := pair.Cdr().(values.Tuple)
+			if cdrok && !values.IsEmptyList(cdr) {
 				return werr.WrapForeignErrorf(errGoRestructureError,
 					"go-cfg-to-structured: expected at most 1 optional argument, got extra")
 			}
@@ -215,11 +215,11 @@ func containsGoto(block *ast.BlockStmt) bool {
 type gotoClass int
 
 const (
-	gotoNone        gotoClass = iota // no gotos
-	gotoForwardOnly                  // all gotos jump to labels later in same block
-	gotoBackwardOnly                 // all gotos jump to labels earlier in same block
-	gotoMixed                        // mix of forward and backward
-	gotoCrossBranch                  // goto into/out of if/switch branches
+	gotoNone         gotoClass = iota // no gotos
+	gotoForwardOnly                   // all gotos jump to labels later in same block
+	gotoBackwardOnly                  // all gotos jump to labels earlier in same block
+	gotoMixed                         // mix of forward and backward
+	gotoCrossBranch                   // goto into/out of if/switch branches
 )
 
 // classifyGotos analyzes goto statements in a block.
@@ -257,10 +257,9 @@ func classifyGotos(block *ast.BlockStmt) gotoClass {
 	// actual goto targets. This excludes break/continue loop labels.
 	labelPos := map[string]int{}
 	for i, stmt := range block.List {
-		if ls, ok := stmt.(*ast.LabeledStmt); ok {
-			if gotoTargets[ls.Label.Name] {
-				labelPos[ls.Label.Name] = i
-			}
+		ls, ok := stmt.(*ast.LabeledStmt)
+		if ok && gotoTargets[ls.Label.Name] {
+			labelPos[ls.Label.Name] = i
 		}
 	}
 
@@ -292,11 +291,12 @@ func classifyGotos(block *ast.BlockStmt) gotoClass {
 			// Label not at top level — can't restructure.
 			return gotoCrossBranch
 		}
-		if target > g.stmtIdx {
+		switch {
+		case target > g.stmtIdx:
 			hasForward = true
-		} else if target < g.stmtIdx {
+		case target < g.stmtIdx:
 			hasBackward = true
-		} else {
+		default:
 			// Self-goto (label and goto at same statement index).
 			// Cannot be restructured — classify as cross-branch.
 			return gotoCrossBranch
@@ -330,7 +330,8 @@ func singleGotoTarget(block *ast.BlockStmt) string {
 
 // negateExpr wraps an expression in !(...). Unwraps double negation.
 func negateExpr(expr ast.Expr) ast.Expr {
-	if unary, ok := expr.(*ast.UnaryExpr); ok && unary.Op == token.NOT {
+	unary, ok := expr.(*ast.UnaryExpr)
+	if ok && unary.Op == token.NOT {
 		return unary.X
 	}
 	return &ast.UnaryExpr{Op: token.NOT, X: &ast.ParenExpr{X: expr}}
@@ -352,7 +353,8 @@ func restructureForwardGotos(stmts []ast.Stmt) []ast.Stmt {
 		// Build label index.
 		labelPos := map[string]int{}
 		for j, s := range result {
-			if ls, ok := s.(*ast.LabeledStmt); ok {
+			ls, ok := s.(*ast.LabeledStmt)
+			if ok {
 				labelPos[ls.Label.Name] = j
 			}
 		}
@@ -386,7 +388,8 @@ func restructureForwardGotos(stmts []ast.Stmt) []ast.Stmt {
 			// Only strip the label if no other goto targets it.
 			targetStmt := result[targetIdx]
 			if !hasOtherGoto(result, gotoTarget, i) {
-				if ls, ok := targetStmt.(*ast.LabeledStmt); ok {
+				ls, lsOk := targetStmt.(*ast.LabeledStmt)
+				if lsOk {
 					targetStmt = ls.Stmt
 				}
 			}
@@ -394,8 +397,7 @@ func restructureForwardGotos(stmts []ast.Stmt) []ast.Stmt {
 			// Rebuild: result[:i] + wrapped + targetStmt + result[targetIdx+1:]
 			var newStmts []ast.Stmt
 			newStmts = append(newStmts, result[:i]...)
-			newStmts = append(newStmts, wrapped)
-			newStmts = append(newStmts, targetStmt)
+			newStmts = append(newStmts, wrapped, targetStmt)
 			newStmts = append(newStmts, result[targetIdx+1:]...)
 			result = newStmts
 			rewritten = true

@@ -1,0 +1,88 @@
+version: "2"
+
+run:
+  timeout: 5m
+  go: "1.24"
+
+formatters:
+  enable:
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/aalpar/wile-goast
+        - github.com/aalpar/wile
+
+linters:
+  enable:
+    # Tier 1: correctness
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - nilerr
+    - unused
+    # Tier 2: high signal
+    - modernize
+    - noctx
+    # Tier 3: style
+    - dupl
+    - gocritic
+    - revive
+    - misspell
+    - unconvert
+    - unparam
+    - whitespace
+  settings:
+    dupl:
+      threshold: 150
+    govet:
+      enable-all: true
+      disable:
+        - fieldalignment
+        - shadow
+    gocritic:
+      enabled-tags:
+        - diagnostic
+        - performance
+      enabled-checks:
+        - ruleguard
+      disabled-checks:
+        - appendAssign
+        - commentedOutCode
+        - hugeParam
+        - rangeValCopy
+      settings:
+        ruleguard:
+          failOn: dsl,import
+          rules: '${config-path}/ruleguard/rules.go'
+    revive:
+      rules:
+        - name: blank-imports
+        - name: context-as-argument
+        - name: context-keys-type
+        - name: dot-imports
+        - name: error-return
+        - name: error-naming
+        - name: increment-decrement
+        - name: var-declaration
+        - name: range
+        - name: receiver-naming
+        - name: time-naming
+        - name: unexported-return
+        - name: indent-error-flow
+        - name: errorf
+        - name: empty-block
+        - name: superfluous-else
+        - name: unreachable-code
+        - name: redefines-builtin-id
+  exclusions:
+    rules:
+      - path: _test\.go
+        linters:
+          - errcheck
+          - unparam
+          - dupl
+      - path: cmd/
+        linters:
+          - unparam

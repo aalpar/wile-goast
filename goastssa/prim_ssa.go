@@ -29,9 +29,9 @@ import (
 )
 
 var (
-	errSSABuildError         = werr.NewStaticError("ssa build error")
-	errSSAFieldIndexError    = werr.NewStaticError("ssa field index error")
-	errSSACanonicalizeError  = werr.NewStaticError("ssa canonicalize error")
+	errSSABuildError        = werr.NewStaticError("ssa build error")
+	errSSAFieldIndexError   = werr.NewStaticError("ssa field index error")
+	errSSACanonicalizeError = werr.NewStaticError("ssa canonicalize error")
 )
 
 // parseSSAOpts extracts mapper options from a variadic rest-arg list.
@@ -229,7 +229,8 @@ func collectFieldSummaries(ssaPkg *ssa.Package, out *[]values.Value) {
 		if !ok || fn.Synthetic != "" {
 			continue
 		}
-		if s := buildFuncSummary(fn, pkgPath); s != nil {
+		s := buildFuncSummary(fn, pkgPath)
+		if s != nil {
 			*out = append(*out, s)
 		}
 	}
@@ -247,7 +248,8 @@ func collectFieldSummaries(ssaPkg *ssa.Package, out *[]values.Value) {
 			if fn == nil || fn.Synthetic != "" || fn.Pkg != ssaPkg {
 				continue
 			}
-			if s := buildFuncSummary(fn, pkgPath); s != nil {
+			s := buildFuncSummary(fn, pkgPath)
+			if s != nil {
 				*out = append(*out, s)
 			}
 		}

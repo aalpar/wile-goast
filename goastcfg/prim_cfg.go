@@ -153,7 +153,8 @@ func findFunction(prog *ssa.Program, ssaPkg *ssa.Package, name string) *ssa.Func
 	// Form 3: qualified name — try exact match via fn.String()
 	if strings.Contains(name, ".") || strings.Contains(name, "(") {
 		for _, mem := range ssaPkg.Members {
-			if fn, ok := mem.(*ssa.Function); ok && fn.String() == name {
+			fn, ok := mem.(*ssa.Function)
+			if ok && fn.String() == name {
 				return fn
 			}
 		}
