@@ -499,6 +499,41 @@ func TestGoCFGToStructured_SiblingLoopsResultVars(t *testing.T) {
 	})
 }
 
+func TestGoCFGToStructured_LoopReturnGroupedResults(t *testing.T) {
+	engine := newEngine(t)
+
+	// Multi-named return field (x, y int) forces cloneTypeExpr to
+	// produce independent type expressions for each result variable.
+	eval(t, engine, `
+		(define source "
+			package p
+			func f(items []int) (x, y int, err error) {
+				for i, v := range items {
+					if v < 0 { return i, v, errNeg }
+				}
+				return 0, 0, nil
+			}")
+		(define file (go-parse-string source))
+		(define decl (car (cdr (assoc 'decls (cdr file)))))
+		(define body (cdr (assoc 'body (cdr decl))))
+		(define ftype (cdr (assoc 'type (cdr decl))))
+		(define result (go-cfg-to-structured body ftype))`)
+
+	t.Run("grouped result types get independent var decls", func(t *testing.T) {
+		result := eval(t, engine, `(go-format result)`)
+		s := result.Internal().(*values.String).Value
+		// Three result vars: _r0 int, _r1 int (cloned), _r2 error.
+		qt.New(t).Assert(strings.Contains(s, "var _r0 int"), qt.IsTrue,
+			qt.Commentf("expected _r0 int, got:\n%s", s))
+		qt.New(t).Assert(strings.Contains(s, "var _r1 int"), qt.IsTrue,
+			qt.Commentf("expected _r1 int (cloned type), got:\n%s", s))
+		qt.New(t).Assert(strings.Contains(s, "var _r2 error"), qt.IsTrue,
+			qt.Commentf("expected _r2 error, got:\n%s", s))
+		qt.New(t).Assert(strings.Contains(s, "return _r0, _r1, _r2"), qt.IsTrue,
+			qt.Commentf("expected return _r0, _r1, _r2 in guard, got:\n%s", s))
+	})
+}
+
 func TestGoCFGToStructured_LoopReturnNoFuncType(t *testing.T) {
 	engine := newEngine(t)
 

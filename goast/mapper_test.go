@@ -1206,3 +1206,37 @@ func TestForEachSexprErrors(t *testing.T) {
 		c.Assert(called, qt.IsFalse)
 	})
 }
+
+func TestCloneTypeExpr(t *testing.T) {
+	c := qt.New(t)
+
+	tests := []struct {
+		name string
+		expr ast.Expr
+	}{
+		{"Ident", ast.NewIdent("int")},
+		{"StarExpr", &ast.StarExpr{X: ast.NewIdent("T")}},
+		{"ArrayType", &ast.ArrayType{Elt: ast.NewIdent("int")}},
+		{"MapType", &ast.MapType{Key: ast.NewIdent("string"), Value: ast.NewIdent("int")}},
+		{"ChanType", &ast.ChanType{Dir: ast.SEND, Value: ast.NewIdent("int")}},
+		{"SelectorExpr", &ast.SelectorExpr{X: ast.NewIdent("pkg"), Sel: ast.NewIdent("Type")}},
+		{"Ellipsis", &ast.Ellipsis{Elt: ast.NewIdent("int")}},
+		{"IndexExpr", &ast.IndexExpr{X: ast.NewIdent("List"), Index: ast.NewIdent("int")}},
+		{"FuncType", &ast.FuncType{}},
+		{"InterfaceType", &ast.InterfaceType{}},
+		{"StructType", &ast.StructType{}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			clone := cloneTypeExpr(tt.expr)
+			c.Assert(clone == tt.expr, qt.IsFalse,
+				qt.Commentf("cloneTypeExpr returned same pointer for %s", tt.name))
+		})
+	}
+
+	t.Run("unknown falls through", func(t *testing.T) {
+		exotic := &ast.ParenExpr{X: ast.NewIdent("int")}
+		clone := cloneTypeExpr(exotic)
+		c.Assert(clone, qt.Equals, exotic) // same pointer — fallback shares reference
+	})
+}
