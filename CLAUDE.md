@@ -279,6 +279,29 @@ Formal Concept Analysis (Ganter & Wille, 1999) applied to Go struct field access
 | `cross-boundary-concepts` | Filter concepts spanning multiple struct types (opts: `'min-extent`, `'min-intent`, `'min-types`) |
 | `boundary-report` | Structured alist report for cross-boundary concepts |
 
+## FCA Algebraic Annotation — `(wile goast fca-algebra)`
+
+Bridges FCA concept lattices with `(wile algebra lattice)` from wile's algebra library. Constructs an algebraic lattice from FCA concepts (with join/meet via the Galois connection), and annotates boundary reports with lattice-theoretic relationships.
+
+| Export | Description |
+|--------|-------------|
+| `concept-lattice->algebra-lattice` | Construct `(wile algebra lattice)` from FCA context + concepts |
+| `concept-relationship` | Classify pair: `subconcept` / `superconcept` / `equal` / `incomparable` |
+| `annotated-boundary-report` | Extend boundary report with `subconcept-of`, `superconcept-of`, `incomparable-with` |
+
+## Boolean Simplification — `(wile goast boolean-simplify)`
+
+Boolean normalization for Go AST conditions and belief selector predicates. Uses `(wile algebra symbolic)` recursive normalizer with a Boolean algebra theory (absorption, involution, idempotence, commutativity).
+
+| Export | Description |
+|--------|-------------|
+| `boolean-normalize` | Normalize boolean S-expression; returns `(values normal-form trace)` |
+| `boolean-equivalent?` | Check if two terms normalize to the same form |
+| `selector->symbolic` | Project belief selector combinators (`all-of`→`and`, `any-of`→`or`, `none-of`→`not`) |
+| `ast-condition->symbolic` | Project Go AST conditions (`&&`→`and`, `||`→`or`, `!`→`not`, comparisons→opaque atoms) |
+
+Note: Go's `&&`/`||` become control flow in SSA, so `ast-condition->symbolic` works at the AST level (from `go-parse-expr`/`go-parse-file`), not SSA.
+
 ## Key Files
 
 | File | Purpose |
@@ -299,6 +322,8 @@ Formal Concept Analysis (Ganter & Wille, 1999) applied to Go struct field access
 | `cmd/wile-goast/lib/wile/goast/ssa-normalize.scm` | SSA algebraic normalization rules (embedded in binary) |
 | `cmd/wile-goast/lib/wile/goast/unify.scm` | AST/SSA diff engine with pluggable classifiers (embedded in binary) |
 | `cmd/wile-goast/lib/wile/goast/fca.scm` | Formal Concept Analysis: false boundary detection via concept lattices (embedded in binary) |
+| `cmd/wile-goast/lib/wile/goast/fca-algebra.scm` | FCA algebraic annotation: concept lattice as `(wile algebra lattice)`, relationship classification (embedded in binary) |
+| `cmd/wile-goast/lib/wile/goast/boolean-simplify.scm` | Boolean normalization for Go AST conditions and belief selectors via `(wile algebra symbolic)` (embedded in binary) |
 | `goast/prim_restructure.go` | Block restructuring: goto elimination, loop return rewriting, guard folding (`go-cfg-to-structured`) |
 | `goastssa/prim_canonicalize.go` | SSA function canonicalization (`go-ssa-canonicalize`) |
 
