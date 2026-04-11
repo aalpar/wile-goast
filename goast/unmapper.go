@@ -207,6 +207,7 @@ func unmapStmt(v values.Value) (ast.Stmt, error) {
 }
 
 // unmapList traverses a Scheme proper list, applying convert to each element.
+// Nil converter results (from optional AST nodes mapped as #f) are skipped.
 func unmapList[T any](v values.Value, convert func(values.Value) (T, error), what string) ([]T, error) {
 	if IsFalse(v) {
 		return nil, nil
@@ -227,7 +228,9 @@ func unmapList[T any](v values.Value, convert func(values.Value) (T, error), wha
 		if err != nil {
 			return nil, err
 		}
-		result = append(result, item)
+		if any(item) != nil {
+			result = append(result, item)
+		}
 		cdr, ok := pair.Cdr().(values.Tuple)
 		if !ok {
 			return nil, werr.WrapForeignErrorf(errMalformedGoAST,
@@ -240,70 +243,12 @@ func unmapList[T any](v values.Value, convert func(values.Value) (T, error), wha
 
 // unmapExprList converts a Scheme list of expressions to []ast.Expr.
 func unmapExprList(v values.Value) ([]ast.Expr, error) {
-	if IsFalse(v) {
-		return nil, nil
-	}
-	tuple, ok := v.(values.Tuple)
-	if !ok {
-		return nil, werr.WrapForeignErrorf(errMalformedGoAST,
-			"goast: expected list of expressions, got %T", v)
-	}
-	var result []ast.Expr
-	for !values.IsEmptyList(tuple) {
-		pair, ok := tuple.(*values.Pair)
-		if !ok {
-			return nil, werr.WrapForeignErrorf(errMalformedGoAST,
-				"goast: expected proper list of expressions, got %T", tuple)
-		}
-		expr, err := unmapExpr(pair.Car())
-		if err != nil {
-			return nil, err
-		}
-		if expr != nil {
-			result = append(result, expr)
-		}
-		cdr, ok := pair.Cdr().(values.Tuple)
-		if !ok {
-			return nil, werr.WrapForeignErrorf(errMalformedGoAST,
-				"goast: improper list in expression list")
-		}
-		tuple = cdr
-	}
-	return result, nil
+	return unmapList(v, unmapExpr, "expressions")
 }
 
 // unmapStmtList converts a Scheme list of statements to []ast.Stmt.
 func unmapStmtList(v values.Value) ([]ast.Stmt, error) {
-	if IsFalse(v) {
-		return nil, nil
-	}
-	tuple, ok := v.(values.Tuple)
-	if !ok {
-		return nil, werr.WrapForeignErrorf(errMalformedGoAST,
-			"goast: expected list of statements, got %T", v)
-	}
-	var result []ast.Stmt
-	for !values.IsEmptyList(tuple) {
-		pair, ok := tuple.(*values.Pair)
-		if !ok {
-			return nil, werr.WrapForeignErrorf(errMalformedGoAST,
-				"goast: expected proper list of statements, got %T", tuple)
-		}
-		stmt, err := unmapStmt(pair.Car())
-		if err != nil {
-			return nil, err
-		}
-		if stmt != nil {
-			result = append(result, stmt)
-		}
-		cdr, ok := pair.Cdr().(values.Tuple)
-		if !ok {
-			return nil, werr.WrapForeignErrorf(errMalformedGoAST,
-				"goast: improper list in statement list")
-		}
-		tuple = cdr
-	}
-	return result, nil
+	return unmapList(v, unmapStmt, "statements")
 }
 
 // unmapStringList extracts a list of Go strings from a Scheme list of strings.
