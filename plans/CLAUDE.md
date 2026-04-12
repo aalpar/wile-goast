@@ -36,8 +36,8 @@
 | `2026-03-26-c2-dataflow-impl.md` | C2 dataflow analysis implementation plan | Complete |
 | `2026-03-26-c3-domains-design.md` | Pre-built abstract domains: reaching defs, liveness, constant prop, sign, interval | Design approved |
 | `2026-03-26-c3-domains-impl.md` | C3 abstract domains implementation plan | Open |
-| `2026-04-06-structured-docstrings-design.md` | Structured docstrings for Go primitives and Scheme procedures | Approved |
-| `2026-04-06-structured-docstrings-impl.md` | Implementation plan: 93 docstrings across 10 files in 11 tasks | Open |
+| `2026-04-06-structured-docstrings-design.md` | Structured docstrings for Go primitives and Scheme procedures | Complete |
+| `2026-04-06-structured-docstrings-impl.md` | Implementation plan: 93 docstrings across 10 files in 11 tasks + 21 post-plan docstrings (fca.scm, path-algebra.scm) | Complete |
 | `2026-04-08-false-boundary-detection-design.md` | FCA-based false boundary detection: discover natural struct groupings from field access patterns | Approved |
 | `2026-04-08-false-boundary-detection-impl.md` | Implementation plan: 9 tasks, FCA core + bridge + boundary detection + integration test | Open |
 | `2026-04-09-fca-findings-goast.md` | FCA self-analysis findings: 7 cross-boundary concepts, AccessRequest×Config extraction (9 sites), makeVarDeclInt inline | Complete |

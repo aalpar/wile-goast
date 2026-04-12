@@ -52,6 +52,9 @@ fields. `Examples:` and `See also:` are preserved in prose. All sections optiona
 | `goast-utils` | AST traversal, list utilities, tree rewriters |
 | `goast-ssa-normalize` | SSA algebraic normalization rules |
 | `goast-unify` | Structural diff and unification detection |
+| `goast-fca` | Formal Concept Analysis: context, lattice, boundary detection |
+| `goast-boolean` | Boolean normalization for AST conditions and belief selectors |
+| `goast-path` | Semiring path algebra over call graphs |
 
 ## Inventory
 

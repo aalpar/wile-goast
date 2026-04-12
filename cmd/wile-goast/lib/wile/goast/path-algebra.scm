@@ -29,6 +29,7 @@
 ;; --- Constructor ---
 
 (define (make-path-analysis semiring cg edge-weight)
+  "Construct a path analysis from a semiring, call graph, and edge-weight function.\nEDGE-WEIGHT receives a cg-edge and returns a semiring value.\nPass #f for unit weights (each edge = semiring-one).\n\nParameters:\n  semiring : any\n  cg : list\n  edge-weight : procedure-or-false\nReturns: path-analysis\nCategory: goast-path\n\nExamples:\n  (make-path-analysis (boolean-semiring) cg #f)\n  (make-path-analysis (tropical-semiring) cg (lambda (e) 1))\n\nSee also: `path-query', `path-query-all'."
   (let ((adj (build-adjacency cg))
         (wfn (or edge-weight (lambda (_) (semiring-one semiring)))))
     (make-path-analysis* semiring adj wfn '())))
@@ -93,9 +94,11 @@
 ;; --- Public API ---
 
 (define (path-query pa source target)
+  "Query the semiring value between source and target.\nReturns semiring-zero if target is unreachable. Lazily computes\nand caches single-source distances on first query per source.\n\nParameters:\n  pa : path-analysis\n  source : string\n  target : string\nReturns: any\nCategory: goast-path\n\nSee also: `path-query-all', `make-path-analysis'."
   (let* ((dist (get-or-compute pa source))
          (entry (assoc target dist)))
     (if entry (cdr entry) (semiring-zero (pa-semiring pa)))))
 
 (define (path-query-all pa source)
+  "Return distance alist for all reachable nodes from source.\nEach entry is (name . semiring-value). Lazily computed and cached.\n\nParameters:\n  pa : path-analysis\n  source : string\nReturns: list\nCategory: goast-path\n\nSee also: `path-query', `make-path-analysis'."
   (get-or-compute pa source))

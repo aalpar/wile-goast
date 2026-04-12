@@ -14,6 +14,7 @@
 
 ;; Add element to a sorted string list, maintaining sort and uniqueness.
 (define (set-add elem sorted)
+  "Add an element to a sorted string list, maintaining sort and uniqueness.\n\nParameters:\n  elem : string\n  sorted : list\nReturns: list\nCategory: goast-fca\n\nSee also: `set-union', `set-member?'."
   (cond ((null? sorted) (list elem))
         ((string<? elem (car sorted)) (cons elem sorted))
         ((string=? elem (car sorted)) sorted)
@@ -21,6 +22,7 @@
 
 ;; Intersection of two sorted string lists.
 (define (set-intersect a b)
+  "Intersection of two sorted string lists.\n\nParameters:\n  a : list\n  b : list\nReturns: list\nCategory: goast-fca\n\nSee also: `set-union', `set-subset?'."
   (cond ((null? a) '())
         ((null? b) '())
         ((string<? (car a) (car b)) (set-intersect (cdr a) b))
@@ -29,6 +31,7 @@
 
 ;; Membership test with early exit on sorted list.
 (define (set-member? elem sorted)
+  "Test membership in a sorted string list with early exit.\n\nParameters:\n  elem : string\n  sorted : list\nReturns: boolean\nCategory: goast-fca\n\nSee also: `set-add'."
   (cond ((null? sorted) #f)
         ((string<? elem (car sorted)) #f)
         ((string=? elem (car sorted)) #t)
@@ -36,6 +39,7 @@
 
 ;; Union of two sorted string lists.
 (define (set-union a b)
+  "Union of two sorted string lists.\n\nParameters:\n  a : list\n  b : list\nReturns: list\nCategory: goast-fca\n\nSee also: `set-intersect', `set-add'."
   (cond ((null? a) b)
         ((null? b) a)
         ((string<? (car a) (car b))
@@ -46,6 +50,7 @@
 
 ;; Subset test on sorted string lists.
 (define (set-subset? a b)
+  "Test whether sorted string list A is a subset of B.\n\nParameters:\n  a : list\n  b : list\nReturns: boolean\nCategory: goast-fca\n\nSee also: `set-intersect'."
   (cond ((null? a) #t)
         ((null? b) #f)
         ((string<? (car a) (car b)) #f)
@@ -54,6 +59,7 @@
 
 ;; Elements strictly before a given element in sorted order.
 (define (set-before elem sorted)
+  "Return elements strictly before ELEM in a sorted string list.\n\nParameters:\n  elem : string\n  sorted : list\nReturns: list\nCategory: goast-fca"
   (cond ((null? sorted) '())
         ((string<? (car sorted) elem)
          (cons (car sorted) (set-before elem (cdr sorted))))
@@ -65,6 +71,7 @@
 ;; incidence: (lambda (obj attr) -> boolean)
 ;; Lookup tables are hash tables for O(1) access in intent/extent.
 (define (make-context objects attributes incidence)
+  "Build an FCA context from objects, attributes, and an incidence function.\nINCIDENCE is (lambda (obj attr) -> boolean). Lookup tables are hash\ntables for O(1) access in intent/extent.\n\nParameters:\n  objects : list\n  attributes : list\n  incidence : procedure\nReturns: list\nCategory: goast-fca\n\nSee also: `context-from-alist', `intent', `extent'."
   (let* ((objs (sort-strings objects))
          (attrs (sort-strings attributes))
          (obj->attrs (make-hashtable))
@@ -94,12 +101,18 @@
           (cons 'attr->objs attr->objs))))
 
 ;; Accessors
-(define (context-objects ctx) (nf ctx 'objects))
-(define (context-attributes ctx) (nf ctx 'attributes))
+(define (context-objects ctx)
+  "Return the object set from an FCA context.\n\nParameters:\n  ctx : list\nReturns: list\nCategory: goast-fca\n\nSee also: `make-context', `context-attributes'."
+  (nf ctx 'objects))
+
+(define (context-attributes ctx)
+  "Return the attribute set from an FCA context.\n\nParameters:\n  ctx : list\nReturns: list\nCategory: goast-fca\n\nSee also: `make-context', `context-objects'."
+  (nf ctx 'attributes))
 
 ;; Convenience: build context from an association list.
 ;; Each entry is (object attr1 attr2 ...).
 (define (context-from-alist entries)
+  "Build an FCA context from an association list.\nEach entry is (object attr1 attr2 ...).\n\nParameters:\n  entries : list\nReturns: list\nCategory: goast-fca\n\nExamples:\n  (context-from-alist '((\"f1\" \"A.x\" \"B.y\") (\"f2\" \"A.x\")))\n\nSee also: `make-context'."
   (let* ((objs (map car entries))
          (attrs (sort-strings
                   (let loop ((es entries) (acc '()))
@@ -116,6 +129,7 @@
 ;; Attributes shared by ALL objects in object-set.
 ;; Empty object-set → all attributes (vacuous truth).
 (define (intent ctx object-set)
+  "Galois connection: return attributes shared by all objects in OBJECT-SET.\nEmpty object-set returns all attributes (vacuous truth).\n\nParameters:\n  ctx : list\n  object-set : list\nReturns: list\nCategory: goast-fca\n\nSee also: `extent', `concept-lattice'."
   (if (null? object-set)
     (context-attributes ctx)
     (let ((ht (nf ctx 'obj->attrs)))
@@ -128,6 +142,7 @@
 ;; Objects having ALL attributes in attribute-set.
 ;; Empty attribute-set → all objects (vacuous truth).
 (define (extent ctx attribute-set)
+  "Galois connection: return objects having all attributes in ATTRIBUTE-SET.\nEmpty attribute-set returns all objects (vacuous truth).\n\nParameters:\n  ctx : list\n  attribute-set : list\nReturns: list\nCategory: goast-fca\n\nSee also: `intent', `concept-lattice'."
   (if (null? attribute-set)
     (context-objects ctx)
     (let ((ht (nf ctx 'attr->objs)))
@@ -140,8 +155,13 @@
 ;;; ── Concept lattice (NextClosure, Ganter 1984) ───────────
 
 ;; Concept accessors: a concept is (extent . intent).
-(define (concept-extent c) (car c))
-(define (concept-intent c) (cdr c))
+(define (concept-extent c)
+  "Extract the extent (object set) from a concept.\n\nParameters:\n  c : pair\nReturns: list\nCategory: goast-fca\n\nSee also: `concept-intent', `concept-lattice'."
+  (car c))
+
+(define (concept-intent c)
+  "Extract the intent (attribute set) from a concept.\n\nParameters:\n  c : pair\nReturns: list\nCategory: goast-fca\n\nSee also: `concept-extent', `concept-lattice'."
+  (cdr c))
 
 ;; Closure operator: attribute set → closed attribute set.
 (define (fca-close ctx attrs)
@@ -167,6 +187,7 @@
 ;; Build the full concept lattice.
 ;; Returns a list of concepts (extent . intent) in lectic order.
 (define (concept-lattice ctx)
+  "Build the full concept lattice via NextClosure (Ganter 1984).\nReturns concepts in lectic order, each as (extent . intent).\n\nParameters:\n  ctx : list\nReturns: list\nCategory: goast-fca\n\nSee also: `intent', `extent', `cross-boundary-concepts'."
   (let* ((attrs (context-attributes ctx))
          (close (lambda (b) (fca-close ctx b)))
          (first (close '())))
@@ -213,6 +234,7 @@
 ;; that access fields from 2+ struct types. This pre-filter dramatically
 ;; reduces context size for large codebases.
 (define (field-index->context index mode . opts)
+  "Convert go-ssa-field-index output to an FCA context.\nMODE controls attribute encoding: 'write-only, 'read-write, or 'type-only.\nOptional 'cross-type-only pre-filters to functions accessing 2+ struct types.\n\nParameters:\n  index : list\n  mode : symbol\nReturns: list\nCategory: goast-fca\n\nExamples:\n  (field-index->context (go-ssa-field-index \"./...\") 'write-only)\n  (field-index->context idx 'write-only 'cross-type-only)\n\nSee also: `go-ssa-field-index', `concept-lattice'."
   (let* ((cross-only (and (pair? opts) (eq? (car opts) 'cross-type-only)))
          (entries
            (filter-map
@@ -263,6 +285,7 @@
 ;; Filter concepts whose intent spans multiple distinct struct types.
 ;; Optional plist args: 'min-extent N, 'min-intent N, 'min-types N.
 (define (cross-boundary-concepts lattice . opts)
+  "Filter concepts whose intent spans multiple distinct struct types.\nOptional keyword args: 'min-extent, 'min-intent, 'min-types (all default 2).\n\nParameters:\n  lattice : list\nReturns: list\nCategory: goast-fca\n\nSee also: `concept-lattice', `boundary-report'."
   (let ((min-ext (plist-ref opts 'min-extent 2))
         (min-int (plist-ref opts 'min-intent 2))
         (min-typ (plist-ref opts 'min-types 2)))
@@ -280,6 +303,7 @@
 ;; Build a structured report for a list of cross-boundary concepts.
 ;; Returns a list of alists, one per concept.
 (define (boundary-report concepts)
+  "Build a structured report for cross-boundary concepts.\nEach entry is an alist with: types, fields, functions, extent-size.\n\nParameters:\n  concepts : list\nReturns: list\nCategory: goast-fca\n\nSee also: `cross-boundary-concepts'."
   (map (lambda (concept)
          (let* ((ext (concept-extent concept))
                 (int (concept-intent concept))
