@@ -66,3 +66,160 @@ func TestPathAlgebra_BooleanLinearChain(t *testing.T) {
 	result = eval(t, engine, `(path-query pa "C" "A")`)
 	c.Assert(result.Internal(), qt.Equals, values.FalseValue)
 }
+
+func TestPathAlgebra_TropicalLinearChain(t *testing.T) {
+	c := qt.New(t)
+	engine := newBeliefEngine(t)
+
+	// A -> B -> C (linear chain) with tropical semiring, unit weight
+	eval(t, engine, `
+		(import (wile goast path-algebra))
+		(import (wile algebra semiring))
+		(define cg (list
+			(list 'cg-node (cons 'name "A") (cons 'id 0)
+				(cons 'edges-in '())
+				(cons 'edges-out (list (list 'cg-edge (cons 'caller "A") (cons 'callee "B") (cons 'description "static")))))
+			(list 'cg-node (cons 'name "B") (cons 'id 1)
+				(cons 'edges-in (list (list 'cg-edge (cons 'caller "A") (cons 'callee "B") (cons 'description "static"))))
+				(cons 'edges-out (list (list 'cg-edge (cons 'caller "B") (cons 'callee "C") (cons 'description "static")))))
+			(list 'cg-node (cons 'name "C") (cons 'id 2)
+				(cons 'edges-in (list (list 'cg-edge (cons 'caller "B") (cons 'callee "C") (cons 'description "static"))))
+				(cons 'edges-out '()))))
+		(define pa (make-path-analysis (tropical-semiring) cg (lambda (_) 1)))`)
+
+	// A to A = 0 (source identity, semiring-one of tropical is 0)
+	result := eval(t, engine, `(path-query pa "A" "A")`)
+	c.Assert(result.Internal().(*values.Integer).Value, qt.Equals, int64(0))
+
+	// A to B = 1
+	result = eval(t, engine, `(path-query pa "A" "B")`)
+	c.Assert(result.Internal().(*values.Integer).Value, qt.Equals, int64(1))
+
+	// A to C = 2
+	result = eval(t, engine, `(path-query pa "A" "C")`)
+	c.Assert(result.Internal().(*values.Integer).Value, qt.Equals, int64(2))
+
+	// C to A = tropical-inf (unreachable)
+	result = eval(t, engine, `(eq? (path-query pa "C" "A") tropical-inf)`)
+	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
+}
+
+func TestPathAlgebra_TropicalDiamond(t *testing.T) {
+	c := qt.New(t)
+	engine := newBeliefEngine(t)
+
+	// A -> B -> C and A -> C (diamond), unit weight
+	eval(t, engine, `
+		(import (wile goast path-algebra))
+		(import (wile algebra semiring))
+		(define cg (list
+			(list 'cg-node (cons 'name "A") (cons 'id 0)
+				(cons 'edges-in '())
+				(cons 'edges-out (list
+					(list 'cg-edge (cons 'caller "A") (cons 'callee "B") (cons 'description "static"))
+					(list 'cg-edge (cons 'caller "A") (cons 'callee "C") (cons 'description "static")))))
+			(list 'cg-node (cons 'name "B") (cons 'id 1)
+				(cons 'edges-in (list (list 'cg-edge (cons 'caller "A") (cons 'callee "B") (cons 'description "static"))))
+				(cons 'edges-out (list (list 'cg-edge (cons 'caller "B") (cons 'callee "C") (cons 'description "static")))))
+			(list 'cg-node (cons 'name "C") (cons 'id 2)
+				(cons 'edges-in (list
+					(list 'cg-edge (cons 'caller "A") (cons 'callee "C") (cons 'description "static"))
+					(list 'cg-edge (cons 'caller "B") (cons 'callee "C") (cons 'description "static"))))
+				(cons 'edges-out '()))))
+		(define pa (make-path-analysis (tropical-semiring) cg (lambda (_) 1)))`)
+
+	// A to C = 1 (direct path shorter than via B which is 2)
+	result := eval(t, engine, `(path-query pa "A" "C")`)
+	c.Assert(result.Internal().(*values.Integer).Value, qt.Equals, int64(1))
+}
+
+func TestPathAlgebra_CountingDiamond(t *testing.T) {
+	c := qt.New(t)
+	engine := newBeliefEngine(t)
+
+	// Same diamond: A -> B -> C and A -> C, counting semiring, unit weight
+	eval(t, engine, `
+		(import (wile goast path-algebra))
+		(import (wile algebra semiring))
+		(define cg (list
+			(list 'cg-node (cons 'name "A") (cons 'id 0)
+				(cons 'edges-in '())
+				(cons 'edges-out (list
+					(list 'cg-edge (cons 'caller "A") (cons 'callee "B") (cons 'description "static"))
+					(list 'cg-edge (cons 'caller "A") (cons 'callee "C") (cons 'description "static")))))
+			(list 'cg-node (cons 'name "B") (cons 'id 1)
+				(cons 'edges-in (list (list 'cg-edge (cons 'caller "A") (cons 'callee "B") (cons 'description "static"))))
+				(cons 'edges-out (list (list 'cg-edge (cons 'caller "B") (cons 'callee "C") (cons 'description "static")))))
+			(list 'cg-node (cons 'name "C") (cons 'id 2)
+				(cons 'edges-in (list
+					(list 'cg-edge (cons 'caller "A") (cons 'callee "C") (cons 'description "static"))
+					(list 'cg-edge (cons 'caller "B") (cons 'callee "C") (cons 'description "static"))))
+				(cons 'edges-out '()))))
+		(define pa (make-path-analysis (counting-semiring) cg (lambda (_) 1)))`)
+
+	// A to C = 2 (two distinct paths: direct + via B)
+	result := eval(t, engine, `(path-query pa "A" "C")`)
+	c.Assert(result.Internal().(*values.Integer).Value, qt.Equals, int64(2))
+
+	// A to B = 1
+	result = eval(t, engine, `(path-query pa "A" "B")`)
+	c.Assert(result.Internal().(*values.Integer).Value, qt.Equals, int64(1))
+}
+
+func TestPathAlgebra_QueryAll(t *testing.T) {
+	c := qt.New(t)
+	engine := newBeliefEngine(t)
+
+	// A -> B -> C (linear chain) with boolean semiring
+	eval(t, engine, `
+		(import (wile goast path-algebra))
+		(import (wile algebra semiring))
+		(define cg (list
+			(list 'cg-node (cons 'name "A") (cons 'id 0)
+				(cons 'edges-in '())
+				(cons 'edges-out (list (list 'cg-edge (cons 'caller "A") (cons 'callee "B") (cons 'description "static")))))
+			(list 'cg-node (cons 'name "B") (cons 'id 1)
+				(cons 'edges-in (list (list 'cg-edge (cons 'caller "A") (cons 'callee "B") (cons 'description "static"))))
+				(cons 'edges-out (list (list 'cg-edge (cons 'caller "B") (cons 'callee "C") (cons 'description "static")))))
+			(list 'cg-node (cons 'name "C") (cons 'id 2)
+				(cons 'edges-in (list (list 'cg-edge (cons 'caller "B") (cons 'callee "C") (cons 'description "static"))))
+				(cons 'edges-out '()))))
+		(define pa (make-path-analysis (boolean-semiring) cg #f))`)
+
+	// From A: all 3 nodes reachable (A, B, C)
+	result := eval(t, engine, `(length (path-query-all pa "A"))`)
+	c.Assert(result.Internal().(*values.Integer).Value, qt.Equals, int64(3))
+
+	// From C: only C itself reachable
+	result = eval(t, engine, `(length (path-query-all pa "C"))`)
+	c.Assert(result.Internal().(*values.Integer).Value, qt.Equals, int64(1))
+}
+
+func TestPathAlgebra_Unreachable(t *testing.T) {
+	c := qt.New(t)
+	engine := newBeliefEngine(t)
+
+	// A -> B with isolated C, boolean semiring
+	eval(t, engine, `
+		(import (wile goast path-algebra))
+		(import (wile algebra semiring))
+		(define cg (list
+			(list 'cg-node (cons 'name "A") (cons 'id 0)
+				(cons 'edges-in '())
+				(cons 'edges-out (list (list 'cg-edge (cons 'caller "A") (cons 'callee "B") (cons 'description "static")))))
+			(list 'cg-node (cons 'name "B") (cons 'id 1)
+				(cons 'edges-in (list (list 'cg-edge (cons 'caller "A") (cons 'callee "B") (cons 'description "static"))))
+				(cons 'edges-out '()))
+			(list 'cg-node (cons 'name "C") (cons 'id 2)
+				(cons 'edges-in '())
+				(cons 'edges-out '()))))
+		(define pa (make-path-analysis (boolean-semiring) cg #f))`)
+
+	// A cannot reach isolated C
+	result := eval(t, engine, `(path-query pa "A" "C")`)
+	c.Assert(result.Internal(), qt.Equals, values.FalseValue)
+
+	// Nonexistent node Z
+	result = eval(t, engine, `(path-query pa "A" "Z")`)
+	c.Assert(result.Internal(), qt.Equals, values.FalseValue)
+}
