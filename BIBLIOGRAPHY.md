@@ -157,3 +157,65 @@ https://doi.org/10.1145/361598.361623
 The original argument for information hiding. A module boundary is justified
 iff it hides a design decision that could change. A false boundary hides
 nothing — the "secret" is routinely exposed to the other side.
+
+## 9. Software Modularization and Package Decomposition
+
+Spyros Mancoridis, Brian S. Mitchell, Christine Rorres, Yih-Farn Chen, and Emden R. Gansner.
+"Using Automatic Clustering to Produce High-Level System Organizations of Source Code."
+In *Proceedings of the 6th International Workshop on Program Comprehension (IWPC '98)*, pp. 45--52. IEEE, 1998.
+https://doi.org/10.1109/WPC.1998.693283
+
+Introduced the Bunch tool: treat source files as graph nodes, dependencies as
+edges, then partition to maximize a quality metric (MQ) that rewards intra-cluster
+cohesion and penalizes inter-cluster coupling. Hill-climbing search over the
+partition space. The import-signature clustering in wile-goast's refactoring
+analysis follows this principle — functions with identical external dependency
+sets belong together.
+
+Brian S. Mitchell and Spyros Mancoridis.
+"On the Automatic Modularization of Software Systems Using the Bunch Tool."
+*IEEE Transactions on Software Engineering*, 32(3):193--208, March 2006.
+https://doi.org/10.1109/TSE.2006.31
+
+The journal version of Bunch. Adds genetic algorithm search, hierarchical
+clustering, and evaluation against authoritative decompositions. Key finding:
+automatic clustering recovers developer-intended module structure with 60-80%
+accuracy, and divergences often reveal real structural problems.
+
+Carliss Y. Baldwin and Kim B. Clark.
+*Design Rules: The Power of Modularity*.
+MIT Press, 2000.
+ISBN 978-0-262-02466-2.
+
+Formalizes the Dependency Structure Matrix (DSM) approach to modular design.
+A DSM is an N×N matrix where entry (i,j) marks a dependency from module i to
+module j. Reordering rows/columns to produce block-diagonal form reveals
+independent clusters; off-diagonal entries are the inter-module coupling that
+a package split must bridge. Baldwin and Clark's contribution is showing that
+modular structure has economic value — it enables independent parallel work
+and option-like flexibility.
+
+Robert C. Martin.
+*Agile Software Development: Principles, Patterns, and Practices*.
+Prentice Hall, 2003.
+ISBN 978-0-135-97444-5.
+
+Chapter 20 introduces package cohesion and coupling metrics:
+Afferent Coupling (Ca, inbound dependencies), Efferent Coupling (Ce, outbound),
+Instability I = Ce/(Ca+Ce), and Abstractness A. The Main Sequence plots
+(A, I) to identify packages in the "zone of pain" (stable + concrete) or
+"zone of uselessness" (unstable + abstract). These metrics formalize the
+intuition behind import-signature analysis: a function's efferent coupling
+set *is* its import signature.
+
+Christian Lindig and Gregor Snelting.
+"Assessing Modular Structure of Legacy Code Based on Mathematical Concept Analysis."
+In *Proceedings of the 19th International Conference on Software Engineering (ICSE '97)*, pp. 349--359. ACM, 1997.
+https://doi.org/10.1145/253228.253354
+
+Applies Formal Concept Analysis to software modularization. Functions are
+objects, imported modules are attributes; the concept lattice reveals which
+function groups share the same dependency set. This is the direct theoretical
+basis for import-signature clustering: each concept in the lattice is a maximal
+set of functions sharing a maximal set of imports. The lattice structure shows
+the refinement hierarchy — which clusters are subsets of which.

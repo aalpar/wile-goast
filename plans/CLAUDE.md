@@ -45,6 +45,7 @@
 | `2026-04-10-function-boundary-recommendations-design.md` | Function boundary recommendations: FCA lattice + SSA cross-flow, Pareto ranking, separate split/merge/extract frontiers | Approved |
 | `2026-04-10-function-boundary-recommendations-impl.md` | Implementation plan: 12 tasks, Pareto + split/merge/extract + SSA filter + integration | Open |
 | `2026-04-10-symbolic-algebra-integration.md` | Phase 3 of wile symbolic algebra: Go boolean simplification, belief equivalence, FCA lattice annotation | Complete |
+| `2026-04-12-package-splitting-design.md` | Package splitting via import signature analysis: FCA + IDF weighting + API surface refinement + min-cut + cycle verification | Proposed |
 
 ## Documentation (outside plans/)
 
