@@ -376,3 +376,46 @@
              collapsed)))
     (and (>= eff-sim threshold)
          (null? non-type-diffs))))
+
+;; ══════════════════════════════════════════════════════════
+;; Algebraic equivalence (v2)
+;;
+;; Uses discover-equivalences from (wile algebra symbolic) to
+;; check if two SSA binop nodes normalize to the same form
+;; under any sub-theory of ssa-theory.
+;;
+;; Normal forms may differ in register names (the 'name field
+;; of ssa-binop nodes is an identity, not algebraic content).
+;; We compare via ssa-diff, accepting forms where all diffs
+;; are register-class.
+;; ══════════════════════════════════════════════════════════
+
+(define (ssa-form-equal? a b)
+  "Compare two SSA normal forms ignoring register names.
+Returns #t when ssa-diff shows only register/identifier diffs."
+  (if (equal? a b) #t
+    (let* ((r (ssa-diff a b))
+           (diffs (diff-result-diffs r)))
+      (let loop ((ds diffs))
+        (cond ((null? ds) #t)
+              ((memq (caar ds) '(register identifier)) (loop (cdr ds)))
+              (else #f))))))
+
+(define ssa-equivalent?
+  (case-lambda
+    ((node-a node-b)
+     (ssa-equivalent* node-a node-b ssa-theory ssa-binop-protocol))
+    ((node-a node-b theory proto)
+     (ssa-equivalent* node-a node-b theory proto))))
+
+(define (ssa-equivalent* node-a node-b theory proto)
+  (let ((forms-a (map car (discover-equivalences theory proto node-a)))
+        (forms-b (map car (discover-equivalences theory proto node-b))))
+    (let outer ((fa forms-a))
+      (cond ((null? fa) #f)
+            ((let inner ((fb forms-b))
+               (cond ((null? fb) #f)
+                     ((ssa-form-equal? (car fa) (car fb)) #t)
+                     (else (inner (cdr fb)))))
+             #t)
+            (else (outer (cdr fa)))))))

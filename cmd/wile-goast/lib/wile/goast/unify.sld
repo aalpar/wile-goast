@@ -4,6 +4,10 @@
     classify-ast-diff classify-ssa-diff
     diff-result-similarity diff-result-diffs diff-result-shared diff-result-diff-count
     score-diffs find-root-substitutions collapse-diffs
-    unifiable?)
-  (import (wile goast utils))
+    unifiable?
+    ;; v2: algebraic equivalence
+    ssa-equivalent?)
+  (import (wile goast utils)
+          (wile algebra symbolic)
+          (wile goast ssa-normalize))
   (include "unify.scm"))

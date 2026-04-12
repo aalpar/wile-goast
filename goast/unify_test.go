@@ -129,3 +129,71 @@ func TestUnify_Unifiable(t *testing.T) {
 		c.Assert(result.Internal(), qt.Equals, values.FalseValue)
 	})
 }
+
+func TestSSAEquivalent_Commutativity(t *testing.T) {
+	c := qt.New(t)
+	engine := newBeliefEngine(t)
+
+	// eval is the existing Scheme evaluation test helper in this package
+	eval(t, engine, `(import (wile goast unify))`)
+
+	// (+ a b) and (+ b a) are equivalent under commutativity
+	result := eval(t, engine, `
+		(ssa-equivalent?
+			'(ssa-binop (name . "t0") (op . +) (x . "a") (y . "b")
+			  (type . "int") (operands "a" "b"))
+			'(ssa-binop (name . "t1") (op . +) (x . "b") (y . "a")
+			  (type . "int") (operands "b" "a")))`)
+	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
+}
+
+func TestSSAEquivalent_Different(t *testing.T) {
+	c := qt.New(t)
+	engine := newBeliefEngine(t)
+
+	// eval is the existing Scheme evaluation test helper in this package
+	eval(t, engine, `(import (wile goast unify))`)
+
+	// (+ a b) and (- a b) are NOT equivalent
+	result := eval(t, engine, `
+		(ssa-equivalent?
+			'(ssa-binop (name . "t0") (op . +) (x . "a") (y . "b")
+			  (type . "int") (operands "a" "b"))
+			'(ssa-binop (name . "t1") (op . -) (x . "a") (y . "b")
+			  (type . "int") (operands "a" "b")))`)
+	c.Assert(result.Internal(), qt.Equals, values.FalseValue)
+}
+
+func TestSSAEquivalent_CustomTheory(t *testing.T) {
+	c := qt.New(t)
+	engine := newBeliefEngine(t)
+
+	// eval is the existing Scheme evaluation test helper in this package
+	eval(t, engine, `
+		(import (wile goast unify))
+		(import (wile goast ssa-normalize))
+		(import (wile algebra symbolic))
+		(import (wile algebra rewrite))`)
+
+	// Custom theory: min/max absorption — min(x, max(x, y)) = x
+	result := eval(t, engine, `
+		(let* ((absorption-na
+				 (make-named-axiom "min-max-absorption"
+				   "min(a, max(a, b)) = a"
+				   (make-absorption-axiom 'min 'max)))
+			   (custom-theory (make-theory (list absorption-na) '()))
+			   (proto ssa-binop-protocol))
+		  ;; Node A: min(x, max(x, y)) — should reduce to x
+		  ;; Node B: just x (atom)
+		  ;; We test that discover-equivalences on node A finds "x" as a normal form
+		  (let ((forms (map car (discover-equivalences custom-theory proto
+				  '(ssa-binop (name . "t0") (op . min) (x . "x")
+				    (y . (ssa-binop (name . "t1") (op . max) (x . "x") (y . "y")
+				           (type . "int") (operands "x" "y")))
+				    (type . "int")
+				    (operands "x" (ssa-binop (name . "t1") (op . max) (x . "x") (y . "y")
+				                    (type . "int") (operands "x" "y"))))))))
+			(member "x" forms)))`)
+	// member returns the tail of the list starting with "x", which is truthy
+	c.Assert(result.Internal(), qt.Not(qt.Equals), values.FalseValue)
+}
