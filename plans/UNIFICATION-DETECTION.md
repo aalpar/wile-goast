@@ -1,14 +1,18 @@
 # Procedure Unification Detection — Remaining Work
 
-**Current state**: AST-level prototype validated on crdt (4 zero-cost candidates found). Substitution collapsing implemented and load-bearing. Cross-package comparison working. SSA equivalence pass completed (v0.5.1): `go-ssa-canonicalize`, `(wile goast ssa-normalize)` (migrated to `(wile algebra rewrite)` axiom declarations), `(wile goast unify)` diff engine.
+**Current state**: AST-level prototype validated on crdt (4 zero-cost candidates found). Substitution collapsing implemented and load-bearing. Cross-package comparison working. SSA equivalence pass completed (v0.5.1): `go-ssa-canonicalize`, `(wile goast ssa-normalize)` (migrated to `(wile algebra symbolic)` named theories), `(wile goast unify)` diff engine with `ssa-equivalent?`.
 
 **Reference**: `examples/goast-query/unify-detect-pkg.scm`
 
-## SSA-Level Equivalence Pass (v2 — unbuilt)
+## SSA-Level Equivalence Pass (v2 — infrastructure complete)
 
-For functions that pass the AST filter, compare SSA representations to detect operator-level equivalence. Go's SSA builder already normalizes operand order, folds constants, and applies strength reductions — yielding commutativity, identity elimination, and similar algebraic properties without custom rewrite rules. The comparison leverages what the compiler knows for free rather than reimplementing algebraic laws in Scheme.
+Axiom declarations migrated to `(wile algebra symbolic)` named-axiom/theory format. New exports: `ssa-theory`, `ssa-binop-protocol` (from ssa-normalize), `ssa-equivalent?` (from unify).
 
-**Key question**: Does SSA normalization actually collapse enough to be useful, or do type differences still dominate?
+`ssa-equivalent?` uses `discover-equivalences` to check if two SSA nodes share a normal form under any sub-theory. Accepts custom theories for domain-specific equivalences (e.g., min/max absorption). Register name differences are tolerated via `ssa-diff` classification.
+
+**Validation answer**: Standard algebraic normalization adds nothing over Go's SSA builder (v1 finding confirmed). The v2 infrastructure enables domain-specific theories that detect equivalences Go doesn't know about. The pipeline is ready; the theories are the next step.
+
+**Key question** (unchanged): Does SSA normalization actually collapse enough to be useful, or do type differences still dominate?
 
 ## SSA Equivalence — Validation Results
 

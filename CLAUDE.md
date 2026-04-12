@@ -111,7 +111,7 @@ Two facilities: def-use reachability (`defuse-reachable?`) and a general worklis
 
 ## SSA Normalization — `(wile goast ssa-normalize)`
 
-Algebraic normalization rules for SSA binop nodes. Rules are generated from axiom declarations via `(wile algebra rewrite)` — identity, absorbing, and commutativity properties are declared per-operator, and `make-normalizer` compiles them into rewrite rules through a term protocol that abstracts over SSA node structure. Integer-type scoped for identity/absorbing to avoid IEEE 754 issues. Extensible via `ssa-rule-set`.
+Algebraic normalization rules for SSA binop nodes. Axioms are declared as `named-axiom` objects via `(wile algebra symbolic)`, compiled into rewrite rules through a term protocol that abstracts over SSA node structure. Integer-type scoped for identity/absorbing to avoid IEEE 754 issues. Extensible via `ssa-rule-set` (flat normalization) or custom theories with `discover-equivalences` (algebraic equivalence).
 
 | Export | Description |
 |--------|-------------|
@@ -120,6 +120,8 @@ Algebraic normalization rules for SSA binop nodes. Rules are generated from axio
 | `ssa-rule-identity` | `x + 0 → x`, `x * 1 → x`, etc. (integer types only) |
 | `ssa-rule-annihilation` | `x * 0 → 0`, `x & 0 → 0` (integer types only) |
 | `ssa-rule-set` | Compose rules: first non-`#f` wins |
+| `ssa-theory` | Named theory for `discover-equivalences` (all SSA axioms) |
+| `ssa-binop-protocol` | Term protocol for SSA binop nodes |
 
 ## Unification Detection — `(wile goast unify)`
 
@@ -133,6 +135,7 @@ Shared diff/scoring library for AST and SSA structural comparison. Extracted fro
 | `score-diffs` | Compute effective similarity with substitution collapsing |
 | `unifiable?` | Verdict: `#t` when effective similarity >= threshold and all remaining diffs are type/register |
 | `diff-result-similarity` | Extract similarity from diff result |
+| `ssa-equivalent?` | Algebraic equivalence via `discover-equivalences`: checks if two SSA nodes share a normal form under any sub-theory |
 
 ## Belief DSL — `(wile goast belief)`
 
