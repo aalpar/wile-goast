@@ -195,6 +195,38 @@ func TestPathAlgebra_QueryAll(t *testing.T) {
 	c.Assert(result.Internal().(*values.Integer).Value, qt.Equals, int64(1))
 }
 
+func TestPathAlgebra_BooleanVsReachable(t *testing.T) {
+	c := qt.New(t)
+	engine := newBeliefEngine(t)
+
+	eval(t, engine, `
+		(import (wile goast path-algebra))
+		(import (wile algebra semiring))
+		(import (wile goast utils))
+		(define cg (go-callgraph "github.com/aalpar/wile-goast/goast" 'static))
+		(define pa (make-path-analysis (boolean-semiring) cg #f))`)
+
+	// Use a known function as root — PrimGoParseExpr has outgoing edges in the static call graph.
+	eval(t, engine, `
+		(define root "github.com/aalpar/wile-goast/goast.PrimGoParseExpr")
+		(define go-reach (go-callgraph-reachable cg root))
+		(define pa-reach (map car (path-query-all pa root)))`)
+
+	// Every node in go-callgraph-reachable should be reachable via path-algebra.
+	result := eval(t, engine, `
+		(let loop ((names go-reach))
+			(cond
+				((null? names) #t)
+				((not (path-query pa root (car names)))
+				 (car names))
+				(else (loop (cdr names)))))`)
+	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
+
+	// Both should have the same count.
+	result = eval(t, engine, `(= (length go-reach) (length pa-reach))`)
+	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
+}
+
 func TestPathAlgebra_Unreachable(t *testing.T) {
 	c := qt.New(t)
 	engine := newBeliefEngine(t)
