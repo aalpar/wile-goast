@@ -53,26 +53,46 @@
     ;; compare: lexicographic on strings, #f for non-strings
     (lambda (a b) (and (string? a) (string? b) (string<? a b)))))
 
-;; ─── Theory declarations ────────────────────
+;; ─── Named axiom declarations ──────────────────
+;;
+;; Named axioms are the source of truth. Raw axioms for flat normalizers
+;; are extracted via named-axiom-axiom.
 
-(define int-identity-theory
-  (list (make-identity-axiom '+ constant-zero?)
-        (make-identity-axiom '* constant-one?)
-        (make-identity-axiom '|\|| constant-zero?)
-        (make-identity-axiom '^ constant-zero?)))
+(define ssa-named-identity
+  (list
+    (make-named-axiom "identity-add" "x + 0 = x" (make-identity-axiom '+ constant-zero?))
+    (make-named-axiom "identity-mul" "x * 1 = x" (make-identity-axiom '* constant-one?))
+    (make-named-axiom "identity-or"  "x | 0 = x" (make-identity-axiom '|\|| constant-zero?))
+    (make-named-axiom "identity-xor" "x ^ 0 = x" (make-identity-axiom '^ constant-zero?))))
 
-(define int-absorbing-theory
-  (list (make-absorbing-axiom '* constant-zero?)
-        (make-absorbing-axiom '& constant-zero?)))
+(define ssa-named-absorbing
+  (list
+    (make-named-axiom "absorbing-mul" "x * 0 = 0" (make-absorbing-axiom '* constant-zero?))
+    (make-named-axiom "absorbing-and" "x & 0 = 0" (make-absorbing-axiom '& constant-zero?))))
 
-(define comm-theory
-  (list (make-commutativity-axiom '+)
-        (make-commutativity-axiom '*)
-        (make-commutativity-axiom '&)
-        (make-commutativity-axiom '|\||)
-        (make-commutativity-axiom '^)
-        (make-commutativity-axiom '==)
-        (make-commutativity-axiom '!=)))
+(define ssa-named-commutative
+  (list
+    (make-named-axiom "commutative-add" "x + y = y + x" (make-commutativity-axiom '+))
+    (make-named-axiom "commutative-mul" "x * y = y * x" (make-commutativity-axiom '*))
+    (make-named-axiom "commutative-and" "x & y = y & x" (make-commutativity-axiom '&))
+    (make-named-axiom "commutative-or"  "x | y = y | x" (make-commutativity-axiom '|\||))
+    (make-named-axiom "commutative-xor" "x ^ y = y ^ x" (make-commutativity-axiom '^))
+    (make-named-axiom "commutative-eq"  "x == y = y == x" (make-commutativity-axiom '==))
+    (make-named-axiom "commutative-ne"  "x != y = y != x" (make-commutativity-axiom '!=))))
+
+;; ─── Theory (new export) ───────────────────────
+
+(define ssa-theory
+  (make-theory
+    (append ssa-named-identity ssa-named-absorbing ssa-named-commutative)
+    '(+ * & |\|| ^ == !=)))
+
+;; ─── Raw axiom lists for flat normalizers ──────
+;; (backward compatible — extracted from named axioms)
+
+(define int-identity-theory (map named-axiom-axiom ssa-named-identity))
+(define int-absorbing-theory (map named-axiom-axiom ssa-named-absorbing))
+(define comm-theory (map named-axiom-axiom ssa-named-commutative))
 
 ;; ─── Normalizers from theories ──────────────
 

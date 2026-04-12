@@ -204,3 +204,25 @@ func TestSSANormalize_ConstantFormats(t *testing.T) {
 		c.Assert(result.Internal().(*values.String).Value, qt.Equals, "r1")
 	})
 }
+
+func TestSSANormalize_TheoryExport(t *testing.T) {
+	c := qt.New(t)
+	engine := newBeliefEngine(t)
+
+	eval(t, engine, `
+		(import (wile goast ssa-normalize))
+		(import (wile algebra symbolic))
+		(import (wile algebra rewrite))`)
+
+	// ssa-theory is a theory? object
+	result := eval(t, engine, `(theory? ssa-theory)`)
+	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
+
+	// ssa-binop-protocol is a term-protocol? object
+	result = eval(t, engine, `(term-protocol? ssa-binop-protocol)`)
+	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
+
+	// Theory has axioms
+	result = eval(t, engine, `(> (length (theory-axioms ssa-theory)) 0)`)
+	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
+}
