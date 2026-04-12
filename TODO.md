@@ -85,8 +85,8 @@ Completed 2026-03-26. Worklist-based forward/backward analysis over SSA blocks.
 
 ### C4. Path algebra on call graphs
 
-- [ ] Boolean semiring — reachability (generalize `go-callgraph-reachable`)
-- [ ] Tropical semiring — shortest/longest call chains
+- [x] Boolean semiring — reachability (generalize `go-callgraph-reachable`)
+- [x] Tropical semiring — shortest/longest call chains
 - [ ] CFL-reachability — context-sensitive analysis
 
 ### C5. Galois connections for abstract interpretation

@@ -302,6 +302,17 @@ Boolean normalization for Go AST conditions and belief selector predicates. Uses
 
 Note: Go's `&&`/`||` become control flow in SSA, so `ast-condition->symbolic` works at the AST level (from `go-parse-expr`/`go-parse-file`), not SSA.
 
+## Path Algebra — `(wile goast path-algebra)`
+
+Semiring-parameterized path computation over call graphs. Lazy single-source Bellman-Ford with per-source caching.
+
+| Export | Description |
+|--------|-------------|
+| `make-path-analysis` | Construct path analysis from semiring, call graph, and optional edge-weight function |
+| `path-analysis?` | Type predicate |
+| `path-query` | Query semiring value between source and target (lazy, cached) |
+| `path-query-all` | Return distance alist for all reachable nodes from source |
+
 ## Key Files
 
 | File | Purpose |
@@ -324,6 +335,7 @@ Note: Go's `&&`/`||` become control flow in SSA, so `ast-condition->symbolic` wo
 | `cmd/wile-goast/lib/wile/goast/fca.scm` | Formal Concept Analysis: false boundary detection via concept lattices (embedded in binary) |
 | `cmd/wile-goast/lib/wile/goast/fca-algebra.scm` | FCA algebraic annotation: concept lattice as `(wile algebra lattice)`, relationship classification (embedded in binary) |
 | `cmd/wile-goast/lib/wile/goast/boolean-simplify.scm` | Boolean normalization for Go AST conditions and belief selectors via `(wile algebra symbolic)` (embedded in binary) |
+| `cmd/wile-goast/lib/wile/goast/path-algebra.scm` | Semiring path algebra: Bellman-Ford over call graphs (embedded in binary) |
 | `goast/prim_restructure.go` | Block restructuring: goto elimination, loop return rewriting, guard folding (`go-cfg-to-structured`) |
 | `goastssa/prim_canonicalize.go` | SSA function canonicalization (`go-ssa-canonicalize`) |
 
