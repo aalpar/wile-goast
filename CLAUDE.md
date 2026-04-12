@@ -281,7 +281,7 @@ Formal Concept Analysis (Ganter & Wille, 1999) applied to Go struct field access
 
 ## FCA Algebraic Annotation — `(wile goast fca-algebra)`
 
-Bridges FCA concept lattices with `(wile algebra lattice)` from wile's algebra library. Constructs an algebraic lattice from FCA concepts (with join/meet via the Galois connection), and annotates boundary reports with lattice-theoretic relationships.
+Bridges FCA concept lattices with `(wile algebra lattice)` and `(wile algebra closure)` from wile's algebra library. The Galois closure operator `intent ∘ extent` is formalized via `make-closure-operator` on the attribute powerset lattice. Constructs an algebraic lattice from FCA concepts (with join/meet via closure application), and annotates boundary reports with lattice-theoretic relationships.
 
 | Export | Description |
 |--------|-------------|
