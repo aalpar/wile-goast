@@ -22,40 +22,31 @@
 ;; Join: concept whose intent = closure(I1 ∩ I2)
 ;; Meet: concept whose intent = closure(I1 ∪ I2)
 (define (concept-lattice->algebra-lattice ctx concepts)
-  "Construct a (wile algebra lattice) from an FCA concept lattice.\nCTX is the FCA context, CONCEPTS is the list from (concept-lattice ctx).\nThe resulting lattice has join/meet via the Galois connection.\n\nParameters:\n  ctx : list\n  concepts : list\nReturns: any\nCategory: goast-fca\n\nSee also: `concept-relationship', `annotated-boundary-report'."
+  "Construct a (wile algebra lattice) from an FCA concept lattice.\nCTX is the FCA context, CONCEPTS is the list from (concept-lattice ctx).\nThe resulting lattice has join/meet via the Galois closure operator.\n\nParameters:\n  ctx : list\n  concepts : list\nReturns: any\nCategory: goast-fca\n\nSee also: `concept-relationship', `annotated-boundary-report'."
   (if (null? concepts)
     (error "concept-lattice->algebra-lattice: concepts list is empty"))
-  (let* (;; Top: largest extent = concept with smallest intent
-         (top-concept
-           (let loop ((cs (cdr concepts)) (best (car concepts)))
-             (if (null? cs) best
-               (loop (cdr cs)
-                     (if (> (length (concept-extent (car cs)))
-                            (length (concept-extent best)))
-                       (car cs) best)))))
-         ;; Bottom: smallest extent = concept with largest intent
-         (bottom-concept
-           (let loop ((cs (cdr concepts)) (best (car concepts)))
-             (if (null? cs) best
-               (loop (cdr cs)
-                     (if (< (length (concept-extent (car cs)))
-                            (length (concept-extent best)))
-                       (car cs) best))))))
+  (let* ((all-attrs (context-attributes ctx))
+         ;; Closure operator: cl(A) = intent(extent(A))
+         (cl (make-closure-operator
+               (lambda (attrs) (intent ctx (extent ctx attrs)))
+               (powerset-lattice all-attrs)))
+         ;; Top: concept with cl('()) as intent (shared by all objects)
+         (top-intent (closure-close cl '()))
+         (top-concept (find-concept-by-intent concepts top-intent))
+         ;; Bottom: concept with cl(all-attrs) as intent
+         (bottom-intent (closure-close cl all-attrs))
+         (bottom-concept (find-concept-by-intent concepts bottom-intent)))
     (make-lattice
-      ;; join: least upper bound — intent = closure of (I1 ∩ I2)
+      ;; join: least upper bound — intent = cl(I1 ∩ I2)
       (lambda (c1 c2)
-        (let* ((i-isect (set-intersect (concept-intent c1) (concept-intent c2)))
-               (ext (extent ctx i-isect))
-               (int (intent ctx ext)))
+        (let ((int (closure-close cl (set-intersect (concept-intent c1) (concept-intent c2)))))
           (or (find-concept-by-intent concepts int)
-              (cons ext int))))
-      ;; meet: greatest lower bound — intent = closure of (I1 ∪ I2)
+              (cons (extent ctx int) int))))
+      ;; meet: greatest lower bound — intent = cl(I1 ∪ I2)
       (lambda (c1 c2)
-        (let* ((i-union (set-union (concept-intent c1) (concept-intent c2)))
-               (ext (extent ctx i-union))
-               (int (intent ctx ext)))
+        (let ((int (closure-close cl (set-union (concept-intent c1) (concept-intent c2)))))
           (or (find-concept-by-intent concepts int)
-              (cons ext int))))
+              (cons (extent ctx int) int))))
       ;; bottom
       bottom-concept
       ;; top

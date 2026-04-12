@@ -5,5 +5,6 @@
     concept-relationship)
   (import (wile goast utils)
           (wile goast fca)
-          (wile algebra lattice))
+          (wile algebra lattice)
+          (wile algebra closure))
   (include "fca-algebra.scm"))
