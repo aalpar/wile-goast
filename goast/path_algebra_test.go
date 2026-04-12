@@ -227,6 +227,43 @@ func TestPathAlgebra_BooleanVsReachable(t *testing.T) {
 	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
 }
 
+func TestPathAlgebra_CustomWeight(t *testing.T) {
+	c := qt.New(t)
+	engine := newBeliefEngine(t)
+
+	// A -> B (weight 3) -> C (weight 5)
+	eval(t, engine, `
+		(import (wile goast path-algebra))
+		(import (wile algebra semiring))
+		(import (wile goast utils))
+		(define cg (list
+			(list 'cg-node (cons 'name "A") (cons 'id 0)
+				(cons 'edges-in '())
+				(cons 'edges-out (list (list 'cg-edge (cons 'caller "A") (cons 'callee "B") (cons 'description "w3")))))
+			(list 'cg-node (cons 'name "B") (cons 'id 1)
+				(cons 'edges-in (list (list 'cg-edge (cons 'caller "A") (cons 'callee "B") (cons 'description "w3"))))
+				(cons 'edges-out (list (list 'cg-edge (cons 'caller "B") (cons 'callee "C") (cons 'description "w5")))))
+			(list 'cg-node (cons 'name "C") (cons 'id 2)
+				(cons 'edges-in (list (list 'cg-edge (cons 'caller "B") (cons 'callee "C") (cons 'description "w5"))))
+				(cons 'edges-out '()))))
+
+		;; Weight function uses description to assign edge weights.
+		(define (edge-weight e)
+			(let ((desc (nf e 'description)))
+				(cond ((equal? desc "w3") 3)
+				      ((equal? desc "w5") 5)
+				      (else 1))))
+
+		(define pa (make-path-analysis (tropical-semiring) cg edge-weight))`)
+
+	// A to B = 3, A to C = 3+5 = 8
+	result := eval(t, engine, `(path-query pa "A" "B")`)
+	c.Assert(result.Internal().(*values.Integer).Value, qt.Equals, int64(3))
+
+	result = eval(t, engine, `(path-query pa "A" "C")`)
+	c.Assert(result.Internal().(*values.Integer).Value, qt.Equals, int64(8))
+}
+
 func TestPathAlgebra_Unreachable(t *testing.T) {
 	c := qt.New(t)
 	engine := newBeliefEngine(t)
