@@ -382,3 +382,82 @@ func TestFCA_CrossBoundaryMinExtent(t *testing.T) {
 		qt.New(t).Assert(result.SchemeString(), qt.Equals, "0")
 	})
 }
+
+// ── Transitive field write propagation ───────────────────
+
+func TestFCA_PropagateFieldWrites(t *testing.T) {
+	engine := newBeliefEngine(t)
+
+	// transcall testdata: SetupConfig writes Config, SetupLogger writes Logger,
+	// Initialize calls both but has no direct writes.
+	// Direct FCA should find no cross-boundary concepts.
+	// Transitive FCA should find Initialize spanning Config + Logger.
+	eval(t, engine, `
+		(import (wile goast fca))
+
+		(define s (go-load
+		  "github.com/aalpar/wile-goast/examples/goast-query/testdata/transcall"))
+		(define idx (go-ssa-field-index s))
+		(define cg  (go-callgraph s 'static))
+	`)
+
+	t.Run("direct FCA: no cross-boundary", func(t *testing.T) {
+		result := eval(t, engine, `
+			(let* ((ctx (field-index->context idx 'write-only))
+			       (lat (concept-lattice ctx))
+			       (xb  (cross-boundary-concepts lat)))
+			  (length xb))`)
+		qt.New(t).Assert(result.SchemeString(), qt.Equals, "0")
+	})
+
+	t.Run("transitive FCA: cross-boundary detected", func(t *testing.T) {
+		// min-extent 1: in transitive analysis, a single function spanning
+		// multiple types IS the signal — it identifies the call site that
+		// crosses the boundary.
+		result := eval(t, engine, `
+			(let* ((pidx (propagate-field-writes idx cg))
+			       (ctx  (field-index->context pidx 'write-only))
+			       (lat  (concept-lattice ctx))
+			       (xb   (cross-boundary-concepts lat 'min-extent 1)))
+			  (>= (length xb) 1))`)
+		qt.New(t).Assert(result.SchemeString(), qt.Equals, "#t")
+	})
+
+	t.Run("cross-boundary spans Config and Logger", func(t *testing.T) {
+		result := eval(t, engine, `
+			(let* ((pidx (propagate-field-writes idx cg))
+			       (ctx  (field-index->context pidx 'write-only))
+			       (lat  (concept-lattice ctx))
+			       (xb   (cross-boundary-concepts lat 'min-extent 1))
+			       (rpt  (boundary-report xb)))
+			  (let loop ((rs rpt))
+			    (if (null? rs) #f
+			      (let ((types (cdr (assoc 'types (car rs)))))
+			        (if (and (member "Config" types)
+			                 (member "Logger" types))
+			          #t
+			          (loop (cdr rs)))))))`)
+		qt.New(t).Assert(result.SchemeString(), qt.Equals, "#t")
+	})
+
+	t.Run("Initialize in cross-boundary extent", func(t *testing.T) {
+		pkg := "github.com/aalpar/wile-goast/examples/goast-query/testdata/transcall"
+		result := eval(t, engine, `
+			(let* ((pidx (propagate-field-writes idx cg))
+			       (ctx  (field-index->context pidx 'write-only))
+			       (lat  (concept-lattice ctx))
+			       (xb   (cross-boundary-concepts lat 'min-extent 1))
+			       (rpt  (boundary-report xb)))
+			  (let loop ((rs rpt))
+			    (if (null? rs) #f
+			      (let* ((r (car rs))
+			             (types (cdr (assoc 'types r))))
+			        (if (and (member "Config" types)
+			                 (member "Logger" types))
+			          (and (member "`+pkg+`.Initialize"
+			                       (cdr (assoc 'functions r)))
+			               #t)
+			          (loop (cdr rs)))))))`)
+		qt.New(t).Assert(result.SchemeString(), qt.Equals, "#t")
+	})
+}

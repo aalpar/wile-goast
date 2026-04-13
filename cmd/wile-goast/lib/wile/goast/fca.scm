@@ -252,6 +252,162 @@
              index)))
     (context-from-alist entries)))
 
+;;; ── Transitive field write propagation ───────────────────
+
+;; Tail-recursive map via for-each + reverse. Safe for large lists.
+(define (map* f lst)
+  (let ((acc '()))
+    (for-each (lambda (x) (set! acc (cons (f x) acc))) lst)
+    (reverse acc)))
+
+;; Tail-recursive filter-map via for-each + reverse. Safe for large lists.
+(define (filter-map* f lst)
+  (let ((acc '()))
+    (for-each (lambda (x) (let ((v (f x))) (if v (set! acc (cons v acc))))) lst)
+    (reverse acc)))
+
+;; Build adjacency map from call graph: func-name → list of callee names.
+(define (cg-adjacency callgraph)
+  (let ((adj (make-hashtable)))
+    (for-each
+      (lambda (node)
+        (let* ((name (nf node 'name))
+               (edges (nf node 'edges-out))
+               (callees (if (pair? edges)
+                          (map* (lambda (e) (nf e 'callee)) edges)
+                          '())))
+          (hashtable-set! adj name callees)))
+      callgraph)
+    adj))
+
+;; Iterative DFS topological sort with back-edge detection.
+;; Returns (processing-order . back-edges) where:
+;;   processing-order: list of func names, callees before callers
+;;   back-edges: hashtable of "caller\0callee" → #t
+;;
+;; Uses an explicit stack to avoid call-depth limits on large graphs.
+;; Stack frames are (node . remaining-callees). When remaining-callees
+;; is exhausted, the node finishes (black) and is added to topo order.
+(define (cg-topo-sort adj all-nodes)
+  (let ((color (make-hashtable))
+        (back-edges (make-hashtable))
+        (topo '())
+        (stack '()))
+    ;; Push a node onto the DFS stack if unvisited.
+    (define (push-if-white node)
+      (let ((c (hashtable-ref color node #f)))
+        (if (not c)
+          (begin
+            (hashtable-set! color node 'gray)
+            (set! stack (cons (cons node (hashtable-ref adj node '()))
+                              stack))))))
+    ;; Process the explicit DFS stack until empty.
+    (define (run)
+      (let loop ()
+        (if (null? stack) #f
+          (let* ((frame (car stack))
+                 (node (car frame))
+                 (remaining (cdr frame)))
+            (if (null? remaining)
+              ;; All callees processed — finish this node.
+              (begin
+                (hashtable-set! color node 'black)
+                (set! topo (cons node topo))
+                (set! stack (cdr stack))
+                (loop))
+              ;; Process next callee.
+              (let ((callee (car remaining)))
+                (set-cdr! frame (cdr remaining))
+                (let ((cc (hashtable-ref color callee #f)))
+                  (cond
+                    ((eq? cc 'gray)
+                     (hashtable-set! back-edges
+                       (string-append node "\x00;" callee) #t))
+                    ((not cc)
+                     (hashtable-set! color callee 'gray)
+                     (set! stack (cons (cons callee (hashtable-ref adj callee '()))
+                                       stack)))))
+                (loop)))))))
+    (for-each (lambda (n) (push-if-white n) (run)) all-nodes)
+    ;; topo is reverse-postorder (sources first).
+    ;; Reverse it: callees before callers.
+    (cons (reverse topo) back-edges)))
+
+;; Extract write-mode field accesses per function.
+(define (direct-write-map field-index)
+  (let ((m (make-hashtable)))
+    (for-each
+      (lambda (summary)
+        (let* ((fname (nf summary 'func))
+               (fields (nf summary 'fields))
+               (writes (filter-map
+                         (lambda (acc)
+                           (and (eq? (nf acc 'mode) 'write) acc))
+                         (if (pair? fields) fields '()))))
+          (hashtable-set! m fname writes)))
+      field-index)
+    m))
+
+;; Test whether caller→callee is a back-edge.
+(define (back-edge? back-edges caller callee)
+  (hashtable-ref back-edges (string-append caller "\x00;" callee) #f))
+
+;; Accumulate transitive writes along DAG edges.
+;; processing-order: callees before callers.
+;; adj: func → callee names.
+;; direct: func → list of write field-accesses.
+;; back-edges: hashtable of back-edge keys.
+;; Returns: hashtable of func → accumulated field-access list.
+(define (accumulate-writes processing-order adj direct back-edges)
+  (let ((acc (make-hashtable)))
+    (for-each
+      (lambda (func)
+        (let loop ((callees (hashtable-ref adj func '()))
+                   (ws (hashtable-ref direct func '())))
+          (if (null? callees)
+            (hashtable-set! acc func ws)
+            (loop (cdr callees)
+                  (if (back-edge? back-edges func (car callees))
+                    ws
+                    (append (hashtable-ref acc (car callees) '()) ws))))))
+      processing-order)
+    acc))
+
+;; Rebuild field-index summaries with accumulated field lists.
+;; Preserves pkg from originals; includes functions from call graph
+;; that had no direct writes but gained transitive writes.
+(define (rebuild-summaries field-index all-funcs acc)
+  (let ((pkg-map (make-hashtable)))
+    (for-each
+      (lambda (s) (hashtable-set! pkg-map (nf s 'func) (nf s 'pkg)))
+      field-index)
+    (filter-map*
+      (lambda (fname)
+        (let ((fields (hashtable-ref acc fname '())))
+          (if (null? fields) #f
+            (list 'ssa-field-summary
+                  (cons 'func fname)
+                  (cons 'pkg (hashtable-ref pkg-map fname ""))
+                  (cons 'fields fields)))))
+      all-funcs)))
+
+;; Propagate write-mode field accesses transitively along call graph edges.
+;; Recursive edges (DFS back-edges) are skipped — recursive functions
+;; contribute only their direct writes.
+;;
+;; field-index: output from go-ssa-field-index
+;; callgraph: output from go-callgraph (use 'static)
+;; Returns: new field-index with expanded write sets.
+(define (propagate-field-writes field-index callgraph)
+  (let* ((adj (cg-adjacency callgraph))
+         (all-nodes (map* (lambda (n) (nf n 'name)) callgraph))
+         (direct (direct-write-map field-index))
+         (sorted (cg-topo-sort adj all-nodes))
+         (processing-order (car sorted))
+         (back-edges (cdr sorted))
+         (acc (accumulate-writes processing-order adj direct back-edges)))
+    (rebuild-summaries field-index processing-order acc)))
+
 ;;; ── Cross-boundary detection ─────────────────────────────
 
 ;; Extract struct name from "Struct.Field" or "Struct.Field:r" attribute.

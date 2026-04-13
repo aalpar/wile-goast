@@ -12,6 +12,7 @@
     concept-intent
     cross-boundary-concepts
     boundary-report
+    propagate-field-writes
     ;; Sorted string set operations (used by fca-algebra, fca-recommend)
     set-intersect
     set-member?
