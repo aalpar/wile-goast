@@ -109,6 +109,21 @@ Two facilities: def-use reachability (`defuse-reachable?`) and a general worklis
 | `ssa-all-instrs` | Flatten all instructions from SSA function |
 | `ssa-instruction-names` | All named values in SSA function |
 
+## Abstract Domains — `(wile goast domains)`
+
+Pre-built abstract domains that plug into C2's `run-analysis`. Each domain is a factory function that constructs a lattice and transfer function, calls `run-analysis`, and returns the result alist.
+
+| Export | Description |
+|--------|-------------|
+| `go-concrete-eval` | Evaluate Go SSA integer opcodes on Scheme integers |
+| `make-reaching-definitions` | Forward reaching definitions (powerset lattice) |
+| `make-liveness` | Backward liveness analysis (powerset lattice) |
+| `make-constant-propagation` | Forward constant propagation (flat + map-lattice) |
+| `sign-lattice` | Construct the 5-element sign lattice: {bot, neg, zero, pos, top} |
+| `make-sign-analysis` | Forward sign analysis with transfer tables |
+| `interval-lattice` | Construct interval lattice with infinity-aware arithmetic |
+| `make-interval-analysis` | Forward interval analysis with per-block widening |
+
 ## SSA Normalization — `(wile goast ssa-normalize)`
 
 Algebraic normalization rules for SSA binop nodes. Axioms are declared as `named-axiom` objects via `(wile algebra symbolic)`, compiled into rewrite rules through a term protocol that abstracts over SSA node structure. Integer-type scoped for identity/absorbing to avoid IEEE 754 issues. Extensible via `ssa-rule-set` (flat normalization) or custom theories with `discover-equivalences` (algebraic equivalence).
@@ -339,6 +354,7 @@ Semiring-parameterized path computation over call graphs. Lazy single-source Bel
 | `cmd/wile-goast/lib/wile/goast/fca-algebra.scm` | FCA algebraic annotation: concept lattice as `(wile algebra lattice)`, relationship classification (embedded in binary) |
 | `cmd/wile-goast/lib/wile/goast/boolean-simplify.scm` | Boolean normalization for Go AST conditions and belief selectors via `(wile algebra symbolic)` (embedded in binary) |
 | `cmd/wile-goast/lib/wile/goast/path-algebra.scm` | Semiring path algebra: Bellman-Ford over call graphs (embedded in binary) |
+| `cmd/wile-goast/lib/wile/goast/domains.scm` | Pre-built abstract domains: reaching defs, liveness, constant prop, sign, interval (embedded in binary) |
 | `goast/prim_restructure.go` | Block restructuring: goto elimination, loop return rewriting, guard folding (`go-cfg-to-structured`) |
 | `goastssa/prim_canonicalize.go` | SSA function canonicalization (`go-ssa-canonicalize`) |
 

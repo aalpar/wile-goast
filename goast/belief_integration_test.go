@@ -1142,3 +1142,401 @@ func TestDataflowMonotonicityViolation(t *testing.T) {
 			  (lattice-bottom lat) 'check-monotone)`)
 	})
 }
+
+// ═══════════════════════════════════════════════════════════════
+// (wile goast domains) — Pre-built abstract domains
+// ═══════════════════════════════════════════════════════════════
+
+func TestDomainsImport(t *testing.T) {
+	engine := newBeliefEngine(t)
+	// Note: "eval" here is the existing Go test helper that runs Scheme
+	// expressions via the Wile engine -- NOT JavaScript/Python eval().
+	eval(t, engine, `(import (wile goast domains))`)
+}
+
+func TestDomainsConcreteEval(t *testing.T) {
+	engine := newBeliefEngine(t)
+	// Note: "eval" here is the existing Go test helper that runs Scheme
+	// expressions via the Wile engine -- NOT JavaScript/Python eval().
+	eval(t, engine, `(import (wile goast domains))`)
+
+	t.Run("add", func(t *testing.T) {
+		result := eval(t, engine, `(go-concrete-eval 'add 2 3)`)
+		qt.New(t).Assert(result.SchemeString(), qt.Equals, "5")
+	})
+
+	t.Run("sub", func(t *testing.T) {
+		result := eval(t, engine, `(go-concrete-eval 'sub 10 4)`)
+		qt.New(t).Assert(result.SchemeString(), qt.Equals, "6")
+	})
+
+	t.Run("mul", func(t *testing.T) {
+		result := eval(t, engine, `(go-concrete-eval 'mul 3 7)`)
+		qt.New(t).Assert(result.SchemeString(), qt.Equals, "21")
+	})
+
+	t.Run("div", func(t *testing.T) {
+		result := eval(t, engine, `(go-concrete-eval 'div 10 3)`)
+		qt.New(t).Assert(result.SchemeString(), qt.Equals, "3")
+	})
+
+	t.Run("div-by-zero", func(t *testing.T) {
+		result := eval(t, engine, `(go-concrete-eval 'div 10 0)`)
+		qt.New(t).Assert(result.SchemeString(), qt.Equals, "unknown")
+	})
+
+	t.Run("rem", func(t *testing.T) {
+		result := eval(t, engine, `(go-concrete-eval 'rem 10 3)`)
+		qt.New(t).Assert(result.SchemeString(), qt.Equals, "1")
+	})
+
+	t.Run("unknown-opcode", func(t *testing.T) {
+		result := eval(t, engine, `(go-concrete-eval 'shl 1 2)`)
+		qt.New(t).Assert(result.SchemeString(), qt.Equals, "unknown")
+	})
+}
+
+func TestDomainsReachingDefinitions(t *testing.T) {
+	engine := newBeliefEngine(t)
+	// Note: "eval" here is the existing Go test helper that runs Scheme
+	// expressions via the Wile engine -- NOT JavaScript/Python eval().
+	eval(t, engine, `
+		(import (wile goast domains))
+		(import (wile goast dataflow))
+		(import (wile goast ssa))
+		(import (wile goast utils))
+
+		(define ssa (go-ssa-build "../examples/goast-query/testdata/arithmetic"))
+		(define (ends-with? s suffix)
+			  (let ((slen (string-length s)) (plen (string-length suffix)))
+			    (and (>= slen plen)
+			         (string=? (substring s (- slen plen) slen) suffix))))
+			(define fn-branch (let loop ((fs ssa))
+			  (cond ((null? fs) #f)
+			        ((ends-with? (nf (car fs) 'name) ".Branch") (car fs))
+			        (else (loop (cdr fs))))))
+
+		(define rd-result (make-reaching-definitions fn-branch))
+	`)
+
+	t.Run("returns non-empty result", func(t *testing.T) {
+		result := eval(t, engine, `(> (length rd-result) 0)`)
+		qt.New(t).Assert(result.SchemeString(), qt.Equals, "#t")
+	})
+
+	t.Run("entry block out has definitions from block 0", func(t *testing.T) {
+		result := eval(t, engine, `
+			(let ((out0 (analysis-out rd-result 0)))
+			  (and (pair? out0) (> (length out0) 0)))`)
+		qt.New(t).Assert(result.SchemeString(), qt.Equals, "#t")
+	})
+
+	t.Run("successor inherits predecessor definitions", func(t *testing.T) {
+		result := eval(t, engine, `
+			(let ((out0 (analysis-out rd-result 0))
+			      (in1  (analysis-in rd-result 1)))
+			  ;; Every name in out0 should appear in in1
+			  (let check ((ns out0))
+			    (cond ((null? ns) #t)
+			          ((member (car ns) in1) (check (cdr ns)))
+			          (else #f))))`)
+		qt.New(t).Assert(result.SchemeString(), qt.Equals, "#t")
+	})
+}
+
+func TestDomainsLiveness(t *testing.T) {
+	engine := newBeliefEngine(t)
+	// Note: "eval" here is the existing Go test helper that runs Scheme
+	// expressions via the Wile engine -- NOT JavaScript/Python eval().
+	eval(t, engine, `
+		(import (wile goast domains))
+		(import (wile goast dataflow))
+		(import (wile goast ssa))
+		(import (wile goast utils))
+
+		(define ssa (go-ssa-build "../examples/goast-query/testdata/arithmetic"))
+		(define (ends-with? s suffix)
+			  (let ((slen (string-length s)) (plen (string-length suffix)))
+			    (and (>= slen plen)
+			         (string=? (substring s (- slen plen) slen) suffix))))
+			(define fn-branch (let loop ((fs ssa))
+			  (cond ((null? fs) #f)
+			        ((ends-with? (nf (car fs) 'name) ".Branch") (car fs))
+			        (else (loop (cdr fs))))))
+
+		(define live-result (make-liveness fn-branch))
+	`)
+
+	t.Run("returns non-empty result", func(t *testing.T) {
+		result := eval(t, engine, `(> (length live-result) 0)`)
+		qt.New(t).Assert(result.SchemeString(), qt.Equals, "#t")
+	})
+
+	t.Run("exit blocks have empty out-state", func(t *testing.T) {
+		result := eval(t, engine, `
+			(let* ((blocks (nf fn-branch 'blocks))
+			       (exits (filter-map
+			                (lambda (b)
+			                  (let ((s (nf b 'succs)))
+			                    (and (or (not s) (null? s)) b)))
+			                blocks)))
+			  (let check ((es exits))
+			    (cond ((null? es) #t)
+			          ((null? (analysis-out live-result (nf (car es) 'index)))
+			           (check (cdr es)))
+			          (else #f))))`)
+		qt.New(t).Assert(result.SchemeString(), qt.Equals, "#t")
+	})
+
+	t.Run("all blocks have states", func(t *testing.T) {
+		// Branch has 3 blocks; each should have an entry in the result
+		result := eval(t, engine, `
+			(= (length live-result)
+			   (length (nf fn-branch 'blocks)))`)
+		qt.New(t).Assert(result.SchemeString(), qt.Equals, "#t")
+	})
+}
+
+func TestDomainsConstantPropagation(t *testing.T) {
+	engine := newBeliefEngine(t)
+	// Note: "eval" here is the existing Go test helper that runs Scheme
+	// expressions via the Wile engine -- NOT JavaScript/Python eval().
+	eval(t, engine, `
+		(import (wile algebra))
+		(import (wile goast domains))
+		(import (wile goast dataflow))
+		(import (wile goast ssa))
+		(import (wile goast utils))
+
+		(define ssa (go-ssa-build "../examples/goast-query/testdata/arithmetic"))
+		(define (ends-with? s suffix)
+			  (let ((slen (string-length s)) (plen (string-length suffix)))
+			    (and (>= slen plen)
+			         (string=? (substring s (- slen plen) slen) suffix))))
+		(define fn-add (let loop ((fs ssa))
+			  (cond ((null? fs) #f)
+			        ((ends-with? (nf (car fs) 'name) ".Add") (car fs))
+			        (else (loop (cdr fs))))))
+
+		(define cp-result (make-constant-propagation fn-add))
+	`)
+
+	t.Run("returns non-empty result", func(t *testing.T) {
+		result := eval(t, engine, `(> (length cp-result) 0)`)
+		qt.New(t).Assert(result.SchemeString(), qt.Equals, "#t")
+	})
+
+	t.Run("parameter-derived binop is non-constant", func(t *testing.T) {
+		result := eval(t, engine, `
+			(let* ((out0 (analysis-out cp-result 0))
+			       (t0-val (assoc "t0" out0)))
+			  (and t0-val (eq? (cdr t0-val) 'flat-top)))`)
+		qt.New(t).Assert(result.SchemeString(), qt.Equals, "#t")
+	})
+}
+
+func TestDomainsConstantPropagationBranch(t *testing.T) {
+	engine := newBeliefEngine(t)
+	// Note: "eval" here is the existing Go test helper that runs Scheme
+	// expressions via the Wile engine -- NOT JavaScript/Python eval().
+	eval(t, engine, `
+		(import (wile algebra))
+		(import (wile goast domains))
+		(import (wile goast dataflow))
+		(import (wile goast ssa))
+		(import (wile goast utils))
+
+		(define ssa (go-ssa-build "../examples/goast-query/testdata/arithmetic"))
+		(define (ends-with? s suffix)
+			  (let ((slen (string-length s)) (plen (string-length suffix)))
+			    (and (>= slen plen)
+			         (string=? (substring s (- slen plen) slen) suffix))))
+			(define fn-branch (let loop ((fs ssa))
+			  (cond ((null? fs) #f)
+			        ((ends-with? (nf (car fs) 'name) ".Branch") (car fs))
+			        (else (loop (cdr fs))))))
+
+		(define cp-branch (make-constant-propagation fn-branch))
+	`)
+
+	t.Run("analysis completes on branching function", func(t *testing.T) {
+		result := eval(t, engine, `(> (length cp-branch) 1)`)
+		qt.New(t).Assert(result.SchemeString(), qt.Equals, "#t")
+	})
+
+	t.Run("all states have alist structure", func(t *testing.T) {
+		result := eval(t, engine, `
+			(let check ((states (analysis-states cp-branch)))
+			  (cond ((null? states) #t)
+			        ((not (pair? (cadr (car states)))) #f)
+			        (else (check (cdr states)))))`)
+		qt.New(t).Assert(result.SchemeString(), qt.Equals, "#t")
+	})
+}
+
+func TestDomainsSignLattice(t *testing.T) {
+	engine := newBeliefEngine(t)
+	// Note: "eval" here is the existing Go test helper that runs Scheme
+	// expressions via the Wile engine -- NOT JavaScript/Python eval().
+	eval(t, engine, `
+		(import (wile algebra))
+		(import (wile goast domains))
+	`)
+
+	t.Run("lattice validates", func(t *testing.T) {
+		result := eval(t, engine, `
+			(let ((sl (sign-lattice)))
+			  (validate-lattice sl '(neg zero pos)))`)
+		qt.New(t).Assert(result.SchemeString(), qt.Equals, "#t")
+	})
+
+	t.Run("join of incomparable is top", func(t *testing.T) {
+		result := eval(t, engine, `
+			(let ((sl (sign-lattice)))
+			  (lattice-join sl 'neg 'pos))`)
+		qt.New(t).Assert(result.SchemeString(), qt.Equals, "flat-top")
+	})
+
+	t.Run("meet of incomparable is bottom", func(t *testing.T) {
+		result := eval(t, engine, `
+			(let ((sl (sign-lattice)))
+			  (lattice-meet sl 'neg 'pos))`)
+		qt.New(t).Assert(result.SchemeString(), qt.Equals, "flat-bottom")
+	})
+}
+
+func TestDomainsSignAnalysis(t *testing.T) {
+	engine := newBeliefEngine(t)
+	// Note: "eval" here is the existing Go test helper that runs Scheme
+	// expressions via the Wile engine -- NOT JavaScript/Python eval().
+	eval(t, engine, `
+		(import (wile algebra))
+		(import (wile goast domains))
+		(import (wile goast dataflow))
+		(import (wile goast ssa))
+		(import (wile goast utils))
+
+		(define ssa (go-ssa-build "../examples/goast-query/testdata/arithmetic"))
+		(define (ends-with? s suffix)
+			  (let ((slen (string-length s)) (plen (string-length suffix)))
+			    (and (>= slen plen)
+			         (string=? (substring s (- slen plen) slen) suffix))))
+		(define fn-add (let loop ((fs ssa))
+			  (cond ((null? fs) #f)
+			        ((ends-with? (nf (car fs) 'name) ".Add") (car fs))
+			        (else (loop (cdr fs))))))
+
+		(define sign-result (make-sign-analysis fn-add))
+	`)
+
+	t.Run("analysis completes", func(t *testing.T) {
+		result := eval(t, engine, `(> (length sign-result) 0)`)
+		qt.New(t).Assert(result.SchemeString(), qt.Equals, "#t")
+	})
+
+	t.Run("parameter-derived binop is top", func(t *testing.T) {
+		result := eval(t, engine, `
+			(let* ((out0 (analysis-out sign-result 0))
+			       (t0-val (assoc "t0" out0)))
+			  (and t0-val (eq? (cdr t0-val) 'flat-top)))`)
+		qt.New(t).Assert(result.SchemeString(), qt.Equals, "#t")
+	})
+}
+
+func TestDomainsIntervalLattice(t *testing.T) {
+	engine := newBeliefEngine(t)
+	// Note: "eval" here is the existing Go test helper that runs Scheme
+	// expressions via the Wile engine -- NOT JavaScript/Python eval().
+	eval(t, engine, `
+		(import (wile algebra))
+		(import (wile goast domains))
+
+		(define il (interval-lattice))
+	`)
+
+	t.Run("lattice validates on sample intervals", func(t *testing.T) {
+		result := eval(t, engine, `
+			(validate-lattice il
+			  (list '(1 . 5) '(3 . 10) '(-2 . 2) '(0 . 0)))`)
+		qt.New(t).Assert(result.SchemeString(), qt.Equals, "#t")
+	})
+
+	t.Run("join widens to encompass both", func(t *testing.T) {
+		result := eval(t, engine, `
+			(lattice-join il '(1 . 5) '(3 . 10))`)
+		qt.New(t).Assert(result.SchemeString(), qt.Equals, "(1 . 10)")
+	})
+
+	t.Run("meet narrows to intersection", func(t *testing.T) {
+		result := eval(t, engine, `
+			(lattice-meet il '(1 . 5) '(3 . 10))`)
+		qt.New(t).Assert(result.SchemeString(), qt.Equals, "(3 . 5)")
+	})
+
+	t.Run("empty meet is bottom", func(t *testing.T) {
+		result := eval(t, engine, `
+			(lattice-meet il '(1 . 3) '(5 . 10))`)
+		qt.New(t).Assert(result.SchemeString(), qt.Equals, "interval-bot")
+	})
+
+	t.Run("bottom is join identity", func(t *testing.T) {
+		result := eval(t, engine, `
+			(lattice-join il (lattice-bottom il) '(2 . 5))`)
+		qt.New(t).Assert(result.SchemeString(), qt.Equals, "(2 . 5)")
+	})
+
+	t.Run("leq checks containment", func(t *testing.T) {
+		result := eval(t, engine, `
+			(and (lattice-leq? il '(2 . 5) '(1 . 10))
+			     (not (lattice-leq? il '(1 . 10) '(2 . 5))))`)
+		qt.New(t).Assert(result.SchemeString(), qt.Equals, "#t")
+	})
+}
+
+func TestDomainsIntervalAnalysis(t *testing.T) {
+	engine := newBeliefEngine(t)
+	// Note: "eval" here is the existing Go test helper that runs Scheme
+	// expressions via the Wile engine -- NOT JavaScript/Python eval().
+	eval(t, engine, `
+		(import (wile algebra))
+		(import (wile goast domains))
+		(import (wile goast dataflow))
+		(import (wile goast ssa))
+		(import (wile goast utils))
+
+		(define ssa (go-ssa-build "../examples/goast-query/testdata/arithmetic"))
+		(define (ends-with? s suffix)
+			  (let ((slen (string-length s)) (plen (string-length suffix)))
+			    (and (>= slen plen)
+			         (string=? (substring s (- slen plen) slen) suffix))))
+		(define fn-add (let loop ((fs ssa))
+			  (cond ((null? fs) #f)
+			        ((ends-with? (nf (car fs) 'name) ".Add") (car fs))
+			        (else (loop (cdr fs))))))
+		(define fn-loop (let loop ((fs ssa))
+			  (cond ((null? fs) #f)
+			        ((ends-with? (nf (car fs) 'name) ".LoopSum") (car fs))
+			        (else (loop (cdr fs))))))
+	`)
+
+	t.Run("analysis completes on Add", func(t *testing.T) {
+		result := eval(t, engine, `
+			(let ((r (make-interval-analysis fn-add)))
+			  (> (length r) 0))`)
+		qt.New(t).Assert(result.SchemeString(), qt.Equals, "#t")
+	})
+
+	t.Run("analysis terminates on LoopSum with widening", func(t *testing.T) {
+		result := eval(t, engine, `
+			(let ((r (make-interval-analysis fn-loop)))
+			  (> (length r) 0))`)
+		qt.New(t).Assert(result.SchemeString(), qt.Equals, "#t")
+	})
+
+	t.Run("custom widening threshold", func(t *testing.T) {
+		result := eval(t, engine, `
+			(let ((r (make-interval-analysis fn-loop 2)))
+			  (> (length r) 0))`)
+		qt.New(t).Assert(result.SchemeString(), qt.Equals, "#t")
+	})
+}

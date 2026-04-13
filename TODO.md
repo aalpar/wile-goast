@@ -76,12 +76,18 @@ Completed 2026-03-26. Worklist-based forward/backward analysis over SSA blocks.
 - [x] Product lattice for combining analysis dimensions — uses existing (wile algebra)
 - [x] Monotonicity assertion (debug mode) — detect buggy transfer functions
 
-### C3. Pre-built abstract domains
+### C3. Pre-built abstract domains — DONE
 
-- [ ] Powerset lattice — liveness, reaching definitions
-- [ ] Flat lattice (⊥ < concrete values < ⊤) — constant propagation
-- [ ] Sign lattice ({⊥, -, 0, +, ⊤})
-- [ ] Interval lattice — range analysis
+Completed 2026-04-12. Five domains in `(wile goast domains)` library:
+reaching definitions, liveness, constant propagation, sign, interval.
+Shared `go-concrete-eval` for integer opcodes. Interval analysis uses
+per-block widening in transfer closure.
+See `plans/2026-03-26-c3-domains-design.md`.
+
+- [x] Powerset lattice — liveness, reaching definitions
+- [x] Flat lattice (⊥ < concrete values < ⊤) — constant propagation
+- [x] Sign lattice ({⊥, -, 0, +, ⊤})
+- [x] Interval lattice — range analysis with widening
 
 ### C4. Path algebra on call graphs
 
