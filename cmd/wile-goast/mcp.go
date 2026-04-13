@@ -73,10 +73,11 @@ func doMCP(ctx context.Context) error {
 				"- Go symbol navigation, references, diagnostics, renaming → use gopls instead\n"+
 				"- Reading a single short function → direct file reading is faster\n\n"+
 				"## Prompts\n\n"+
-				"Three guided workflows are available as MCP prompts:\n"+
+				"Four prompts are available:\n"+
 				"- `goast-analyze` — selects the right analysis layer for a structural question\n"+
 				"- `goast-beliefs` — defines and runs consistency checks via the belief DSL\n"+
-				"- `goast-refactor` — finds unification candidates and verifies refactoring correctness\n",
+				"- `goast-refactor` — finds unification candidates and verifies refactoring correctness\n"+
+				"- `goast-scheme-ref` — Wile Scheme reference: available/missing primitives, idioms, exports, gotchas. **Load before writing non-trivial Scheme.**\n",
 		),
 	)
 
@@ -179,6 +180,11 @@ func (ms *mcpServer) registerPrompts(s *server.MCPServer) error {
 					mcp.ArgumentDescription("Go package pattern to analyze (e.g., './...', 'my/package')"),
 				),
 			},
+		},
+		{
+			name:        "goast-scheme-ref",
+			description: "Wile Scheme reference — available primitives, missing builtins, idioms, library exports, and gotchas. Load before writing non-trivial Scheme.",
+			file:        "prompts/goast-scheme-ref.md",
 		},
 	}
 
