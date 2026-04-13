@@ -55,6 +55,29 @@ func doMCP(ctx context.Context) error {
 		v,
 		server.WithToolCapabilities(true),
 		server.WithPromptCapabilities(true),
+		server.WithInstructions(
+			"# The wile-goast MCP server\n\n"+
+				"Go static analysis via Scheme. Use this server for structural queries about Go code "+
+				"that go beyond what grep or file reading can answer reliably.\n\n"+
+				"## When to use\n\n"+
+				"- Finding similar or duplicate functions → AST diff via `(wile goast)`\n"+
+				"- Checking consistency patterns (every Lock has Unlock, etc.) → belief DSL via `(wile goast belief)`\n"+
+				"- Understanding call relationships → call graph queries via `(wile goast callgraph)`\n"+
+				"- Analyzing control flow (dominance, reachability, paths) → CFG via `(wile goast cfg)`\n"+
+				"- Running lint/analysis passes → `(wile goast lint)`\n"+
+				"- Examining SSA form and data flow → `(wile goast ssa)`\n\n"+
+				"The `eval` tool accepts Scheme expressions with these libraries pre-loaded. "+
+				"Parse Go packages with `go-parse-file` or `go-typecheck-package`, then query the result.\n\n"+
+				"## When NOT to use\n\n"+
+				"- Scheme runtime behavior, primitive signatures, library docs → use wile instead\n"+
+				"- Go symbol navigation, references, diagnostics, renaming → use gopls instead\n"+
+				"- Reading a single short function → direct file reading is faster\n\n"+
+				"## Prompts\n\n"+
+				"Three guided workflows are available as MCP prompts:\n"+
+				"- `goast-analyze` — selects the right analysis layer for a structural question\n"+
+				"- `goast-beliefs` — defines and runs consistency checks via the belief DSL\n"+
+				"- `goast-refactor` — finds unification candidates and verifies refactoring correctness\n",
+		),
 	)
 
 	s.AddTool(
