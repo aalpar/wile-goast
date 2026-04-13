@@ -2,7 +2,7 @@
 
 Upgrade `ssa-normalize` axioms to `(wile algebra symbolic)` theories. Wire `discover-equivalences` into the unification pipeline.
 
-**Status:** Approved
+**Status:** Complete
 
 **Depends on:** `(wile algebra symbolic)` (wile v1.13+), `(wile goast ssa-normalize)`, `(wile goast unify)`
 

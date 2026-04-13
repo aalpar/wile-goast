@@ -23,7 +23,7 @@
 |------|----------|--------|
 | `BELIEF-DSL.md` | Belief DSL design: graduation model, bootstrapping, discovery emit mode, suppression | Graduation/emit open |
 | `CONSISTENCY-DEVIATION.md` | Five belief categories: validation results, bug fixes, known limitations | Complete |
-| `UNIFICATION-DETECTION.md` | AST/SSA equivalence detection for procedure unification | SSA equivalence v2 pass open |
+| `UNIFICATION-DETECTION.md` | AST/SSA equivalence detection for procedure unification | SSA equivalence v2 complete |
 | `2026-03-23-interface-behavioral-consistency.md` | Cross-implementation behavior consistency checking for Go interfaces | Implemented |
 | `2026-03-23-mcp-server-design.md` | MCP server: eval tool, prompts, stdio transport | Complete |
 | `2026-03-24-shared-session-design.md` | GoSession for reusing loaded packages across primitives | Complete (v0.5.0) |
@@ -38,17 +38,17 @@
 | `2026-03-26-c3-domains-impl.md` | C3 abstract domains implementation plan | Complete |
 | `2026-04-06-structured-docstrings-design.md` | Structured docstrings for Go primitives and Scheme procedures | Complete |
 | `2026-04-06-structured-docstrings-impl.md` | Implementation plan: 93 docstrings across 10 files in 11 tasks + 21 post-plan docstrings (fca.scm, path-algebra.scm) | Complete |
-| `2026-04-08-false-boundary-detection-design.md` | FCA-based false boundary detection: discover natural struct groupings from field access patterns | Approved |
-| `2026-04-08-false-boundary-detection-impl.md` | Implementation plan: 9 tasks, FCA core + bridge + boundary detection + integration test | Open |
+| `2026-04-08-false-boundary-detection-design.md` | FCA-based false boundary detection: discover natural struct groupings from field access patterns | Complete |
+| `2026-04-08-false-boundary-detection-impl.md` | Implementation plan: 9 tasks, FCA core + bridge + boundary detection + integration test | Complete |
 | `2026-04-09-fca-findings-goast.md` | FCA self-analysis findings: 7 cross-boundary concepts, AccessRequest×Config extraction (9 sites), makeVarDeclInt inline | Complete |
-| `2026-04-09-function-name-forms.md` | Five function name forms across layers, mismatch bugs, reduction plan (target: 2 forms + pkg metadata) | Open |
+| `2026-04-09-function-name-forms.md` | Five function name forms across layers, mismatch bugs, reduction plan (target: 2 forms + pkg metadata) | Complete |
 | `2026-04-10-function-boundary-recommendations-design.md` | Function boundary recommendations: FCA lattice + SSA cross-flow, Pareto ranking, separate split/merge/extract frontiers | Approved |
 | `2026-04-10-function-boundary-recommendations-impl.md` | Implementation plan: 12 tasks, Pareto + split/merge/extract + SSA filter + integration | Open |
 | `2026-04-10-symbolic-algebra-integration.md` | Phase 3 of wile symbolic algebra: Go boolean simplification, belief equivalence, FCA lattice annotation | Complete |
 | `2026-04-12-path-algebra-design.md` | C4: Semiring path algebra on call graphs — lazy single-source Bellman-Ford with `(wile algebra semiring)` | Complete |
 | `2026-04-12-path-algebra-impl.md` | C4 implementation: 7 tasks, TDD, synthetic + real CG tests | Complete |
 | `2026-04-12-fca-closure-unification-design.md` | Replace hand-rolled Galois closure in fca-algebra with `(wile algebra closure)` | Complete |
-| `2026-04-12-ssa-equivalence-v2-design.md` | SSA equivalence v2: migrate to symbolic theories, wire discover-equivalences into unify | Approved |
+| `2026-04-12-ssa-equivalence-v2-design.md` | SSA equivalence v2: migrate to symbolic theories, wire discover-equivalences into unify | Complete |
 | `2026-04-12-package-splitting-design.md` | Package splitting via import signature analysis: FCA + IDF weighting + API surface refinement + min-cut + cycle verification | Proposed |
 
 ## Documentation (outside plans/)

@@ -4,7 +4,7 @@
 
 **Reference**: `examples/goast-query/unify-detect-pkg.scm`
 
-## SSA-Level Equivalence Pass (v2 — infrastructure complete)
+## SSA-Level Equivalence Pass (v2 — complete)
 
 Axiom declarations migrated to `(wile algebra symbolic)` named-axiom/theory format. New exports: `ssa-theory`, `ssa-binop-protocol` (from ssa-normalize), `ssa-equivalent?` (from unify).
 

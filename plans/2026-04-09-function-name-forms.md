@@ -2,7 +2,7 @@
 
 **Goal:** Document every function name form, where each is produced and consumed, identify which can be eliminated, and converge on a design where Form 1 never escapes into cross-referencing contexts.
 
-**Status:** Findings documented. Reduction plan finalized.
+**Status:** Complete. All six steps implemented. `ssa-short-name` retained for the legitimate `interface-methods` bridge (Go's `types.Func.Name()` returns short names).
 
 ## The Five Forms
 
