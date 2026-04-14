@@ -310,6 +310,13 @@
   "Site selector: all methods on a receiver type.\nShorthand for (functions-matching (has-receiver TYPE-NAME)).\n\nParameters:\n  type-name : string\nReturns: procedure\nCategory: goast-belief\n\nExamples:\n  (methods-of \"*Server\")\n\nSee also: `functions-matching', `has-receiver'."
   (functions-matching (has-receiver type-name)))
 
+;; (all-functions-in pkg-pattern) -> (lambda (ctx) -> list-of-func-decls)
+;; Returns all func-decl nodes from the matched packages.
+(define (all-functions-in pkg-pattern)
+  "Site selector: all functions in packages matching a pattern.\nReturns all func-decl nodes from the matched packages.\n\nParameters:\n  pkg-pattern : string\nReturns: procedure\nCategory: goast-belief\n\nExamples:\n  (define-aggregate-belief \"pkg-check\"\n    (sites (all-functions-in \"my/pkg\"))\n    (analyze ...))\n\nSee also: `functions-matching', `define-aggregate-belief'."
+  (lambda (ctx)
+    (all-func-decls (ctx-pkgs ctx))))
+
 ;; (implementors-of iface-name) -> (lambda (ctx) -> list-of-func-decls)
 ;; Returns all func-decls whose receiver type implements the named interface.
 (define (implementors-of iface-name)
