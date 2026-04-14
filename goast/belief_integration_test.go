@@ -1541,6 +1541,45 @@ func TestDomainsIntervalAnalysis(t *testing.T) {
 	})
 }
 
+func TestAggregateBeliefEvaluation(t *testing.T) {
+	engine := newBeliefEngine(t)
+
+	result := eval(t, engine, `
+		(import (wile goast belief))
+		(import (wile goast utils))
+		(reset-beliefs!)
+
+		;; Register an aggregate belief with a custom analyzer
+		;; that returns a fixed verdict.
+		(define-aggregate-belief "test-cohesion"
+			(sites (functions-matching (name-matches "Lock")))
+			(analyze (custom (lambda (sites ctx)
+				(list (cons 'type 'aggregate)
+				      (cons 'verdict 'TEST-OK)
+				      (cons 'functions (length sites)))))))
+
+		(let ((out (open-output-string)))
+		  (parameterize ((current-output-port out))
+			(run-beliefs "github.com/aalpar/wile-goast/examples/goast-query/testdata/pairing"))
+		  (get-output-string out))
+	`)
+
+	c := qt.New(t)
+	output := result.SchemeString()
+
+	t.Run("aggregate belief header printed", func(t *testing.T) {
+		c.Assert(output, qt.Matches, `.*Aggregate Belief: test-cohesion.*`)
+	})
+
+	t.Run("aggregate verdict printed", func(t *testing.T) {
+		c.Assert(output, qt.Matches, `.*TEST-OK.*`)
+	})
+
+	t.Run("summary includes aggregate count", func(t *testing.T) {
+		c.Assert(output, qt.Matches, `.*Aggregate beliefs:.*1.*`)
+	})
+}
+
 func TestAggregateBeliefRegistration(t *testing.T) {
 	engine := newBeliefEngine(t)
 
