@@ -60,9 +60,9 @@
     (append *aggregate-beliefs*
       (list (list name sites-fn analyzer)))))
 
-(define (agg-belief-name b) (list-ref b 0))
-(define (agg-belief-sites-fn b) (list-ref b 1))
-(define (agg-belief-analyzer b) (list-ref b 2))
+(define (aggregate-belief-name b) (list-ref b 0))
+(define (aggregate-belief-sites-fn b) (list-ref b 1))
+(define (aggregate-belief-analyzer b) (list-ref b 2))
 
 ;; ── define-belief macro ─────────────────────────────────
 ;;
@@ -738,6 +738,10 @@
   "Property checker: escape hatch for user-defined checks.\nPROC receives (site ctx) and returns a symbol categorizing the result.\nSite is a func-decl AST node (tagged alist). Common fields:\n  (nf site 'name)      => function name string\n  (nf site 'body)      => function body AST (list of statements)\n  (nf site 'recv)      => receiver list (methods) or #f (functions)\n  (nf site 'type)      => function type node with params, results\n  (nf site 'pkg-path)  => import path of the containing package\nCtx is the analysis context. Use ctx-pkgs, ctx-ssa, ctx-callgraph,\nctx-find-ssa-func to access loaded analysis data.\n\nParameters:\n  proc : procedure\nReturns: procedure\nCategory: goast-belief\n\nExamples:\n  (custom (lambda (site ctx)\n    (if (nf site 'recv) 'is-method 'is-function)))\n  (custom (lambda (site ctx)\n    (let ((ssa (ctx-find-ssa-func ctx (nf site 'pkg-path) (nf site 'name))))\n      (if ssa 'has-ssa 'no-ssa))))\n\nSee also: `functions-matching', `ctx-find-ssa-func', `nf'."
   proc)
 
+(define (aggregate-custom proc)
+  "Aggregate analyzer: escape hatch for user-defined analyzers.\nPROC receives (sites ctx) and returns a result alist.\nSites is the list of func-decl nodes from the (sites ...) clause.\nCtx is the analysis context.\n\nParameters:\n  proc : procedure\nReturns: procedure\nCategory: goast-belief\n\nExamples:\n  (define-aggregate-belief \"my-check\"\n    (sites (all-functions-in))\n    (analyze (aggregate-custom\n      (lambda (sites ctx)\n        (list (cons 'type 'aggregate)\n              (cons 'verdict 'OK))))))\n\nSee also: `custom', `define-aggregate-belief'."
+  proc)
+
 ;; ── Statistical comparison ──────────────────────────────
 ;;
 ;; Given a list of (site . category) pairs, find the majority
@@ -852,12 +856,12 @@
 ;; ── Aggregate belief evaluation ────────────────────────
 
 (define (evaluate-aggregate-beliefs ctx)
-  "Evaluate all registered aggregate beliefs. Returns count evaluated."
-  (let loop ((beliefs *aggregate-beliefs*) (count 0))
+  "Evaluate all registered aggregate beliefs. Returns (values count errors)."
+  (let loop ((beliefs *aggregate-beliefs*) (count 0) (errs 0))
     (if (null? beliefs)
-      count
+      (values count errs)
       (let* ((belief (car beliefs))
-             (name (agg-belief-name belief)))
+             (name (aggregate-belief-name belief)))
         (guard (exn
                  (#t (display "── Aggregate Belief: ") (display name)
                      (display " ──") (newline)
@@ -866,45 +870,55 @@
                        (display (error-object-message exn))
                        (display exn))
                      (display ")") (newline) (newline)
-                     (loop (cdr beliefs) (+ count 1))))
-          (let* ((sites-fn (agg-belief-sites-fn belief))
-                 (analyzer (agg-belief-analyzer belief))
+                     (loop (cdr beliefs) count (+ errs 1))))
+          (let* ((sites-fn (aggregate-belief-sites-fn belief))
+                 (analyzer (aggregate-belief-analyzer belief))
                  (sites (sites-fn ctx))
                  (result (analyzer sites ctx)))
             (print-aggregate-result name result)
-            (loop (cdr beliefs) (+ count 1))))))))
+            (loop (cdr beliefs) (+ count 1) errs)))))))
 
 (define (print-aggregate-result name result)
   "Print an aggregate belief result."
   (display "── Aggregate Belief: ") (display name) (display " ──")
   (newline)
-  (let ((verdict (assoc 'verdict result))
-        (confidence (assoc 'confidence result))
-        (functions (assoc 'functions result)))
-    (when verdict
-      (display "  Verdict:    ") (display (cdr verdict)) (newline))
-    (when confidence
-      (display "  Confidence: ") (display (cdr confidence)) (newline))
-    (when functions
-      (display "  Functions:  ") (display (cdr functions)) (newline))
-    ;; Print groups if present
-    (let ((report (assoc 'report result)))
-      (when report
-        (let* ((rpt (cdr report))
-               (groups (assoc 'groups rpt)))
-          (when groups
-            (let* ((gs (cdr groups))
-                   (ga (assoc 'group-a gs))
-                   (gb (assoc 'group-b gs))
-                   (cut (assoc 'cut-ratio gs)))
-              (when ga
-                (display "  Group A:    ") (display (length (cdr ga)))
-                (display " functions") (newline))
-              (when gb
-                (display "  Group B:    ") (display (length (cdr gb)))
-                (display " functions") (newline))
-              (when cut
-                (display "  Cut ratio:  ") (display (cdr cut)) (newline))))))))
+  (if (not (pair? result))
+    (begin (display "  (unexpected result: not an alist)") (newline))
+    (let ((verdict (assoc 'verdict result))
+          (confidence (assoc 'confidence result))
+          (functions (assoc 'functions result)))
+      (if (not (or verdict confidence functions))
+        (begin (display "  (no recognized keys in result)") (newline))
+        (begin
+          (when verdict
+            (display "  Verdict:    ") (display (cdr verdict)) (newline))
+          (when confidence
+            (display "  Confidence: ") (display (cdr confidence)) (newline))
+          (when functions
+            (display "  Functions:  ") (display (cdr functions)) (newline))
+          ;; Print reason if present
+          (let ((reason (assoc 'reason (let ((rpt (assoc 'report result)))
+                                         (if rpt (cdr rpt) result)))))
+            (when reason
+              (display "  Reason:     ") (display (cdr reason)) (newline)))
+          ;; Print groups if present
+          (let ((report (assoc 'report result)))
+            (when report
+              (let* ((rpt (cdr report))
+                     (groups (assoc 'groups rpt)))
+                (when groups
+                  (let* ((gs (cdr groups))
+                         (ga (assoc 'group-a gs))
+                         (gb (assoc 'group-b gs))
+                         (cut (assoc 'cut-ratio gs)))
+                    (when ga
+                      (display "  Group A:    ") (display (length (cdr ga)))
+                      (display " functions") (newline))
+                    (when gb
+                      (display "  Group B:    ") (display (length (cdr gb)))
+                      (display " functions") (newline))
+                    (when cut
+                      (display "  Cut ratio:  ") (display (cdr cut)) (newline)))))))))))
   (newline))
 
 ;; Main entry point.
@@ -915,16 +929,20 @@
     (print-header)
     (let loop ((beliefs *beliefs*)
                (evaluated 0)
+               (errors 0)
                (strong 0)
                (total-deviations 0))
       (if (null? beliefs)
         ;; Aggregate beliefs, then summary
-        (let ((agg-count (evaluate-aggregate-beliefs ctx)))
-          (display "── Summary ──") (newline)
-          (display "  Beliefs evaluated:   ") (display (+ evaluated agg-count)) (newline)
-          (display "  Strong beliefs:      ") (display strong) (newline)
-          (display "  Aggregate beliefs:   ") (display agg-count) (newline)
-          (display "  Deviations found:    ") (display total-deviations) (newline))
+        (let-values (((agg-count agg-errors) (evaluate-aggregate-beliefs ctx)))
+          (let ((all-errors (+ errors agg-errors)))
+            (display "── Summary ──") (newline)
+            (display "  Beliefs evaluated:   ") (display (+ evaluated agg-count)) (newline)
+            (display "  Strong beliefs:      ") (display strong) (newline)
+            (display "  Aggregate beliefs:   ") (display agg-count) (newline)
+            (when (> all-errors 0)
+              (display "  Errors:              ") (display all-errors) (newline))
+            (display "  Deviations found:    ") (display total-deviations) (newline)))
         ;; Evaluate next belief
         (let* ((belief (car beliefs))
                (result
@@ -941,13 +959,13 @@
                    (evaluate-belief belief ctx))))
           (cond
             ((eq? result 'error)
-             (loop (cdr beliefs) (+ evaluated 1) strong total-deviations))
+             (loop (cdr beliefs) evaluated (+ errors 1) strong total-deviations))
             ((not result)
              ;; No sites found
              (display "── Belief: ") (display (belief-name belief)) (display " ──")
              (newline)
              (display "  (no sites found)") (newline) (newline)
-             (loop (cdr beliefs) (+ evaluated 1) strong total-deviations))
+             (loop (cdr beliefs) (+ evaluated 1) errors strong total-deviations))
             (else
              (let* ((name (list-ref result 0))
                     (ratio (list-ref result 2))
@@ -965,7 +983,7 @@
                  (begin
                    (print-belief-result result)
                    (loop (cdr beliefs)
-                         (+ evaluated 1) (+ strong 1)
+                         (+ evaluated 1) errors (+ strong 1)
                          (+ total-deviations (length deviations))))
                  (begin
                    (display "── Belief: ") (display name) (display " ──")
@@ -974,4 +992,4 @@
                    (display " adherence, ") (display total)
                    (display " sites — below threshold)") (newline) (newline)
                    (loop (cdr beliefs)
-                         (+ evaluated 1) strong total-deviations)))))))))))
+                         (+ evaluated 1) errors strong total-deviations)))))))))))

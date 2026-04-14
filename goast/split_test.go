@@ -321,7 +321,7 @@ func TestSplit_VerifyAcyclic(t *testing.T) {
 	})
 }
 
-func TestSingleClusterAnalyzer(t *testing.T) {
+func TestSplit_SingleCluster(t *testing.T) {
 	engine := newBeliefEngine(t)
 
 	eval(t, engine, `
@@ -345,7 +345,7 @@ func TestSingleClusterAnalyzer(t *testing.T) {
 	})
 }
 
-func TestSingleClusterAnalyzer_Synthetic(t *testing.T) {
+func TestSplit_SingleCluster_Synthetic(t *testing.T) {
 	engine := newBeliefEngine(t)
 
 	eval(t, engine, `
@@ -438,7 +438,7 @@ func TestSplit_Integration_Goast(t *testing.T) {
 	})
 }
 
-func TestAggregateBeliefIntegration_Goast(t *testing.T) {
+func TestSplit_AggregateBeliefIntegration_Goast(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration test")
 	}

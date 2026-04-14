@@ -1584,7 +1584,7 @@ func TestAggregateBeliefEvaluation(t *testing.T) {
 		;; that returns a fixed verdict.
 		(define-aggregate-belief "test-cohesion"
 			(sites (functions-matching (name-matches "Lock")))
-			(analyze (custom (lambda (sites ctx)
+			(analyze (aggregate-custom (lambda (sites ctx)
 				(list (cons 'type 'aggregate)
 				      (cons 'verdict 'TEST-OK)
 				      (cons 'functions (length sites)))))))
@@ -1625,7 +1625,7 @@ func TestAggregateBeliefRegistration(t *testing.T) {
 		eval(t, engine, `
 			(define-aggregate-belief "test-agg"
 				(sites (functions-matching (name-matches "Foo")))
-				(analyze (custom (lambda (sites ctx) '((verdict . TEST))))))
+				(analyze (aggregate-custom (lambda (sites ctx) '((verdict . TEST))))))
 		`)
 		result := eval(t, engine, `(length (aggregate-beliefs))`)
 		c.Assert(result.SchemeString(), qt.Equals, "1")

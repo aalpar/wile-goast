@@ -31,7 +31,7 @@
     all-of any-of none-of
     ;; Property checkers
     paired-with ordered co-mutated
-    checked-before-use custom
+    checked-before-use custom aggregate-custom
     ;; Utils re-export (for custom lambdas)
     nf tag? walk filter-map flat-map member? unique)
   (import (wile goast utils)
