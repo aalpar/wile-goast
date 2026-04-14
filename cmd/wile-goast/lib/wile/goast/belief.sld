@@ -16,6 +16,8 @@
   (export
     ;; Core
     define-belief run-beliefs reset-beliefs! *beliefs*
+    define-aggregate-belief register-aggregate-belief! *aggregate-beliefs*
+    aggregate-beliefs
     ;; Context (needed by custom lambdas)
     make-context ctx-pkgs ctx-ssa ctx-callgraph ctx-find-ssa-func ctx-field-index
     ;; Site selectors

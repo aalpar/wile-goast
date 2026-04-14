@@ -33,9 +33,16 @@
 
 (define *beliefs* '())
 
+(define *aggregate-beliefs* '())
+
+(define (aggregate-beliefs)
+  "Return the current list of registered aggregate beliefs.\n\nCategory: goast-belief\n\nSee also: `define-aggregate-belief', `reset-beliefs!'."
+  *aggregate-beliefs*)
+
 (define (reset-beliefs!)
-  "Clear all registered beliefs.\n\nCategory: goast-belief\n\nSee also: `run-beliefs'."
-  (set! *beliefs* '()))
+  "Clear all registered beliefs (per-site and aggregate).\n\nCategory: goast-belief\n\nSee also: `run-beliefs'."
+  (set! *beliefs* '())
+  (set! *aggregate-beliefs* '()))
 
 (define (register-belief! name sites-fn expect-fn min-adherence min-sites)
   (set! *beliefs*
@@ -48,6 +55,15 @@
 (define (belief-min-adherence b) (list-ref b 3))
 (define (belief-min-sites b) (list-ref b 4))
 
+(define (register-aggregate-belief! name sites-fn analyzer)
+  (set! *aggregate-beliefs*
+    (append *aggregate-beliefs*
+      (list (list name sites-fn analyzer)))))
+
+(define (agg-belief-name b) (list-ref b 0))
+(define (agg-belief-sites-fn b) (list-ref b 1))
+(define (agg-belief-analyzer b) (list-ref b 2))
+
 ;; ── define-belief macro ─────────────────────────────────
 ;;
 ;; (define-belief "name"
@@ -59,6 +75,11 @@
   (syntax-rules (sites expect threshold)
     ((_ name (sites selector) (expect checker) (threshold min-adh min-n))
      (register-belief! name selector checker min-adh min-n))))
+
+(define-syntax define-aggregate-belief
+  (syntax-rules (sites analyze)
+    ((_ name (sites selector) (analyze analyzer))
+     (register-aggregate-belief! name selector analyzer))))
 
 ;; ── Analysis context ────────────────────────────────────
 ;;
