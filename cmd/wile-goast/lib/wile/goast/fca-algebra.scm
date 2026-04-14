@@ -12,77 +12,12 @@
 ;; See the License for the specific language governing permissions and
 ;; limitations under the License.
 
-;;; fca-algebra.scm — Concept lattice as an algebraic lattice
+;;; fca-algebra.scm — Annotated boundary reports
 ;;;
-;;; Bridges FCA concept lattices with (wile algebra lattice) so that
-;;; lattice-theoretic operations (join, meet, leq) and algebraic
-;;; annotations (subconcept, superconcept, incomparable) are available
-;;; for boundary reports.
-
-;;; ── Concept lattice → algebra lattice ───────────────────
-
-;; Find the concept in the lattice matching the given intent.
-(define (find-concept-by-intent lattice int)
-  (let loop ((cs lattice))
-    (cond ((null? cs) #f)
-          ((equal? (concept-intent (car cs)) int) (car cs))
-          (else (loop (cdr cs))))))
-
-;; Construct a (wile algebra lattice) from an FCA concept lattice.
-;; ctx: the FCA context (needed for Galois connection operations)
-;; concepts: the list of concepts from (concept-lattice ctx)
-;;
-;; Lattice ordering: C1 <= C2 iff E1 ⊆ E2 (equiv. I2 ⊆ I1)
-;; Join: concept whose intent = closure(I1 ∩ I2)
-;; Meet: concept whose intent = closure(I1 ∪ I2)
-(define (concept-lattice->algebra-lattice ctx concepts)
-  "Construct a (wile algebra lattice) from an FCA concept lattice.\nCTX is the FCA context, CONCEPTS is the list from (concept-lattice ctx).\nThe resulting lattice has join/meet via the Galois closure operator.\n\nParameters:\n  ctx : list\n  concepts : list\nReturns: any\nCategory: goast-fca\n\nSee also: `concept-relationship', `annotated-boundary-report'."
-  (if (null? concepts)
-    (error "concept-lattice->algebra-lattice: concepts list is empty"))
-  (let* ((all-attrs (context-attributes ctx))
-         ;; Closure operator: cl(A) = intent(extent(A))
-         (cl (make-closure-operator
-               (lambda (attrs) (intent ctx (extent ctx attrs)))
-               (powerset-lattice all-attrs)))
-         ;; Top: concept with cl('()) as intent (shared by all objects)
-         (top-intent (closure-close cl '()))
-         (top-concept (find-concept-by-intent concepts top-intent))
-         ;; Bottom: concept with cl(all-attrs) as intent
-         (bottom-intent (closure-close cl all-attrs))
-         (bottom-concept (find-concept-by-intent concepts bottom-intent)))
-    (make-lattice
-      ;; join: least upper bound — intent = cl(I1 ∩ I2)
-      (lambda (c1 c2)
-        (let ((int (closure-close cl (set-intersect (concept-intent c1) (concept-intent c2)))))
-          (or (find-concept-by-intent concepts int)
-              (cons (extent ctx int) int))))
-      ;; meet: greatest lower bound — intent = cl(I1 ∪ I2)
-      (lambda (c1 c2)
-        (let ((int (closure-close cl (set-union (concept-intent c1) (concept-intent c2)))))
-          (or (find-concept-by-intent concepts int)
-              (cons (extent ctx int) int))))
-      ;; bottom
-      bottom-concept
-      ;; top
-      top-concept
-      ;; leq: C1 <= C2 iff I2 ⊆ I1 (more attributes = lower in lattice)
-      (lambda (c1 c2)
-        (set-subset? (concept-intent c2) (concept-intent c1))))))
-
-;;; ── Concept relationship ────────────────────────────────
-
-;; Determine the relationship between two concepts.
-;; Returns one of: 'subconcept, 'superconcept, 'equal, 'incomparable
-(define (concept-relationship c1 c2)
-  "Classify the lattice relationship between two concepts.\nReturns: subconcept (C1 <= C2), superconcept (C1 >= C2), equal, or incomparable.\n\nParameters:\n  c1 : list\n  c2 : list\nReturns: symbol\nCategory: goast-fca\n\nSee also: `concept-lattice->algebra-lattice', `annotated-boundary-report'."
-  (let ((i1 (concept-intent c1))
-        (i2 (concept-intent c2)))
-    (let ((i2-sub-i1 (set-subset? i2 i1))
-          (i1-sub-i2 (set-subset? i1 i2)))
-      (cond ((and i1-sub-i2 i2-sub-i1) 'equal)
-            (i2-sub-i1 'subconcept)    ;; I2 ⊆ I1 means E1 ⊆ E2, C1 <= C2
-            (i1-sub-i2 'superconcept)  ;; I1 ⊆ I2 means E2 ⊆ E1, C2 <= C1
-            (else 'incomparable)))))
+;;; Go-specific annotation layer over FCA concept lattices.
+;;; Core lattice construction and concept relationships are provided
+;;; by (wile algebra fca). This module adds Go-specific formatting:
+;;; dot-notation type extraction from attribute strings.
 
 ;;; ── Annotated boundary report ───────────────────────────
 

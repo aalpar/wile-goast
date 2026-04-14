@@ -14,25 +14,31 @@
 
 (define-library (wile goast fca)
   (export
+    ;; Re-exported from (wile algebra fca)
     make-context
     context-from-alist
+    fca-context?
     context-objects
     context-attributes
-    field-index->context
     intent
     extent
     concept-lattice
     concept-extent
     concept-intent
-    cross-boundary-concepts
-    boundary-report
-    propagate-field-writes
-    ;; Sorted string set operations (used by fca-algebra, fca-recommend)
+    concept-lattice->algebra-lattice
+    concept-relationship
     set-intersect
     set-member?
     set-add
     set-before
     set-union
-    set-subset?)
-  (import (wile goast utils))
+    set-subset?
+    sort-strings
+    ;; Defined locally (Go SSA/callgraph bridge)
+    field-index->context
+    cross-boundary-concepts
+    boundary-report
+    propagate-field-writes)
+  (import (wile goast utils)
+          (wile algebra fca))
   (include "fca.scm"))

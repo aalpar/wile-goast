@@ -18,7 +18,5 @@
     annotated-boundary-report
     concept-relationship)
   (import (wile goast utils)
-          (wile goast fca)
-          (wile algebra lattice)
-          (wile algebra closure))
+          (wile goast fca))
   (include "fca-algebra.scm"))
