@@ -17,5 +17,7 @@
   (import (wile goast utils))
   (import (wile goast fca))
   (export
-    import-signatures)
+    import-signatures
+    compute-idf
+    filter-noise)
   (include "split.scm"))
