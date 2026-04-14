@@ -186,6 +186,20 @@ func (ms *mcpServer) registerPrompts(s *server.MCPServer) error {
 			description: "Wile Scheme reference — available primitives, missing builtins, idioms, library exports, and gotchas. Load before writing non-trivial Scheme.",
 			file:        "prompts/goast-scheme-ref.md",
 		},
+		{
+			name:        "goast-split",
+			description: "Analyze package cohesion and recommend splits via IDF-weighted Formal Concept Analysis",
+			file:        "prompts/goast-split.md",
+			args: []mcp.PromptOption{
+				mcp.WithArgument("package",
+					mcp.RequiredArgument(),
+					mcp.ArgumentDescription("Go package pattern to analyze (e.g., 'my/package', './internal/...')"),
+				),
+				mcp.WithArgument("goal",
+					mcp.ArgumentDescription("Motivation for the split (e.g., 'reduce coupling', 'package too large')"),
+				),
+			},
+		},
 	}
 
 	for _, p := range prompts {
