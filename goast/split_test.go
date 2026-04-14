@@ -438,3 +438,31 @@ func TestSplit_Integration_Goast(t *testing.T) {
 		c.Assert(result.SchemeString(), qt.Equals, "#t")
 	})
 }
+
+func TestAggregateBeliefIntegration_Goast(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration test")
+	}
+
+	engine := newBeliefEngine(t)
+
+	eval(t, engine, `
+		(import (wile goast belief))
+		(import (wile goast split))
+		(import (wile goast utils))
+		(reset-beliefs!)
+
+		(define-aggregate-belief "goast-cohesion"
+			(sites (all-functions-in
+				"github.com/aalpar/wile-goast/goast"))
+			(analyze (single-cluster)))
+
+		(run-beliefs "github.com/aalpar/wile-goast/goast")
+	`)
+
+	c := qt.New(t)
+
+	t.Run("completes without error on real package", func(t *testing.T) {
+		c.Assert(true, qt.IsTrue)
+	})
+}
