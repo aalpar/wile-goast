@@ -19,5 +19,7 @@
   (export
     import-signatures
     compute-idf
-    filter-noise)
+    filter-noise
+    build-package-context
+    refine-by-api-surface)
   (include "split.scm"))

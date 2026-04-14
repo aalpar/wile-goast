@@ -106,3 +106,77 @@ func TestSplit_FilterNoise(t *testing.T) {
 		c.Assert(result.SchemeString(), qt.Equals, "#t")
 	})
 }
+
+func TestSplit_BuildPackageContext(t *testing.T) {
+	engine := newBeliefEngine(t)
+
+	eval(t, engine, `
+		(import (wile goast split))
+		(import (wile goast fca))
+
+		(define filtered '(("F1" "fmt" "strings")
+		                    ("F2" "fmt")
+		                    ("F3" "strings")))
+		(define ctx (build-package-context filtered))
+	`)
+
+	c := qt.New(t)
+
+	t.Run("3 objects", func(t *testing.T) {
+		result := eval(t, engine, `(length (context-objects ctx))`)
+		c.Assert(result.SchemeString(), qt.Equals, "3")
+	})
+
+	t.Run("2 attributes", func(t *testing.T) {
+		result := eval(t, engine, `(length (context-attributes ctx))`)
+		c.Assert(result.SchemeString(), qt.Equals, "2")
+	})
+
+	t.Run("functions with no deps excluded", func(t *testing.T) {
+		result := eval(t, engine, `
+			(define filtered2 '(("F1" "fmt") ("F2")))
+			(define ctx2 (build-package-context filtered2))
+			(length (context-objects ctx2))`)
+		c.Assert(result.SchemeString(), qt.Equals, "1")
+	})
+}
+
+func TestSplit_RefineByAPISurface(t *testing.T) {
+	engine := newBeliefEngine(t)
+
+	eval(t, engine, `
+		(import (wile goast split))
+		(import (wile goast fca))
+
+		;; Simulate go-func-refs output
+		(define raw-refs
+		  '((func-ref (name . "F1")
+		              (pkg . "test/pkg")
+		              (refs . ((ref (pkg . "io") (objects . ("Reader" "Writer")))
+		                       (ref (pkg . "fmt") (objects . ("Println"))))))
+		    (func-ref (name . "F2")
+		              (pkg . "test/pkg")
+		              (refs . ((ref (pkg . "io") (objects . ("Closer")))
+		                       (ref (pkg . "fmt") (objects . ("Sprintf"))))))))
+		;; Only io is high-IDF
+		(define filtered '(("F1" "io") ("F2" "io")))
+		(define ctx (refine-by-api-surface raw-refs filtered))
+	`)
+
+	c := qt.New(t)
+
+	t.Run("attributes are pkg:object pairs", func(t *testing.T) {
+		result := eval(t, engine, `
+			(let ((attrs (context-attributes ctx)))
+			  (and (member "io:Reader" attrs)
+			       (member "io:Closer" attrs)))`)
+		c.Assert(result.SchemeString(), qt.Not(qt.Equals), "#f")
+	})
+
+	t.Run("F1 and F2 have different attributes", func(t *testing.T) {
+		result := eval(t, engine, `
+			(equal? (intent ctx '("F1"))
+			        (intent ctx '("F2")))`)
+		c.Assert(result.SchemeString(), qt.Equals, "#f")
+	})
+}

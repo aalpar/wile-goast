@@ -100,3 +100,67 @@ See also: `compute-idf', `build-package-context'."
                              (and w (>= (cdr w) threshold))))
                          (cdr sig))))
          signatures)))
+
+(define (build-package-context filtered-signatures)
+  "Build FCA formal context from filtered import signatures.
+Objects = function names. Attributes = high-IDF package paths.
+
+Parameters:
+  filtered-signatures : list — output from (filter-noise ...)
+Returns: fca-context — formal context for (concept-lattice)
+Category: goast-split
+
+Examples:
+  (define ctx (build-package-context filtered))
+  (concept-lattice ctx)
+
+See also: `filter-noise', `refine-by-api-surface', `context-from-alist'."
+  (context-from-alist
+    (filter (lambda (sig) (not (null? (cdr sig))))
+            filtered-signatures)))
+
+(define (refine-by-api-surface func-refs filtered-signatures)
+  "Refine FCA context to (package, object-name) granularity.
+Replaces package-level attributes with pkg:object pairs for finer
+sub-clustering when two functions import the same package but use
+different API surfaces.
+
+Parameters:
+  func-refs             : list — raw output from (go-func-refs ...)
+  filtered-signatures   : list — output from (filter-noise ...)
+Returns: fca-context — refined formal context
+Category: goast-split
+
+Examples:
+  (define ctx (refine-by-api-surface raw-refs filtered))
+  (concept-lattice ctx)
+
+See also: `build-package-context', `import-signatures'."
+  (let* ((high-idf-pkgs
+           (let loop ((sigs filtered-signatures) (acc '()))
+             (if (null? sigs) acc
+               (loop (cdr sigs)
+                     (append (cdr (car sigs)) acc)))))
+         (high-set (unique high-idf-pkgs)))
+    (context-from-alist
+      (filter-map
+        (lambda (fr)
+          (let* ((name (nf fr 'name))
+                 (refs (let ((r (nf fr 'refs))) (if r r '())))
+                 (attrs
+                   (let loop ((rs refs) (acc '()))
+                     (if (null? rs) acc
+                       (let* ((r (car rs))
+                              (pkg (nf r 'pkg)))
+                         (if (member pkg high-set)
+                           (let ((objs (nf r 'objects)))
+                             (loop (cdr rs)
+                                   (append
+                                     (map (lambda (o)
+                                            (string-append pkg ":" o))
+                                          (if objs objs '()))
+                                     acc)))
+                           (loop (cdr rs) acc)))))))
+            (if (null? attrs) #f
+              (cons name attrs))))
+        func-refs))))
