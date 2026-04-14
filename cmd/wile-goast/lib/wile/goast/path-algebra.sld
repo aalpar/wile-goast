@@ -19,5 +19,6 @@
     path-query
     path-query-all)
   (import (wile algebra semiring)
+          (wile algebra graph)
           (wile goast utils))
   (include "path-algebra.scm"))

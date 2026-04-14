@@ -14,19 +14,8 @@
 
 ;;; (wile goast path-algebra) — Semiring path computation over call graphs
 ;;;
-;;; Lazy single-source Bellman-Ford parameterized by semiring.
-;;; Boolean semiring = reachability, tropical = shortest path,
-;;; counting = path count.
-
-;; --- Record type ---
-
-(define-record-type <path-analysis>
-  (make-path-analysis* semiring adjacency weight-fn cache)
-  path-analysis?
-  (semiring   pa-semiring)
-  (adjacency  pa-adjacency)
-  (weight-fn  pa-weight-fn)
-  (cache      pa-cache set-pa-cache!))
+;;; Thin wrapper over (wile algebra graph) that converts Go call graph
+;;; nodes into the adjacency alist format expected by graph-analysis.
 
 ;; --- Adjacency construction ---
 
@@ -43,76 +32,13 @@
 ;; --- Constructor ---
 
 (define (make-path-analysis semiring cg edge-weight)
-  "Construct a path analysis from a semiring, call graph, and edge-weight function.\nEDGE-WEIGHT receives a cg-edge and returns a semiring value.\nPass #f for unit weights (each edge = semiring-one).\n\nParameters:\n  semiring : any\n  cg : list\n  edge-weight : procedure-or-false\nReturns: path-analysis\nCategory: goast-path\n\nExamples:\n  (make-path-analysis (boolean-semiring) cg #f)\n  (make-path-analysis (tropical-semiring) cg (lambda (e) 1))\n\nSee also: `path-query', `path-query-all'."
-  (let ((adj (build-adjacency cg))
-        (wfn (or edge-weight (lambda (_) (semiring-one semiring)))))
-    (make-path-analysis* semiring adj wfn '())))
-
-;; --- Local utilities ---
-
-(define (filter pred lst)
-  (let loop ((xs lst) (acc '()))
-    (if (null? xs) (reverse acc)
-      (loop (cdr xs)
-            (if (pred (car xs)) (cons (car xs) acc) acc)))))
-
-;; --- Single-source computation ---
-
-;; Compute distances from source using worklist Bellman-Ford.
-;; Returns alist ((name . value) ...) for all reachable nodes.
-(define (compute-single-source pa source)
-  (let ((S   (pa-semiring pa))
-        (adj (pa-adjacency pa))
-        (wfn (pa-weight-fn pa)))
-    (let loop ((worklist (list source))
-               (dist (list (cons source (semiring-one S)))))
-      (if (null? worklist) dist
-          (let* ((node (car worklist))
-                 (rest (cdr worklist))
-                 (node-dist (cdr (assoc node dist))))
-            ;; Get outgoing edges for this node
-            (let ((entry (assoc node adj)))
-              (if (not entry)
-                  (loop rest dist)
-                  (let edge-loop ((edges (cdr entry))
-                                  (wl rest)
-                                  (d dist))
-                    (if (null? edges)
-                        (loop wl d)
-                        (let* ((callee-name (caar edges))
-                               (edge (cdar edges))
-                               (w (wfn edge))
-                               (candidate (semiring-times S node-dist w))
-                               (old-entry (assoc callee-name d))
-                               (old-val (if old-entry (cdr old-entry) (semiring-zero S)))
-                               (merged (semiring-plus S old-val candidate)))
-                          (if (equal? merged old-val)
-                              (edge-loop (cdr edges) wl d)
-                              (let ((new-d (cons (cons callee-name merged)
-                                                 (if old-entry
-                                                     (filter (lambda (p) (not (equal? (car p) callee-name))) d)
-                                                     d))))
-                                (edge-loop (cdr edges)
-                                           (if (member callee-name wl) wl (cons callee-name wl))
-                                           new-d)))))))))))))
-
-;; --- Cache layer ---
-
-(define (get-or-compute pa source)
-  (let ((cached (assoc source (pa-cache pa))))
-    (if cached (cdr cached)
-        (let ((result (compute-single-source pa source)))
-          (set-pa-cache! pa (cons (cons source result) (pa-cache pa)))
-          result))))
+  "Construct a path analysis from a semiring, call graph, and edge-weight function.\nEDGE-WEIGHT receives a cg-edge and returns a semiring value.\nPass #f for unit weights (each edge = semiring-one).\n\nParameters:\n  semiring : any\n  cg : list\n  edge-weight : procedure-or-false\nReturns: graph-analysis\nCategory: goast-path\n\nExamples:\n  (make-path-analysis (boolean-semiring) cg #f)\n  (make-path-analysis (tropical-semiring) cg (lambda (e) 1))\n\nSee also: `path-query', `path-query-all'."
+  (make-graph-analysis semiring (build-adjacency cg) edge-weight))
 
 ;; --- Public API ---
 
-(define (path-query pa source target)
-  "Query the semiring value between source and target.\nReturns semiring-zero if target is unreachable. Lazily computes\nand caches single-source distances on first query per source.\n\nParameters:\n  pa : path-analysis\n  source : string\n  target : string\nReturns: any\nCategory: goast-path\n\nSee also: `path-query-all', `make-path-analysis'."
-  (let* ((dist (get-or-compute pa source))
-         (entry (assoc target dist)))
-    (if entry (cdr entry) (semiring-zero (pa-semiring pa)))))
+(define path-analysis? graph-analysis?)
 
-(define (path-query-all pa source)
-  "Return distance alist for all reachable nodes from source.\nEach entry is (name . semiring-value). Lazily computed and cached.\n\nParameters:\n  pa : path-analysis\n  source : string\nReturns: list\nCategory: goast-path\n\nSee also: `path-query', `make-path-analysis'."
-  (get-or-compute pa source))
+(define path-query graph-query)
+
+(define path-query-all graph-query-all)
