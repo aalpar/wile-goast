@@ -32,7 +32,8 @@
 
     ;; Utilities
     string-suffix?)
-  (import (wile goast utils)
+  (import (wile algebra pareto)
+          (wile goast utils)
           (wile goast fca)
           (wile goast dataflow))
   (include "fca-recommend.scm"))
