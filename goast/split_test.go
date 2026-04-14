@@ -320,3 +320,55 @@ func TestSplit_VerifyAcyclic(t *testing.T) {
 		c.Assert(result.SchemeString(), qt.Equals, "#f")
 	})
 }
+
+func TestSplit_Integration_Goast(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration test")
+	}
+
+	engine := newBeliefEngine(t)
+
+	eval(t, engine, `
+		(import (wile goast split))
+		(import (wile goast utils))
+
+		(define refs (go-func-refs
+		  "github.com/aalpar/wile-goast/goast"))
+		(define report (recommend-split refs))
+	`)
+
+	c := qt.New(t)
+
+	t.Run("many functions", func(t *testing.T) {
+		result := eval(t, engine, `(> (cdr (assoc 'functions report)) 20)`)
+		c.Assert(result.SchemeString(), qt.Equals, "#t")
+	})
+
+	t.Run("has high-IDF packages", func(t *testing.T) {
+		result := eval(t, engine, `
+			(not (null? (cdr (assoc 'high-idf report))))`)
+		c.Assert(result.SchemeString(), qt.Equals, "#t")
+	})
+
+	t.Run("confidence is a known level", func(t *testing.T) {
+		result := eval(t, engine, `
+			(let ((c (cdr (assoc 'confidence report))))
+			  (or (eq? c 'HIGH) (eq? c 'MEDIUM)
+			      (eq? c 'LOW) (eq? c 'NONE)))`)
+		c.Assert(result.SchemeString(), qt.Equals, "#t")
+	})
+
+	t.Run("acyclic field present", func(t *testing.T) {
+		result := eval(t, engine, `
+			(let ((a (cdr (assoc 'acyclic report))))
+			  (assoc 'acyclic a))`)
+		c.Assert(result.SchemeString(), qt.Not(qt.Equals), "#f")
+	})
+
+	t.Run("refined split also works", func(t *testing.T) {
+		result := eval(t, engine, `
+			(define report-r (recommend-split refs 'refine))
+			(> (cdr (assoc 'functions report-r)) 20)`)
+		c.Assert(result.SchemeString(), qt.Equals, "#t")
+	})
+}
