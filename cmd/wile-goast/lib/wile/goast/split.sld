@@ -21,5 +21,6 @@
     compute-idf
     filter-noise
     build-package-context
-    refine-by-api-surface)
+    refine-by-api-surface
+    find-split)
   (include "split.scm"))

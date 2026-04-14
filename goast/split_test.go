@@ -180,3 +180,52 @@ func TestSplit_RefineByAPISurface(t *testing.T) {
 		c.Assert(result.SchemeString(), qt.Equals, "#f")
 	})
 }
+
+func TestSplit_FindSplit(t *testing.T) {
+	engine := newBeliefEngine(t)
+
+	eval(t, engine, `
+		(import (wile goast split))
+		(import (wile goast fca))
+
+		;; Two clear groups: F1,F2 use "A"; F3,F4 use "B"; F5 bridges both.
+		(define ctx (context-from-alist
+		  '(("F1" "A" "C")
+		    ("F2" "A" "C")
+		    ("F3" "B" "D")
+		    ("F4" "B" "D")
+		    ("F5" "A" "B"))))
+		(define lat (concept-lattice ctx))
+		(define result (find-split ctx lat))
+	`)
+
+	c := qt.New(t)
+
+	t.Run("two non-empty groups", func(t *testing.T) {
+		result := eval(t, engine, `
+			(and (not (null? (cdr (assoc 'group-a result))))
+			     (not (null? (cdr (assoc 'group-b result)))))`)
+		c.Assert(result.SchemeString(), qt.Equals, "#t")
+	})
+
+	t.Run("F5 in cut (bridges both)", func(t *testing.T) {
+		result := eval(t, engine, `
+			(not (equal? #f (member "F5" (cdr (assoc 'cut result)))))`)
+		c.Assert(result.SchemeString(), qt.Equals, "#t")
+	})
+
+	t.Run("cut-ratio is 0.2 (1 of 5)", func(t *testing.T) {
+		result := eval(t, engine, `(cdr (assoc 'cut-ratio result))`)
+		c.Assert(result.SchemeString(), qt.Equals, "0.2")
+	})
+
+	t.Run("no split when all share same deps", func(t *testing.T) {
+		result := eval(t, engine, `
+			(define ctx-uniform (context-from-alist
+			  '(("F1" "A") ("F2" "A") ("F3" "A"))))
+			(define lat-u (concept-lattice ctx-uniform))
+			(define result-u (find-split ctx-uniform lat-u))
+			(cdr (assoc 'cut-ratio result-u))`)
+		c.Assert(result.SchemeString(), qt.Equals, "1.0")
+	})
+}

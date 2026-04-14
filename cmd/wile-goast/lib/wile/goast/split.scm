@@ -164,3 +164,115 @@ See also: `build-package-context', `import-signatures'."
             (if (null? attrs) #f
               (cons name attrs))))
         func-refs))))
+
+(define (set-difference a b)
+  "Return elements in sorted list a not in sorted list b."
+  (let loop ((xs a) (ys b) (acc '()))
+    (cond ((null? xs) (reverse acc))
+          ((null? ys) (append (reverse acc) xs))
+          ((string<? (car xs) (car ys))
+           (loop (cdr xs) ys (cons (car xs) acc)))
+          ((string=? (car xs) (car ys))
+           (loop (cdr xs) (cdr ys) acc))
+          (else (loop xs (cdr ys) acc)))))
+
+(define (sort-strings lst)
+  "Sort a list of strings lexicographically (insertion sort with dedup)."
+  (let loop ((xs lst) (acc '()))
+    (if (null? xs) acc
+      (loop (cdr xs) (set-add (car xs) acc)))))
+
+(define (incomparable-concept-pairs concepts context)
+  "Find all pairs of concepts that are lattice-incomparable."
+  (let loop ((cs concepts) (acc '()))
+    (if (null? cs) acc
+      (let inner ((rest (cdr cs)) (acc acc))
+        (if (null? rest)
+          (loop (cdr cs) acc)
+          (let* ((c1 (car cs))
+                 (c2 (car rest))
+                 (e1 (concept-extent c1))
+                 (e2 (concept-extent c2)))
+            (if (and (not (set-subset? e1 e2))
+                     (not (set-subset? e2 e1)))
+              (inner (cdr rest) (cons (cons c1 c2) acc))
+              (inner (cdr rest) acc))))))))
+
+(define (best-split-pair pairs context)
+  "Select the pair that yields the most balanced partition.
+Primary: maximize min(|e1|, |e2|) — prefer balanced groups.
+Secondary: maximize coverage — prefer pairs that touch more objects."
+  (if (null? pairs) #f
+    (let loop ((ps pairs)
+               (best #f) (best-bal -1) (best-cov -1))
+      (if (null? ps) best
+        (let* ((pair (car ps))
+               (e1 (concept-extent (car pair)))
+               (e2 (concept-extent (cdr pair)))
+               (bal (min (length e1) (length e2)))
+               (cov (length (set-union e1 e2))))
+          (if (or (> bal best-bal)
+                  (and (= bal best-bal) (> cov best-cov)))
+            (loop (cdr ps) pair bal cov)
+            (loop (cdr ps) best best-bal best-cov)))))))
+
+(define (assign-remainder objs c1 c2 context)
+  "Assign functions not in either concept by attribute affinity.
+Returns (a-additions b-additions ambiguous)."
+  (let ((i1 (concept-intent c1))
+        (i2 (concept-intent c2)))
+    (let loop ((os objs) (a '()) (b '()) (amb '()))
+      (if (null? os) (list a b amb)
+        (let* ((o (car os))
+               (attrs (intent context (list o)))
+               (a-overlap (length (set-intersect attrs i1)))
+               (b-overlap (length (set-intersect attrs i2))))
+          (cond ((> a-overlap b-overlap) (loop (cdr os) (cons o a) b amb))
+                ((> b-overlap a-overlap) (loop (cdr os) a (cons o b) amb))
+                (else (loop (cdr os) a b (cons o amb)))))))))
+
+(define (find-split context lattice)
+  "Find a two-way partition of functions minimizing cross-group coupling.
+Uses the concept lattice to identify two large incomparable concepts,
+then classifies each function by which concept's attributes it shares more.
+
+Parameters:
+  context : fca-context
+  lattice : list — output from (concept-lattice context)
+Returns: alist with keys: group-a, group-b, cut, cut-ratio
+Category: goast-split
+
+Examples:
+  (define result (find-split ctx lat))
+  (assoc 'group-a result)
+  (assoc 'cut-ratio result)
+
+See also: `build-package-context', `verify-acyclic'."
+  (let* ((concepts (filter (lambda (c)
+                             (> (length (concept-extent c)) 1))
+                           lattice))
+         (pairs (incomparable-concept-pairs concepts context))
+         (best (best-split-pair pairs context)))
+    (if (not best)
+      '((group-a) (group-b) (cut) (cut-ratio . 1.0))
+      (let* ((c1 (car best))
+             (c2 (cdr best))
+             (e1 (concept-extent c1))
+             (e2 (concept-extent c2))
+             (all-objs (context-objects context))
+             (only-a (set-difference e1 e2))
+             (only-b (set-difference e2 e1))
+             (both (set-intersect e1 e2))
+             (neither (set-difference
+                        (set-difference all-objs e1) e2))
+             (assigned (assign-remainder neither c1 c2 context))
+             (group-a (append only-a (car assigned)))
+             (group-b (append only-b (cadr assigned)))
+             (cut-items (append both (caddr assigned)))
+             (total (length all-objs))
+             (ratio (if (zero? total) 1.0
+                      (/ (length cut-items) total))))
+        (list (cons 'group-a (sort-strings group-a))
+              (cons 'group-b (sort-strings group-b))
+              (cons 'cut (sort-strings cut-items))
+              (cons 'cut-ratio (exact->inexact ratio)))))))
