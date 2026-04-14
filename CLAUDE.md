@@ -307,6 +307,22 @@ Bridges FCA concept lattices with `(wile algebra lattice)` and `(wile algebra cl
 | `concept-relationship` | Classify pair: `subconcept` / `superconcept` / `equal` / `incomparable` |
 | `annotated-boundary-report` | Extend boundary report with `subconcept-of`, `superconcept-of`, `incomparable-with` |
 
+## Function Boundary Recommendations — `(wile goast fca-recommend)`
+
+Analyzes FCA concept lattices to produce ranked split/merge/extract recommendations for function boundaries. SSA data flow filtering distinguishes intentional coordination from accidental aggregation. Pareto dominance ranking with separate frontiers per type.
+
+| Export | Description |
+|--------|-------------|
+| `dominates?` | Pareto dominance: X >= Y on all factors, > on at least one |
+| `pareto-frontier` | Compute Pareto frontier and dominated groups |
+| `concept-signature` | Map function name to its concepts in the lattice |
+| `incomparable-pairs` | Find incomparable concept pairs in a signature |
+| `split-candidates` | Functions serving incomparable state clusters |
+| `merge-candidates` | Functions maintaining shared state separately |
+| `extract-candidates` | Sub-operations shared by more callers than the full op |
+| `boundary-recommendations` | Top-level: three Pareto frontiers (split/merge/extract) |
+| `string-suffix?` | Test if a string ends with a given suffix |
+
 ## Boolean Simplification — `(wile goast boolean-simplify)`
 
 Boolean normalization for Go AST conditions and belief selector predicates. Uses `(wile algebra symbolic)` recursive normalizer with a Boolean algebra theory (absorption, involution, idempotence, commutativity).
@@ -352,6 +368,7 @@ Semiring-parameterized path computation over call graphs. Lazy single-source Bel
 | `cmd/wile-goast/lib/wile/goast/unify.scm` | AST/SSA diff engine with pluggable classifiers (embedded in binary) |
 | `cmd/wile-goast/lib/wile/goast/fca.scm` | Formal Concept Analysis: false boundary detection via concept lattices (embedded in binary) |
 | `cmd/wile-goast/lib/wile/goast/fca-algebra.scm` | FCA algebraic annotation: concept lattice as `(wile algebra lattice)`, relationship classification (embedded in binary) |
+| `cmd/wile-goast/lib/wile/goast/fca-recommend.scm` | Function boundary recommendations: split/merge/extract via FCA + SSA cross-flow (embedded in binary) |
 | `cmd/wile-goast/lib/wile/goast/boolean-simplify.scm` | Boolean normalization for Go AST conditions and belief selectors via `(wile algebra symbolic)` (embedded in binary) |
 | `cmd/wile-goast/lib/wile/goast/path-algebra.scm` | Semiring path algebra: Bellman-Ford over call graphs (embedded in binary) |
 | `cmd/wile-goast/lib/wile/goast/domains.scm` | Pre-built abstract domains: reaching defs, liveness, constant prop, sign, interval (embedded in binary) |

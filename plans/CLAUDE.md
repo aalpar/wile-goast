@@ -42,8 +42,8 @@
 | `2026-04-08-false-boundary-detection-impl.md` | Implementation plan: 9 tasks, FCA core + bridge + boundary detection + integration test | Complete |
 | `2026-04-09-fca-findings-goast.md` | FCA self-analysis findings: 7 cross-boundary concepts, AccessRequest×Config extraction (9 sites), makeVarDeclInt inline | Complete |
 | `2026-04-09-function-name-forms.md` | Five function name forms across layers, mismatch bugs, reduction plan (target: 2 forms + pkg metadata) | Complete |
-| `2026-04-10-function-boundary-recommendations-design.md` | Function boundary recommendations: FCA lattice + SSA cross-flow, Pareto ranking, separate split/merge/extract frontiers | Approved |
-| `2026-04-10-function-boundary-recommendations-impl.md` | Implementation plan: 12 tasks, Pareto + split/merge/extract + SSA filter + integration | Open |
+| `2026-04-10-function-boundary-recommendations-design.md` | Function boundary recommendations: FCA lattice + SSA cross-flow, Pareto ranking, separate split/merge/extract frontiers | Complete |
+| `2026-04-10-function-boundary-recommendations-impl.md` | Implementation plan: 12 tasks, Pareto + split/merge/extract + SSA filter + integration | Complete |
 | `2026-04-10-symbolic-algebra-integration.md` | Phase 3 of wile symbolic algebra: Go boolean simplification, belief equivalence, FCA lattice annotation | Complete |
 | `2026-04-12-path-algebra-design.md` | C4: Semiring path algebra on call graphs — lazy single-source Bellman-Ford with `(wile algebra semiring)` | Complete |
 | `2026-04-12-path-algebra-impl.md` | C4 implementation: 7 tasks, TDD, synthetic + real CG tests | Complete |
