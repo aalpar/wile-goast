@@ -20,6 +20,7 @@
     aggregate-beliefs
     ;; Context (needed by custom lambdas)
     make-context ctx-pkgs ctx-ssa ctx-callgraph ctx-find-ssa-func ctx-field-index
+    ctx-session
     ;; Site selectors
     functions-matching callers-of methods-of all-functions-in sites-from
     all-func-decls implementors-of interface-methods

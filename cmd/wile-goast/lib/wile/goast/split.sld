@@ -16,6 +16,7 @@
   (import (scheme base))
   (import (wile goast utils))
   (import (wile goast fca))
+  (import (wile goast belief))
   (export
     import-signatures
     compute-idf
@@ -24,5 +25,6 @@
     refine-by-api-surface
     find-split
     verify-acyclic
-    recommend-split)
+    recommend-split
+    single-cluster)
   (include "split.scm"))

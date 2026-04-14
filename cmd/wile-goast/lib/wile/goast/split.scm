@@ -395,3 +395,22 @@ See also: `import-signatures', `find-split', `verify-acyclic'."
           ((and acyclic? (<= cut-ratio 0.15)) 'HIGH)
           ((and acyclic? (<= cut-ratio 0.30)) 'MEDIUM)
           (else 'LOW))))
+
+;;; ── Aggregate analyzer for belief DSL ─────────────────────
+
+(define (single-cluster . opts)
+  "Aggregate analyzer: check if a package is cohesive or should split.\nWraps recommend-split for use with define-aggregate-belief.\nUses the belief context's GoSession to avoid redundant package loading.\n\nParameters:\n  opts : optional — keyword options forwarded to recommend-split:\n           'idf-threshold N (default 0.36)\n           'refine (use API-surface refinement)\nReturns: procedure — (lambda (sites ctx) -> result-alist)\nCategory: goast-split\n\nExamples:\n  (define-aggregate-belief \"pkg-cohesion\"\n    (sites (all-functions-in \"my/pkg\"))\n    (analyze (single-cluster 'idf-threshold 0.36)))\n\nSee also: `recommend-split', `define-aggregate-belief'."
+  (lambda (sites ctx)
+    (let* ((session (ctx-session ctx))
+           (refs (go-func-refs session))
+           (report (apply recommend-split refs opts))
+           (confidence (cdr (assoc 'confidence report)))
+           (verdict (if (or (eq? confidence 'HIGH)
+                            (eq? confidence 'MEDIUM))
+                      'SPLIT
+                      'COHESIVE)))
+      (list (cons 'type 'aggregate)
+            (cons 'verdict verdict)
+            (cons 'confidence confidence)
+            (cons 'functions (cdr (assoc 'functions report)))
+            (cons 'report report)))))
