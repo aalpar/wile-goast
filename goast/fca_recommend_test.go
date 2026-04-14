@@ -173,6 +173,47 @@ func TestMergeCandidates(t *testing.T) {
 	})
 }
 
+func TestBoundaryRecommendations(t *testing.T) {
+	engine := newBeliefEngine(t)
+
+	eval(t, engine, `
+		(import (wile goast fca))
+		(import (wile goast fca-recommend))
+
+		(define ctx (context-from-alist
+		  '(("Split1" "A.x" "B.y")
+		    ("A-only" "A.x")
+		    ("B-only" "B.y")
+		    ("Merge1" "C.a" "C.b")
+		    ("Merge2" "C.a" "C.b"))))
+		(define lat (concept-lattice ctx))
+		(define recs (boundary-recommendations lat #f))
+	`)
+
+	t.Run("returns three frontiers", func(t *testing.T) {
+		result := eval(t, engine, `
+			(and (assoc 'splits recs)
+			     (assoc 'merges recs)
+			     (assoc 'extracts recs)
+			     #t)`)
+		qt.New(t).Assert(result.SchemeString(), qt.Equals, "#t")
+	})
+
+	t.Run("split frontier non-empty", func(t *testing.T) {
+		result := eval(t, engine, `
+			(let ((sf (cdr (assoc 'splits recs))))
+			  (pair? (cdr (assoc 'frontier sf))))`)
+		qt.New(t).Assert(result.SchemeString(), qt.Equals, "#t")
+	})
+
+	t.Run("merge frontier non-empty", func(t *testing.T) {
+		result := eval(t, engine, `
+			(let ((mf (cdr (assoc 'merges recs))))
+			  (pair? (cdr (assoc 'frontier mf))))`)
+		qt.New(t).Assert(result.SchemeString(), qt.Equals, "#t")
+	})
+}
+
 func TestExtractCandidates(t *testing.T) {
 	engine := newBeliefEngine(t)
 

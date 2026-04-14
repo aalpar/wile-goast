@@ -274,7 +274,8 @@
                (narrower
                  (filter
                    (lambda (c)
-                     (and (< (length (concept-extent c)) (length e-broad))
+                     (and (pair? (concept-extent c))
+                          (< (length (concept-extent c)) (length e-broad))
                           (set-subset? i-broad (concept-intent c))
                           (not (equal? (concept-intent c) i-broad))))
                    lattice))
@@ -302,6 +303,44 @@
                     (cons 'narrow-extent e-narrow))))))
       multi-extent)))
 
-;;; ── Stub for remaining export ──────────────────────────
+;;; ── Top-level recommendation pipeline ───────────────────
 
-(define (boundary-recommendations lattice ssa-funcs) '())
+;; Produce ranked recommendations: three Pareto frontiers.
+;; lattice: from (concept-lattice ctx)
+;; ssa-funcs: from (go-ssa-build session), or #f to skip SSA filtering
+(define (boundary-recommendations lattice ssa-funcs)
+  (let* ((splits (split-candidates lattice ssa-funcs))
+         (merges (merge-candidates lattice))
+         (extracts (extract-candidates lattice))
+         (split-input
+           (map (lambda (s)
+                  (list (cdr (assoc 'function s))
+                        (cdr (assoc 'factors s))))
+                splits))
+         (merge-input
+           (map (lambda (m)
+                  (list (cdr (assoc 'functions m))
+                        (cdr (assoc 'factors m))))
+                merges))
+         (extract-input
+           (map (lambda (e)
+                  (list (cdr (assoc 'sub-operation e))
+                        (cdr (assoc 'factors e))))
+                extracts))
+         (empty-frontier '((frontier) (dominated)))
+         (split-frontier
+           (if (null? split-input) empty-frontier
+             (pareto-frontier split-input
+               '(incomparable-count intent-disjointness no-cross-flow
+                 pattern-balance stmt-count))))
+         (merge-frontier
+           (if (null? merge-input) empty-frontier
+             (pareto-frontier merge-input
+               '(intent-overlap write-overlap extent-count))))
+         (extract-frontier
+           (if (null? extract-input) empty-frontier
+             (pareto-frontier extract-input
+               '(extent-ratio intent-size sub-concept-depth)))))
+    (list (cons 'splits split-frontier)
+          (cons 'merges merge-frontier)
+          (cons 'extracts extract-frontier))))
