@@ -765,6 +765,38 @@ func TestBeliefRunBeliefsOutput(t *testing.T) {
 	})
 }
 
+func TestAllFunctionsIn(t *testing.T) {
+	engine := newBeliefEngine(t)
+
+	eval(t, engine, `
+		(import (wile goast belief))
+		(import (wile goast utils))
+
+		(define ctx (make-context
+			"github.com/aalpar/wile-goast/examples/goast-query/testdata/pairing"))
+		(define selector (all-functions-in
+			"github.com/aalpar/wile-goast/examples/goast-query/testdata/pairing"))
+		(define sites (selector ctx))
+	`)
+
+	c := qt.New(t)
+
+	t.Run("returns non-empty list", func(t *testing.T) {
+		result := eval(t, engine, `(> (length sites) 0)`)
+		c.Assert(result.SchemeString(), qt.Equals, "#t")
+	})
+
+	t.Run("each site is a func-decl", func(t *testing.T) {
+		result := eval(t, engine, `(tag? (car sites) 'func-decl)`)
+		c.Assert(result.SchemeString(), qt.Equals, "#t")
+	})
+
+	t.Run("each site has pkg-path", func(t *testing.T) {
+		result := eval(t, engine, `(nf (car sites) 'pkg-path)`)
+		c.Assert(result.SchemeString(), qt.Not(qt.Equals), "#f")
+	})
+}
+
 // ── Dataflow library tests ──────────────────────────────
 
 func TestDataflowBooleanLattice(t *testing.T) {
