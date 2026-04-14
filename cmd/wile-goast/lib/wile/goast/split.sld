@@ -22,5 +22,6 @@
     filter-noise
     build-package-context
     refine-by-api-surface
-    find-split)
+    find-split
+    verify-acyclic)
   (include "split.scm"))

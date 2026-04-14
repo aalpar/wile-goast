@@ -229,3 +229,51 @@ func TestSplit_FindSplit(t *testing.T) {
 		c.Assert(result.SchemeString(), qt.Equals, "1.0")
 	})
 }
+
+func TestSplit_VerifyAcyclic(t *testing.T) {
+	engine := newBeliefEngine(t)
+
+	eval(t, engine, `
+		(import (wile goast split))
+		(import (wile goast utils))
+
+		;; Simulate: F1 calls F3 (a->b), but F3 doesn't call F1 (no b->a).
+		(define refs
+		  '((func-ref (name . "F1") (pkg . "my/pkg")
+		              (refs . ((ref (pkg . "my/pkg")
+		                            (objects . ("F3"))))))
+		    (func-ref (name . "F2") (pkg . "my/pkg")
+		              (refs . ()))
+		    (func-ref (name . "F3") (pkg . "my/pkg")
+		              (refs . ()))
+		    (func-ref (name . "F4") (pkg . "my/pkg")
+		              (refs . ()))))
+	`)
+
+	c := qt.New(t)
+
+	t.Run("one-way dependency is acyclic", func(t *testing.T) {
+		result := eval(t, engine, `
+			(define v (verify-acyclic '("F1" "F2") '("F3" "F4") refs))
+			(cdr (assoc 'acyclic v))`)
+		c.Assert(result.SchemeString(), qt.Equals, "#t")
+	})
+
+	t.Run("a-refs-b count is 1", func(t *testing.T) {
+		result := eval(t, engine, `(cdr (assoc 'a-refs-b v))`)
+		c.Assert(result.SchemeString(), qt.Equals, "1")
+	})
+
+	t.Run("bidirectional dependency is cyclic", func(t *testing.T) {
+		result := eval(t, engine, `
+			;; F3 also calls F1 -> cycle
+			(define refs-cycle
+			  '((func-ref (name . "F1") (pkg . "p")
+			              (refs . ((ref (pkg . "p") (objects . ("F3"))))))
+			    (func-ref (name . "F3") (pkg . "p")
+			              (refs . ((ref (pkg . "p") (objects . ("F1"))))))))
+			(define vc (verify-acyclic '("F1") '("F3") refs-cycle))
+			(cdr (assoc 'acyclic vc))`)
+		c.Assert(result.SchemeString(), qt.Equals, "#f")
+	})
+}
