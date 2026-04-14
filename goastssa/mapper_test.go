@@ -138,6 +138,11 @@ func GetX() int {
 	fieldName, ok := goast.GetField(found.(*values.Pair).Cdr(), "field")
 	c.Assert(ok, qt.IsTrue)
 	c.Assert(fieldName.(*values.String).Value, qt.Equals, "X")
+
+	// Struct type name should be present.
+	structField, ok := goast.GetField(found.(*values.Pair).Cdr(), "struct")
+	c.Assert(ok, qt.IsTrue, qt.Commentf("ssa-field should have struct field"))
+	c.Assert(structField.(*values.String).Value, qt.Equals, "Point")
 }
 
 func TestMapIndex(t *testing.T) {
@@ -223,6 +228,11 @@ func SetX(p *Point, v int) {
 	fieldName, ok := goast.GetField(found.(*values.Pair).Cdr(), "field")
 	c.Assert(ok, qt.IsTrue)
 	c.Assert(fieldName.(*values.String).Value, qt.Equals, "X")
+
+	// Struct type name should be present.
+	structField, ok := goast.GetField(found.(*values.Pair).Cdr(), "struct")
+	c.Assert(ok, qt.IsTrue, qt.Commentf("ssa-field-addr should have struct field"))
+	c.Assert(structField.(*values.String).Value, qt.Equals, "Point")
 
 	// Should also have ssa-store.
 	store := findNodeByTag(result, "ssa-store")

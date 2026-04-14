@@ -282,9 +282,11 @@ func (p *ssaMapper) mapStore(v *ssa.Store) values.Value {
 func (p *ssaMapper) mapFieldAddr(v *ssa.FieldAddr) values.Value {
 	structType := typesDeref(v.X.Type())
 	fieldName := fieldNameAt(structType, v.Field)
+	structName, _ := structTypeName(structType)
 	return goast.Node("ssa-field-addr",
 		goast.Field("name", goast.Str(v.Name())),
 		goast.Field("x", valName(v.X)),
+		goast.Field("struct", goast.Str(structName)),
 		goast.Field("field", goast.Str(fieldName)),
 		goast.Field("field-index", values.NewInteger(int64(v.Field))),
 		goast.Field("type", goast.Str(types.TypeString(v.Type(), nil))),
@@ -295,9 +297,11 @@ func (p *ssaMapper) mapFieldAddr(v *ssa.FieldAddr) values.Value {
 func (p *ssaMapper) mapField(v *ssa.Field) values.Value {
 	structType := v.X.Type()
 	fieldName := fieldNameAt(structType, v.Field)
+	structName, _ := structTypeName(structType)
 	return goast.Node("ssa-field",
 		goast.Field("name", goast.Str(v.Name())),
 		goast.Field("x", valName(v.X)),
+		goast.Field("struct", goast.Str(structName)),
 		goast.Field("field", goast.Str(fieldName)),
 		goast.Field("field-index", values.NewInteger(int64(v.Field))),
 		goast.Field("type", goast.Str(types.TypeString(v.Type(), nil))),
