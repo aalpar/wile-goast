@@ -13,10 +13,9 @@
 ;; limitations under the License.
 
 (define-library (wile goast split)
-  (import (scheme base))
-  (import (wile goast utils))
-  (import (wile goast fca))
-  (import (wile goast belief))
+  (import (wile goast utils)
+          (wile goast fca)
+          (wile goast belief))
   (export
     import-signatures
     compute-idf

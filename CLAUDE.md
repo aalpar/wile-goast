@@ -186,7 +186,7 @@ Declarative consistency deviation detection. Beliefs are patterns extracted stat
 | `(functions-matching pred ...)` | AST | Functions matching all predicates |
 | `(callers-of "func")` | Call Graph | All callers of a function |
 | `(methods-of "Type")` | AST | All methods on a receiver type |
-| `(all-functions-in "pkg")` | AST | All functions in a package |
+| `(all-functions-in)` | AST | All functions in context's loaded packages |
 | `(sites-from "belief" 'which 'adherence)` | — | Bootstrapping from another belief's results |
 
 ### Selector Predicates
@@ -219,7 +219,7 @@ Aggregate beliefs evaluate whole-package properties instead of per-site patterns
 
 ```scheme
 (define-aggregate-belief "package-cohesion"
-  (sites (all-functions-in "my/pkg"))
+  (sites (all-functions-in))
   (analyze (single-cluster 'idf-threshold 0.36)))
 ```
 

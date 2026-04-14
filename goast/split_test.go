@@ -331,8 +331,7 @@ func TestSingleClusterAnalyzer(t *testing.T) {
 		(reset-beliefs!)
 
 		(define-aggregate-belief "test-split"
-			(sites (all-functions-in
-				"github.com/aalpar/wile-goast/goast/testdata/iface"))
+			(sites (all-functions-in))
 			(analyze (single-cluster)))
 
 		(run-beliefs
@@ -453,8 +452,7 @@ func TestAggregateBeliefIntegration_Goast(t *testing.T) {
 		(reset-beliefs!)
 
 		(define-aggregate-belief "goast-cohesion"
-			(sites (all-functions-in
-				"github.com/aalpar/wile-goast/goast"))
+			(sites (all-functions-in))
 			(analyze (single-cluster)))
 
 		(run-beliefs "github.com/aalpar/wile-goast/goast")

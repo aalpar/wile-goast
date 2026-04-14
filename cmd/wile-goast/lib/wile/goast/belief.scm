@@ -310,10 +310,13 @@
   "Site selector: all methods on a receiver type.\nShorthand for (functions-matching (has-receiver TYPE-NAME)).\n\nParameters:\n  type-name : string\nReturns: procedure\nCategory: goast-belief\n\nExamples:\n  (methods-of \"*Server\")\n\nSee also: `functions-matching', `has-receiver'."
   (functions-matching (has-receiver type-name)))
 
-;; (all-functions-in pkg-pattern) -> (lambda (ctx) -> list-of-func-decls)
-;; Returns all func-decl nodes from the matched packages.
-(define (all-functions-in pkg-pattern)
-  "Site selector: all functions in packages matching a pattern.\nReturns all func-decl nodes from the matched packages.\n\nParameters:\n  pkg-pattern : string\nReturns: procedure\nCategory: goast-belief\n\nExamples:\n  (define-aggregate-belief \"pkg-check\"\n    (sites (all-functions-in \"my/pkg\"))\n    (analyze ...))\n\nSee also: `functions-matching', `define-aggregate-belief'."
+;; (all-functions-in) -> (lambda (ctx) -> list-of-func-decls)
+;; Returns all func-decl nodes from the context's loaded packages.
+;; The package scope is determined by the target argument to run-beliefs,
+;; not by this selector — use this for aggregate beliefs where the
+;; analyzer is self-contained.
+(define (all-functions-in)
+  "Site selector: all functions in the context's loaded packages.\nReturns all func-decl nodes annotated with pkg-path.\nThe package scope is determined by run-beliefs' target argument.\n\nReturns: procedure\nCategory: goast-belief\n\nExamples:\n  (define-aggregate-belief \"pkg-check\"\n    (sites (all-functions-in))\n    (analyze ...))\n\nSee also: `functions-matching', `define-aggregate-belief'."
   (lambda (ctx)
     (all-func-decls (ctx-pkgs ctx))))
 

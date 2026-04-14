@@ -774,8 +774,7 @@ func TestAllFunctionsIn(t *testing.T) {
 
 		(define ctx (make-context
 			"github.com/aalpar/wile-goast/examples/goast-query/testdata/pairing"))
-		(define selector (all-functions-in
-			"github.com/aalpar/wile-goast/examples/goast-query/testdata/pairing"))
+		(define selector (all-functions-in))
 		(define sites (selector ctx))
 	`)
 

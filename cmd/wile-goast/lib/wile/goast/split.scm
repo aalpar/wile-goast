@@ -399,18 +399,26 @@ See also: `import-signatures', `find-split', `verify-acyclic'."
 ;;; ── Aggregate analyzer for belief DSL ─────────────────────
 
 (define (single-cluster . opts)
-  "Aggregate analyzer: check if a package is cohesive or should split.\nWraps recommend-split for use with define-aggregate-belief.\nUses the belief context's GoSession to avoid redundant package loading.\n\nParameters:\n  opts : optional — keyword options forwarded to recommend-split:\n           'idf-threshold N (default 0.36)\n           'refine (use API-surface refinement)\nReturns: procedure — (lambda (sites ctx) -> result-alist)\nCategory: goast-split\n\nExamples:\n  (define-aggregate-belief \"pkg-cohesion\"\n    (sites (all-functions-in \"my/pkg\"))\n    (analyze (single-cluster 'idf-threshold 0.36)))\n\nSee also: `recommend-split', `define-aggregate-belief'."
+  "Aggregate analyzer: check if a package is cohesive or should split.\nWraps recommend-split for use with define-aggregate-belief.\nUses the belief context's GoSession to avoid redundant package loading.\nThe sites argument is unused — this analyzer is self-contained,\nderiving its data from the context's session via go-func-refs.\n\nParameters:\n  opts : optional — keyword options forwarded to recommend-split:\n           'idf-threshold N (default 0.36)\n           'refine (use API-surface refinement)\nReturns: procedure — (lambda (sites ctx) -> result-alist)\nCategory: goast-split\n\nExamples:\n  (define-aggregate-belief \"pkg-cohesion\"\n    (sites (all-functions-in))\n    (analyze (single-cluster 'idf-threshold 0.36)))\n\nSee also: `recommend-split', `define-aggregate-belief'."
   (lambda (sites ctx)
-    (let* ((session (ctx-session ctx))
-           (refs (go-func-refs session))
-           (report (apply recommend-split refs opts))
-           (confidence (cdr (assoc 'confidence report)))
-           (verdict (if (or (eq? confidence 'HIGH)
-                            (eq? confidence 'MEDIUM))
-                      'SPLIT
-                      'COHESIVE)))
-      (list (cons 'type 'aggregate)
-            (cons 'verdict verdict)
-            (cons 'confidence confidence)
-            (cons 'functions (cdr (assoc 'functions report)))
-            (cons 'report report)))))
+    (guard (exn
+             (#t (error "single-cluster analyzer failed"
+                        (if (error-object? exn)
+                          (error-object-message exn)
+                          exn))))
+      (let* ((session (ctx-session ctx))
+             (refs (go-func-refs session))
+             (report (apply recommend-split refs opts))
+             (confidence (and (assoc 'confidence report)
+                              (cdr (assoc 'confidence report))))
+             (functions (and (assoc 'functions report)
+                             (cdr (assoc 'functions report))))
+             (verdict (if (or (eq? confidence 'HIGH)
+                              (eq? confidence 'MEDIUM))
+                        'SPLIT
+                        'COHESIVE)))
+        (list (cons 'type 'aggregate)
+              (cons 'verdict verdict)
+              (cons 'confidence confidence)
+              (cons 'functions functions)
+              (cons 'report report))))))
