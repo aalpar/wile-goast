@@ -14,7 +14,10 @@
     extract-candidates
 
     ;; Top-level
-    boundary-recommendations)
+    boundary-recommendations
+
+    ;; Utilities
+    string-suffix?)
   (import (wile goast utils)
           (wile goast fca)
           (wile goast dataflow))

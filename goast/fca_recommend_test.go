@@ -89,6 +89,48 @@ func TestPareto_Dominates(t *testing.T) {
 	})
 }
 
+func TestCrossFlowFilter(t *testing.T) {
+	engine := newBeliefEngine(t)
+
+	eval(t, engine, `
+		(import (wile goast fca))
+		(import (wile goast fca-recommend))
+		(import (wile goast dataflow))
+
+		(define s (go-load
+		  "github.com/aalpar/wile-goast/examples/goast-query/testdata/funcboundary"))
+		(define ssa-funcs (go-ssa-build s))
+		(define idx (go-ssa-field-index s))
+		(define ctx (field-index->context idx 'write-only))
+		(define lat (concept-lattice ctx))
+		(define splits (split-candidates lat ssa-funcs))
+	`)
+
+	t.Run("ProcessRequest has no cross-flow", func(t *testing.T) {
+		result := eval(t, engine, `
+			(let loop ((ss splits))
+			  (cond ((null? ss) 'not-found)
+			        ((string-suffix? ".ProcessRequest"
+			           (cdr (assoc 'function (car ss))))
+			         (cdr (assoc 'no-cross-flow
+			                (cdr (assoc 'factors (car ss))))))
+			        (else (loop (cdr ss)))))`)
+		qt.New(t).Assert(result.SchemeString(), qt.Equals, "#t")
+	})
+
+	t.Run("ProcessAndRecord has cross-flow", func(t *testing.T) {
+		result := eval(t, engine, `
+			(let loop ((ss splits))
+			  (cond ((null? ss) 'not-found)
+			        ((string-suffix? ".ProcessAndRecord"
+			           (cdr (assoc 'function (car ss))))
+			         (cdr (assoc 'no-cross-flow
+			                (cdr (assoc 'factors (car ss))))))
+			        (else (loop (cdr ss)))))`)
+		qt.New(t).Assert(result.SchemeString(), qt.Equals, "#f")
+	})
+}
+
 func TestConceptSignature(t *testing.T) {
 	engine := newBeliefEngine(t)
 

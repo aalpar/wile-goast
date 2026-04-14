@@ -119,10 +119,41 @@
   (let ((fn (find-ssa-func ssa-funcs func-name)))
     (if fn (length (ssa-all-instrs fn)) 0)))
 
-;;; ── Cross-flow detection (placeholder, Task 7) ────────
+;;; ── SSA cross-flow detection ────────────────────────────
 
+;; Extract struct.field key from an ssa-field-addr instruction.
+(define (field-addr-key instr)
+  (let ((struct-name (nf instr 'struct))
+        (field-name (nf instr 'field)))
+    (and struct-name field-name
+         (string-append struct-name "." field-name))))
+
+;; Register names for field-addrs whose struct.field is in intent-fields.
+(define (cluster-field-addrs instrs intent-fields)
+  (filter-map
+    (lambda (instr)
+      (and (tag? instr 'ssa-field-addr)
+           (let ((key (field-addr-key instr)))
+             (and key (set-member? key intent-fields)
+                  (nf instr 'name)))))
+    instrs))
+
+;; Check cross-cluster data flow within a function.
+;; Returns #t if any value from cluster1 fields reaches a store
+;; targeting cluster2 fields via def-use chains.
 (define (cross-flow-between? ssa-funcs func-name cluster1-fields cluster2-fields)
-  #f)
+  (let ((fn (find-ssa-func ssa-funcs func-name)))
+    (if (not fn) #f
+      (let* ((instrs (ssa-all-instrs fn))
+             (c1-names (cluster-field-addrs instrs cluster1-fields))
+             (c2-names (cluster-field-addrs instrs cluster2-fields)))
+        (if (or (null? c1-names) (null? c2-names)) #f
+          (defuse-reachable? fn c1-names
+            (lambda (instr)
+              (and (tag? instr 'ssa-store)
+                   (let ((addr (nf instr 'addr)))
+                     (and addr (member? addr c2-names)))))
+            10))))))
 
 ;;; ── Split candidate detection ──────────────────────────
 
@@ -154,7 +185,8 @@
                          (exact->inexact (/ min-e max-e)))))
                    (no-cross-flow
                      (if ssa-funcs
-                       (not (cross-flow-between? ssa-funcs func-name i1 i2))
+                       (not (or (cross-flow-between? ssa-funcs func-name i1 i2)
+                                (cross-flow-between? ssa-funcs func-name i2 i1)))
                        #t))
                    (stmt-ct (if ssa-funcs
                               (ssa-stmt-count ssa-funcs func-name) 0))
