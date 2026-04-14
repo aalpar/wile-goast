@@ -105,9 +105,75 @@
                    (cons (cons (car cs) (car rest)) acc)
                    acc)))))))
 
+;;; ── SSA helpers ─────────────────────────────────────────
+
+(define (find-ssa-func ssa-funcs func-name)
+  (let loop ((fs ssa-funcs))
+    (cond ((null? fs) #f)
+          ((and (pair? (car fs))
+                (string=? (or (nf (car fs) 'name) "") func-name))
+           (car fs))
+          (else (loop (cdr fs))))))
+
+(define (ssa-stmt-count ssa-funcs func-name)
+  (let ((fn (find-ssa-func ssa-funcs func-name)))
+    (if fn (length (ssa-all-instrs fn)) 0)))
+
+;;; ── Cross-flow detection (placeholder, Task 7) ────────
+
+(define (cross-flow-between? ssa-funcs func-name cluster1-fields cluster2-fields)
+  #f)
+
+;;; ── Split candidate detection ──────────────────────────
+
+(define (split-candidates lattice ssa-funcs)
+  (let ((all-funcs (unique (flat-map concept-extent lattice))))
+    (filter-map
+      (lambda (func-name)
+        (let* ((sig (concept-signature lattice func-name))
+               (sig-nontop (filter (lambda (c) (pair? (concept-intent c))) sig))
+               (pairs (incomparable-pairs sig-nontop)))
+          (if (null? pairs) #f
+            (let* ((pair1 (car pairs))
+                   (c1 (car pair1))
+                   (c2 (cdr pair1))
+                   (i1 (concept-intent c1))
+                   (i2 (concept-intent c2))
+                   (e1 (concept-extent c1))
+                   (e2 (concept-extent c2))
+                   (isect (set-intersect i1 i2))
+                   (iunion (set-union i1 i2))
+                   (disjointness
+                     (if (null? iunion) 0
+                       (exact->inexact
+                         (- 1 (/ (length isect) (length iunion))))))
+                   (balance
+                     (let ((min-e (min (length e1) (length e2)))
+                           (max-e (max (length e1) (length e2))))
+                       (if (= max-e 0) 0
+                         (exact->inexact (/ min-e max-e)))))
+                   (no-cross-flow
+                     (if ssa-funcs
+                       (not (cross-flow-between? ssa-funcs func-name i1 i2))
+                       #t))
+                   (stmt-ct (if ssa-funcs
+                              (ssa-stmt-count ssa-funcs func-name) 0))
+                   (factors
+                     (list (cons 'incomparable-count (length pairs))
+                           (cons 'intent-disjointness disjointness)
+                           (cons 'no-cross-flow no-cross-flow)
+                           (cons 'pattern-balance balance)
+                           (cons 'stmt-count stmt-ct))))
+              (list (cons 'type 'split)
+                    (cons 'function func-name)
+                    (cons 'factors factors)
+                    (cons 'clusters
+                      (list (list (cons 'intent i1) (cons 'extent e1))
+                            (list (cons 'intent i2) (cons 'extent e2)))))))))
+      all-funcs)))
+
 ;;; ── Stubs for remaining exports (implemented in later tasks) ──
 
-(define (split-candidates lattice ssa-funcs) '())
 (define (merge-candidates lattice) '())
 (define (extract-candidates lattice) '())
 (define (boundary-recommendations lattice ssa-funcs) '())

@@ -6,6 +6,51 @@ import (
 	qt "github.com/frankban/quicktest"
 )
 
+func TestSplitCandidates_Lattice(t *testing.T) {
+	engine := newBeliefEngine(t)
+
+	eval(t, engine, `
+		(import (wile goast fca))
+		(import (wile goast fca-recommend))
+
+		(define ctx (context-from-alist
+		  '(("ProcessRequest" "A.x" "A.y" "B.z" "B.w")
+		    ("ConfigOnly" "A.x")
+		    ("MetricsOnly" "B.z"))))
+		(define lat (concept-lattice ctx))
+	`)
+
+	t.Run("ProcessRequest is a split candidate", func(t *testing.T) {
+		result := eval(t, engine, `
+			(let ((splits (split-candidates lat #f)))
+			  (and (pair? splits)
+			       (let ((first (car splits)))
+			         (string=? (cdr (assoc 'function first))
+			                   "ProcessRequest"))))`)
+		qt.New(t).Assert(result.SchemeString(), qt.Equals, "#t")
+	})
+
+	t.Run("ConfigOnly is not a split candidate", func(t *testing.T) {
+		result := eval(t, engine, `
+			(let ((splits (split-candidates lat #f)))
+			  (let loop ((ss splits))
+			    (cond ((null? ss) #t)
+			          ((string=? (cdr (assoc 'function (car ss)))
+			                     "ConfigOnly") #f)
+			          (else (loop (cdr ss))))))`)
+		qt.New(t).Assert(result.SchemeString(), qt.Equals, "#t")
+	})
+
+	t.Run("split has intent-disjointness factor", func(t *testing.T) {
+		result := eval(t, engine, `
+			(let* ((splits (split-candidates lat #f))
+			       (first (car splits))
+			       (factors (cdr (assoc 'factors first))))
+			  (assoc 'intent-disjointness factors))`)
+		qt.New(t).Assert(result.SchemeString(), qt.Not(qt.Equals), "#f")
+	})
+}
+
 func TestPareto_Dominates(t *testing.T) {
 	engine := newBeliefEngine(t)
 
