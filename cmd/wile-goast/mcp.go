@@ -73,11 +73,12 @@ func doMCP(ctx context.Context) error {
 				"- Go symbol navigation, references, diagnostics, renaming → use gopls instead\n"+
 				"- Reading a single short function → direct file reading is faster\n\n"+
 				"## Prompts\n\n"+
-				"Four prompts are available:\n"+
+				"Five prompts are available:\n"+
 				"- `goast-analyze` — selects the right analysis layer for a structural question\n"+
 				"- `goast-beliefs` — defines and runs consistency checks via the belief DSL\n"+
 				"- `goast-refactor` — finds unification candidates and verifies refactoring correctness\n"+
-				"- `goast-scheme-ref` — Wile Scheme reference: available/missing primitives, idioms, exports, gotchas. **Load before writing non-trivial Scheme.**\n",
+				"- `goast-scheme-ref` — Wile Scheme reference: available/missing primitives, idioms, exports, gotchas. **Load before writing non-trivial Scheme.**\n"+
+				"- `goast-split` — analyze package cohesion and recommend splits via IDF-weighted FCA\n",
 		),
 	)
 

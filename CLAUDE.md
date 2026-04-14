@@ -186,6 +186,7 @@ Declarative consistency deviation detection. Beliefs are patterns extracted stat
 | `(functions-matching pred ...)` | AST | Functions matching all predicates |
 | `(callers-of "func")` | Call Graph | All callers of a function |
 | `(methods-of "Type")` | AST | All methods on a receiver type |
+| `(all-functions-in "pkg")` | AST | All functions in a package |
 | `(sites-from "belief" 'which 'adherence)` | — | Bootstrapping from another belief's results |
 
 ### Selector Predicates
@@ -211,6 +212,31 @@ Declarative consistency deviation detection. Beliefs are patterns extracted stat
 | `(co-mutated "field" ...)` | SSA | `'co-mutated` / `'partial` |
 | `(checked-before-use "val")` | SSA+CFG | `'guarded` / `'unguarded` |
 | `(custom (lambda (site ctx) ...))` | any | user-defined symbol |
+
+### Aggregate Beliefs
+
+Aggregate beliefs evaluate whole-package properties instead of per-site patterns.
+
+```scheme
+(define-aggregate-belief "package-cohesion"
+  (sites (all-functions-in "my/pkg"))
+  (analyze (single-cluster 'idf-threshold 0.36)))
+```
+
+Result shape (different from per-site beliefs):
+
+```scheme
+("name"
+  (type . aggregate)
+  (verdict . SPLIT)       ;; COHESIVE | SPLIT
+  (confidence . HIGH)
+  (functions . 47)
+  (report . <recommend-split output>))
+```
+
+| Analyzer | Description |
+|----------|-------------|
+| `(single-cluster . opts)` | Package cohesion via `recommend-split` |
 
 ### Key Files
 
@@ -270,6 +296,8 @@ Single tool: `eval` — takes a `code` string (Scheme expression), returns the e
 | `goast-analyze` | Structural analysis — layer selection, primitive reference, examples |
 | `goast-beliefs` | Belief DSL — define and run consistency beliefs |
 | `goast-refactor` | Unification detection — find duplicates, verify refactoring |
+| `goast-scheme-ref` | Wile Scheme reference — primitives, idioms, exports, gotchas |
+| `goast-split` | Package cohesion analysis and split recommendations |
 
 Prompt content lives in `cmd/wile-goast/prompts/*.md` (embedded in binary).
 

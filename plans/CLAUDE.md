@@ -51,6 +51,8 @@
 | `2026-04-12-ssa-equivalence-v2-design.md` | SSA equivalence v2: migrate to symbolic theories, wire discover-equivalences into unify | Complete |
 | `2026-04-12-package-splitting-design.md` | Package splitting via import signature analysis: FCA + IDF weighting + API surface refinement + min-cut + cycle verification | Phase 1-2 complete |
 | `2026-04-13-package-splitting-impl.md` | Package splitting implementation: go-func-refs primitive + (wile goast split) library, 12 tasks, TDD | Complete |
+| `2026-04-13-split-belief-planner-design.md` | Phase 3-4: aggregate belief mode for package cohesion + interactive MCP split planner | Complete |
+| `2026-04-13-split-belief-planner-impl.md` | Phase 3-4 implementation: aggregate beliefs + single-cluster + goast-split prompt, 13 tasks, TDD | Complete |
 
 ## Documentation (outside plans/)
 
