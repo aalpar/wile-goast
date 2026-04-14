@@ -404,6 +404,56 @@ func TestGoInterfaceImplementorsErrors(t *testing.T) {
 	}
 }
 
+func TestGoFuncRefs(t *testing.T) {
+	engine := newEngine(t)
+
+	result := eval(t, engine, `
+		(define refs (go-func-refs
+		  "github.com/aalpar/wile-goast/goast/testdata/iface"))
+		refs
+	`)
+
+	c := qt.New(t)
+	c.Assert(result.SchemeString(), qt.Not(qt.Equals), "()")
+
+	t.Run("each entry is a func-ref", func(t *testing.T) {
+		result := eval(t, engine, `
+			(define first-ref (car refs))
+			(car first-ref)`)
+		qt.New(t).Assert(result.SchemeString(), qt.Equals, "func-ref")
+	})
+
+	t.Run("entry has name field", func(t *testing.T) {
+		result := eval(t, engine, `(cdr (assoc 'name (cdr (car refs))))`)
+		qt.New(t).Assert(result.SchemeString(), qt.Not(qt.Equals), "#f")
+	})
+
+	t.Run("entry has pkg field", func(t *testing.T) {
+		result := eval(t, engine, `(cdr (assoc 'pkg (cdr (car refs))))`)
+		qt.New(t).Assert(result.SchemeString(), qt.Not(qt.Equals), "#f")
+	})
+
+	t.Run("entry has refs field", func(t *testing.T) {
+		result := eval(t, engine, `(assoc 'refs (cdr (car refs)))`)
+		qt.New(t).Assert(result.SchemeString(), qt.Not(qt.Equals), "#f")
+	})
+}
+
+func TestGoFuncRefs_WithSession(t *testing.T) {
+	engine := newEngine(t)
+
+	eval(t, engine, `
+		(define s (go-load
+		  "github.com/aalpar/wile-goast/goast/testdata/iface"))
+		(define refs (go-func-refs s))
+	`)
+
+	t.Run("returns same data from session", func(t *testing.T) {
+		result := eval(t, engine, `(length refs)`)
+		qt.New(t).Assert(result.SchemeString(), qt.Not(qt.Equals), "0")
+	})
+}
+
 // schemeStringLiteral wraps a Go string as a Scheme string literal,
 // escaping backslashes, double quotes, and newlines.
 func schemeStringLiteral(s string) string {
