@@ -155,6 +155,19 @@ func addPrimitives(r *registry.Registry) error {
 				"See also: `go-load'.",
 			ParamNames: []string{"pattern", "rest"}, Category: "goast",
 			ReturnType: values.TypeList},
+		{Name: "go-func-refs", ParamCount: 1, Impl: PrimGoFuncRefs,
+			Doc: "Returns per-function external reference profiles for a Go package.\n" +
+				"For each function/method, lists the external (package, object-names)\n" +
+				"pairs it references via types.Info.Uses.\n" +
+				"Input: package pattern string or GoSession.\n" +
+				"Output: list of (func-ref (name . N) (pkg . P) (refs . ((ref ...)))).\n\n" +
+				"Examples:\n" +
+				"  (define refs (go-func-refs \"my/pkg\"))\n" +
+				"  (cdr (assoc 'name (cdr (car refs))))  ; => \"MyFunc\"\n" +
+				"  (cdr (assoc 'refs (cdr (car refs))))  ; => ((ref (pkg . \"io\") (objects . (\"Reader\"))))\n\n" +
+				"See also: `go-typecheck-package', `go-load', `go-list-deps'.",
+			ParamNames: []string{"target"}, Category: "goast",
+			ReturnType: values.TypeList},
 		{Name: "go-cfg-to-structured", ParamCount: 2, IsVariadic: true, Impl: PrimGoCFGToStructured,
 			Doc: "Restructures a block containing early returns into a single-exit if/else tree.\n" +
 				"Optional second arg: func-type for result variable synthesis.\n" +
