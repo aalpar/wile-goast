@@ -454,6 +454,37 @@ func TestGoFuncRefs_WithSession(t *testing.T) {
 	})
 }
 
+func TestGoFuncRefs_SelfAnalysis(t *testing.T) {
+	engine := newEngine(t)
+
+	eval(t, engine, `
+		(define refs (go-func-refs
+		  "github.com/aalpar/wile-goast/goast"))
+	`)
+
+	c := qt.New(t)
+
+	t.Run("many functions found", func(t *testing.T) {
+		result := eval(t, engine, `(> (length refs) 20)`)
+		c.Assert(result.SchemeString(), qt.Equals, "#t")
+	})
+
+	t.Run("some function references go/ast", func(t *testing.T) {
+		// goast/ definitely uses go/ast
+		result := eval(t, engine, `
+			(let loop ((rs refs))
+			  (cond ((null? rs) #f)
+			        ((let ((r (cdr (assoc 'refs (cdr (car rs))))))
+			           (and r (let check ((gs r))
+			             (cond ((null? gs) #f)
+			                   ((equal? (cdr (assoc 'pkg (cdr (car gs)))) "go/ast") #t)
+			                   (else (check (cdr gs)))))))
+			         #t)
+			        (else (loop (cdr rs)))))`)
+		c.Assert(result.SchemeString(), qt.Equals, "#t")
+	})
+}
+
 // schemeStringLiteral wraps a Go string as a Scheme string literal,
 // escaping backslashes, double quotes, and newlines.
 func schemeStringLiteral(s string) string {
