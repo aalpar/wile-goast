@@ -89,6 +89,59 @@ func TestPareto_Dominates(t *testing.T) {
 	})
 }
 
+func TestIntegration_FuncBoundary(t *testing.T) {
+	engine := newBeliefEngine(t)
+
+	eval(t, engine, `
+		(import (wile goast fca))
+		(import (wile goast fca-recommend))
+		(import (wile goast dataflow))
+
+		(define s (go-load
+		  "github.com/aalpar/wile-goast/examples/goast-query/testdata/funcboundary"))
+		(define ssa-funcs (go-ssa-build s))
+		(define idx (go-ssa-field-index s))
+
+		;; Write-only mode for splits and merges
+		(define ctx-w (field-index->context idx 'write-only))
+		(define lat-w (concept-lattice ctx-w))
+
+		;; Read-write mode for extracts
+		(define ctx-rw (field-index->context idx 'read-write))
+		(define lat-rw (concept-lattice ctx-rw))
+
+		(define recs-w (boundary-recommendations lat-w ssa-funcs))
+		(define recs-rw (boundary-recommendations lat-rw ssa-funcs))
+	`)
+
+	t.Run("ProcessRequest on split frontier with no-cross-flow", func(t *testing.T) {
+		result := eval(t, engine, `
+			(let* ((sf (cdr (assoc 'splits recs-w)))
+			       (frontier-ids (cdr (assoc 'frontier sf))))
+			  (let loop ((ids frontier-ids))
+			    (cond ((null? ids) #f)
+			          ((string-suffix? ".ProcessRequest" (car ids)) #t)
+			          (else (loop (cdr ids))))))`)
+		qt.New(t).Assert(result.SchemeString(), qt.Equals, "#t")
+	})
+
+	t.Run("merge candidates include session writers", func(t *testing.T) {
+		result := eval(t, engine, `
+			(let* ((mf (cdr (assoc 'merges recs-w)))
+			       (frontier-ids (cdr (assoc 'frontier mf))))
+			  (pair? frontier-ids))`)
+		qt.New(t).Assert(result.SchemeString(), qt.Equals, "#t")
+	})
+
+	t.Run("extract candidates found in read-write mode", func(t *testing.T) {
+		result := eval(t, engine, `
+			(let* ((ef (cdr (assoc 'extracts recs-rw)))
+			       (frontier-ids (cdr (assoc 'frontier ef))))
+			  (pair? frontier-ids))`)
+		qt.New(t).Assert(result.SchemeString(), qt.Equals, "#t")
+	})
+}
+
 func TestCrossFlowFilter(t *testing.T) {
 	engine := newBeliefEngine(t)
 
