@@ -23,5 +23,6 @@
     build-package-context
     refine-by-api-surface
     find-split
-    verify-acyclic)
+    verify-acyclic
+    recommend-split)
   (include "split.scm"))

@@ -230,6 +230,49 @@ func TestSplit_FindSplit(t *testing.T) {
 	})
 }
 
+func TestSplit_RecommendSplit_Synthetic(t *testing.T) {
+	engine := newBeliefEngine(t)
+
+	eval(t, engine, `
+		(import (wile goast split))
+
+		;; Two clusters with distinct deps, one bridge function.
+		(define refs
+		  '((func-ref (name . "Read")  (pkg . "p")
+		              (refs . ((ref (pkg . "io") (objects . ("Reader"))))))
+		    (func-ref (name . "Write") (pkg . "p")
+		              (refs . ((ref (pkg . "io") (objects . ("Writer"))))))
+		    (func-ref (name . "Parse") (pkg . "p")
+		              (refs . ((ref (pkg . "go/ast") (objects . ("File"))))))
+		    (func-ref (name . "Check") (pkg . "p")
+		              (refs . ((ref (pkg . "go/ast") (objects . ("Inspect"))))))
+		    (func-ref (name . "Bridge") (pkg . "p")
+		              (refs . ((ref (pkg . "io") (objects . ("Reader")))
+		                       (ref (pkg . "go/ast") (objects . ("File"))))))))
+		(define report (recommend-split refs))
+	`)
+
+	c := qt.New(t)
+
+	t.Run("has confidence", func(t *testing.T) {
+		result := eval(t, engine, `(cdr (assoc 'confidence report))`)
+		c.Assert(result.SchemeString(), qt.Not(qt.Equals), "NONE")
+	})
+
+	t.Run("function count is 5", func(t *testing.T) {
+		result := eval(t, engine, `(cdr (assoc 'functions report))`)
+		c.Assert(result.SchemeString(), qt.Equals, "5")
+	})
+
+	t.Run("two non-empty groups", func(t *testing.T) {
+		result := eval(t, engine, `
+			(let ((gs (cdr (assoc 'groups report))))
+			  (and (not (null? (cdr (assoc 'group-a gs))))
+			       (not (null? (cdr (assoc 'group-b gs))))))`)
+		c.Assert(result.SchemeString(), qt.Equals, "#t")
+	})
+}
+
 func TestSplit_VerifyAcyclic(t *testing.T) {
 	engine := newBeliefEngine(t)
 

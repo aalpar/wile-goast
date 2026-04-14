@@ -328,3 +328,70 @@ See also: `find-split', `recommend-split'."
     (cond ((null? is) #f)
           ((member (car is) lst) #t)
           (else (loop (cdr is))))))
+
+(define (recommend-split func-refs . opts)
+  "Analyze a package's functions and recommend a two-way split.
+Computes IDF-weighted import signatures, builds FCA concept lattice,
+finds min-cut partition, and verifies acyclicity.
+
+Parameters:
+  func-refs : list — output from (go-func-refs ...)
+  opts      : optional — keyword options:
+              'idf-threshold N (default 0.36)
+              'refine         (use API-surface refinement)
+Returns: alist with keys:
+  functions  — total function count
+  high-idf   — high-IDF packages with scores
+  groups     — (find-split) result
+  acyclic    — (verify-acyclic) result
+  confidence — HIGH / MEDIUM / LOW / NONE
+Category: goast-split
+
+Examples:
+  (define report (recommend-split (go-func-refs \"my/pkg\")))
+  (assoc 'confidence report)
+
+See also: `import-signatures', `find-split', `verify-acyclic'."
+  (let* ((threshold (opt-ref opts 'idf-threshold 0.36))
+         (refine? (memq 'refine opts))
+         (sigs (import-signatures func-refs))
+         (idf (compute-idf sigs))
+         (filtered (filter-noise sigs idf threshold))
+         (context (if refine?
+                    (refine-by-api-surface func-refs filtered)
+                    (build-package-context filtered)))
+         (lattice (concept-lattice context))
+         (groups (find-split context lattice))
+         (group-a (cdr (assoc 'group-a groups)))
+         (group-b (cdr (assoc 'group-b groups)))
+         (acyclic-info (verify-acyclic group-a group-b func-refs))
+         (high-idf-pkgs (filter (lambda (e) (>= (cdr e) threshold))
+                                idf))
+         (confidence (compute-confidence groups acyclic-info)))
+    (list (cons 'functions (length func-refs))
+          (cons 'high-idf high-idf-pkgs)
+          (cons 'groups groups)
+          (cons 'acyclic acyclic-info)
+          (cons 'confidence confidence))))
+
+(define (opt-ref opts key default)
+  "Look up a keyword option: (opt-ref '(key1 val1 key2 val2) 'key1 #f) => val1."
+  (let loop ((os opts))
+    (cond ((null? os) default)
+          ((and (not (null? (cdr os)))
+                (eq? (car os) key))
+           (cadr os))
+          (else (loop (cdr os))))))
+
+(define (compute-confidence groups acyclic-info)
+  "Compute confidence level from split quality metrics."
+  (let* ((cut-ratio (cdr (assoc 'cut-ratio groups)))
+         (group-a (cdr (assoc 'group-a groups)))
+         (group-b (cdr (assoc 'group-b groups)))
+         (acyclic? (cdr (assoc 'acyclic acyclic-info)))
+         (has-groups? (and (not (null? group-a))
+                           (not (null? group-b)))))
+    (cond ((not has-groups?) 'NONE)
+          ((and acyclic? (<= cut-ratio 0.15)) 'HIGH)
+          ((and acyclic? (<= cut-ratio 0.30)) 'MEDIUM)
+          (else 'LOW))))
