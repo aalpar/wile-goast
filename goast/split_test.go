@@ -321,6 +321,72 @@ func TestSplit_VerifyAcyclic(t *testing.T) {
 	})
 }
 
+func TestSingleClusterAnalyzer(t *testing.T) {
+	engine := newBeliefEngine(t)
+
+	eval(t, engine, `
+		(import (wile goast belief))
+		(import (wile goast split))
+		(import (wile goast utils))
+		(reset-beliefs!)
+
+		(define-aggregate-belief "test-split"
+			(sites (all-functions-in
+				"github.com/aalpar/wile-goast/goast/testdata/iface"))
+			(analyze (single-cluster)))
+
+		(run-beliefs
+			"github.com/aalpar/wile-goast/goast/testdata/iface")
+	`)
+
+	c := qt.New(t)
+
+	t.Run("completes without error", func(t *testing.T) {
+		c.Assert(true, qt.IsTrue)
+	})
+}
+
+func TestSingleClusterAnalyzer_Synthetic(t *testing.T) {
+	engine := newBeliefEngine(t)
+
+	eval(t, engine, `
+		(import (wile goast belief))
+		(import (wile goast split))
+		(import (wile goast utils))
+
+		(define analyzer (single-cluster 'idf-threshold 0.36))
+
+		(define ctx (make-context
+			"github.com/aalpar/wile-goast/goast/testdata/iface"))
+		(define sites '())
+		(define result (analyzer sites ctx))
+	`)
+
+	c := qt.New(t)
+
+	t.Run("result has type aggregate", func(t *testing.T) {
+		result := eval(t, engine, `(cdr (assoc 'type result))`)
+		c.Assert(result.SchemeString(), qt.Equals, "aggregate")
+	})
+
+	t.Run("result has verdict", func(t *testing.T) {
+		result := eval(t, engine, `
+			(let ((v (cdr (assoc 'verdict result))))
+				(or (eq? v 'COHESIVE) (eq? v 'SPLIT)))`)
+		c.Assert(result.SchemeString(), qt.Equals, "#t")
+	})
+
+	t.Run("result has functions count", func(t *testing.T) {
+		result := eval(t, engine, `(number? (cdr (assoc 'functions result)))`)
+		c.Assert(result.SchemeString(), qt.Equals, "#t")
+	})
+
+	t.Run("result has report", func(t *testing.T) {
+		result := eval(t, engine, `(pair? (cdr (assoc 'report result)))`)
+		c.Assert(result.SchemeString(), qt.Equals, "#t")
+	})
+}
+
 func TestSplit_Integration_Goast(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration test")
