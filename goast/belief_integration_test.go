@@ -1540,3 +1540,30 @@ func TestDomainsIntervalAnalysis(t *testing.T) {
 		qt.New(t).Assert(result.SchemeString(), qt.Equals, "#t")
 	})
 }
+
+func TestAggregateBeliefRegistration(t *testing.T) {
+	engine := newBeliefEngine(t)
+
+	eval(t, engine, `
+		(import (wile goast belief))
+		(reset-beliefs!)
+	`)
+
+	c := qt.New(t)
+
+	t.Run("register aggregate belief", func(t *testing.T) {
+		eval(t, engine, `
+			(define-aggregate-belief "test-agg"
+				(sites (functions-matching (name-matches "Foo")))
+				(analyze (custom (lambda (sites ctx) '((verdict . TEST))))))
+		`)
+		result := eval(t, engine, `(length (aggregate-beliefs))`)
+		c.Assert(result.SchemeString(), qt.Equals, "1")
+	})
+
+	t.Run("reset clears aggregate beliefs", func(t *testing.T) {
+		eval(t, engine, `(reset-beliefs!)`)
+		result := eval(t, engine, `(length (aggregate-beliefs))`)
+		c.Assert(result.SchemeString(), qt.Equals, "0")
+	})
+}
