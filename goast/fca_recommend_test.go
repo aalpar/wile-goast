@@ -44,6 +44,60 @@ func TestPareto_Dominates(t *testing.T) {
 	})
 }
 
+func TestConceptSignature(t *testing.T) {
+	engine := newBeliefEngine(t)
+
+	eval(t, engine, `
+		(import (wile goast fca))
+		(import (wile goast fca-recommend))
+
+		(define ctx (context-from-alist
+		  '(("F1" "A.x" "B.y")
+		    ("F2" "A.x")
+		    ("F3" "B.y"))))
+		(define lat (concept-lattice ctx))
+	`)
+
+	t.Run("F1 in multiple concepts", func(t *testing.T) {
+		result := eval(t, engine, `(length (concept-signature lat "F1"))`)
+		qt.New(t).Assert(result.SchemeString(), qt.Not(qt.Equals), "0")
+	})
+
+	t.Run("F2 in at least one concept", func(t *testing.T) {
+		result := eval(t, engine, `(>= (length (concept-signature lat "F2")) 1)`)
+		qt.New(t).Assert(result.SchemeString(), qt.Equals, "#t")
+	})
+}
+
+func TestIncomparablePairs(t *testing.T) {
+	engine := newBeliefEngine(t)
+
+	eval(t, engine, `
+		(import (wile goast fca))
+		(import (wile goast fca-recommend))
+
+		(define ctx (context-from-alist
+		  '(("F1" "A.x" "B.y")
+		    ("F2" "A.x")
+		    ("F3" "B.y"))))
+		(define lat (concept-lattice ctx))
+	`)
+
+	t.Run("F1 has incomparable pairs", func(t *testing.T) {
+		result := eval(t, engine, `
+			(let ((sig (concept-signature lat "F1")))
+			  (length (incomparable-pairs sig)))`)
+		qt.New(t).Assert(result.SchemeString(), qt.Equals, "1")
+	})
+
+	t.Run("F2 has no incomparable pairs", func(t *testing.T) {
+		result := eval(t, engine, `
+			(let ((sig (concept-signature lat "F2")))
+			  (length (incomparable-pairs sig)))`)
+		qt.New(t).Assert(result.SchemeString(), qt.Equals, "0")
+	})
+}
+
 func TestPareto_Frontier(t *testing.T) {
 	engine := newBeliefEngine(t)
 
