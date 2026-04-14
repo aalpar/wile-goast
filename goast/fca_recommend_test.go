@@ -173,6 +173,48 @@ func TestMergeCandidates(t *testing.T) {
 	})
 }
 
+func TestExtractCandidates(t *testing.T) {
+	engine := newBeliefEngine(t)
+
+	eval(t, engine, `
+		(import (wile goast fca))
+		(import (wile goast fca-recommend))
+		(import (wile goast utils))
+
+		(define ctx (context-from-alist
+		  '(("Validate" "S.Token:r" "S.Expiry:r")
+		    ("HandleAuth" "S.Token:r" "S.Expiry:r" "Auth.User:w" "Auth.Level:w")
+		    ("HandleResp" "S.Token:r" "S.Expiry:r" "Resp.Body:w" "Resp.Status:w"))))
+		(define lat (concept-lattice ctx))
+	`)
+
+	t.Run("extract candidate found", func(t *testing.T) {
+		result := eval(t, engine, `
+			(let ((extracts (extract-candidates lat)))
+			  (pair? extracts))`)
+		qt.New(t).Assert(result.SchemeString(), qt.Equals, "#t")
+	})
+
+	t.Run("extent-ratio > 1", func(t *testing.T) {
+		result := eval(t, engine, `
+			(let* ((extracts (extract-candidates lat))
+			       (first (car extracts))
+			       (factors (cdr (assoc 'factors first))))
+			  (> (cdr (assoc 'extent-ratio factors)) 1))`)
+		qt.New(t).Assert(result.SchemeString(), qt.Equals, "#t")
+	})
+
+	t.Run("sub-operation includes session reads", func(t *testing.T) {
+		result := eval(t, engine, `
+			(let* ((extracts (extract-candidates lat))
+			       (first (car extracts))
+			       (sub-op (cdr (assoc 'sub-operation first))))
+			  (and (member? "S.Token:r" sub-op)
+			       (member? "S.Expiry:r" sub-op)))`)
+		qt.New(t).Assert(result.SchemeString(), qt.Equals, "#t")
+	})
+}
+
 func TestConceptSignature(t *testing.T) {
 	engine := newBeliefEngine(t)
 

@@ -245,7 +245,63 @@
                   (cons 'shared-intent int))))))
     lattice))
 
-;;; ── Stubs for remaining exports (implemented in later tasks) ──
+;;; ── Extract candidate detection ─────────────────────────
 
-(define (extract-candidates lattice) '())
+;; Lattice depth of a concept (distance from top).
+(define (concept-depth lattice concept)
+  (let ((target-int (concept-intent concept)))
+    (let loop ((cs lattice) (depth 0) (prev-size 0))
+      (cond ((null? cs) depth)
+            ((equal? (concept-intent (car cs)) target-int) depth)
+            ((and (set-subset? (concept-intent (car cs)) target-int)
+                  (> (length (concept-intent (car cs))) prev-size))
+             (loop (cdr cs) (+ depth 1) (length (concept-intent (car cs)))))
+            (else (loop (cdr cs) depth prev-size))))))
+
+;; Extract candidates: concept pairs (C_broad, C_narrow) where
+;; C_broad has broader extent and smaller intent. The broad concept's
+;; intent is the shared sub-operation.
+(define (extract-candidates lattice)
+  (let ((multi-extent
+          (filter (lambda (c)
+                    (and (>= (length (concept-extent c)) 2)
+                         (pair? (concept-intent c))))
+                  lattice)))
+    (filter-map
+      (lambda (c-broad)
+        (let* ((e-broad (concept-extent c-broad))
+               (i-broad (concept-intent c-broad))
+               (narrower
+                 (filter
+                   (lambda (c)
+                     (and (< (length (concept-extent c)) (length e-broad))
+                          (set-subset? i-broad (concept-intent c))
+                          (not (equal? (concept-intent c) i-broad))))
+                   lattice))
+               (best-narrow
+                 (if (null? narrower) #f
+                   (let loop ((ns (cdr narrower)) (best (car narrower)))
+                     (if (null? ns) best
+                       (loop (cdr ns)
+                             (if (> (length (concept-extent (car ns)))
+                                    (length (concept-extent best)))
+                               (car ns) best)))))))
+          (if (not best-narrow) #f
+            (let* ((e-narrow (concept-extent best-narrow))
+                   (ratio (exact->inexact
+                            (/ (length e-broad) (length e-narrow))))
+                   (depth (concept-depth lattice c-broad))
+                   (factors
+                     (list (cons 'extent-ratio ratio)
+                           (cons 'intent-size (length i-broad))
+                           (cons 'sub-concept-depth depth))))
+              (list (cons 'type 'extract)
+                    (cons 'sub-operation i-broad)
+                    (cons 'factors factors)
+                    (cons 'broad-extent e-broad)
+                    (cons 'narrow-extent e-narrow))))))
+      multi-extent)))
+
+;;; ── Stub for remaining export ──────────────────────────
+
 (define (boundary-recommendations lattice ssa-funcs) '())
