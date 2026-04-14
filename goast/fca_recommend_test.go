@@ -131,6 +131,48 @@ func TestCrossFlowFilter(t *testing.T) {
 	})
 }
 
+func TestMergeCandidates(t *testing.T) {
+	engine := newBeliefEngine(t)
+
+	eval(t, engine, `
+		(import (wile goast fca))
+		(import (wile goast fca-recommend))
+
+		(define ctx (context-from-alist
+		  '(("ResetSession" "Session.Token" "Session.Expiry")
+		    ("ExpireSession" "Session.Token" "Session.Expiry")
+		    ("Other" "X.a"))))
+		(define lat (concept-lattice ctx))
+	`)
+
+	t.Run("merge candidate found", func(t *testing.T) {
+		result := eval(t, engine, `
+			(let ((merges (merge-candidates lat)))
+			  (pair? merges))`)
+		qt.New(t).Assert(result.SchemeString(), qt.Equals, "#t")
+	})
+
+	t.Run("merge has intent-overlap factor", func(t *testing.T) {
+		result := eval(t, engine, `
+			(let* ((merges (merge-candidates lat))
+			       (first (car merges))
+			       (factors (cdr (assoc 'factors first))))
+			  (cdr (assoc 'intent-overlap factors)))`)
+		qt.New(t).Assert(result.SchemeString(), qt.Equals, "1.0")
+	})
+
+	t.Run("merge functions are ResetSession and ExpireSession", func(t *testing.T) {
+		eval(t, engine, `(import (wile goast utils))`)
+		result := eval(t, engine, `
+			(let* ((merges (merge-candidates lat))
+			       (first (car merges))
+			       (fns (cdr (assoc 'functions first))))
+			  (and (member? "ResetSession" fns)
+			       (member? "ExpireSession" fns)))`)
+		qt.New(t).Assert(result.SchemeString(), qt.Equals, "#t")
+	})
+}
+
 func TestConceptSignature(t *testing.T) {
 	engine := newBeliefEngine(t)
 

@@ -204,8 +204,48 @@
                             (list (cons 'intent i2) (cons 'extent e2)))))))))
       all-funcs)))
 
+;;; ── Merge candidate detection ───────────────────────────
+
+;; Merge candidates: concepts with |E| >= 2 and non-empty intent.
+;; Multiple functions sharing the same field access pattern.
+(define (merge-candidates lattice)
+  (filter-map
+    (lambda (concept)
+      (let ((ext (concept-extent concept))
+            (int (concept-intent concept)))
+        (if (or (< (length ext) 2) (null? int)) #f
+          (let* ((func-intents
+                   (map (lambda (f)
+                          (let loop ((cs lattice) (best int))
+                            (cond ((null? cs) best)
+                                  ((and (member? f (concept-extent (car cs)))
+                                        (set-subset? best (concept-intent (car cs))))
+                                   (loop (cdr cs) (concept-intent (car cs))))
+                                  (else (loop (cdr cs) best)))))
+                        ext))
+                 (all-union (let loop ((fis func-intents) (acc '()))
+                              (if (null? fis) acc
+                                (loop (cdr fis) (set-union acc (car fis))))))
+                 (overlap (if (null? all-union) 0
+                            (exact->inexact (/ (length int) (length all-union)))))
+                 (write-fields (filter
+                                 (lambda (a) (not (string-suffix? ":r" a))) int))
+                 (all-write (filter
+                              (lambda (a) (not (string-suffix? ":r" a))) all-union))
+                 (write-ovl (if (null? all-write) 0
+                              (exact->inexact (/ (length write-fields)
+                                                 (length all-write)))))
+                 (factors
+                   (list (cons 'intent-overlap overlap)
+                         (cons 'write-overlap write-ovl)
+                         (cons 'extent-count (length ext)))))
+            (list (cons 'type 'merge)
+                  (cons 'functions ext)
+                  (cons 'factors factors)
+                  (cons 'shared-intent int))))))
+    lattice))
+
 ;;; ── Stubs for remaining exports (implemented in later tasks) ──
 
-(define (merge-candidates lattice) '())
 (define (extract-candidates lattice) '())
 (define (boundary-recommendations lattice ssa-funcs) '())
