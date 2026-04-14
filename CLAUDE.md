@@ -166,7 +166,26 @@ Declarative consistency deviation detection. Beliefs are patterns extracted stat
   (threshold 0.90 5))
 
 (run-beliefs "my/package/...")
+;; => list of result alists (one per belief)
 ```
+
+### Return Shape
+
+`run-beliefs` returns a flat list of self-describing alists:
+
+```scheme
+;; Per-site belief
+((name . "lock-unlock") (type . per-site) (status . strong)
+ (pattern . paired-defer) (ratio . 9/10) (total . 10)
+ (adherence . ("pkg.Foo" "pkg.Bar" ...))
+ (deviations . (("pkg.Baz" . unpaired) ...)))
+
+;; Aggregate belief
+((name . "pkg-cohesion") (type . aggregate) (status . ok)
+ (verdict . SPLIT) (confidence . HIGH) ...)
+```
+
+Status values: `strong`, `weak`, `no-sites`, `error` (per-site); `ok`, `error` (aggregate).
 
 ### Belief Definition Form
 
@@ -221,17 +240,6 @@ Aggregate beliefs evaluate whole-package properties instead of per-site patterns
 (define-aggregate-belief "package-cohesion"
   (sites (all-functions-in))
   (analyze (single-cluster 'idf-threshold 0.36)))
-```
-
-Result shape (different from per-site beliefs):
-
-```scheme
-("name"
-  (type . aggregate)
-  (verdict . SPLIT)       ;; COHESIVE | SPLIT
-  (confidence . HIGH)
-  (functions . 47)
-  (report . <recommend-split output>))
 ```
 
 | Analyzer | Description |
