@@ -20,9 +20,9 @@
     make-constant-propagation
     sign-lattice
     make-sign-analysis
-    interval-lattice
     make-interval-analysis)
   (import (wile algebra)
+          (wile algebra interval)
           (wile goast dataflow)
           (wile goast utils))
   (include "domains.scm"))
