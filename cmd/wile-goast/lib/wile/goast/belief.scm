@@ -839,6 +839,64 @@
         deviations))
     (newline)))
 
+;; ── Aggregate belief evaluation ────────────────────────
+
+(define (evaluate-aggregate-beliefs ctx)
+  "Evaluate all registered aggregate beliefs. Returns count evaluated."
+  (let loop ((beliefs *aggregate-beliefs*) (count 0))
+    (if (null? beliefs)
+      count
+      (let* ((belief (car beliefs))
+             (name (agg-belief-name belief)))
+        (guard (exn
+                 (#t (display "── Aggregate Belief: ") (display name)
+                     (display " ──") (newline)
+                     (display "  (error: ")
+                     (if (error-object? exn)
+                       (display (error-object-message exn))
+                       (display exn))
+                     (display ")") (newline) (newline)
+                     (loop (cdr beliefs) (+ count 1))))
+          (let* ((sites-fn (agg-belief-sites-fn belief))
+                 (analyzer (agg-belief-analyzer belief))
+                 (sites (sites-fn ctx))
+                 (result (analyzer sites ctx)))
+            (print-aggregate-result name result)
+            (loop (cdr beliefs) (+ count 1))))))))
+
+(define (print-aggregate-result name result)
+  "Print an aggregate belief result."
+  (display "── Aggregate Belief: ") (display name) (display " ──")
+  (newline)
+  (let ((verdict (assoc 'verdict result))
+        (confidence (assoc 'confidence result))
+        (functions (assoc 'functions result)))
+    (when verdict
+      (display "  Verdict:    ") (display (cdr verdict)) (newline))
+    (when confidence
+      (display "  Confidence: ") (display (cdr confidence)) (newline))
+    (when functions
+      (display "  Functions:  ") (display (cdr functions)) (newline))
+    ;; Print groups if present
+    (let ((report (assoc 'report result)))
+      (when report
+        (let* ((rpt (cdr report))
+               (groups (assoc 'groups rpt)))
+          (when groups
+            (let* ((gs (cdr groups))
+                   (ga (assoc 'group-a gs))
+                   (gb (assoc 'group-b gs))
+                   (cut (assoc 'cut-ratio gs)))
+              (when ga
+                (display "  Group A:    ") (display (length (cdr ga)))
+                (display " functions") (newline))
+              (when gb
+                (display "  Group B:    ") (display (length (cdr gb)))
+                (display " functions") (newline))
+              (when cut
+                (display "  Cut ratio:  ") (display (cdr cut)) (newline))))))))
+  (newline))
+
 ;; Main entry point.
 ;; Evaluates all registered beliefs against the target package.
 (define (run-beliefs target)
@@ -850,11 +908,12 @@
                (strong 0)
                (total-deviations 0))
       (if (null? beliefs)
-        ;; Summary
-        (begin
+        ;; Aggregate beliefs, then summary
+        (let ((agg-count (evaluate-aggregate-beliefs ctx)))
           (display "── Summary ──") (newline)
-          (display "  Beliefs evaluated:   ") (display evaluated) (newline)
+          (display "  Beliefs evaluated:   ") (display (+ evaluated agg-count)) (newline)
           (display "  Strong beliefs:      ") (display strong) (newline)
+          (display "  Aggregate beliefs:   ") (display agg-count) (newline)
           (display "  Deviations found:    ") (display total-deviations) (newline))
         ;; Evaluate next belief
         (let* ((belief (car beliefs))
