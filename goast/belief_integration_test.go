@@ -127,8 +127,10 @@ func TestBeliefDefineAndRun(t *testing.T) {
 
 	// Define a belief that checks whether functions matching "Prim" have a body,
 	// then run it against the goast package itself.
-	eval(t, engine, `
+	result := eval(t, engine, `
 		(import (wile goast belief))
+
+		(reset-beliefs!)
 
 		(define-belief "prim-functions-have-body"
 		  (sites (functions-matching (name-matches "Prim")))
@@ -136,8 +138,13 @@ func TestBeliefDefineAndRun(t *testing.T) {
 		    (if (nf site 'body) 'has-body 'no-body))))
 		  (threshold 0.90 3))
 
-		(run-beliefs "github.com/aalpar/wile-goast/goast")
+		(let ((results (run-beliefs "github.com/aalpar/wile-goast/goast")))
+		  (and (pair? results)
+		       (assoc 'name (car results))
+		       #t))
 	`)
+
+	qt.New(t).Assert(result.SchemeString(), qt.Equals, "#t")
 }
 
 func TestUtilsTakeDrop(t *testing.T) {
@@ -680,8 +687,7 @@ func TestBeliefSitesFrom(t *testing.T) {
 	engine := newBeliefEngine(t)
 
 	// Define two beliefs: the second bootstraps from the first's deviations.
-	// Capture run-beliefs output to verify the second belief sees the right sites.
-	result := eval(t, engine, `
+	eval(t, engine, `
 		(import (wile goast belief))
 
 		(reset-beliefs!)
@@ -696,32 +702,40 @@ func TestBeliefSitesFrom(t *testing.T) {
 		  (expect (custom (lambda (site ctx) 'found)))
 		  (threshold 0.50 1))
 
-		(let ((out (open-output-string)))
-		  (parameterize ((current-output-port out))
-		    (run-beliefs
-		      "github.com/aalpar/wile-goast/examples/goast-query/testdata/pairing"))
-		  (get-output-string out))
+		(define results
+		  (run-beliefs
+		    "github.com/aalpar/wile-goast/examples/goast-query/testdata/pairing"))
 	`)
 
 	c := qt.New(t)
-	output := result.SchemeString()
 
-	t.Run("pairing belief reported", func(t *testing.T) {
-		c.Assert(output, qt.Matches, `.*pairing.*`)
+	t.Run("two results returned", func(t *testing.T) {
+		result := eval(t, engine, `(length results)`)
+		c.Assert(result.SchemeString(), qt.Equals, "2")
 	})
 
-	t.Run("followup belief sees 1 site", func(t *testing.T) {
-		// The followup belief should see exactly 1 site (the deviation from pairing)
-		c.Assert(output, qt.Matches, `.*followup.*1/1 sites.*`)
+	t.Run("pairing belief is strong", func(t *testing.T) {
+		result := eval(t, engine, `(cdr (assoc 'status (car results)))`)
+		c.Assert(result.SchemeString(), qt.Equals, "strong")
+	})
+
+	t.Run("followup sees 1 site from deviation", func(t *testing.T) {
+		result := eval(t, engine, `(cdr (assoc 'total (cadr results)))`)
+		c.Assert(result.SchemeString(), qt.Equals, "1")
+	})
+
+	t.Run("followup belief is strong", func(t *testing.T) {
+		result := eval(t, engine, `(cdr (assoc 'status (cadr results)))`)
+		c.Assert(result.SchemeString(), qt.Equals, "strong")
 	})
 }
 
 func TestBeliefRunBeliefsOutput(t *testing.T) {
 	engine := newBeliefEngine(t)
 
-	// Run a single belief and verify the output contains expected structure:
-	// header, belief name, pattern, deviation, summary.
-	result := eval(t, engine, `
+	// Register a single belief and call run-beliefs, binding the return value.
+	// run-beliefs should return a list of result alists (one per belief).
+	eval(t, engine, `
 		(import (wile goast belief))
 
 		(reset-beliefs!)
@@ -732,36 +746,140 @@ func TestBeliefRunBeliefsOutput(t *testing.T) {
 		  (expect (ordered "Validate" "Process"))
 		  (threshold 0.60 3))
 
-		(let ((out (open-output-string)))
-		  (parameterize ((current-output-port out))
-		    (run-beliefs
-		      "github.com/aalpar/wile-goast/examples/goast-query/testdata/ordering"))
-		  (get-output-string out))
+		(define results
+		  (run-beliefs
+		    "github.com/aalpar/wile-goast/examples/goast-query/testdata/ordering"))
 	`)
 
 	c := qt.New(t)
-	output := result.SchemeString()
 
-	t.Run("has header", func(t *testing.T) {
-		c.Assert(output, qt.Matches, `.*Consistency Analysis.*`)
+	t.Run("results is a pair", func(t *testing.T) {
+		result := eval(t, engine, `(pair? results)`)
+		c.Assert(result.SchemeString(), qt.Equals, "#t")
 	})
 
-	t.Run("has belief name", func(t *testing.T) {
-		c.Assert(output, qt.Matches, `.*ordering-test.*`)
+	t.Run("name is ordering-test", func(t *testing.T) {
+		result := eval(t, engine, `(cdr (assoc 'name (car results)))`)
+		c.Assert(result.SchemeString(), qt.Equals, `"ordering-test"`)
 	})
 
-	t.Run("has pattern with counts", func(t *testing.T) {
-		c.Assert(output, qt.Matches, `.*a-dominates-b.*4/5 sites.*`)
+	t.Run("type is per-site", func(t *testing.T) {
+		result := eval(t, engine, `(cdr (assoc 'type (car results)))`)
+		c.Assert(result.SchemeString(), qt.Equals, "per-site")
 	})
 
-	t.Run("has deviation", func(t *testing.T) {
-		c.Assert(output, qt.Matches, `.*DEVIATION.*PipelineReversed.*`)
+	t.Run("status is strong", func(t *testing.T) {
+		result := eval(t, engine, `(cdr (assoc 'status (car results)))`)
+		c.Assert(result.SchemeString(), qt.Equals, "strong")
 	})
 
-	t.Run("has summary", func(t *testing.T) {
-		c.Assert(output, qt.Matches, `.*Beliefs evaluated:.*1.*`)
-		c.Assert(output, qt.Matches, `.*Strong beliefs:.*1.*`)
-		c.Assert(output, qt.Matches, `.*Deviations found:.*1.*`)
+	t.Run("pattern is a-dominates-b", func(t *testing.T) {
+		result := eval(t, engine, `(cdr (assoc 'pattern (car results)))`)
+		c.Assert(result.SchemeString(), qt.Equals, "a-dominates-b")
+	})
+
+	t.Run("ratio is 4/5", func(t *testing.T) {
+		result := eval(t, engine, `(cdr (assoc 'ratio (car results)))`)
+		c.Assert(result.SchemeString(), qt.Equals, "4/5")
+	})
+
+	t.Run("total is 5", func(t *testing.T) {
+		result := eval(t, engine, `(cdr (assoc 'total (car results)))`)
+		c.Assert(result.SchemeString(), qt.Equals, "5")
+	})
+
+	t.Run("adherence list length is 4", func(t *testing.T) {
+		result := eval(t, engine, `(length (cdr (assoc 'adherence (car results))))`)
+		c.Assert(result.SchemeString(), qt.Equals, "4")
+	})
+
+	t.Run("deviations length is 1", func(t *testing.T) {
+		result := eval(t, engine, `(length (cdr (assoc 'deviations (car results))))`)
+		c.Assert(result.SchemeString(), qt.Equals, "1")
+	})
+
+	t.Run("deviation entry is string-symbol pair matching PipelineReversed", func(t *testing.T) {
+		result := eval(t, engine, `
+			(let* ((devs (cdr (assoc 'deviations (car results))))
+			       (entry (car devs))
+			       (s (car entry))
+			       (pat "PipelineReversed")
+			       (plen (string-length pat))
+			       (slen (string-length s)))
+			  (and (string? s)
+			       (symbol? (cdr entry))
+			       (let loop ((i 0))
+			         (cond ((> (+ i plen) slen) #f)
+			               ((string=? (substring s i (+ i plen)) pat) #t)
+			               (else (loop (+ i 1)))))))`)
+		c.Assert(result.SchemeString(), qt.Equals, "#t")
+	})
+}
+
+func TestBeliefRunBeliefsStatuses(t *testing.T) {
+	engine := newBeliefEngine(t)
+
+	// Register three beliefs with different expected statuses:
+	// - "strong-one": 4/5 >= 0.60 threshold -> strong
+	// - "weak-one":   4/5 < 0.99 threshold  -> weak
+	// - "empty-one":  no matching sites      -> no-sites
+	eval(t, engine, `
+		(import (wile goast belief))
+
+		(reset-beliefs!)
+
+		(define-belief "strong-one"
+		  (sites (functions-matching
+		           (all-of (contains-call "Validate") (contains-call "Process"))))
+		  (expect (ordered "Validate" "Process"))
+		  (threshold 0.60 3))
+
+		(define-belief "weak-one"
+		  (sites (functions-matching
+		           (all-of (contains-call "Validate") (contains-call "Process"))))
+		  (expect (ordered "Validate" "Process"))
+		  (threshold 0.99 3))
+
+		(define-belief "empty-one"
+		  (sites (functions-matching (name-matches "ZZZZZ_NO_MATCH")))
+		  (expect (ordered "Validate" "Process"))
+		  (threshold 0.50 1))
+
+		(define results
+		  (run-beliefs
+		    "github.com/aalpar/wile-goast/examples/goast-query/testdata/ordering"))
+	`)
+
+	c := qt.New(t)
+
+	t.Run("3 results returned", func(t *testing.T) {
+		result := eval(t, engine, `(length results)`)
+		c.Assert(result.SchemeString(), qt.Equals, "3")
+	})
+
+	t.Run("first status is strong", func(t *testing.T) {
+		result := eval(t, engine, `(cdr (assoc 'status (list-ref results 0)))`)
+		c.Assert(result.SchemeString(), qt.Equals, "strong")
+	})
+
+	t.Run("second status is weak", func(t *testing.T) {
+		result := eval(t, engine, `(cdr (assoc 'status (list-ref results 1)))`)
+		c.Assert(result.SchemeString(), qt.Equals, "weak")
+	})
+
+	t.Run("third status is no-sites", func(t *testing.T) {
+		result := eval(t, engine, `(cdr (assoc 'status (list-ref results 2)))`)
+		c.Assert(result.SchemeString(), qt.Equals, "no-sites")
+	})
+
+	t.Run("weak entry has pattern key", func(t *testing.T) {
+		result := eval(t, engine, `(assoc 'pattern (list-ref results 1))`)
+		c.Assert(result.SchemeString(), qt.Not(qt.Equals), "#f")
+	})
+
+	t.Run("weak entry has ratio key", func(t *testing.T) {
+		result := eval(t, engine, `(assoc 'ratio (list-ref results 1))`)
+		c.Assert(result.SchemeString(), qt.Not(qt.Equals), "#f")
 	})
 }
 
@@ -1575,7 +1693,8 @@ func TestDomainsIntervalAnalysis(t *testing.T) {
 func TestAggregateBeliefEvaluation(t *testing.T) {
 	engine := newBeliefEngine(t)
 
-	result := eval(t, engine, `
+	// Register an aggregate belief and assert on run-beliefs return value.
+	eval(t, engine, `
 		(import (wile goast belief))
 		(import (wile goast utils))
 		(reset-beliefs!)
@@ -1589,25 +1708,35 @@ func TestAggregateBeliefEvaluation(t *testing.T) {
 				      (cons 'verdict 'TEST-OK)
 				      (cons 'functions (length sites)))))))
 
-		(let ((out (open-output-string)))
-		  (parameterize ((current-output-port out))
-			(run-beliefs "github.com/aalpar/wile-goast/examples/goast-query/testdata/pairing"))
-		  (get-output-string out))
+		(define results
+		  (run-beliefs "github.com/aalpar/wile-goast/examples/goast-query/testdata/pairing"))
 	`)
 
 	c := qt.New(t)
-	output := result.SchemeString()
 
-	t.Run("aggregate belief header printed", func(t *testing.T) {
-		c.Assert(output, qt.Matches, `.*Aggregate Belief: test-cohesion.*`)
+	t.Run("1 result returned", func(t *testing.T) {
+		result := eval(t, engine, `(length results)`)
+		c.Assert(result.SchemeString(), qt.Equals, "1")
 	})
 
-	t.Run("aggregate verdict printed", func(t *testing.T) {
-		c.Assert(output, qt.Matches, `.*TEST-OK.*`)
+	t.Run("type is aggregate", func(t *testing.T) {
+		result := eval(t, engine, `(cdr (assoc 'type (car results)))`)
+		c.Assert(result.SchemeString(), qt.Equals, "aggregate")
 	})
 
-	t.Run("summary includes aggregate count", func(t *testing.T) {
-		c.Assert(output, qt.Matches, `.*Aggregate beliefs:.*1.*`)
+	t.Run("status is ok", func(t *testing.T) {
+		result := eval(t, engine, `(cdr (assoc 'status (car results)))`)
+		c.Assert(result.SchemeString(), qt.Equals, "ok")
+	})
+
+	t.Run("name is test-cohesion", func(t *testing.T) {
+		result := eval(t, engine, `(cdr (assoc 'name (car results)))`)
+		c.Assert(result.SchemeString(), qt.Equals, `"test-cohesion"`)
+	})
+
+	t.Run("verdict is TEST-OK", func(t *testing.T) {
+		result := eval(t, engine, `(cdr (assoc 'verdict (car results)))`)
+		c.Assert(result.SchemeString(), qt.Equals, "TEST-OK")
 	})
 }
 

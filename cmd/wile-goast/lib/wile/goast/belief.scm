@@ -818,178 +818,98 @@
     (display val port)
     (get-output-string port)))
 
-;; Print report header.
-(define (print-header)
-  (display "══════════════════════════════════════════════════")
-  (newline)
-  (display "  Consistency Analysis")
-  (newline)
-  (display "══════════════════════════════════════════════════")
-  (newline) (newline))
-
-;; Print a single belief result.
-(define (print-belief-result result)
-  (let* ((name (list-ref result 0))
-         (maj-cat (list-ref result 1))
-         (ratio (list-ref result 2))
-         (total (list-ref result 3))
-         (adherence (list-ref result 4))
-         (deviations (list-ref result 5))
-         (adherence-count (length adherence)))
-    (display "── Belief: ") (display name) (display " ──")
-    (newline)
-    (display "  Pattern: ") (display maj-cat)
-    (display " (") (display adherence-count)
-    (display "/") (display total) (display " sites)")
-    (newline)
-    (if (null? deviations)
-      (begin (display "    (no deviations)") (newline))
-      (for-each
-        (lambda (d)
-          (display "    DEVIATION: ")
-          (display (site-display-name (car d)))
-          (display " -> ") (display (cdr d))
-          (newline))
-        deviations))
-    (newline)))
 
 ;; ── Aggregate belief evaluation ────────────────────────
 
 (define (evaluate-aggregate-beliefs ctx)
-  "Evaluate all registered aggregate beliefs. Returns (values count errors)."
-  (let loop ((beliefs *aggregate-beliefs*) (count 0) (errs 0))
+  "Evaluate all registered aggregate beliefs. Returns list of result alists."
+  (let loop ((beliefs *aggregate-beliefs*) (results '()))
     (if (null? beliefs)
-      (values count errs)
+      (reverse results)
       (let* ((belief (car beliefs))
              (name (aggregate-belief-name belief)))
         (guard (exn
-                 (#t (display "── Aggregate Belief: ") (display name)
-                     (display " ──") (newline)
-                     (display "  (error: ")
-                     (if (error-object? exn)
-                       (display (error-object-message exn))
-                       (display exn))
-                     (display ")") (newline) (newline)
-                     (loop (cdr beliefs) count (+ errs 1))))
+                 (#t (loop (cdr beliefs)
+                           (cons (list (cons 'name name)
+                                       (cons 'type 'aggregate)
+                                       (cons 'status 'error)
+                                       (cons 'message
+                                             (if (error-object? exn)
+                                               (error-object-message exn)
+                                               (display-to-string exn))))
+                                 results))))
           (let* ((sites-fn (aggregate-belief-sites-fn belief))
                  (analyzer (aggregate-belief-analyzer belief))
                  (sites (sites-fn ctx))
                  (result (analyzer sites ctx)))
-            (print-aggregate-result name result)
-            (loop (cdr beliefs) (+ count 1) errs)))))))
-
-(define (print-aggregate-result name result)
-  "Print an aggregate belief result."
-  (display "── Aggregate Belief: ") (display name) (display " ──")
-  (newline)
-  (if (not (pair? result))
-    (begin (display "  (unexpected result: not an alist)") (newline))
-    (let ((verdict (assoc 'verdict result))
-          (confidence (assoc 'confidence result))
-          (functions (assoc 'functions result)))
-      (if (not (or verdict confidence functions))
-        (begin (display "  (no recognized keys in result)") (newline))
-        (begin
-          (when verdict
-            (display "  Verdict:    ") (display (cdr verdict)) (newline))
-          (when confidence
-            (display "  Confidence: ") (display (cdr confidence)) (newline))
-          (when functions
-            (display "  Functions:  ") (display (cdr functions)) (newline))
-          ;; Print reason if present
-          (let ((reason (assoc 'reason (let ((rpt (assoc 'report result)))
-                                         (if rpt (cdr rpt) result)))))
-            (when reason
-              (display "  Reason:     ") (display (cdr reason)) (newline)))
-          ;; Print groups if present
-          (let ((report (assoc 'report result)))
-            (when report
-              (let* ((rpt (cdr report))
-                     (groups (assoc 'groups rpt)))
-                (when groups
-                  (let* ((gs (cdr groups))
-                         (ga (assoc 'group-a gs))
-                         (gb (assoc 'group-b gs))
-                         (cut (assoc 'cut-ratio gs)))
-                    (when ga
-                      (display "  Group A:    ") (display (length (cdr ga)))
-                      (display " functions") (newline))
-                    (when gb
-                      (display "  Group B:    ") (display (length (cdr gb)))
-                      (display " functions") (newline))
-                    (when cut
-                      (display "  Cut ratio:  ") (display (cdr cut)) (newline)))))))))))
-  (newline))
+            (loop (cdr beliefs)
+                  (cons (append (list (cons 'name name)
+                                     (cons 'type 'aggregate)
+                                     (cons 'status 'ok))
+                                (if (pair? result) result '()))
+                        results))))))))
 
 ;; Main entry point.
 ;; Evaluates all registered beliefs against the target package.
 (define (run-beliefs target)
-  "Evaluate all registered beliefs against the target package pattern.\nPrints results showing adherence and deviation sites per belief.\nBeliefs are registered via define-belief.\n\nParameters:\n  target : string\nReturns: any\nCategory: goast-belief\n\nExamples:\n  (run-beliefs \"my/package/...\")\n\nSee also: `reset-beliefs!'."
+  "Evaluate all registered beliefs against the target package pattern.\nReturns a flat list of result alists — one per belief (per-site and aggregate).\nBeliefs are registered via define-belief.\n\nParameters:\n  target : string\nReturns: list\nCategory: goast-belief\n\nExamples:\n  (run-beliefs \"my/package/...\")\n\nSee also: `reset-beliefs!'."
   (let ((ctx (make-context target)))
-    (print-header)
     (let loop ((beliefs *beliefs*)
-               (evaluated 0)
-               (errors 0)
-               (strong 0)
-               (total-deviations 0))
+               (results '()))
       (if (null? beliefs)
-        ;; Aggregate beliefs, then summary
-        (let-values (((agg-count agg-errors) (evaluate-aggregate-beliefs ctx)))
-          (let ((all-errors (+ errors agg-errors)))
-            (display "── Summary ──") (newline)
-            (display "  Beliefs evaluated:   ") (display (+ evaluated agg-count)) (newline)
-            (display "  Strong beliefs:      ") (display strong) (newline)
-            (display "  Aggregate beliefs:   ") (display agg-count) (newline)
-            (when (> all-errors 0)
-              (display "  Errors:              ") (display all-errors) (newline))
-            (display "  Deviations found:    ") (display total-deviations) (newline)))
+        ;; Append aggregate belief results
+        (append (reverse results) (evaluate-aggregate-beliefs ctx))
         ;; Evaluate next belief
         (let* ((belief (car beliefs))
+               (name (belief-name belief))
                (result
                  (guard (exn
-                          (#t (display "── Belief: ")
-                              (display (belief-name belief))
-                              (display " ──") (newline)
-                              (display "  (error: ")
-                              (if (error-object? exn)
-                                (display (error-object-message exn))
-                                (display exn))
-                              (display ")") (newline) (newline)
-                              'error))
+                          (#t (cons 'error
+                                (if (error-object? exn)
+                                  (error-object-message exn)
+                                  (display-to-string exn)))))
                    (evaluate-belief belief ctx))))
           (cond
-            ((eq? result 'error)
-             (loop (cdr beliefs) evaluated (+ errors 1) strong total-deviations))
+            ((and (pair? result) (eq? (car result) 'error))
+             (loop (cdr beliefs)
+                   (cons (list (cons 'name name)
+                               (cons 'type 'per-site)
+                               (cons 'status 'error)
+                               (cons 'message (cdr result)))
+                         results)))
             ((not result)
              ;; No sites found
-             (display "── Belief: ") (display (belief-name belief)) (display " ──")
-             (newline)
-             (display "  (no sites found)") (newline) (newline)
-             (loop (cdr beliefs) (+ evaluated 1) errors strong total-deviations))
+             (loop (cdr beliefs)
+                   (cons (list (cons 'name name)
+                               (cons 'type 'per-site)
+                               (cons 'status 'no-sites))
+                         results)))
             (else
-             (let* ((name (list-ref result 0))
+             (let* ((maj-cat (list-ref result 1))
                     (ratio (list-ref result 2))
                     (total (list-ref result 3))
                     (adherence (list-ref result 4))
                     (deviations (list-ref result 5))
                     (min-adh (belief-min-adherence belief))
                     (min-n (belief-min-sites belief))
-                    (is-strong (and (>= ratio min-adh) (>= total min-n))))
+                    (is-strong (and (>= ratio min-adh) (>= total min-n)))
+                    (status (if is-strong 'strong 'weak)))
                ;; Store results for bootstrapping
                (ctx-store-result! ctx name
                  adherence
                  (map car deviations))
-               (if is-strong
-                 (begin
-                   (print-belief-result result)
-                   (loop (cdr beliefs)
-                         (+ evaluated 1) errors (+ strong 1)
-                         (+ total-deviations (length deviations))))
-                 (begin
-                   (display "── Belief: ") (display name) (display " ──")
-                   (newline)
-                   (display "  (weak: ") (display ratio)
-                   (display " adherence, ") (display total)
-                   (display " sites — below threshold)") (newline) (newline)
-                   (loop (cdr beliefs)
-                         (+ evaluated 1) errors strong total-deviations)))))))))))
+               (loop (cdr beliefs)
+                     (cons (list (cons 'name name)
+                                 (cons 'type 'per-site)
+                                 (cons 'status status)
+                                 (cons 'pattern maj-cat)
+                                 (cons 'ratio ratio)
+                                 (cons 'total total)
+                                 (cons 'adherence
+                                       (map site-display-name adherence))
+                                 (cons 'deviations
+                                       (map (lambda (d)
+                                              (cons (site-display-name (car d))
+                                                    (cdr d)))
+                                            deviations)))
+                           results))))))))))
