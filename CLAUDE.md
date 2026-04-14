@@ -50,6 +50,7 @@ All sub-extensions depend on the base `goast` package for shared mapper/helper i
 | `go-load` | Load packages into a GoSession for reuse |
 | `go-session?` | Type predicate for GoSession |
 | `go-list-deps` | Lightweight transitive dependency discovery |
+| `go-func-refs` | Per-function external reference profiles via types.Info.Uses |
 | `go-cfg-to-structured` | Restructure block into single-exit form: goto elimination, loop return rewriting, guard folding. Optional func-type for result variable synthesis. |
 
 ### goastssa — `(wile goast ssa)`
@@ -336,6 +337,21 @@ Boolean normalization for Go AST conditions and belief selector predicates. Uses
 
 Note: Go's `&&`/`||` become control flow in SSA, so `ast-condition->symbolic` works at the AST level (from `go-parse-expr`/`go-parse-file`), not SSA.
 
+## Package Splitting — `(wile goast split)`
+
+Import signature analysis for Go package decomposition. Discovers natural package boundaries using IDF-weighted FCA on per-function dependency profiles.
+
+| Export | Description |
+|--------|-------------|
+| `import-signatures` | Extract per-function package dependency sets from `go-func-refs` output |
+| `compute-idf` | IDF weights for dependency informativeness |
+| `filter-noise` | Remove ubiquitous (low-IDF) dependencies |
+| `build-package-context` | FCA context at package granularity |
+| `refine-by-api-surface` | FCA context at (package, object) granularity |
+| `find-split` | Min-cut two-way partition via concept lattice |
+| `verify-acyclic` | Check proposed split for Go import cycles |
+| `recommend-split` | Top-level: IDF + FCA + min-cut + cycle check + confidence |
+
 ## Path Algebra — `(wile goast path-algebra)`
 
 Semiring-parameterized path computation over call graphs. Lazy single-source Bellman-Ford with per-source caching.
@@ -369,6 +385,8 @@ Semiring-parameterized path computation over call graphs. Lazy single-source Bel
 | `cmd/wile-goast/lib/wile/goast/fca.scm` | Formal Concept Analysis: false boundary detection via concept lattices (embedded in binary) |
 | `cmd/wile-goast/lib/wile/goast/fca-algebra.scm` | FCA algebraic annotation: concept lattice as `(wile algebra lattice)`, relationship classification (embedded in binary) |
 | `cmd/wile-goast/lib/wile/goast/fca-recommend.scm` | Function boundary recommendations: split/merge/extract via FCA + SSA cross-flow (embedded in binary) |
+| `cmd/wile-goast/lib/wile/goast/split.scm` | Package splitting analysis: IDF-weighted FCA on import signatures (embedded in binary) |
+| `goast/prim_funcrefs.go` | Per-function external reference extraction (`go-func-refs`) |
 | `cmd/wile-goast/lib/wile/goast/boolean-simplify.scm` | Boolean normalization for Go AST conditions and belief selectors via `(wile algebra symbolic)` (embedded in binary) |
 | `cmd/wile-goast/lib/wile/goast/path-algebra.scm` | Semiring path algebra: Bellman-Ford over call graphs (embedded in binary) |
 | `cmd/wile-goast/lib/wile/goast/domains.scm` | Pre-built abstract domains: reaching defs, liveness, constant prop, sign, interval (embedded in binary) |

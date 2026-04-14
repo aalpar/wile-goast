@@ -66,8 +66,8 @@ func funcRefsFromPattern(mc machine.CallContext, pattern *values.String) error {
 
 // funcRefEntry holds the per-function external reference data during collection.
 type funcRefEntry struct {
-	name   string
-	pkg    string
+	name    string
+	pkg     string
 	extRefs map[string]map[string]bool // ext-pkg-path -> set of object names
 }
 
@@ -194,13 +194,13 @@ func recvTypeName(expr ast.Expr) string {
 	case *ast.Ident:
 		return t.Name
 	case *ast.IndexExpr:
-		// Generic type T[P] — use the base name.
-		if id, ok := t.X.(*ast.Ident); ok {
+		id, ok := t.X.(*ast.Ident)
+		if ok {
 			return id.Name
 		}
 	case *ast.IndexListExpr:
-		// Generic type T[P, Q] — use the base name.
-		if id, ok := t.X.(*ast.Ident); ok {
+		id, ok := t.X.(*ast.Ident)
+		if ok {
 			return id.Name
 		}
 	}

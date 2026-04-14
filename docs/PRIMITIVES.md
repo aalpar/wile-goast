@@ -50,6 +50,7 @@ source. Optionally type-checks packages via `go/packages`.
 | `(go-load pattern ... . options)` | GoSession | Load packages into a reusable session |
 | `(go-session? v)` | boolean | Type predicate for GoSession |
 | `(go-list-deps pattern ...)` | list of strings | Transitive import path discovery |
+| `(go-func-refs target)` | list of tagged alists | Per-function external reference profiles |
 | `(go-cfg-to-structured block [func-type])` | block or `#f` | Restructure block into single-exit form: goto elimination, loop return rewriting, guard folding |
 
 ### Session Management
@@ -81,6 +82,21 @@ accepts both types.
 
 **`go-list-deps`** uses lightweight loading (`NeedName | NeedImports` only) for
 dependency discovery before committing to a full load.
+
+**`go-func-refs`** extracts per-function external reference profiles. For each
+function/method in the target package, returns the set of external `(package,
+object-name)` pairs it references via `types.Info.Uses`. Accepts a package
+pattern string or GoSession. Returns:
+
+```scheme
+((func-ref (name . "MyFunc")
+           (pkg . "my/pkg")
+           (refs . ((ref (pkg . "io") (objects . ("Reader" "Writer")))
+                    (ref (pkg . "fmt") (objects . ("Println")))))))
+```
+
+Method receivers format as `"RecvType.Method"`. Functions with no body
+(interface methods, external declarations) are excluded.
 
 ### Options
 
