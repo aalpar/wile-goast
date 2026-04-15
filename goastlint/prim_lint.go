@@ -86,19 +86,19 @@ func PrimGoAnalyze(mc machine.CallContext) error {
 		return nil
 	}
 
-	switch v := arg.(type) {
-	case *goast.GoSession:
-		if v.IsLintMode() {
-			return analyzeFromSession(mc, v, analyzers)
+	if session, ok := goast.UnwrapSession(arg); ok {
+		if session.IsLintMode() {
+			return analyzeFromSession(mc, session, analyzers)
 		}
 		// Non-lint session: fall back to fresh load with LoadAllSyntax.
-		return analyzeFromPattern(mc, v.Patterns(), analyzers)
-	case *values.String:
-		return analyzeFromPattern(mc, []string{v.Value}, analyzers)
-	default:
+		return analyzeFromPattern(mc, session.Patterns(), analyzers)
+	}
+	pat, ok := arg.(*values.String)
+	if !ok {
 		return werr.WrapForeignErrorf(werr.ErrNotAString,
 			"go-analyze: expected string or go-session, got %T", arg)
 	}
+	return analyzeFromPattern(mc, []string{pat.Value}, analyzers)
 }
 
 func analyzeFromSession(mc machine.CallContext, session *goast.GoSession, analyzers []*analysis.Analyzer) error {

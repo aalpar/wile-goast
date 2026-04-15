@@ -64,15 +64,15 @@ func PrimGoCallgraph(mc machine.CallContext) error {
 			"go-callgraph: algorithm must be static, cha, rta, or vta; got %s", algo.Key)
 	}
 
-	switch v := arg.(type) {
-	case *goast.GoSession:
-		return callgraphFromSession(mc, v, algo.Key)
-	case *values.String:
-		return callgraphFromPattern(mc, v, algo.Key)
-	default:
+	if session, ok := goast.UnwrapSession(arg); ok {
+		return callgraphFromSession(mc, session, algo.Key)
+	}
+	pat, ok := arg.(*values.String)
+	if !ok {
 		return werr.WrapForeignErrorf(werr.ErrNotAString,
 			"go-callgraph: expected string or go-session, got %T", arg)
 	}
+	return callgraphFromPattern(mc, pat, algo.Key)
 }
 
 func callgraphFromSession(mc machine.CallContext, session *goast.GoSession, algorithm string) error {

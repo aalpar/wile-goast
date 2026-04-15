@@ -29,7 +29,7 @@ func TestGoLoad_ReturnsSession(t *testing.T) {
 	engine := newEngine(t)
 	result := testutil.RunScheme(t, engine,
 		`(go-load "github.com/aalpar/wile-goast/goast")`)
-	_, ok := result.Internal().(*extgoast.GoSession)
+	_, ok := extgoast.UnwrapSession(result.Internal())
 	qt.New(t).Assert(ok, qt.IsTrue)
 }
 
@@ -37,7 +37,7 @@ func TestGoLoad_MultiplePatterns(t *testing.T) {
 	engine := newEngine(t)
 	result := testutil.RunScheme(t, engine,
 		`(go-load "github.com/aalpar/wile-goast/goast" "github.com/aalpar/wile-goast/goastssa")`)
-	s, ok := result.Internal().(*extgoast.GoSession)
+	s, ok := extgoast.UnwrapSession(result.Internal())
 	qt.New(t).Assert(ok, qt.IsTrue)
 	qt.New(t).Assert(len(s.Patterns()), qt.Equals, 2)
 }
@@ -46,7 +46,7 @@ func TestGoLoad_LintOption(t *testing.T) {
 	engine := newEngine(t)
 	result := testutil.RunScheme(t, engine,
 		`(go-load "github.com/aalpar/wile-goast/goast" 'lint)`)
-	s, ok := result.Internal().(*extgoast.GoSession)
+	s, ok := extgoast.UnwrapSession(result.Internal())
 	qt.New(t).Assert(ok, qt.IsTrue)
 	qt.New(t).Assert(s.IsLintMode(), qt.IsTrue)
 }

@@ -23,38 +23,38 @@ import (
 	qt "github.com/frankban/quicktest"
 )
 
-func TestGoSession_SchemeString(t *testing.T) {
+func TestWrapUnwrapSession(t *testing.T) {
 	c := qt.New(t)
 	s := goast.NewGoSession([]string{"my/pkg"}, nil, nil, false)
-	c.Assert(s.SchemeString(), qt.Matches, `#<go-session.*my/pkg.*>`)
+
+	wrapped := goast.WrapSession(s)
+	c.Assert(wrapped.OpaqueTag(), qt.Equals, "go-session")
+
+	unwrapped, ok := goast.UnwrapSession(wrapped)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(unwrapped, qt.Equals, s)
 }
 
-func TestGoSession_IsVoid(t *testing.T) {
+func TestUnwrapSession_WrongType(t *testing.T) {
 	c := qt.New(t)
-	s := goast.NewGoSession([]string{"my/pkg"}, nil, nil, false)
-	c.Assert(s.IsVoid(), qt.IsFalse)
-	var nilSession *goast.GoSession
-	c.Assert(nilSession.IsVoid(), qt.IsTrue)
+	_, ok := goast.UnwrapSession(values.NewString("not a session"))
+	c.Assert(ok, qt.IsFalse)
 }
 
-func TestGoSession_EqualTo(t *testing.T) {
+func TestUnwrapSession_WrongTag(t *testing.T) {
 	c := qt.New(t)
-	s1 := goast.NewGoSession([]string{"my/pkg"}, nil, nil, false)
-	s2 := goast.NewGoSession([]string{"my/pkg"}, nil, nil, false)
-	c.Assert(s1.EqualTo(s1), qt.IsTrue)
-	c.Assert(s1.EqualTo(s2), qt.IsFalse) // identity, not structural
+	other := values.NewOpaqueValue("something-else", 42)
+	_, ok := goast.UnwrapSession(other)
+	c.Assert(ok, qt.IsFalse)
 }
 
-func TestGoSession_OpaqueTag(t *testing.T) {
+func TestWrapSession_Identity(t *testing.T) {
 	c := qt.New(t)
-	s := goast.NewGoSession([]string{"my/pkg"}, nil, nil, false)
-	c.Assert(s.OpaqueTag(), qt.Equals, "go-session")
-}
-
-func TestGoSession_ImplementsValue(t *testing.T) {
-	var _ values.Value = (*goast.GoSession)(nil)
-}
-
-func TestGoSession_ImplementsOpaque(t *testing.T) {
-	var _ values.Opaque = (*goast.GoSession)(nil)
+	s1 := goast.NewGoSession([]string{"a"}, nil, nil, false)
+	s2 := goast.NewGoSession([]string{"a"}, nil, nil, false)
+	w1 := goast.WrapSession(s1)
+	w2 := goast.WrapSession(s2)
+	// Different OpaqueValues are not equal (identity semantics).
+	c.Assert(w1.EqualTo(w2), qt.IsFalse)
+	c.Assert(w1.EqualTo(w1), qt.IsTrue)
 }

@@ -15,9 +15,7 @@
 package goast
 
 import (
-	"fmt"
 	"go/token"
-	"strings"
 	"sync"
 
 	"golang.org/x/tools/go/packages"
@@ -45,11 +43,7 @@ type GoSession struct {
 	cache   map[string]any
 }
 
-// Compile-time interface checks.
-var (
-	_ values.Value  = (*GoSession)(nil)
-	_ values.Opaque = (*GoSession)(nil)
-)
+const sessionTag = "go-session"
 
 // NewGoSession creates a GoSession from already-loaded packages.
 func NewGoSession(patterns []string, pkgs []*packages.Package, fset *token.FileSet, lintMode bool) *GoSession {
@@ -62,22 +56,20 @@ func NewGoSession(patterns []string, pkgs []*packages.Package, fset *token.FileS
 	}
 }
 
-func (s *GoSession) SchemeString() string {
-	return fmt.Sprintf("#<go-session %q %d-pkgs>",
-		strings.Join(s.patterns, " "), len(s.pkgs))
+// WrapSession wraps a GoSession as an OpaqueValue for Scheme.
+func WrapSession(s *GoSession) *values.OpaqueValue {
+	return values.NewOpaqueValue(sessionTag, s)
 }
 
-func (s *GoSession) IsVoid() bool {
-	return s == nil
-}
-
-func (s *GoSession) EqualTo(v values.Value) bool {
-	return s == v
-}
-
-// OpaqueTag returns "go-session" for the opaque value protocol.
-func (s *GoSession) OpaqueTag() string {
-	return "go-session"
+// UnwrapSession extracts a GoSession from a values.Value.
+// Returns nil, false if v is not a go-session OpaqueValue.
+func UnwrapSession(v values.Value) (*GoSession, bool) {
+	o, ok := v.(*values.OpaqueValue)
+	if !ok || o.OpaqueTag() != sessionTag {
+		return nil, false
+	}
+	s, ok := o.Unwrap().(*GoSession)
+	return s, ok
 }
 
 // Packages returns the loaded packages.

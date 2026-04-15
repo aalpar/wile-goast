@@ -210,15 +210,15 @@ func PrimGoCFG(mc machine.CallContext) error {
 		return err
 	}
 
-	switch v := arg.(type) {
-	case *goast.GoSession:
-		return cfgFromSession(mc, v, funcName.Value)
-	case *values.String:
-		return cfgFromPattern(mc, v, funcName.Value)
-	default:
+	if session, ok := goast.UnwrapSession(arg); ok {
+		return cfgFromSession(mc, session, funcName.Value)
+	}
+	pat, ok := arg.(*values.String)
+	if !ok {
 		return werr.WrapForeignErrorf(werr.ErrNotAString,
 			"go-cfg: expected string or go-session, got %T", arg)
 	}
+	return cfgFromPattern(mc, pat, funcName.Value)
 }
 
 func cfgFromSession(mc machine.CallContext, session *goast.GoSession, funcName string) error {

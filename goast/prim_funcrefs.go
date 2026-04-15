@@ -32,15 +32,15 @@ import (
 // external (cross-package) objects it references via types.Info.Uses.
 func PrimGoFuncRefs(mc machine.CallContext) error {
 	arg := mc.Arg(0)
-	switch v := arg.(type) {
-	case *GoSession:
-		return funcRefsFromSession(mc, v)
-	case *values.String:
-		return funcRefsFromPattern(mc, v)
-	default:
+	if session, ok := UnwrapSession(arg); ok {
+		return funcRefsFromSession(mc, session)
+	}
+	pat, ok := arg.(*values.String)
+	if !ok {
 		return werr.WrapForeignErrorf(werr.ErrNotAString,
 			"go-func-refs: expected string or go-session, got %T", arg)
 	}
+	return funcRefsFromPattern(mc, pat)
 }
 
 func funcRefsFromSession(mc machine.CallContext, session *GoSession) error {

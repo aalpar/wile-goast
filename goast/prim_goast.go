@@ -238,15 +238,15 @@ func mapPackage(pkg *packages.Package, baseOpts *mapperOpts) values.Value {
 // and returns a list of annotated (package ...) s-expression nodes.
 func PrimGoTypecheckPackage(mc machine.CallContext) error {
 	arg := mc.Arg(0)
-	switch v := arg.(type) {
-	case *GoSession:
-		return typecheckFromSession(mc, v)
-	case *values.String:
-		return typecheckFromPattern(mc, v)
-	default:
+	if session, ok := UnwrapSession(arg); ok {
+		return typecheckFromSession(mc, session)
+	}
+	pat, ok := arg.(*values.String)
+	if !ok {
 		return werr.WrapForeignErrorf(werr.ErrNotAString,
 			"go-typecheck-package: expected string or go-session, got %T", arg)
 	}
+	return typecheckFromPattern(mc, pat)
 }
 
 func typecheckFromSession(mc machine.CallContext, session *GoSession) error {
@@ -297,15 +297,15 @@ func PrimInterfaceImplementors(mc machine.CallContext) error {
 	}
 
 	arg1 := mc.Arg(1)
-	switch v := arg1.(type) {
-	case *GoSession:
-		return implementorsFromSession(mc, ifaceName.Value, v)
-	case *values.String:
-		return implementorsFromPattern(mc, ifaceName.Value, v)
-	default:
+	if session, ok := UnwrapSession(arg1); ok {
+		return implementorsFromSession(mc, ifaceName.Value, session)
+	}
+	pat, ok := arg1.(*values.String)
+	if !ok {
 		return werr.WrapForeignErrorf(werr.ErrNotAString,
 			"go-interface-implementors: expected string or go-session, got %T", arg1)
 	}
+	return implementorsFromPattern(mc, ifaceName.Value, pat)
 }
 
 func implementorsFromSession(mc machine.CallContext, ifaceName string, session *GoSession) error {

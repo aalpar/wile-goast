@@ -72,15 +72,15 @@ func parseSSAOpts(rest values.Value, fset *token.FileSet) (*ssaMapper, error) {
 // target is a package pattern string or a GoSession from go-load.
 func PrimGoSSABuild(mc machine.CallContext) error {
 	arg := mc.Arg(0)
-	switch v := arg.(type) {
-	case *goast.GoSession:
-		return ssaBuildFromSession(mc, v)
-	case *values.String:
-		return ssaBuildFromPattern(mc, v)
-	default:
+	if session, ok := goast.UnwrapSession(arg); ok {
+		return ssaBuildFromSession(mc, session)
+	}
+	pat, ok := arg.(*values.String)
+	if !ok {
 		return werr.WrapForeignErrorf(werr.ErrNotAString,
 			"go-ssa-build: expected string or go-session, got %T", arg)
 	}
+	return ssaBuildFromPattern(mc, pat)
 }
 
 func ssaBuildFromSession(mc machine.CallContext, session *goast.GoSession) error {
@@ -162,15 +162,15 @@ func collectSSAFuncs(mc machine.CallContext, mapper *ssaMapper, prog *ssa.Progra
 // access data (struct type, field name, receiver, read/write mode).
 func PrimGoSSAFieldIndex(mc machine.CallContext) error {
 	arg := mc.Arg(0)
-	switch v := arg.(type) {
-	case *goast.GoSession:
-		return fieldIndexFromSession(mc, v)
-	case *values.String:
-		return fieldIndexFromPattern(mc, v)
-	default:
+	if session, ok := goast.UnwrapSession(arg); ok {
+		return fieldIndexFromSession(mc, session)
+	}
+	pat, ok := arg.(*values.String)
+	if !ok {
 		return werr.WrapForeignErrorf(werr.ErrNotAString,
 			"go-ssa-field-index: expected string or go-session, got %T", arg)
 	}
+	return fieldIndexFromPattern(mc, pat)
 }
 
 func fieldIndexFromSession(mc machine.CallContext, session *goast.GoSession) error {

@@ -84,13 +84,13 @@ func PrimGoLoad(mc machine.CallContext) error {
 		return err
 	}
 
-	mc.SetValue(NewGoSession(patterns, pkgs, fset, lintMode))
+	mc.SetValue(WrapSession(NewGoSession(patterns, pkgs, fset, lintMode)))
 	return nil
 }
 
 // PrimGoSessionP implements (go-session? v).
 func PrimGoSessionP(mc machine.CallContext) error {
-	_, ok := mc.Arg(0).(*GoSession)
+	_, ok := UnwrapSession(mc.Arg(0))
 	if ok {
 		mc.SetValue(values.TrueValue)
 	} else {
