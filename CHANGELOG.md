@@ -1,5 +1,68 @@
 # Changelog
 
+## v0.5.111 — Lint and Session Cleanup
+
+- Fix compound if-init lint violations across all session-dispatch sites
+- Wrap GoSession in OpaqueValue (wile registry refactor)
+- Extract algebra libraries to wile upstream: FCA, Pareto, interval, graph algorithms
+- `run-beliefs` returns structured alists (name, type, status, ratio, deviations)
+
+## v0.5.95 — Package Splitting and Aggregate Beliefs
+
+New libraries: `(wile goast split)`, `(wile goast fca-recommend)`
+
+Package splitting analysis via IDF-weighted Formal Concept Analysis on
+per-function import signatures:
+
+- `go-func-refs` — per-function external reference profiles via `types.Info.Uses`
+- `import-signatures`, `compute-idf`, `filter-noise` — dependency extraction and weighting
+- `build-package-context`, `refine-by-api-surface` — FCA at package and API granularity
+- `find-split` — min-cut two-way partition via concept lattice
+- `verify-acyclic` — import cycle check for proposed splits
+- `recommend-split` — top-level entry point: IDF + FCA + min-cut + cycle check + confidence
+
+Function boundary recommendations via FCA + SSA cross-flow:
+
+- `split-candidates` — functions serving incomparable state clusters
+- `merge-candidates` — functions maintaining shared state separately
+- `extract-candidates` — sub-operations shared by more callers than the full op
+- `boundary-recommendations` — three Pareto frontiers (split/merge/extract)
+
+Belief DSL extensions:
+
+- `define-aggregate-belief` — whole-package property evaluation
+- `all-functions-in` site selector
+- `single-cluster` aggregate analyzer (bridges `recommend-split`)
+- `goast-split` MCP prompt for package cohesion analysis
+
+## v0.5.49 — Abstract Domains and Path Algebra
+
+New libraries: `(wile goast domains)`, `(wile goast path-algebra)`
+
+Pre-built abstract domains for `run-analysis`:
+
+- `make-reaching-definitions` — forward reaching definitions (powerset)
+- `make-liveness` — backward liveness analysis (powerset)
+- `make-constant-propagation` — forward constant propagation (flat + map-lattice)
+- `make-sign-analysis` — forward sign analysis with transfer tables
+- `make-interval-analysis` — forward interval analysis with per-block widening
+
+Semiring-parameterized path computation over call graphs:
+
+- `make-path-analysis` — lazy single-source Bellman-Ford with per-source caching
+- `path-query`, `path-query-all` — query semiring values between functions
+
+Other:
+
+- `ssa-equivalent?` — algebraic equivalence via `discover-equivalences`
+- SSA normalization migrated to `(wile algebra symbolic)` named-axiom/theory
+- FCA closure operator formalized via `(wile algebra closure)`
+- `LoadPackagesChecked` helper consolidates package loading across all sub-extensions
+- Function name forms standardized: Form 3 qualified names in typed ASTs
+- Restructurer refactored: `loopRewriter` struct, unified switch/typeswitch/select dispatch
+- golangci-lint config with project-specific ruleguard rules
+- Apache 2.0 license
+
 ## v0.5.5 — False Boundary Detection via FCA
 
 New library: `(wile goast fca)`
