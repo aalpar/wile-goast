@@ -59,11 +59,31 @@ build-linux-amd64: $(DIST_DIR)/linux/amd64/$(MY_BIN)
 .PHONY: build-all
 build-all: build-darwin-arm64 build-darwin-amd64 build-linux-arm64 build-linux-amd64
 
-# Install wile-goast to $GOPATH/bin (or $GOBIN).
+# Install prefix. Binary goes to PREFIX/bin, libraries to PREFIX/share/wile/lib.
+PREFIX ?= /usr/local
+DATADIR = $(PREFIX)/share/wile
+
+# Install the wile-goast binary and Scheme libraries.
 #   make install
+#   make install PREFIX=/opt/wile-goast
+.PHONY: install-base
+install-base: build
+	@mkdir -p $(PREFIX)/bin
+	cp $(DIST_DIR)/$(HOST_OS)/$(HOST_ARCH)/$(MY_BIN) $(PREFIX)/bin/$(MY_BIN)
+	@echo "Installed $(MY_BIN) to $(PREFIX)/bin/$(MY_BIN)"
+	@mkdir -p $(DATADIR)
+	cp -R cmd/wile-goast/lib $(DATADIR)/
+	@echo "Installed libraries to $(DATADIR)/lib/"
+
+.PHONY: install-darwin
+install-darwin: install-base
+	codesign --force --sign - $(PREFIX)/bin/$(MY_BIN)
+
+.PHONY: install-linux
+install-linux: install-base
+
 .PHONY: install
-install:
-	$(GO) install $(LDFLAGS) ./cmd/wile-goast
+install: install-$(HOST_OS)
 
 # Compile tests for all packages without running them.
 #   make buildtest
