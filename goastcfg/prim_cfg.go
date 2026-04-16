@@ -210,7 +210,8 @@ func PrimGoCFG(mc machine.CallContext) error {
 		return err
 	}
 
-	if session, ok := goast.UnwrapSession(arg); ok {
+	session, ok := goast.UnwrapSession(arg)
+	if ok {
 		return cfgFromSession(mc, session, funcName.Value)
 	}
 	pat, ok := arg.(*values.String)

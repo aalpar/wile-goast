@@ -72,7 +72,8 @@ func parseSSAOpts(rest values.Value, fset *token.FileSet) (*ssaMapper, error) {
 // target is a package pattern string or a GoSession from go-load.
 func PrimGoSSABuild(mc machine.CallContext) error {
 	arg := mc.Arg(0)
-	if session, ok := goast.UnwrapSession(arg); ok {
+	session, ok := goast.UnwrapSession(arg)
+	if ok {
 		return ssaBuildFromSession(mc, session)
 	}
 	pat, ok := arg.(*values.String)
@@ -162,7 +163,8 @@ func collectSSAFuncs(mc machine.CallContext, mapper *ssaMapper, prog *ssa.Progra
 // access data (struct type, field name, receiver, read/write mode).
 func PrimGoSSAFieldIndex(mc machine.CallContext) error {
 	arg := mc.Arg(0)
-	if session, ok := goast.UnwrapSession(arg); ok {
+	session, ok := goast.UnwrapSession(arg)
+	if ok {
 		return fieldIndexFromSession(mc, session)
 	}
 	pat, ok := arg.(*values.String)

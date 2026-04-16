@@ -32,7 +32,8 @@ import (
 // external (cross-package) objects it references via types.Info.Uses.
 func PrimGoFuncRefs(mc machine.CallContext) error {
 	arg := mc.Arg(0)
-	if session, ok := UnwrapSession(arg); ok {
+	session, ok := UnwrapSession(arg)
+	if ok {
 		return funcRefsFromSession(mc, session)
 	}
 	pat, ok := arg.(*values.String)

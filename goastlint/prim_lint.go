@@ -86,7 +86,8 @@ func PrimGoAnalyze(mc machine.CallContext) error {
 		return nil
 	}
 
-	if session, ok := goast.UnwrapSession(arg); ok {
+	session, ok := goast.UnwrapSession(arg)
+	if ok {
 		if session.IsLintMode() {
 			return analyzeFromSession(mc, session, analyzers)
 		}

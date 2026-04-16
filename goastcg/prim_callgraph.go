@@ -64,7 +64,8 @@ func PrimGoCallgraph(mc machine.CallContext) error {
 			"go-callgraph: algorithm must be static, cha, rta, or vta; got %s", algo.Key)
 	}
 
-	if session, ok := goast.UnwrapSession(arg); ok {
+	session, ok := goast.UnwrapSession(arg)
+	if ok {
 		return callgraphFromSession(mc, session, algo.Key)
 	}
 	pat, ok := arg.(*values.String)

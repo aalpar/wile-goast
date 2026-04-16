@@ -238,7 +238,8 @@ func mapPackage(pkg *packages.Package, baseOpts *mapperOpts) values.Value {
 // and returns a list of annotated (package ...) s-expression nodes.
 func PrimGoTypecheckPackage(mc machine.CallContext) error {
 	arg := mc.Arg(0)
-	if session, ok := UnwrapSession(arg); ok {
+	session, ok := UnwrapSession(arg)
+	if ok {
 		return typecheckFromSession(mc, session)
 	}
 	pat, ok := arg.(*values.String)
@@ -297,7 +298,8 @@ func PrimInterfaceImplementors(mc machine.CallContext) error {
 	}
 
 	arg1 := mc.Arg(1)
-	if session, ok := UnwrapSession(arg1); ok {
+	session, ok := UnwrapSession(arg1)
+	if ok {
 		return implementorsFromSession(mc, ifaceName.Value, session)
 	}
 	pat, ok := arg1.(*values.String)
