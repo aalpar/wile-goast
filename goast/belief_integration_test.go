@@ -1805,3 +1805,43 @@ func TestAggregateBeliefRegistration(t *testing.T) {
 		c.Assert(result.SchemeString(), qt.Equals, "0")
 	})
 }
+
+func TestAggregateBeliefExpressionMetadata(t *testing.T) {
+	engine := newBeliefEngine(t)
+
+	eval(t, engine, `
+		(import (wile goast belief))
+		(import (wile goast utils))
+		(reset-beliefs!)
+
+		(define-aggregate-belief "test-agg-expr"
+			(sites (functions-matching (name-matches "Lock")))
+			(analyze (aggregate-custom (lambda (sites ctx)
+				(list (cons 'verdict 'TEST-OK))))))
+
+		(define results
+		  (run-beliefs "github.com/aalpar/wile-goast/examples/goast-query/testdata/pairing"))
+	`)
+
+	c := qt.New(t)
+
+	t.Run("sites-expr present", func(t *testing.T) {
+		result := eval(t, engine, `(assoc 'sites-expr (car results))`)
+		c.Assert(result.SchemeString(), qt.Not(qt.Equals), "#f")
+	})
+
+	t.Run("sites-expr matches source", func(t *testing.T) {
+		result := eval(t, engine, `(cdr (assoc 'sites-expr (car results)))`)
+		c.Assert(result.SchemeString(), qt.Matches, `.*functions-matching.*name-matches.*Lock.*`)
+	})
+
+	t.Run("analyze-expr present", func(t *testing.T) {
+		result := eval(t, engine, `(assoc 'analyze-expr (car results))`)
+		c.Assert(result.SchemeString(), qt.Not(qt.Equals), "#f")
+	})
+
+	t.Run("analyze-expr matches source", func(t *testing.T) {
+		result := eval(t, engine, `(cdr (assoc 'analyze-expr (car results)))`)
+		c.Assert(result.SchemeString(), qt.Matches, `.*aggregate-custom.*lambda.*`)
+	})
+}

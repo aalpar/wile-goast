@@ -59,14 +59,17 @@
 (define (belief-sites-expr b) (list-ref b 5))
 (define (belief-expect-expr b) (list-ref b 6))
 
-(define (register-aggregate-belief! name sites-fn analyzer)
+(define (register-aggregate-belief! name sites-fn analyzer
+                                    sites-expr analyze-expr)
   (set! *aggregate-beliefs*
     (append *aggregate-beliefs*
-      (list (list name sites-fn analyzer)))))
+      (list (list name sites-fn analyzer sites-expr analyze-expr)))))
 
 (define (aggregate-belief-name b) (list-ref b 0))
 (define (aggregate-belief-sites-fn b) (list-ref b 1))
 (define (aggregate-belief-analyzer b) (list-ref b 2))
+(define (aggregate-belief-sites-expr b) (list-ref b 3))
+(define (aggregate-belief-analyze-expr b) (list-ref b 4))
 
 ;; ── define-belief macro ─────────────────────────────────
 ;;
@@ -85,7 +88,9 @@
 (define-syntax define-aggregate-belief
   (syntax-rules (sites analyze)
     ((_ name (sites selector) (analyze analyzer))
-     (register-aggregate-belief! name selector analyzer))))
+     (register-aggregate-belief! name selector analyzer
+                                 '(sites selector)
+                                 '(analyze analyzer)))))
 
 ;; ── Analysis context ────────────────────────────────────
 ;;
@@ -842,7 +847,9 @@
                                        (cons 'message
                                              (if (error-object? exn)
                                                (error-object-message exn)
-                                               (display-to-string exn))))
+                                               (display-to-string exn)))
+                                       (cons 'sites-expr (aggregate-belief-sites-expr belief))
+                                       (cons 'analyze-expr (aggregate-belief-analyze-expr belief)))
                                  results))))
           (let* ((sites-fn (aggregate-belief-sites-fn belief))
                  (analyzer (aggregate-belief-analyzer belief))
@@ -851,7 +858,9 @@
             (loop (cdr beliefs)
                   (cons (append (list (cons 'name name)
                                      (cons 'type 'aggregate)
-                                     (cons 'status 'ok))
+                                     (cons 'status 'ok)
+                                     (cons 'sites-expr (aggregate-belief-sites-expr belief))
+                                     (cons 'analyze-expr (aggregate-belief-analyze-expr belief)))
                                 (if (pair? result) result '()))
                         results))))))))
 
