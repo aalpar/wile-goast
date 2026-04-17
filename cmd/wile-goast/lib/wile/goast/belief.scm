@@ -930,3 +930,89 @@
                                 (cons 'sites-expr (belief-sites-expr belief))
                                 (cons 'expect-expr (belief-expect-expr belief)))
                            results))))))))))
+
+;; ── Emit mode ─────────────────────────────────────────
+
+;; Format a Scheme value as a string suitable for source output.
+;; Uses write (not display) so strings get quoted.
+(define (write-to-string val)
+  (let ((port (open-output-string)))
+    (write val port)
+    (get-output-string port)))
+
+;; Emit define-belief and define-aggregate-belief forms for
+;; strong per-site beliefs and ok aggregate beliefs.
+;; Returns a string of Scheme source code.
+(define (emit-beliefs results)
+  (let ((port (open-output-string)))
+    (let loop ((rs results))
+      (cond
+        ((null? rs)
+         (get-output-string port))
+        (else
+         (let* ((r (car rs))
+                (type (cdr (assoc 'type r)))
+                (status (cdr (assoc 'status r))))
+           (cond
+             ;; Per-site: emit only strong beliefs
+             ((and (eq? type 'per-site) (eq? status 'strong))
+              (emit-per-site-belief r port)
+              (loop (cdr rs)))
+             ;; Aggregate: emit only ok beliefs
+             ((and (eq? type 'aggregate) (eq? status 'ok))
+              (emit-aggregate-belief r port)
+              (loop (cdr rs)))
+             ;; Skip weak, no-sites, error
+             (else (loop (cdr rs))))))))))
+
+(define (emit-per-site-belief r port)
+  (let ((name (cdr (assoc 'name r)))
+        (pattern (cdr (assoc 'pattern r)))
+        (ratio (cdr (assoc 'ratio r)))
+        (total (cdr (assoc 'total r)))
+        (deviations (cdr (assoc 'deviations r)))
+        (sites-expr (cdr (assoc 'sites-expr r)))
+        (expect-expr (cdr (assoc 'expect-expr r))))
+    ;; Comment header
+    (display ";; " port) (display name port) (newline port)
+    (display ";; Adherence: " port)
+    (display (exact->inexact ratio) port)
+    (display " (" port) (display (- total (length deviations)) port)
+    (display "/" port) (display total port) (display ")" port)
+    (display ", Pattern: " port) (display pattern port) (newline port)
+    (when (pair? deviations)
+      (display ";; Deviations: " port)
+      (display (string-join (map (lambda (d) (car d)) deviations) ", ") port)
+      (newline port))
+    (display ";;" port) (newline port)
+    ;; Form
+    (display "(define-belief " port) (write name port) (newline port)
+    (display "  " port) (write sites-expr port) (newline port)
+    (display "  " port) (write expect-expr port) (newline port)
+    (display "  (threshold " port)
+    (display (exact->inexact ratio) port)
+    (display " " port) (display total port)
+    (display "))" port) (newline port)
+    (newline port)))
+
+(define (emit-aggregate-belief r port)
+  (let ((name (cdr (assoc 'name r)))
+        (sites-expr (cdr (assoc 'sites-expr r)))
+        (analyze-expr (cdr (assoc 'analyze-expr r))))
+    ;; Comment header
+    (display ";; " port) (display name port) (newline port)
+    (display ";; Status: ok" port) (newline port)
+    (display ";;" port) (newline port)
+    ;; Form
+    (display "(define-aggregate-belief " port) (write name port) (newline port)
+    (display "  " port) (write sites-expr port) (newline port)
+    (display "  " port) (write analyze-expr port) (display ")" port) (newline port)
+    (newline port)))
+
+;; Join a list of strings with a separator.
+(define (string-join strs sep)
+  (if (null? strs) ""
+    (let loop ((rest (cdr strs)) (acc (car strs)))
+      (if (null? rest) acc
+        (loop (cdr rest)
+              (string-append acc sep (car rest)))))))

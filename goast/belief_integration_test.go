@@ -1806,6 +1806,145 @@ func TestAggregateBeliefRegistration(t *testing.T) {
 	})
 }
 
+func TestEmitBeliefsPerSite(t *testing.T) {
+	engine := newBeliefEngine(t)
+
+	eval(t, engine, `
+		(import (wile goast belief))
+		(reset-beliefs!)
+
+		(define-belief "prim-have-body"
+		  (sites (functions-matching (name-matches "Prim")))
+		  (expect (custom (lambda (site ctx)
+		    (if (nf site 'body) 'has-body 'no-body))))
+		  (threshold 0.90 3))
+
+		(define results (run-beliefs "github.com/aalpar/wile-goast/goast"))
+		(define emitted (emit-beliefs results))
+	`)
+
+	c := qt.New(t)
+
+	t.Run("returns a string", func(t *testing.T) {
+		result := eval(t, engine, `(string? emitted)`)
+		c.Assert(result.SchemeString(), qt.Equals, "#t")
+	})
+
+	t.Run("contains define-belief", func(t *testing.T) {
+		result := eval(t, engine, `(string-contains emitted "define-belief")`)
+		c.Assert(result.SchemeString(), qt.Equals, "#t")
+	})
+
+	t.Run("contains belief name", func(t *testing.T) {
+		result := eval(t, engine, `(string-contains emitted "prim-have-body")`)
+		c.Assert(result.SchemeString(), qt.Equals, "#t")
+	})
+
+	t.Run("contains sites expression", func(t *testing.T) {
+		result := eval(t, engine, `(string-contains emitted "functions-matching")`)
+		c.Assert(result.SchemeString(), qt.Equals, "#t")
+	})
+
+	t.Run("contains expect expression", func(t *testing.T) {
+		result := eval(t, engine, `(string-contains emitted "custom")`)
+		c.Assert(result.SchemeString(), qt.Equals, "#t")
+	})
+
+	t.Run("contains threshold", func(t *testing.T) {
+		result := eval(t, engine, `(string-contains emitted "threshold")`)
+		c.Assert(result.SchemeString(), qt.Equals, "#t")
+	})
+}
+
+func TestEmitBeliefsAggregate(t *testing.T) {
+	engine := newBeliefEngine(t)
+
+	eval(t, engine, `
+		(import (wile goast belief))
+		(import (wile goast utils))
+		(reset-beliefs!)
+
+		(define-aggregate-belief "test-cohesion"
+			(sites (all-functions-in))
+			(analyze (aggregate-custom (lambda (sites ctx)
+				(list (cons 'verdict 'TEST-OK))))))
+
+		(define results
+		  (run-beliefs "github.com/aalpar/wile-goast/examples/goast-query/testdata/pairing"))
+		(define emitted (emit-beliefs results))
+	`)
+
+	c := qt.New(t)
+
+	t.Run("contains define-aggregate-belief", func(t *testing.T) {
+		result := eval(t, engine, `(string-contains emitted "define-aggregate-belief")`)
+		c.Assert(result.SchemeString(), qt.Equals, "#t")
+	})
+
+	t.Run("contains belief name", func(t *testing.T) {
+		result := eval(t, engine, `(string-contains emitted "test-cohesion")`)
+		c.Assert(result.SchemeString(), qt.Equals, "#t")
+	})
+
+	t.Run("contains sites expression", func(t *testing.T) {
+		result := eval(t, engine, `(string-contains emitted "all-functions-in")`)
+		c.Assert(result.SchemeString(), qt.Equals, "#t")
+	})
+
+	t.Run("contains analyze expression", func(t *testing.T) {
+		result := eval(t, engine, `(string-contains emitted "aggregate-custom")`)
+		c.Assert(result.SchemeString(), qt.Equals, "#t")
+	})
+}
+
+func TestEmitBeliefsFiltering(t *testing.T) {
+	engine := newBeliefEngine(t)
+
+	eval(t, engine, `
+		(import (wile goast belief))
+		(reset-beliefs!)
+
+		(define-belief "strong-one"
+		  (sites (functions-matching
+		           (all-of (contains-call "Validate") (contains-call "Process"))))
+		  (expect (ordered "Validate" "Process"))
+		  (threshold 0.60 3))
+
+		(define-belief "weak-one"
+		  (sites (functions-matching
+		           (all-of (contains-call "Validate") (contains-call "Process"))))
+		  (expect (ordered "Validate" "Process"))
+		  (threshold 0.99 3))
+
+		(define-belief "empty-one"
+		  (sites (functions-matching (name-matches "ZZZZZ_NO_MATCH")))
+		  (expect (ordered "Validate" "Process"))
+		  (threshold 0.50 1))
+
+		(define results
+		  (run-beliefs
+		    "github.com/aalpar/wile-goast/examples/goast-query/testdata/ordering"))
+		(define emitted (emit-beliefs results))
+	`)
+
+	c := qt.New(t)
+
+	t.Run("strong belief emitted", func(t *testing.T) {
+		result := eval(t, engine, `(string-contains emitted "strong-one")`)
+		c.Assert(result.SchemeString(), qt.Equals, "#t")
+	})
+
+	t.Run("weak belief not emitted", func(t *testing.T) {
+		result := eval(t, engine, `(string-contains emitted "weak-one")`)
+		c.Assert(result.SchemeString(), qt.Equals, "#f")
+	})
+
+	t.Run("empty belief not emitted", func(t *testing.T) {
+		result := eval(t, engine, `(string-contains emitted "empty-one")`)
+		c.Assert(result.SchemeString(), qt.Equals, "#f")
+	})
+}
+
 func TestAggregateBeliefExpressionMetadata(t *testing.T) {
 	engine := newBeliefEngine(t)
 
