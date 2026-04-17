@@ -44,16 +44,20 @@
   (set! *beliefs* '())
   (set! *aggregate-beliefs* '()))
 
-(define (register-belief! name sites-fn expect-fn min-adherence min-sites)
+(define (register-belief! name sites-fn expect-fn min-adherence min-sites
+                          sites-expr expect-expr)
   (set! *beliefs*
     (append *beliefs*
-      (list (list name sites-fn expect-fn min-adherence min-sites)))))
+      (list (list name sites-fn expect-fn min-adherence min-sites
+                  sites-expr expect-expr)))))
 
 (define (belief-name b) (list-ref b 0))
 (define (belief-sites-fn b) (list-ref b 1))
 (define (belief-expect-fn b) (list-ref b 2))
 (define (belief-min-adherence b) (list-ref b 3))
 (define (belief-min-sites b) (list-ref b 4))
+(define (belief-sites-expr b) (list-ref b 5))
+(define (belief-expect-expr b) (list-ref b 6))
 
 (define (register-aggregate-belief! name sites-fn analyzer)
   (set! *aggregate-beliefs*
@@ -74,7 +78,9 @@
 (define-syntax define-belief
   (syntax-rules (sites expect threshold)
     ((_ name (sites selector) (expect checker) (threshold min-adh min-n))
-     (register-belief! name selector checker min-adh min-n))))
+     (register-belief! name selector checker min-adh min-n
+                       '(sites selector)
+                       '(expect checker)))))
 
 (define-syntax define-aggregate-belief
   (syntax-rules (sites analyze)
@@ -911,5 +917,7 @@
                                        (map (lambda (d)
                                               (cons (site-display-name (car d))
                                                     (cdr d)))
-                                            deviations)))
+                                            deviations))
+                                (cons 'sites-expr (belief-sites-expr belief))
+                                (cons 'expect-expr (belief-expect-expr belief)))
                            results))))))))))

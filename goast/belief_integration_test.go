@@ -1740,6 +1740,45 @@ func TestAggregateBeliefEvaluation(t *testing.T) {
 	})
 }
 
+func TestBeliefExpressionMetadata(t *testing.T) {
+	engine := newBeliefEngine(t)
+
+	eval(t, engine, `
+		(import (wile goast belief))
+		(reset-beliefs!)
+
+		(define-belief "test-expr"
+		  (sites (functions-matching (name-matches "Prim")))
+		  (expect (custom (lambda (site ctx) 'ok)))
+		  (threshold 0.50 1))
+
+		(define results
+		  (run-beliefs "github.com/aalpar/wile-goast/goast"))
+	`)
+
+	c := qt.New(t)
+
+	t.Run("sites-expr present", func(t *testing.T) {
+		result := eval(t, engine, `(assoc 'sites-expr (car results))`)
+		c.Assert(result.SchemeString(), qt.Not(qt.Equals), "#f")
+	})
+
+	t.Run("sites-expr matches source", func(t *testing.T) {
+		result := eval(t, engine, `(cdr (assoc 'sites-expr (car results)))`)
+		c.Assert(result.SchemeString(), qt.Matches, `.*functions-matching.*name-matches.*Prim.*`)
+	})
+
+	t.Run("expect-expr present", func(t *testing.T) {
+		result := eval(t, engine, `(assoc 'expect-expr (car results))`)
+		c.Assert(result.SchemeString(), qt.Not(qt.Equals), "#f")
+	})
+
+	t.Run("expect-expr matches source", func(t *testing.T) {
+		result := eval(t, engine, `(cdr (assoc 'expect-expr (car results)))`)
+		c.Assert(result.SchemeString(), qt.Matches, `.*custom.*lambda.*`)
+	})
+}
+
 func TestAggregateBeliefRegistration(t *testing.T) {
 	engine := newBeliefEngine(t)
 
