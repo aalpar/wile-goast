@@ -25,7 +25,7 @@
 ;; ── Belief registry ─────────────────────────────────────
 ;;
 ;; Each belief is stored as:
-;;   (name sites-fn expect-fn min-adherence min-sites)
+;;   (name sites-fn expect-fn min-adherence min-sites sites-expr expect-expr)
 ;;
 ;; sites-fn:  (lambda (ctx) ...) -> list of sites
 ;; expect-fn: (lambda (site ctx) ...) -> category symbol
