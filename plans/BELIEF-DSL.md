@@ -1,12 +1,20 @@
 # Belief DSL — Remaining Work
 
-**Current state**: Implemented as `(wile goast belief)`. Core form (`define-belief`, `run-beliefs`), all site selectors, all property checkers, multi-package support, `go-ssa-field-index` performance optimization — all working.
+> **Incomplete items:**
+> 1. ~~**Discovery `--emit` mode**~~ -- DONE (v0.5.112)
+> 2. **Suppression** -- diff discovery output against committed belief files to suppress known findings (§ below)
+
+**Current state**: Implemented as `(wile goast belief)`. Core form (`define-belief`, `run-beliefs`), all site selectors, all property checkers, multi-package support, `go-ssa-field-index` performance optimization, aggregate beliefs, structured return values — all working.
 
 **Reference**: `cmd/wile-goast/lib/wile/goast/belief.sld`, `cmd/wile-goast/lib/wile/goast/belief.scm`
 
-## Belief Graduation — Discovery `--emit` Mode (unimplemented)
+---
 
-Discovery scripts should gain an `--emit` mode that outputs `define-belief` forms instead of human-readable reports. This closes the discover → review → commit lifecycle:
+## Discovery `--emit` Mode
+
+Discovery scripts should gain an `emit-beliefs` procedure that outputs `define-belief`
+forms instead of human-readable reports. This closes the discover → review → commit
+lifecycle (distinct from C6 "belief graduation" which promotes beliefs to dataflow assertions):
 
 ```
 discover → review → commit → enforce
@@ -17,22 +25,232 @@ discover → review → commit → enforce
  (stdout)         (.scm)       (exit code)
 ```
 
-Currently discovery scripts output reports. The `--emit` mode would output candidate Scheme code:
+### Problem: Expression Recovery
+
+Currently beliefs store compiled lambdas:
 
 ```scheme
-;; Debugger stepping fields: stepMode + stepFrame
-;; Adherence: 75% (3/4 sites), Deviations: StepOver
-;;
-(define-belief "Debugger:stepMode+stepFrame"
-  (sites (functions-matching
-           (stores-to-fields "Debugger" "stepMode" "stepFrame")))
-  (expect (co-mutated "stepMode" "stepFrame"))
-  (threshold 0.66 3))
+;; belief.scm internal representation (5-element list)
+(name sites-fn expect-fn min-adherence min-sites)
 ```
 
-## Suppression (unimplemented)
+To emit `define-belief` source code, the original selector and checker **expressions**
+must survive compilation. A lambda can't be decompiled.
 
-Future discovery runs should diff output against committed belief files. A belief whose `(sites ...)` and `(expect ...)` match an existing `define-belief` is suppressed — discovery only reports *new* findings. The diff is structural, not textual: same selector type, same target fields/functions, same checker. Names and thresholds don't matter for matching.
+### Design: Expression Metadata
+
+Extend belief storage to 7 elements:
+
+```scheme
+(name sites-fn expect-fn min-adherence min-sites sites-expr expect-expr)
+```
+
+The `define-belief` macro already receives the literal `(sites ...)` and `(expect ...)`
+forms. It just needs to **quote** them alongside the compiled functions.
+
+Change in `define-belief` macro (belief.scm, line 74):
+
+```scheme
+;; Before (line 76-77):
+((_ name (sites selector) (expect checker) (threshold min-adh min-n))
+ (register-belief! name selector checker min-adh min-n))
+
+;; After:
+((_ name (sites selector) (expect checker) (threshold min-adh min-n))
+ (register-belief! name selector checker min-adh min-n
+                   '(sites selector)
+                   '(expect checker)))
+```
+
+New accessors:
+
+```scheme
+(define (belief-sites-expr b) (list-ref b 5))
+(define (belief-expect-expr b) (list-ref b 6))
+```
+
+Attach expression metadata to `run-beliefs` result alists:
+
+```scheme
+;; Each result alist gains two keys:
+((name . "lock-unlock") (type . per-site) (status . strong)
+ (pattern . paired-defer) (ratio . 9/10) (total . 10)
+ (adherence . (...)) (deviations . (...))
+ (sites-expr . (functions-matching (contains-call "Lock")))
+ (expect-expr . (paired-with "Lock" "Unlock")))
+```
+
+### `emit-beliefs` API
+
+```scheme
+(emit-beliefs results)
+;; results: return value of run-beliefs (list of result alists with expression metadata)
+;; Returns: string of Scheme source code
+```
+
+For each result with `status = strong`:
+1. Emit a comment header: belief name, adherence ratio, pattern, deviation list
+2. Emit a `define-belief` form using stored expressions
+3. Threshold in emitted form: use the belief's original `min-adherence` and `min-sites`
+
+For `status = weak`, `no-sites`, or `error`: skip (not candidates).
+
+For `type = aggregate`: skip (aggregate beliefs have different semantics; they don't
+produce per-site enforcement).
+
+### Output Format
+
+```scheme
+;; lock-unlock-pairing
+;; Adherence: 90% (9/10), Pattern: paired-defer
+;; Deviations: pkg.Baz (unpaired)
+;;
+(define-belief "lock-unlock-pairing"
+  (sites (functions-matching (contains-call "Lock")))
+  (expect (paired-with "Lock" "Unlock"))
+  (threshold 0.90 5))
+```
+
+### Edge Cases
+
+**Custom checkers.** `(expect (custom (lambda (site ctx) ...)))` — the quoted lambda
+form is syntactically valid Scheme, so it emits correctly. But the lambda captures nothing
+from the discovery context, so the emitted form is self-contained. This works.
+
+**Bootstrapped selectors.** `(sites (sites-from "other-belief" 'deviation))` — the
+emitted form preserves this reference. If the upstream belief isn't defined in the
+enforcement context, `run-beliefs` will fail at runtime with an informative error
+(belief not found). This is correct — the human reviewer should resolve the dependency
+or replace with a concrete selector.
+
+**`contains-call` dual use.** `contains-call` appears both as a selector predicate
+and as a property checker. The emitted expression distinguishes them by position:
+`(sites (functions-matching (contains-call "X")))` vs `(expect (contains-call "X"))`.
+
+### Changes Required
+
+| File | Change |
+|------|--------|
+| `belief.scm` line 74 | `define-belief` macro: quote `sites` and `expect` expressions, pass to `register-belief!` |
+| `belief.scm` line 47 | `register-belief!`: accept 7 args, store 7-element tuple |
+| `belief.scm` (accessors) | Add `belief-sites-expr`, `belief-expect-expr` |
+| `belief.scm` (evaluate-belief) | Attach `sites-expr` and `expect-expr` keys to result alists |
+| `belief.scm` (new) | Add `emit-beliefs` procedure |
+| `belief.sld` | Export `emit-beliefs` |
+
+---
+
+## Suppression
+
+Future discovery runs should diff output against committed belief files. A belief
+whose selector and checker expressions structurally match an existing committed belief
+is suppressed — discovery only reports *new* findings.
+
+### Structural Matching
+
+Two beliefs structurally match when their selector and checker expressions are
+`equal?` after quoting:
+
+```scheme
+(define (belief-expressions-match? a b)
+  (and (equal? (belief-sites-expr a) (belief-sites-expr b))
+       (equal? (belief-expect-expr a) (belief-expect-expr b))))
+```
+
+Names and thresholds are **ignored** for matching. Rationale:
+- **Names:** A human might rename "lock-unlock" to "mutex-pairing" — same belief.
+- **Thresholds:** A committed threshold of 0.80 and a discovery finding of 0.90 are
+  the same pattern at different confidence. Suppressing prevents duplicating work.
+
+Why structural, not semantic: Two selectors might select the same sites but be expressed
+differently (`(contains-call "Lock")` vs `(any-of (contains-call "Lock") (contains-call "RLock"))`).
+Structural matching is conservative — it only suppresses exact expression duplicates,
+avoiding false suppression. Semantic equivalence would require evaluating both selectors
+against the same package, which is the full analysis cost.
+
+### `suppress-known` API
+
+```scheme
+(suppress-known results committed-beliefs)
+;; results:    list of result alists from run-beliefs (with expression metadata)
+;; committed:  list of belief tuples from the registry after loading committed files
+;; Returns:    filtered results — only findings not matching any committed belief
+```
+
+Implementation: for each result, check if any committed belief has matching
+expressions. If so, remove from output.
+
+### Loading Committed Beliefs
+
+```scheme
+(load-committed-beliefs path)
+;; path: directory path or single .scm file
+;; Side effects: evaluates Scheme file(s), populating *beliefs* registry
+;; Returns: snapshot of *beliefs* as a list
+```
+
+The loading sequence:
+
+1. Save current `*beliefs*` state
+2. Call `(reset-beliefs!)`
+3. Load and evaluate the committed file(s) — each `define-belief` form populates the registry
+4. Snapshot the registry → `committed-beliefs`
+5. Restore original `*beliefs*` state
+6. Return snapshot
+
+Alternative: `(with-belief-scope thunk)` that saves/restores `*beliefs*` around
+execution. More composable, and `load-committed-beliefs` becomes a thin wrapper.
+
+```scheme
+(define (with-belief-scope thunk)
+  (let ((saved *beliefs*))
+    (dynamic-wind
+      (lambda () (reset-beliefs!))
+      thunk
+      (lambda () (set! *beliefs* saved)))))
+```
+
+### CLI Integration
+
+```
+wile-goast -f discovery.scm --emit                     # emit all strong findings
+wile-goast -f discovery.scm --emit --suppress beliefs/  # emit only new findings
+```
+
+In `cmd/wile-goast/main.go`:
+1. Parse `--emit` and `--suppress <path>` flags
+2. If `--suppress`: before running the discovery script, evaluate committed files
+   in a scoped belief context to capture their expression metadata
+3. Run discovery script → capture `run-beliefs` results
+4. If `--suppress`: call `suppress-known` to filter
+5. Call `emit-beliefs` on (filtered) results
+6. Write to stdout
+
+### Edge Cases
+
+**Threshold-only changes.** A committed belief at threshold 0.80 and a discovery
+result at 0.90 for the same pattern: suppressed. The human already committed this
+belief. If they want to update the threshold, they edit the committed file directly.
+
+**Renamed beliefs.** Match ignores names → renaming doesn't break suppression.
+
+**Stale committed beliefs.** A committed belief whose selector no longer matches any
+sites: irrelevant for suppression (it won't appear in discovery results). Does NOT
+need cleanup — `run-beliefs` already reports `status = no-sites` for these.
+
+**File evaluation errors.** If a committed `.scm` file fails to evaluate (e.g., uses
+an import not available in the wile-goast binary): skip with a warning to stderr.
+Don't abort — partial suppression is better than none.
+
+### Changes Required
+
+| File | Change |
+|------|--------|
+| `belief.scm` (new) | Add `with-belief-scope`, `load-committed-beliefs`, `suppress-known` |
+| `belief.sld` | Export `with-belief-scope`, `load-committed-beliefs`, `suppress-known` |
+| `cmd/wile-goast/main.go` | Add `--emit` and `--suppress` CLI flags |
+
+---
 
 ## Limitations Worth Addressing
 

@@ -25,7 +25,7 @@
 ;; ── Belief registry ─────────────────────────────────────
 ;;
 ;; Each belief is stored as:
-;;   (name sites-fn expect-fn min-adherence min-sites)
+;;   (name sites-fn expect-fn min-adherence min-sites sites-expr expect-expr)
 ;;
 ;; sites-fn:  (lambda (ctx) ...) -> list of sites
 ;; expect-fn: (lambda (site ctx) ...) -> category symbol
@@ -44,25 +44,32 @@
   (set! *beliefs* '())
   (set! *aggregate-beliefs* '()))
 
-(define (register-belief! name sites-fn expect-fn min-adherence min-sites)
+(define (register-belief! name sites-fn expect-fn min-adherence min-sites
+                          sites-expr expect-expr)
   (set! *beliefs*
     (append *beliefs*
-      (list (list name sites-fn expect-fn min-adherence min-sites)))))
+      (list (list name sites-fn expect-fn min-adherence min-sites
+                  sites-expr expect-expr)))))
 
 (define (belief-name b) (list-ref b 0))
 (define (belief-sites-fn b) (list-ref b 1))
 (define (belief-expect-fn b) (list-ref b 2))
 (define (belief-min-adherence b) (list-ref b 3))
 (define (belief-min-sites b) (list-ref b 4))
+(define (belief-sites-expr b) (list-ref b 5))
+(define (belief-expect-expr b) (list-ref b 6))
 
-(define (register-aggregate-belief! name sites-fn analyzer)
+(define (register-aggregate-belief! name sites-fn analyzer
+                                    sites-expr analyze-expr)
   (set! *aggregate-beliefs*
     (append *aggregate-beliefs*
-      (list (list name sites-fn analyzer)))))
+      (list (list name sites-fn analyzer sites-expr analyze-expr)))))
 
 (define (aggregate-belief-name b) (list-ref b 0))
 (define (aggregate-belief-sites-fn b) (list-ref b 1))
 (define (aggregate-belief-analyzer b) (list-ref b 2))
+(define (aggregate-belief-sites-expr b) (list-ref b 3))
+(define (aggregate-belief-analyze-expr b) (list-ref b 4))
 
 ;; ── define-belief macro ─────────────────────────────────
 ;;
@@ -74,12 +81,16 @@
 (define-syntax define-belief
   (syntax-rules (sites expect threshold)
     ((_ name (sites selector) (expect checker) (threshold min-adh min-n))
-     (register-belief! name selector checker min-adh min-n))))
+     (register-belief! name selector checker min-adh min-n
+                       '(sites selector)
+                       '(expect checker)))))
 
 (define-syntax define-aggregate-belief
   (syntax-rules (sites analyze)
     ((_ name (sites selector) (analyze analyzer))
-     (register-aggregate-belief! name selector analyzer))))
+     (register-aggregate-belief! name selector analyzer
+                                 '(sites selector)
+                                 '(analyze analyzer)))))
 
 ;; ── Analysis context ────────────────────────────────────
 ;;
@@ -836,7 +847,9 @@
                                        (cons 'message
                                              (if (error-object? exn)
                                                (error-object-message exn)
-                                               (display-to-string exn))))
+                                               (display-to-string exn)))
+                                       (cons 'sites-expr (aggregate-belief-sites-expr belief))
+                                       (cons 'analyze-expr (aggregate-belief-analyze-expr belief)))
                                  results))))
           (let* ((sites-fn (aggregate-belief-sites-fn belief))
                  (analyzer (aggregate-belief-analyzer belief))
@@ -845,7 +858,9 @@
             (loop (cdr beliefs)
                   (cons (append (list (cons 'name name)
                                      (cons 'type 'aggregate)
-                                     (cons 'status 'ok))
+                                     (cons 'status 'ok)
+                                     (cons 'sites-expr (aggregate-belief-sites-expr belief))
+                                     (cons 'analyze-expr (aggregate-belief-analyze-expr belief)))
                                 (if (pair? result) result '()))
                         results))))))))
 
@@ -911,5 +926,93 @@
                                        (map (lambda (d)
                                               (cons (site-display-name (car d))
                                                     (cdr d)))
-                                            deviations)))
+                                            deviations))
+                                (cons 'sites-expr (belief-sites-expr belief))
+                                (cons 'expect-expr (belief-expect-expr belief)))
                            results))))))))))
+
+;; ── Emit mode ─────────────────────────────────────────
+
+;; Format a Scheme value as a string suitable for source output.
+;; Uses write (not display) so strings get quoted.
+(define (write-to-string val)
+  (let ((port (open-output-string)))
+    (write val port)
+    (get-output-string port)))
+
+;; Emit define-belief and define-aggregate-belief forms for
+;; strong per-site beliefs and ok aggregate beliefs.
+;; Returns a string of Scheme source code.
+(define (emit-beliefs results)
+  (let ((port (open-output-string)))
+    (let loop ((rs results))
+      (cond
+        ((null? rs)
+         (get-output-string port))
+        (else
+         (let* ((r (car rs))
+                (type (cdr (assoc 'type r)))
+                (status (cdr (assoc 'status r))))
+           (cond
+             ;; Per-site: emit only strong beliefs
+             ((and (eq? type 'per-site) (eq? status 'strong))
+              (emit-per-site-belief r port)
+              (loop (cdr rs)))
+             ;; Aggregate: emit only ok beliefs
+             ((and (eq? type 'aggregate) (eq? status 'ok))
+              (emit-aggregate-belief r port)
+              (loop (cdr rs)))
+             ;; Skip weak, no-sites, error
+             (else (loop (cdr rs))))))))))
+
+(define (emit-per-site-belief r port)
+  (let ((name (cdr (assoc 'name r)))
+        (pattern (cdr (assoc 'pattern r)))
+        (ratio (cdr (assoc 'ratio r)))
+        (total (cdr (assoc 'total r)))
+        (deviations (cdr (assoc 'deviations r)))
+        (sites-expr (cdr (assoc 'sites-expr r)))
+        (expect-expr (cdr (assoc 'expect-expr r))))
+    ;; Comment header
+    (display ";; " port) (display name port) (newline port)
+    (display ";; Adherence: " port)
+    (display (exact->inexact ratio) port)
+    (display " (" port) (display (- total (length deviations)) port)
+    (display "/" port) (display total port) (display ")" port)
+    (display ", Pattern: " port) (display pattern port) (newline port)
+    (when (pair? deviations)
+      (display ";; Deviations: " port)
+      (display (string-join (map (lambda (d) (car d)) deviations) ", ") port)
+      (newline port))
+    (display ";;" port) (newline port)
+    ;; Form
+    (display "(define-belief " port) (write name port) (newline port)
+    (display "  " port) (write sites-expr port) (newline port)
+    (display "  " port) (write expect-expr port) (newline port)
+    (display "  (threshold " port)
+    (display (exact->inexact ratio) port)
+    (display " " port) (display total port)
+    (display "))" port) (newline port)
+    (newline port)))
+
+(define (emit-aggregate-belief r port)
+  (let ((name (cdr (assoc 'name r)))
+        (sites-expr (cdr (assoc 'sites-expr r)))
+        (analyze-expr (cdr (assoc 'analyze-expr r))))
+    ;; Comment header
+    (display ";; " port) (display name port) (newline port)
+    (display ";; Status: ok" port) (newline port)
+    (display ";;" port) (newline port)
+    ;; Form
+    (display "(define-aggregate-belief " port) (write name port) (newline port)
+    (display "  " port) (write sites-expr port) (newline port)
+    (display "  " port) (write analyze-expr port) (display ")" port) (newline port)
+    (newline port)))
+
+;; Join a list of strings with a separator.
+(define (string-join strs sep)
+  (if (null? strs) ""
+    (let loop ((rest (cdr strs)) (acc (car strs)))
+      (if (null? rest) acc
+        (loop (cdr rest)
+              (string-append acc sep (car rest)))))))

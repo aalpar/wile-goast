@@ -178,14 +178,32 @@ Declarative consistency deviation detection. Beliefs are patterns extracted stat
 ((name . "lock-unlock") (type . per-site) (status . strong)
  (pattern . paired-defer) (ratio . 9/10) (total . 10)
  (adherence . ("pkg.Foo" "pkg.Bar" ...))
- (deviations . (("pkg.Baz" . unpaired) ...)))
+ (deviations . (("pkg.Baz" . unpaired) ...))
+ (sites-expr . (functions-matching (contains-call "Lock")))
+ (expect-expr . (paired-with "Lock" "Unlock")))
 
 ;; Aggregate belief
 ((name . "pkg-cohesion") (type . aggregate) (status . ok)
+ (sites-expr . (all-functions-in))
+ (analyze-expr . (single-cluster 'idf-threshold 0.36))
  (verdict . SPLIT) (confidence . HIGH) ...)
 ```
 
 Status values: `strong`, `weak`, `no-sites`, `error` (per-site); `ok`, `error` (aggregate).
+
+### Emit Mode
+
+`emit-beliefs` takes `run-beliefs` output and produces Scheme source code — `define-belief` forms for strong per-site beliefs, `define-aggregate-belief` forms for ok aggregates. Closes the discover → review → commit → enforce lifecycle.
+
+```scheme
+(define emitted (emit-beliefs (run-beliefs "my/package/...")))
+(display emitted)
+;; => (define-belief "lock-unlock" ...)
+```
+
+| Export | Description |
+|--------|-------------|
+| `emit-beliefs` | Format strong/ok belief results as Scheme source code |
 
 ### Belief Definition Form
 
