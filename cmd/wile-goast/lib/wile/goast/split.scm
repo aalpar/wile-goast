@@ -351,12 +351,14 @@ Examples:
   (assoc 'confidence report)
 
 See also: `import-signatures', `find-split', `verify-acyclic'."
+  ;; NONE branches deliberately omit 'groups and 'acyclic. Callers must
+  ;; check 'confidence before reading split-specific fields — a missing
+  ;; key is a clearer sentinel than fabricated-empty-values that look
+  ;; like a legitimate "clean split".
   (let ((n (length func-refs)))
     (if (< n 2)
       (list (cons 'functions n)
             (cons 'high-idf '())
-            (cons 'groups '((group-a) (group-b) (cut) (cut-ratio . 1.0)))
-            (cons 'acyclic '((acyclic . #t) (a-refs-b . 0) (b-refs-a . 0)))
             (cons 'confidence 'NONE)
             (cons 'reason "too few functions for split analysis"))
       (let* ((threshold (opt-ref opts 'idf-threshold 0.36))
@@ -373,34 +375,32 @@ See also: `import-signatures', `find-split', `verify-acyclic'."
           ;; Fail fast — concept-lattice is 2^N in attribute count.
           (list (cons 'functions n)
                 (cons 'high-idf (filter (lambda (e) (>= (cdr e) threshold)) idf))
-                (cons 'groups '((group-a) (group-b) (cut) (cut-ratio . 1.0)))
-                (cons 'acyclic '((acyclic . #t) (a-refs-b . 0) (b-refs-a . 0)))
-                (cons 'confidence 'NONE)
                 (cons 'attribute-count attr-count)
                 (cons 'max-attributes max-attrs)
+                (cons 'confidence 'NONE)
                 (cons 'reason
                       (string-append
                         "context has too many attributes for concept-lattice enumeration; "
                         "tighten 'idf-threshold, add 'refine, or raise 'max-attributes "
                         "(warning: 2^N growth)")))
-      (let* ((lattice (concept-lattice context))
-             (groups (find-split context lattice))
-             (group-a (cdr (assoc 'group-a groups)))
-             (group-b (cdr (assoc 'group-b groups)))
-             (acyclic-info (verify-acyclic group-a group-b func-refs))
-             (high-idf-pkgs (filter (lambda (e) (>= (cdr e) threshold))
-                                    idf))
-             (confidence (compute-confidence groups acyclic-info))
-             (reason (cond ((eq? confidence 'NONE) "no incomparable concepts found")
-                           (else #f))))
-        (let ((base (list (cons 'functions n)
-                          (cons 'high-idf high-idf-pkgs)
-                          (cons 'groups groups)
-                          (cons 'acyclic acyclic-info)
-                          (cons 'confidence confidence))))
-          (if reason
-            (append base (list (cons 'reason reason)))
-            base))))))))
+          (let* ((lattice (concept-lattice context))
+                 (groups (find-split context lattice))
+                 (group-a (cdr (assoc 'group-a groups)))
+                 (group-b (cdr (assoc 'group-b groups)))
+                 (acyclic-info (verify-acyclic group-a group-b func-refs))
+                 (high-idf-pkgs (filter (lambda (e) (>= (cdr e) threshold))
+                                        idf))
+                 (confidence (compute-confidence groups acyclic-info))
+                 (reason (cond ((eq? confidence 'NONE) "no incomparable concepts found")
+                               (else #f))))
+            (let ((base (list (cons 'functions n)
+                              (cons 'high-idf high-idf-pkgs)
+                              (cons 'groups groups)
+                              (cons 'acyclic acyclic-info)
+                              (cons 'confidence confidence))))
+              (if reason
+                (append base (list (cons 'reason reason)))
+                base))))))))
 
 (define (compute-confidence groups acyclic-info)
   "Compute confidence level from split quality metrics."

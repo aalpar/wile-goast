@@ -316,6 +316,40 @@ func TestSplit_RecommendSplit_MaxAttributesGuard(t *testing.T) {
 			  (and r (string? (cdr r))))`)
 		c.Assert(result.SchemeString(), qt.Equals, "#t")
 	})
+
+	t.Run("NONE branch omits groups and acyclic (no fabricated data)", func(t *testing.T) {
+		// A caller that reads 'groups without checking 'confidence would
+		// previously see a fabricated empty split. Missing key is the clear
+		// sentinel; force callers to branch on 'confidence.
+		result := eval(t, engine, `
+			(and (not (assoc 'groups guarded))
+			     (not (assoc 'acyclic guarded)))`)
+		c.Assert(result.SchemeString(), qt.Equals, "#t")
+	})
+}
+
+func TestSplit_RecommendSplit_TooFewFunctionsShape(t *testing.T) {
+	// The "too few functions" NONE branch also omits groups/acyclic.
+	engine := newBeliefEngine(t)
+
+	eval(t, engine, `
+		(import (wile goast split))
+		(define report (recommend-split '()))
+	`)
+
+	c := qt.New(t)
+
+	t.Run("empty input gives NONE", func(t *testing.T) {
+		result := eval(t, engine, `(cdr (assoc 'confidence report))`)
+		c.Assert(result.SchemeString(), qt.Equals, "NONE")
+	})
+
+	t.Run("no groups or acyclic keys on NONE", func(t *testing.T) {
+		result := eval(t, engine, `
+			(and (not (assoc 'groups report))
+			     (not (assoc 'acyclic report)))`)
+		c.Assert(result.SchemeString(), qt.Equals, "#t")
+	})
 }
 
 func TestSplit_VerifyAcyclic(t *testing.T) {
