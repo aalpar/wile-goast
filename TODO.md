@@ -508,16 +508,21 @@ Effort tags: S (hours), M (day), L (multi-day).
 
 ### Low
 
-- [ ] **FCA triad import ambiguity** — `cmd/wile-goast/lib/wile/goast/fca-algebra.scm:54`
-      references `concept-relationship` without explicit import; relies on
-      transitive resolution via `(wile goast fca)` / `(wile algebra fca)`.
-      Verify actual resolution at load time; either add explicit re-export in
-      `fca-algebra.sld` or document the transitive dependency inline. **[S]**
+- [x] **FCA triad import ambiguity** — Verified: works as designed.
+      `fca.sld` acts as a facade, explicitly re-exporting 11 symbols from
+      `(wile algebra fca)` (see `;; Re-exported from (wile algebra fca)` comment
+      on line 17). `fca-algebra.sld` imports `(wile goast fca)` and transitively
+      picks up `concept-relationship`, `concept-extent`, etc. All three
+      `TestFCAAlgebra_*` test suites pass. The audit agent missed the facade
+      comment. No fix required. **[S]** — verified 2026-04-19
 
-- [ ] **`path-algebra.scm` exports unused internally** — 44 lines, 2 exports
-      (`path-graph`, `transitive-closure`); no internal library imports found.
-      Grep `examples/` and scripts for external consumers. Delete if dead, or
-      add a test documenting the intended external-Scheme role. **[S]**
+- [x] **`path-algebra.scm` exports unused internally** — Verified: exports are
+      `make-path-analysis`, `path-analysis?`, `path-query`, `path-query-all`
+      (thin wrapper over `(wile algebra graph)`). `goast/path_algebra_test.go`
+      (309 lines) provides direct coverage. Documented in
+      `cmd/wile-goast/prompts/goast-scheme-ref.md:151`. Role is public-facing
+      Scheme API, not internal utility. No action needed.
+      **[S]** — verified 2026-04-19
 
 - [ ] **`belief_integration_test.go` lacks parameterization** — 1986 lines, 49
       test functions, each re-initializes a Wile engine and reloads packages.
