@@ -573,8 +573,15 @@ Effort tags: S (hours), M (day), L (multi-day).
       Scheme API, not internal utility. No action needed.
       **[S]** — verified 2026-04-19
 
-- [ ] **`belief_integration_test.go` lacks parameterization** — 1986 lines, 49
-      test functions, each re-initializes a Wile engine and reloads packages.
-      Convert to `t.Run` subtests grouped by belief category with shared
-      engine setup where safe. Reduces wall time and maintenance burden. **[M]**
+- [ ] **`belief_integration_test.go` lacks parameterization** —
+      **REASSESSED: low value, marginal ROI.** Measured baseline:
+      * 50 test functions, 9.2s total wall time (not per-test)
+      * Individual tests (e.g., `TestBeliefCategory1_Pairing`) take 0.6s each
+      * All category tests already use `t.Run` for subtests (the pattern the
+        audit wanted)
+      The actual bottleneck is per-test `go-typecheck-package` calls on
+      different testdata packages — not engine reinitialization. A shared
+      `testMain` engine would save maybe 1-2s total, at the cost of harder
+      test-name greppability and coupled state. Audit overcounted problem
+      severity. **[L, deferred — low value]**
 
