@@ -419,3 +419,108 @@ inlining (Track 2) earns its cost.
       At this project stage (v0.5.x, zero consumers, same author for both repos), copying is the pragmatic choice. The drift risk is low because you're the only consumer, and the rules are small enough to eyeball.
       ─────────────────────────────────────────────────
 
+## Staff-Engineer Findings 2026-04-19 — Next to Address
+
+All items below must be fixed. Priority reflects ordering, not optionality.
+Effort tags: S (hours), M (day), L (multi-day).
+
+### High
+
+- [ ] **Session/pattern dispatch duplicated 4×** — Extract shared helper in `goast`.
+      Sites: `goastssa/prim_ssa.go:105-119`, `goastcfg/prim_cfg.go:246-260`,
+      `goastcg/prim_callgraph.go:92-109`, `goastlint/prim_lint.go` (session-or-string
+      dispatch). Add `goast.DispatchSessionOrPattern(values.Value) (*GoSession,
+      *values.String, error)`, replace all 4 copies. Do before PR-2 (go-ssa-narrow)
+      lands and it gets copied a 5th time. **[S]**
+
+- [ ] **`belief.scm` god-object (1018 lines)** — Extract `(wile goast belief-checkers)`
+      library containing property checkers (`paired-with`, `ordered`, `contains-call`,
+      `stores-to-fields`, `checked-before-use`, `custom`) + SSA helpers at
+      `cmd/wile-goast/lib/wile/goast/belief.scm:571-755`. Leave registry, selectors,
+      runner, and emit in `belief.scm`. **[M]**
+
+- [ ] **`filter` reimplemented in 4 Scheme libraries** — Add `filter` (and likely
+      `find`, `position`) to `cmd/wile-goast/lib/wile/goast/utils.scm` + `utils.sld`
+      exports. Delete local copies at `domains.scm:23`, `split.scm:20`,
+      `fca-recommend.scm:24`, `unify.scm:33`. Two different idioms in use
+      (named-let accumulator vs filter-map wrapper); canonicalize on one. **[S]**
+
+- [ ] **AST tag addition touches 6 files** — Convert mapper/unmapper dispatch in
+      `goast/mapper.go` (852 lines) + `goast/unmapper.go` + `unmapper_{decl,stmt,expr,
+      types,comments}.go` to a registration table keyed by AST tag
+      (`map[reflect.Type]mapperFn`), collocating forward + reverse mapping per
+      node type. Reduces per-tag extension cost from 6 files to 1. **[L]**
+
+- [ ] **10 of 12 embedded Scheme libraries have no integration test** — Missing
+      dedicated coverage: `boolean-simplify.scm`, `domains.scm`, `fca.scm`,
+      `fca-algebra.scm`, `fca-recommend.scm`, `path-algebra.scm`, `split.scm`,
+      `ssa-normalize.scm`, `unify.scm`, `utils.scm`. Only `belief.scm` and
+      `dataflow.scm` are exercised (via `goast/belief_integration_test.go`). Add
+      one 10–20 line smoke test per library exercising a public entry point.
+      Do before next wile version bump. **[M]**
+
+### Medium
+
+- [ ] **`register.go` LibraryNamer divergence** — Sub-extensions wrap with custom
+      struct (`goastssa/register.go:7-10`, `goastcfg/register.go:7-10`,
+      `goastcg/register.go:7-10`, `goastlint/register.go:7-10`); `goast/register.go`
+      does not. Prior staff-engineer finding (TODO.md §Fix "/staff-engineer" findings,
+      Low #9 above) called it "correct by design" but undocumented. At minimum:
+      add the one-line comment. Preferably: unify the pattern so new sub-extensions
+      have a single template. **[S]**
+
+- [ ] **`mapper.go` idiom divergence (free fns vs receiver methods)** —
+      `goast/mapper.go` uses free functions with `*mapperOpts` struct-passing;
+      `goastssa/mapper.go`, `goastcfg/mapper.go`, `goastcg/mapper.go` use receiver
+      methods on `*ssaMapper` / `*cfgMapper` / `*cgMapper`. Converge on
+      receiver-method style across all four. **[M]**
+
+- [ ] **FCA concept lattice scaling wall (2^|attributes|)** —
+      `cmd/wile-goast/lib/wile/goast/fca.scm` (`concept-lattice` via NextClosure)
+      enumerates all formal concepts up front. Worst case explodes at >100
+      functions × >50 dependency attributes. Consumers: `recommend-split`,
+      `single-cluster` aggregate belief. Add bounded variant with `'max-concepts`
+      and `'min-extent` keyword arguments; keep exhaustive as default. **[M]**
+
+- [ ] **Hardcoded limits buried in library code** — Expose as keyword arguments
+      with documented defaults:
+      `cmd/wile-goast/lib/wile/goast/split.scm:95,363` (IDF threshold 0.36 —
+      tunable via keyword but default undocumented);
+      `cmd/wile-goast/scripts/unify-detect-pkg.scm:547` (similarity 0.60 — not
+      tunable, requires source edit);
+      `cmd/wile-goast/lib/wile/goast/belief.scm:735` (fuel=5 in
+      `checked-before-use` — silently caps reachability). **[S]**
+
+- [ ] **Error-path test gaps in sub-extensions** — Coverage headlines hide
+      untested error branches: `goastssa` 67% test/src ratio, `goastlint` 59%,
+      `goastcfg` 74%. Primary offender: `goastssa/prim_canonicalize.go` has 10+
+      `werr.WrapForeignErrorf` sites with no error-case tests. Add table-driven
+      `TestPrim<X>Errors` per package covering documented sentinels. **[S]**
+
+- [ ] **Error sentinel naming inconsistency** — Prefix and suffix drift across
+      packages: `errGo*` / `errCFG*` / `errCG*` / `errLint*`, some with `Error`
+      suffix, some without. Sites: `goast/helpers.go:24-29`,
+      `goastcfg/prim_cfg.go:30-31`, `goastcg/prim_callgraph.go:45-48`,
+      `goastlint/prim_lint.go:~55-70`. Pick `err<Pkg><Category>` (no `Error`
+      suffix — type name carries it), apply repo-wide, add a ruleguard rule
+      once `ruleguard/rules.go` is wired to CI (see prior staff-engineer finding
+      above on ruleguard integration). **[S]**
+
+### Low
+
+- [ ] **FCA triad import ambiguity** — `cmd/wile-goast/lib/wile/goast/fca-algebra.scm:54`
+      references `concept-relationship` without explicit import; relies on
+      transitive resolution via `(wile goast fca)` / `(wile algebra fca)`.
+      Verify actual resolution at load time; either add explicit re-export in
+      `fca-algebra.sld` or document the transitive dependency inline. **[S]**
+
+- [ ] **`path-algebra.scm` exports unused internally** — 44 lines, 2 exports
+      (`path-graph`, `transitive-closure`); no internal library imports found.
+      Grep `examples/` and scripts for external consumers. Delete if dead, or
+      add a test documenting the intended external-Scheme role. **[S]**
+
+- [ ] **`belief_integration_test.go` lacks parameterization** — 1986 lines, 49
+      test functions, each re-initializes a Wile engine and reloads packages.
+      Convert to `t.Run` subtests grouped by belief category with shared
+      engine setup where safe. Reduces wall time and maintenance burden. **[M]**
+
