@@ -164,7 +164,16 @@ func collectSSAFuncs(mc machine.CallContext, mapper *ssaMapper, prog *ssa.Progra
 // Returns a list of ssa-field-summary nodes with per-function field
 // access data (struct type, field name, receiver, read/write mode).
 func PrimGoSSAFieldIndex(mc machine.CallContext) error {
-	return goast.DispatchSessionOrPattern(mc.Arg(0), "go-ssa-field-index",
+	mctx, ok := mc.(*machine.MachineContext)
+	if !ok {
+		return werr.WrapForeignErrorf(errSSAFieldIndex,
+			"go-ssa-field-index: CallContext is not *MachineContext")
+	}
+	arg, _, err := goast.ExtractTargetAndRest(mctx, mc.Arg(0))
+	if err != nil {
+		return err
+	}
+	return goast.DispatchSessionOrPattern(arg, "go-ssa-field-index",
 		func(s *goast.GoSession) error { return fieldIndexFromSession(mc, s) },
 		func(p *values.String) error { return fieldIndexFromPattern(mc, p) })
 }

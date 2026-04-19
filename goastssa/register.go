@@ -63,12 +63,13 @@ func addPrimitives(r *registry.Registry) error {
 				"See also: `go-load', `go-ssa-canonicalize', `go-ssa-field-index'.",
 			ParamNames: []string{"options"}, Category: "goast-ssa",
 			ReturnType: values.TypeList},
-		{Name: "go-ssa-field-index", ParamCount: 1, Impl: PrimGoSSAFieldIndex,
+		{Name: "go-ssa-field-index", ParamCount: 1, IsVariadic: true, Impl: PrimGoSSAFieldIndex,
 			Doc: "Returns per-function field access summaries for a Go package.\n" +
 				"Each entry is an ssa-field-summary with: func, pkg, fields.\n" +
 				"Each field access is an ssa-field-access with: struct, struct-pkg,\n" +
 				"field, recv, and mode (symbol: read or write).\n" +
-				"Arg is a package pattern or GoSession.\n\n" +
+				"Optional arg is a package pattern or GoSession; if absent, uses\n" +
+				"(current-go-target).\n\n" +
 				"Examples:\n" +
 				"  (import (wile goast utils))\n" +
 				"  (define idx (go-ssa-field-index \"./...\"))\n" +

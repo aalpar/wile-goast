@@ -116,9 +116,10 @@ func addPrimitives(r *registry.Registry) error {
 				"See also: `go-load', `go-ssa-build', `go-interface-implementors'.",
 			ParamNames: []string{"target", "rest"}, Category: "goast",
 			ReturnType: values.TypeList},
-		{Name: "go-interface-implementors", ParamCount: 2, Impl: PrimInterfaceImplementors,
+		{Name: "go-interface-implementors", ParamCount: 2, IsVariadic: true, Impl: PrimInterfaceImplementors,
 			Doc: "Finds all concrete types implementing a named interface.\n" +
-				"Second arg is a package pattern or GoSession.\n" +
+				"Second arg (optional) is a package pattern or GoSession; if absent,\n" +
+				"uses (current-go-target).\n" +
 				"Returns an alist with: methods (list of method name strings)\n" +
 				"and implementors (list of alists, each with a type field).\n\n" +
 				"Examples:\n" +
@@ -164,11 +165,12 @@ func addPrimitives(r *registry.Registry) error {
 				"See also: `go-load'.",
 			ParamNames: []string{"pattern", "rest"}, Category: "goast",
 			ReturnType: values.TypeList},
-		{Name: "go-func-refs", ParamCount: 1, Impl: PrimGoFuncRefs,
+		{Name: "go-func-refs", ParamCount: 1, IsVariadic: true, Impl: PrimGoFuncRefs,
 			Doc: "Returns per-function external reference profiles for a Go package.\n" +
 				"For each function/method, lists the external (package, object-names)\n" +
 				"pairs it references via types.Info.Uses.\n" +
-				"Input: package pattern string or GoSession.\n" +
+				"Optional arg is a package pattern or GoSession; if absent, uses\n" +
+				"(current-go-target).\n" +
 				"Output: list of (func-ref (name . N) (pkg . P) (refs . ((ref ...)))).\n\n" +
 				"Examples:\n" +
 				"  (define refs (go-func-refs \"my/pkg\"))\n" +

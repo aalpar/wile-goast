@@ -23,14 +23,25 @@ import (
 
 	"github.com/aalpar/wile/machine"
 	"github.com/aalpar/wile/values"
+	"github.com/aalpar/wile/werr"
 )
 
-// PrimGoFuncRefs implements (go-func-refs target).
+// PrimGoFuncRefs implements (go-func-refs [target]).
 // target is a package pattern string or a GoSession from go-load.
+// If not provided, uses (current-go-target).
 // For each function/method in the loaded packages, returns the set of
 // external (cross-package) objects it references via types.Info.Uses.
 func PrimGoFuncRefs(mc machine.CallContext) error {
-	return DispatchSessionOrPattern(mc.Arg(0), "go-func-refs",
+	mctx, ok := mc.(*machine.MachineContext)
+	if !ok {
+		return werr.WrapForeignErrorf(errGoPackageLoad,
+			"go-func-refs: CallContext is not *MachineContext")
+	}
+	arg, _, err := ExtractTargetAndRest(mctx, mc.Arg(0))
+	if err != nil {
+		return err
+	}
+	return DispatchSessionOrPattern(arg, "go-func-refs",
 		func(s *GoSession) error { return funcRefsFromSession(mc, s) },
 		func(p *values.String) error { return funcRefsFromPattern(mc, p) })
 }

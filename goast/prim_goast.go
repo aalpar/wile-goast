@@ -294,11 +294,20 @@ func typecheckFromPatternWithRest(mc machine.CallContext, pattern *values.String
 // Finds all concrete types implementing the named interface within the loaded packages.
 // Returns a tagged alist: (interface-info (name . X) (pkg . Y) (methods . (...)) (implementors . (...))).
 func PrimInterfaceImplementors(mc machine.CallContext) error {
+	mctx, ok := mc.(*machine.MachineContext)
+	if !ok {
+		return werr.WrapForeignErrorf(errGoPackageLoad,
+			"go-interface-implementors: CallContext is not *MachineContext")
+	}
 	ifaceName, err := helpers.RequireArg[*values.String](mc, 0, werr.ErrNotAString, "go-interface-implementors")
 	if err != nil {
 		return err
 	}
-	return DispatchSessionOrPattern(mc.Arg(1), "go-interface-implementors",
+	arg, _, err := ExtractTargetAndRest(mctx, mc.Arg(1))
+	if err != nil {
+		return err
+	}
+	return DispatchSessionOrPattern(arg, "go-interface-implementors",
 		func(s *GoSession) error { return implementorsFromSession(mc, ifaceName.Value, s) },
 		func(p *values.String) error { return implementorsFromPattern(mc, ifaceName.Value, p) })
 }

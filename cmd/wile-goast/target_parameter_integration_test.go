@@ -104,3 +104,52 @@ func TestGoSSABuildExplicitArgStillWorks(t *testing.T) {
 	qt.Assert(t, ok, qt.IsTrue, qt.Commentf("result is %T, want *values.Integer", result.Internal()))
 	qt.Assert(t, n.Value > 0, qt.IsTrue)
 }
+
+func TestGoSSAFieldIndexUsesCurrentGoTarget(t *testing.T) {
+	goast.ResetTargetState()
+	t.Setenv("WILE_GOAST_TARGET", "")
+
+	engine := buildEngine(context.Background())
+	defer func() { _ = engine.Close() }()
+
+	const pkg = "github.com/aalpar/wile-goast/goast"
+
+	// No arg — should use (current-go-target)
+	result := testutil.RunScheme(t, engine,
+		`(parameterize ((current-go-target "`+pkg+`"))
+		   (list? (go-ssa-field-index)))`)
+	qt.Assert(t, result.Internal(), qt.Equals, values.TrueValue)
+}
+
+func TestGoFuncRefsUsesCurrentGoTarget(t *testing.T) {
+	goast.ResetTargetState()
+	t.Setenv("WILE_GOAST_TARGET", "")
+
+	engine := buildEngine(context.Background())
+	defer func() { _ = engine.Close() }()
+
+	const pkg = "github.com/aalpar/wile-goast/goast"
+
+	result := testutil.RunScheme(t, engine,
+		`(parameterize ((current-go-target "`+pkg+`"))
+		   (list? (go-func-refs)))`)
+	qt.Assert(t, result.Internal(), qt.Equals, values.TrueValue)
+}
+
+func TestGoInterfaceImplementorsUsesCurrentGoTarget(t *testing.T) {
+	goast.ResetTargetState()
+	t.Setenv("WILE_GOAST_TARGET", "")
+
+	engine := buildEngine(context.Background())
+	defer func() { _ = engine.Close() }()
+
+	// testdata/iface has `type Store interface` — pick that so the
+	// call returns real data rather than a "not found" error.
+	const pkg = "github.com/aalpar/wile-goast/goast/testdata/iface"
+
+	// Only iface-name required; target defaults via parameter.
+	result := testutil.RunScheme(t, engine,
+		`(parameterize ((current-go-target "`+pkg+`"))
+		   (pair? (go-interface-implementors "Store")))`)
+	qt.Assert(t, result.Internal(), qt.Equals, values.TrueValue)
+}
