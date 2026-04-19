@@ -733,6 +733,28 @@ func findNodeByTag(v values.Value, tag string) values.Value {
 	return nil
 }
 
+func TestMapFunctionIncludesRefField(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	fn := buildSSAFromSource(t, dir, `
+package testpkg
+
+func Foo() int {
+	return 42
+}
+`, "Foo")
+
+	mapper := &ssaMapper{fset: token.NewFileSet()}
+	node := mapper.mapFunction(fn)
+
+	refField, ok := goast.GetField(node.(*values.Pair).Cdr(), "ref")
+	c.Assert(ok, qt.IsTrue, qt.Commentf("mapFunction output should include 'ref' field"))
+
+	got, ok := UnwrapSSAFunctionRef(refField)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(got, qt.Equals, fn)
+}
+
 func listLength(v values.Value) int {
 	n := 0
 	tuple, ok := v.(values.Tuple)

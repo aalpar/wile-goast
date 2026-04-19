@@ -58,6 +58,7 @@ func (p *ssaMapper) mapFunction(fn *ssa.Function) values.Value {
 		goast.Field("params", goast.ValueList(params)),
 		goast.Field("free-vars", goast.ValueList(freeVars)),
 		goast.Field("blocks", goast.ValueList(blocks)),
+		goast.Field("ref", WrapSSAFunctionRef(fn)),
 	}
 	if fn.Pkg != nil {
 		fields = append(fields, goast.Field("pkg", goast.Str(fn.Pkg.Pkg.Path())))
