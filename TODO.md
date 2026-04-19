@@ -433,11 +433,20 @@ Effort tags: S (hours), M (day), L (multi-day).
       Closure-per-site carries the extra args (rest/funcName/algo/analyzers).
       TDD: three tests in `goast/session_test.go`. **[S]** — done 2026-04-19
 
-- [ ] **`belief.scm` god-object (1018 lines)** — Extract `(wile goast belief-checkers)`
-      library containing property checkers (`paired-with`, `ordered`, `contains-call`,
-      `stores-to-fields`, `checked-before-use`, `custom`) + SSA helpers at
-      `cmd/wile-goast/lib/wile/goast/belief.scm:571-755`. Leave registry, selectors,
-      runner, and emit in `belief.scm`. **[M]**
+- [x] **`belief.scm` god-object (1018 lines)** — Split into two files
+      included by the same `belief.sld`:
+      * `belief-checkers.scm` (210 lines): property checkers (`paired-with`,
+        `ordered`, `co-mutated`, `checked-before-use`, `custom`,
+        `aggregate-custom`) + their SSA helpers (`struct-field-names`,
+        `find-ssa-call-blocks`, `find-call-position`, `ssa-dominates?`).
+      * `belief.scm` (837 lines): registry, context, selectors, predicates,
+        runner, emit mode.
+      Rejected the separate-library approach: the checkers depend on
+      `ctx-find-ssa-func` and other context accessors, and a separate library
+      would force an awkward `(wile goast belief-context)` split or circular
+      imports. The include-both-files approach keeps a single library
+      namespace (zero API change) while getting the cohesion benefit.
+      **[M]** — done 2026-04-19
 
 - [x] **`filter` reimplemented in 4 Scheme libraries** — Added `filter` to
       `utils.scm` (named-let version, correct for #f elements) + exported from

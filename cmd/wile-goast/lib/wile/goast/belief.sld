@@ -36,4 +36,5 @@
     nf tag? walk filter-map flat-map member? unique)
   (import (wile goast utils)
           (wile goast dataflow))
-  (include "belief.scm"))
+  (include "belief.scm")
+  (include "belief-checkers.scm"))
