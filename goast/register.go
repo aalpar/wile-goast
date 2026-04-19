@@ -20,6 +20,12 @@ import (
 )
 
 // Extension is the Go AST extension.
+//
+// No LibraryNamer wrapper: the registry's default `(wile <ext-name>)` rule
+// already gives us `(wile goast)` from the name "goast". Sub-extensions
+// (goastssa, goastcfg, goastcg, goastlint) wrap with LibraryNamer because
+// they need multi-symbol names like `(wile goast ssa)` that the default
+// rule would render as `(wile goast-ssa)`.
 var Extension = registry.NewExtension("goast", AddToRegistry)
 
 // Builder aggregates all Go AST registration functions.
