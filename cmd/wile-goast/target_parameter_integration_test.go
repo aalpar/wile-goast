@@ -65,3 +65,42 @@ func TestCurrentGoTargetParameterize(t *testing.T) {
 	qt.Assert(t, ok, qt.IsTrue, qt.Commentf("result is %T, want *values.String", result.Internal()))
 	qt.Assert(t, s.Value, qt.Equals, "./sub/...")
 }
+
+func TestGoSSABuildUsesCurrentGoTarget(t *testing.T) {
+	goast.ResetTargetState()
+	t.Setenv("WILE_GOAST_TARGET", "")
+
+	ctx := context.Background()
+	engine := buildEngine(ctx)
+	defer func() { _ = engine.Close() }()
+
+	const pkg = "github.com/aalpar/wile-goast/goast"
+
+	// Load a session first
+	testutil.RunScheme(t, engine, `(define s (go-load "`+pkg+`"))`)
+
+	// No arg — should use (current-go-target) which defaults to "./..."
+	result := testutil.RunScheme(t, engine,
+		`(parameterize ((current-go-target "`+pkg+`"))
+		   (length (go-ssa-build)))`)
+	n, ok := result.Internal().(*values.Integer)
+	qt.Assert(t, ok, qt.IsTrue, qt.Commentf("result is %T, want *values.Integer", result.Internal()))
+	qt.Assert(t, n.Value > 0, qt.IsTrue)
+}
+
+func TestGoSSABuildExplicitArgStillWorks(t *testing.T) {
+	goast.ResetTargetState()
+	t.Setenv("WILE_GOAST_TARGET", "")
+
+	ctx := context.Background()
+	engine := buildEngine(ctx)
+	defer func() { _ = engine.Close() }()
+
+	const pkg = "github.com/aalpar/wile-goast/goast"
+
+	result := testutil.RunScheme(t, engine,
+		`(length (go-ssa-build "`+pkg+`"))`)
+	n, ok := result.Internal().(*values.Integer)
+	qt.Assert(t, ok, qt.IsTrue, qt.Commentf("result is %T, want *values.Integer", result.Internal()))
+	qt.Assert(t, n.Value > 0, qt.IsTrue)
+}

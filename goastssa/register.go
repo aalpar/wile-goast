@@ -42,9 +42,10 @@ var AddToRegistry = Builder.AddToRegistry
 
 func addPrimitives(r *registry.Registry) error {
 	r.AddPrimitives([]registry.PrimitiveSpec{
-		{Name: "go-ssa-build", ParamCount: 2, IsVariadic: true, Impl: PrimGoSSABuild,
+		{Name: "go-ssa-build", ParamCount: 1, IsVariadic: true, Impl: PrimGoSSABuild,
 			Doc: "Builds SSA form for a Go package and returns a list of ssa-func nodes.\n" +
-				"First arg is a package pattern or GoSession. Options: 'debug.\n" +
+				"Pattern or GoSession may be the first arg; if absent, (current-go-target) is used.\n" +
+				"Options: 'debug.\n" +
 				"Each ssa-func has: name, signature, params, free-vars, blocks, pkg.\n" +
 				"Each ssa-block has: index, preds, succs, instrs, and optional idom, comment.\n" +
 				"Instructions are tagged nodes: ssa-call, ssa-if, ssa-return, ssa-store, etc.\n" +
@@ -60,7 +61,7 @@ func addPrimitives(r *registry.Registry) error {
 				"  (tag? (car instrs) 'ssa-call)  ; => #t or #f\n" +
 				"  (nf (car instrs) 'func)        ; => \"fmt.Println\"\n\n" +
 				"See also: `go-load', `go-ssa-canonicalize', `go-ssa-field-index'.",
-			ParamNames: []string{"pattern", "options"}, Category: "goast-ssa",
+			ParamNames: []string{"options"}, Category: "goast-ssa",
 			ReturnType: values.TypeList},
 		{Name: "go-ssa-field-index", ParamCount: 1, Impl: PrimGoSSAFieldIndex,
 			Doc: "Returns per-function field access summaries for a Go package.\n" +

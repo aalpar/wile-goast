@@ -34,6 +34,29 @@ var (
 	errSSACanonicalizeError = werr.NewStaticError("ssa canonicalize error")
 )
 
+// extractTargetAndRest unpacks the rest-list arg of a pattern-accepting
+// primitive. If the rest list is non-empty, returns the first element
+// (which the caller dispatches as string or GoSession) plus the remaining
+// rest list. If the rest list is empty, reads the current-go-target
+// parameter and returns its value plus an empty rest list.
+func extractTargetAndRest(mc *machine.MachineContext, restArg values.Value) (values.Value, values.Value, error) {
+	tuple, ok := restArg.(values.Tuple)
+	if !ok {
+		return nil, nil, werr.WrapForeignErrorf(errSSABuildError,
+			"extractTargetAndRest: rest arg is %T, not a values.Tuple", restArg)
+	}
+	if values.IsEmptyList(tuple) {
+		param := goast.GetCurrentGoTargetParam()
+		return mc.ResolveParameterValue(param), tuple, nil
+	}
+	pair, ok := tuple.(*values.Pair)
+	if !ok {
+		return nil, nil, werr.WrapForeignErrorf(errSSABuildError,
+			"extractTargetAndRest: non-empty rest is %T, not a *values.Pair", tuple)
+	}
+	return pair.Car(), pair.Cdr(), nil
+}
+
 // parseSSAOpts extracts mapper options from a variadic rest-arg list.
 // Returns an error for non-symbol values or unrecognized option names.
 func parseSSAOpts(rest values.Value, fset *token.FileSet) (*ssaMapper, error) {
@@ -68,24 +91,33 @@ func parseSSAOpts(rest values.Value, fset *token.FileSet) (*ssaMapper, error) {
 	return opts, nil
 }
 
-// PrimGoSSABuild implements (go-ssa-build target . options).
+// PrimGoSSABuild implements (go-ssa-build [target] . options).
 // target is a package pattern string or a GoSession from go-load.
+// If not provided, uses (current-go-target).
 func PrimGoSSABuild(mc machine.CallContext) error {
-	arg := mc.Arg(0)
+	mctx, ok := mc.(*machine.MachineContext)
+	if !ok {
+		return werr.WrapForeignErrorf(errSSABuildError,
+			"go-ssa-build: CallContext is not *MachineContext")
+	}
+	arg, rest, err := extractTargetAndRest(mctx, mc.Arg(0))
+	if err != nil {
+		return err
+	}
 	session, ok := goast.UnwrapSession(arg)
 	if ok {
-		return ssaBuildFromSession(mc, session)
+		return ssaBuildFromSessionWithRest(mc, session, rest)
 	}
 	pat, ok := arg.(*values.String)
 	if !ok {
 		return werr.WrapForeignErrorf(werr.ErrNotAString,
 			"go-ssa-build: expected string or go-session, got %T", arg)
 	}
-	return ssaBuildFromPattern(mc, pat)
+	return ssaBuildFromPatternWithRest(mc, pat, rest)
 }
 
-func ssaBuildFromSession(mc machine.CallContext, session *goast.GoSession) error {
-	mapper, err := parseSSAOpts(mc.Arg(1), session.FileSet())
+func ssaBuildFromSessionWithRest(mc machine.CallContext, session *goast.GoSession, rest values.Value) error {
+	mapper, err := parseSSAOpts(rest, session.FileSet())
 	if err != nil {
 		return err
 	}
@@ -93,9 +125,9 @@ func ssaBuildFromSession(mc machine.CallContext, session *goast.GoSession) error
 	return collectSSAFuncs(mc, mapper, prog, ssaPkgs)
 }
 
-func ssaBuildFromPattern(mc machine.CallContext, pattern *values.String) error {
+func ssaBuildFromPatternWithRest(mc machine.CallContext, pattern *values.String, rest values.Value) error {
 	fset := token.NewFileSet()
-	mapper, err := parseSSAOpts(mc.Arg(1), fset)
+	mapper, err := parseSSAOpts(rest, fset)
 	if err != nil {
 		return err
 	}
