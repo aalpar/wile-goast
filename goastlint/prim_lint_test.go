@@ -141,13 +141,14 @@ func TestGoAnalyze_WithLintSession(t *testing.T) {
 	qt.New(t).Assert(result.Internal(), qt.Equals, values.TrueValue)
 }
 
-func TestGoAnalyze_WithNonLintSession_FallsBack(t *testing.T) {
+func TestGoAnalyze_WithNonLintSession_Errors(t *testing.T) {
+	// A session loaded without 'lint mode lacks LoadAllSyntax; running
+	// analyzers on it would silently re-invoke packages.Load (10x cost,
+	// breaks snapshot consistency). Error out with guidance instead.
 	engine := newSessionEngine(t)
 	testutil.RunScheme(t, engine,
 		`(define s (go-load "github.com/aalpar/wile-goast/goast"))`)
-	result := testutil.RunScheme(t, engine,
-		`(list? (go-analyze s "assign"))`)
-	qt.New(t).Assert(result.Internal(), qt.Equals, values.TrueValue)
+	evalExpectError(t, engine, `(go-analyze s "assign")`)
 }
 
 func TestGoAnalyze_Errors(t *testing.T) {

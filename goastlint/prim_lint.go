@@ -32,6 +32,7 @@ var (
 	errLintBuild       = werr.NewStaticError("analyze build error")
 	errLintUnknownName = werr.NewStaticError("unknown analyzer name")
 	errLintRun         = werr.NewStaticError("analyzer run error")
+	errLintSession     = werr.NewStaticError("session not in lint mode")
 )
 
 // parseAnalyzerNames collects and validates the variadic analyzer-name arguments.
@@ -72,7 +73,11 @@ func parseAnalyzerNames(rest values.Value) ([]*analysis.Analyzer, error) {
 
 // PrimGoAnalyze implements (go-analyze target analyzer-name ...).
 // target is a package pattern string or a GoSession from go-load.
-// If given a GoSession loaded without 'lint mode, falls back to fresh loading.
+// A GoSession must be loaded with 'lint mode — analyzers need
+// LoadAllSyntax which standard go-load does not produce. Passing a
+// non-lint session is rejected with guidance rather than silently
+// re-running packages.Load (10x cost, breaks session snapshot
+// consistency).
 func PrimGoAnalyze(mc machine.CallContext) error {
 	analyzers, err := parseAnalyzerNames(mc.Arg(1))
 	if err != nil {
@@ -86,15 +91,27 @@ func PrimGoAnalyze(mc machine.CallContext) error {
 
 	return goast.DispatchSessionOrPattern(mc.Arg(0), "go-analyze",
 		func(s *goast.GoSession) error {
-			if s.IsLintMode() {
-				return analyzeFromSession(mc, s, analyzers)
+			if !s.IsLintMode() {
+				return werr.WrapForeignErrorf(errLintSession,
+					"go-analyze: session was loaded without 'lint mode; "+
+						"use (go-load %q 'lint) or pass the pattern string directly",
+					firstPattern(s.Patterns()))
 			}
-			// Non-lint session: fall back to fresh load with LoadAllSyntax.
-			return analyzeFromPattern(mc, s.Patterns(), analyzers)
+			return analyzeFromSession(mc, s, analyzers)
 		},
 		func(p *values.String) error {
 			return analyzeFromPattern(mc, []string{p.Value}, analyzers)
 		})
+}
+
+// firstPattern returns the first pattern in a session's load list, or
+// "..." as a placeholder if the session has none. Used only for
+// constructing user-facing error messages.
+func firstPattern(patterns []string) string {
+	if len(patterns) == 0 {
+		return "..."
+	}
+	return patterns[0]
 }
 
 func analyzeFromSession(mc machine.CallContext, session *goast.GoSession, analyzers []*analysis.Analyzer) error {

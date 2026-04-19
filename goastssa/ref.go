@@ -42,3 +42,34 @@ func UnwrapSSAFunctionRef(v values.Value) (*ssa.Function, bool) {
 	fn, ok := o.Unwrap().(*ssa.Function)
 	return fn, ok
 }
+
+// findValueByName walks fn's parameters, free vars, and block instructions
+// and returns the first ssa.Value whose Name() matches. Returns nil, false
+// if no match or fn is nil.
+func findValueByName(fn *ssa.Function, name string) (ssa.Value, bool) {
+	if fn == nil {
+		return nil, false
+	}
+	for _, p := range fn.Params {
+		if p.Name() == name {
+			return p, true
+		}
+	}
+	for _, fv := range fn.FreeVars {
+		if fv.Name() == name {
+			return fv, true
+		}
+	}
+	for _, b := range fn.Blocks {
+		for _, instr := range b.Instrs {
+			v, ok := instr.(ssa.Value)
+			if !ok {
+				continue
+			}
+			if v.Name() == name {
+				return v, true
+			}
+		}
+	}
+	return nil, false
+}

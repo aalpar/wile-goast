@@ -21,6 +21,60 @@ import (
 	"golang.org/x/tools/go/ssa"
 )
 
+func TestFindValueByName(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	fn := buildSSAFromSource(t, dir, `
+package testpkg
+
+func Foo(a, b int) int {
+	return a + b
+}
+`, "Foo")
+
+	var sampleName string
+	for _, b := range fn.Blocks {
+		for _, instr := range b.Instrs {
+			v, ok := instr.(ssa.Value)
+			if ok && v.Name() != "" {
+				sampleName = v.Name()
+				break
+			}
+		}
+		if sampleName != "" {
+			break
+		}
+	}
+	c.Assert(sampleName, qt.Not(qt.Equals), "")
+
+	v, ok := findValueByName(fn, sampleName)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(v.Name(), qt.Equals, sampleName)
+}
+
+func TestFindValueByNameMissing(t *testing.T) {
+	c := qt.New(t)
+	fn := &ssa.Function{}
+	_, ok := findValueByName(fn, "nonexistent")
+	c.Assert(ok, qt.IsFalse)
+}
+
+func TestFindValueByNameParameter(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	fn := buildSSAFromSource(t, dir, `
+package testpkg
+
+func Bar(alpha int, beta string) int {
+	return alpha
+}
+`, "Bar")
+
+	v, ok := findValueByName(fn, "alpha")
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(v.Name(), qt.Equals, "alpha")
+}
+
 func TestWrapUnwrapSSAFunctionRef(t *testing.T) {
 	c := qt.New(t)
 	fn := &ssa.Function{}
