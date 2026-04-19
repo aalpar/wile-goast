@@ -25,6 +25,8 @@
 | `2026-03-25-b3-c2-c6-design.md` | Algebra framework roadmap (B3/C2/C3/C4-semiring done) | C4-CFL, C5, C6 open |
 | `2026-04-17-belief-suppression-design.md` | Belief suppression: `with-belief-scope`, `load-committed-beliefs`, `suppress-known` | Design approved, impl pending |
 | `2026-04-17-fca-duplicate-detection-design.md` | FCA-clustered duplicate function detection: reference-FCA + structural diff + algebraic equivalence + LLM residue | Design draft, impl pending |
+| `2026-04-19-llm-concept-filter-design.md` | LLM as precision-oriented semantic filter on FCA concepts (cross-cutting, annotate-only default) | Design draft, impl pending |
+| `2026-04-19-mcp-tool-surface-design.md` | Post-filter MCP tool surface: pipeline-shaped tools returning structured reports instead of `eval`-driven orchestration | Design draft, impl pending (Phase 1 next) |
 
 ## Completed Plans (moved to `memory/`)
 

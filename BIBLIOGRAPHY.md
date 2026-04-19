@@ -219,3 +219,42 @@ function groups share the same dependency set. This is the direct theoretical
 basis for import-signature clustering: each concept in the lattice is a maximal
 set of functions sharing a maximal set of imports. The lattice structure shows
 the refinement hierarchy — which clusters are subsets of which.
+
+### Follow-up: FCA extensions to investigate
+
+Bernhard Ganter and Sergei O. Kuznetsov.
+"Pattern Structures and Their Projections."
+In *Conceptual Structures: Broadening the Base (ICCS 2001)*,
+Lecture Notes in Computer Science, vol. 2120, pp. 129--142. Springer, 2001.
+https://doi.org/10.1007/3-540-44583-8_10
+
+Generalizes FCA from binary incidence to arbitrary meet-semilattices of
+descriptions. Attributes become structured objects (intervals, type
+hierarchies, graphs) and the derivation operator lifts from set intersection
+to semilattice meet. Relevant to wile-goast for folding algebraic domain
+information (sign lattices, interval lattices, type hierarchies) directly
+into an FCA context rather than flattening them to binary attributes.
+
+Mohamed Rouane-Hacene, Marianne Huchard, Amedeo Napoli, and Petko Valtchev.
+"Relational Concept Analysis: Mining Concept Lattices from Multi-Relational
+Data."
+*Annals of Mathematics and Artificial Intelligence*, 67(1):81--108, 2013.
+https://doi.org/10.1007/s10472-012-9329-3
+
+Extends FCA to a family of linked contexts connected by binary relations.
+Each context produces its own concept lattice, and relational scaling
+introduces cross-lattice attributes (e.g., "function f uses a field in
+concept C of the field-context"). Directly relevant to wile-goast's
+cross-layer problem: functions, fields, callers, and types are naturally
+modeled as a linked family of contexts rather than one flattened context.
+
+Gerd Stumme, Rafik Taouil, Yves Bastide, Nicolas Pasquier, and Lotfi Lakhal.
+"Computing Iceberg Concept Lattices with Titanic."
+*Data and Knowledge Engineering*, 42(2):189--222, August 2002.
+https://doi.org/10.1016/S0169-023X(02)00057-5
+
+Support-based pruning of concept lattices: retain only concepts whose extent
+exceeds a minimum support threshold. Addresses the combinatorial explosion
+of full concept lattices on large contexts. Complements the IDF-based
+attribute filtering already used in wile-goast's `(wile goast split)` with
+extent-based concept filtering.
