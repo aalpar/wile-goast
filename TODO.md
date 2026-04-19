@@ -451,13 +451,20 @@ Effort tags: S (hours), M (day), L (multi-day).
       (`map[reflect.Type]mapperFn`), collocating forward + reverse mapping per
       node type. Reduces per-tag extension cost from 6 files to 1. **[L]**
 
-- [ ] **10 of 12 embedded Scheme libraries have no integration test** — Missing
-      dedicated coverage: `boolean-simplify.scm`, `domains.scm`, `fca.scm`,
-      `fca-algebra.scm`, `fca-recommend.scm`, `path-algebra.scm`, `split.scm`,
-      `ssa-normalize.scm`, `unify.scm`, `utils.scm`. Only `belief.scm` and
-      `dataflow.scm` are exercised (via `goast/belief_integration_test.go`). Add
-      one 10–20 line smoke test per library exercising a public entry point.
-      Do before next wile version bump. **[M]**
+- [x] **10 of 12 embedded Scheme libraries have no integration test** — The
+      audit agent missed most of the existing test files. Verified actual state:
+      * `boolean_simplify_test.go`, `fca_test.go`, `fca_algebra_test.go`,
+        `fca_recommend_test.go`, `path_algebra_test.go`, `split_test.go`,
+        `ssa_normalize_test.go`, `unify_test.go` all exist as dedicated test
+        files (hundreds of lines each).
+      * `domains.scm` is covered by 6+ tests in `belief_integration_test.go`
+        (reaching-defs, liveness, const-prop, sign-analysis, interval-analysis).
+      * `belief.scm` and `dataflow.scm` covered in `belief_integration_test.go`.
+      * `utils.scm` was the only gap — added `goast/utils_test.go` with 8 smoke
+        tests covering nf/tag?/filter/filter-map/flat-map/unique/member?/take/
+        drop/opt-ref/ordered-pairs/walk. Also locks in the filter-correctness
+        invariant (the named-let version keeps #f elements).
+      **[M]** — done 2026-04-19
 
 ### Medium
 
