@@ -29,16 +29,26 @@ import (
 // PrimGoLoad implements (go-load pattern ... . options).
 // Loads Go packages and returns a GoSession for reuse across primitives.
 func PrimGoLoad(mc machine.CallContext) error {
-	first, err := helpers.RequireArg[*values.String](mc, 0, werr.ErrNotAString, "go-load")
+	mctx, ok := mc.(*machine.MachineContext)
+	if !ok {
+		return werr.WrapForeignErrorf(errGoLoadError,
+			"go-load: CallContext is not *MachineContext")
+	}
+	arg, rest, err := ExtractTargetAndRest(mctx, mc.Arg(0))
 	if err != nil {
 		return err
+	}
+	first, ok := arg.(*values.String)
+	if !ok {
+		return werr.WrapForeignErrorf(werr.ErrNotAString,
+			"go-load: first arg must be a string, got %T", arg)
 	}
 
 	patterns := []string{first.Value}
 	lintMode := false
 
-	// Walk variadic rest for additional patterns and options.
-	tuple, ok := mc.Arg(1).(values.Tuple)
+	// Walk the remaining rest list for additional patterns and options.
+	tuple, ok := rest.(values.Tuple)
 	if ok {
 		for !values.IsEmptyList(tuple) {
 			pair, pok := tuple.(*values.Pair)

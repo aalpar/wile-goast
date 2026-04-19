@@ -512,6 +512,33 @@ func TestGoTypecheckPackageExplicitArgStillWorks(t *testing.T) {
 
 // schemeStringLiteral wraps a Go string as a Scheme string literal,
 // escaping backslashes, double quotes, and newlines.
+
+func TestGoLoadUsesCurrentGoTarget(t *testing.T) {
+	extgoast.ResetTargetState()
+	t.Setenv("WILE_GOAST_TARGET", "")
+
+	engine := newEngine(t)
+	defer func() { _ = engine.Close() }()
+
+	// go-load returns a GoSession; the success of the call is enough signal.
+	result := eval(t, engine,
+		`(parameterize ((current-go-target "github.com/aalpar/wile-goast/goast"))
+		   (eq? (go-load) #f))`)
+	qt.New(t).Assert(result.Internal(), qt.Equals, values.FalseValue)
+}
+
+func TestGoLoadExplicitArgStillWorks(t *testing.T) {
+	extgoast.ResetTargetState()
+	t.Setenv("WILE_GOAST_TARGET", "")
+
+	engine := newEngine(t)
+	defer func() { _ = engine.Close() }()
+
+	result := eval(t, engine,
+		`(eq? (go-load "github.com/aalpar/wile-goast/goast") #f)`)
+	qt.New(t).Assert(result.Internal(), qt.Equals, values.FalseValue)
+}
+
 func schemeStringLiteral(s string) string {
 	var b []byte
 	b = append(b, '"')

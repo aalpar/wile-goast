@@ -124,17 +124,19 @@ func addPrimitives(r *registry.Registry) error {
 				"See also: `go-typecheck-package', `implementors-of'.",
 			ParamNames: []string{"interface-name", "package-pattern"}, Category: "goast",
 			ReturnType: values.TypeList},
-		{Name: "go-load", ParamCount: 2, IsVariadic: true, Impl: PrimGoLoad,
-			Doc: "Loads Go packages and returns a GoSession for reuse across analysis primitives.\n" +
-				"Avoids redundant packages.Load calls when multiple primitives share a target.\n" +
-				"GoSession is an opaque value accepted by go-typecheck-package, go-ssa-build,\n" +
-				"go-callgraph, go-cfg, go-analyze, and go-ssa-field-index.\n\n" +
-				"Examples:\n" +
-				"  (define s (go-load \"./...\"))\n" +
-				"  (go-session? s)           ; => #t\n" +
-				"  (go-typecheck-package s)   ; reuses loaded packages\n" +
-				"  (go-ssa-build s)           ; reuses loaded packages\n" +
-				"  (go-callgraph s 'cha)      ; reuses loaded packages\n\n" +
+		{Name: "go-load", ParamCount: 1, IsVariadic: true, Impl: PrimGoLoad,
+			Doc: "Loads Go packages and returns a GoSession for reuse across analysis primitives.\\n" +
+				"Avoids redundant packages.Load calls when multiple primitives share a target.\\n" +
+				"First arg is a package pattern or GoSession; optional. If no first arg provided,\\n" +
+				"uses (current-go-target).\\n" +
+				"GoSession is an opaque value accepted by go-typecheck-package, go-ssa-build,\\n" +
+				"go-callgraph, go-cfg, go-analyze, and go-ssa-field-index.\\n\\n" +
+				"Examples:\\n" +
+				"  (define s (go-load \\\"./...\\\"))\\n" +
+				"  (go-session? s)           ; => #t\\n" +
+				"  (go-typecheck-package s)   ; reuses loaded packages\\n" +
+				"  (go-ssa-build s)           ; reuses loaded packages\\n" +
+				"  (go-callgraph s 'cha)      ; reuses loaded packages\\n\\n" +
 				"See also: `go-session?', `go-typecheck-package', `go-ssa-build'.",
 			ParamNames: []string{"pattern", "rest"}, Category: "goast"},
 		{Name: "go-session?", ParamCount: 1, Impl: PrimGoSessionP,
