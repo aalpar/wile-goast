@@ -1,0 +1,67 @@
+// Copyright 2026 Aaron Alpar
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package main
+
+import (
+	"context"
+	"testing"
+
+	"github.com/aalpar/wile-goast/goast"
+	"github.com/aalpar/wile-goast/testutil"
+	"github.com/aalpar/wile/values"
+
+	qt "github.com/frankban/quicktest"
+)
+
+func TestCurrentGoTargetDefault(t *testing.T) {
+	goast.ResetTargetState()
+	t.Setenv("WILE_GOAST_TARGET", "")
+
+	engine := buildEngine(context.Background())
+	defer func() { _ = engine.Close() }()
+
+	result := testutil.RunScheme(t, engine, `(current-go-target)`)
+	s, ok := result.Internal().(*values.String)
+	qt.Assert(t, ok, qt.IsTrue, qt.Commentf("result is %T, want *values.String", result.Internal()))
+	qt.Assert(t, s.Value, qt.Equals, "./...")
+}
+
+func TestCurrentGoTargetEnvVar(t *testing.T) {
+	goast.ResetTargetState()
+	t.Setenv("WILE_GOAST_TARGET", "github.com/example/foo/...")
+
+	engine := buildEngine(context.Background())
+	defer func() { _ = engine.Close() }()
+
+	result := testutil.RunScheme(t, engine, `(current-go-target)`)
+	s, ok := result.Internal().(*values.String)
+	qt.Assert(t, ok, qt.IsTrue, qt.Commentf("result is %T, want *values.String", result.Internal()))
+	qt.Assert(t, s.Value, qt.Equals, "github.com/example/foo/...")
+}
+
+func TestCurrentGoTargetParameterize(t *testing.T) {
+	goast.ResetTargetState()
+	t.Setenv("WILE_GOAST_TARGET", "")
+
+	engine := buildEngine(context.Background())
+	defer func() { _ = engine.Close() }()
+
+	result := testutil.RunScheme(t, engine,
+		`(parameterize ((current-go-target "./sub/..."))
+		   (current-go-target))`)
+	s, ok := result.Internal().(*values.String)
+	qt.Assert(t, ok, qt.IsTrue, qt.Commentf("result is %T, want *values.String", result.Internal()))
+	qt.Assert(t, s.Value, qt.Equals, "./sub/...")
+}
