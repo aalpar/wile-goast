@@ -183,53 +183,83 @@ Backward walk over the def-use chain of `ssa-value`, dispatching on the producin
 
 **Cycle detection**: visited-set keyed by `(ssa.Function pointer, ssa.Value pointer)`. Pointer identity is stable across the analysis.
 
-### 6.3 MVP coverage (PR-2)
+### 6.3 MVP coverage (PR-2) — **shipped**
 
-Handled in the first ship:
-- `Alloc`, `New`, composite literals of concrete type
-- Direct-return calls (interface and concrete)
-- Inter-procedural recursion with cycle break
-- `Phi` union over operands
-- Type assertion
-- `Extract` from `(T, ok)` tuple
+PR-2 landed in commits `f8d9c6e` (SSAFunctionRef), `3b389ea` (mapper ref field), `3664cfe` (findValueByName — commit-history collision with parallel goastlint work, see commit note), `06513dc` (primitive skeleton), `c14617a` (narrowing algorithm), `3fe3424` (Scheme integration tests).
 
-Widens with reason tag (no analysis):
-- Parameters → reason `parameter`
-- Global / field loads of interface type → reason `global-load` or `field-load`
-- `nil` constants → reason `nil-constant`
-- Cycle → reason `cycle`
-- Interface-method dispatch with unresolvable receiver → reason `interface-method-dispatch`
+**Shipped — `narrow` confidence (concrete type recovered):**
+- `Alloc`, `MakeClosure`, `MakeMap`, `MakeSlice`, `MakeChan` — direct type
+- `MakeInterface` — recurses on wrapped value
+- `ChangeType`, `ChangeInterface`, `Convert`, `MultiConvert`, `SliceToArrayPointer` — recurses on operand
+- `TypeAssert` — records `AssertedType`
+- `Phi` — unions over edges
+- `Extract` — records tuple-at-index element type, falls back to tuple-walk for interface elements
+- `Call` with concrete return type — direct record
+- `Call` with interface return, static callee — inter-procedural recursion over callee's `Return` instructions
+- `BinOp`, `UnOp` (non-interface), `Field`, `FieldAddr`, `Index`, `IndexAddr`, `Lookup` (non-interface), `Slice`, `Range`, `Next`, typed `Const`, `Function` — direct type
+- Cycle detection via `(*ssa.Function, ssa.Value)` visited set keyed by pointer identity
 
-Surfaces as `no-paths`:
-- No sink-reachable path found from the starting value (detectable gap — see §8 smoke cases).
+**Shipped — `widened` confidence with reason tag:**
+- `Parameter` → `parameter`
+- `FreeVar` → `free-var`
+- `Global` → `global-load`
+- `UnOp`/`Field`/`FieldAddr`/`Lookup` with interface result → `field-load`
+- `Const` where `IsNil()` → `nil-constant`
+- `Call` with `IsInvoke()` → `interface-method-dispatch`
+- `Builtin` / non-static callee → `unresolvable-callee`
+- Unrecognized instruction → `unhandled`
+- Cycle (revisit of value in same walk) → `cycle`
 
-**Deferred to PR-2' iterations, if Helper-widened count demands them:**
-- Call-graph-context parameter narrowing (look up all callers of a function and narrow the parameter by the union of arg types at call sites).
-- Slice / map element type reasoning.
-- Type-switch arm narrowing.
-- Reflect-based value production.
+**Shipped — `no-paths`:**
+- Value name not found in function → `value-not-found`
+- Empty callee return set (function with no `Return` instructions reachable)
+- Merge of only `no-paths` results
+
+`mergeResults` computes the union of types + reasons with deterministic ordering (insertion-sort for reproducibility). Overall confidence is `widened` if any input widened, `no-paths` if all inputs are no-paths, else `narrow`.
+
+**Deferred to follow-up iterations if the `widened`-with-`parameter`/`field-load` rate on the 428-prim run exceeds the §8 kill threshold (>30% Helper-widened):**
+- Call-graph-context parameter narrowing (look up callers, narrow parameter by union of call-site arg types).
+- Store-site tracking for fields/globals (walk Stores-to-field, narrow to union of stored values).
+- Slice / map element type reasoning via `MakeSlice.Elem` + `Store`/`Index` pairs.
+- Type-switch arm narrowing (each arm establishes the type within its block).
+- Reflect-based value production (`reflect.New`, `reflect.Zero`).
 
 ### 6.4 Type classification layer
 
 `go-ssa-narrow` returns Go type strings (e.g., `"*github.com/aalpar/wile/values.Integer"`). Mapping those to wile's `values.ValueType.Name()` strings (e.g., `"integer"`) is axis-b-specific and lives in the axis-b script — not in this primitive. Keeps `go-ssa-narrow` domain-neutral.
 
-### 6.5 PR-2 tests
+### 6.5 PR-2 tests — **shipped**
 
-Go fixtures in `goastssa/testdata/narrow_*.go`, one file per case, each with a single well-named function whose return shape is known by construction.
+Rather than per-fixture Go files under `testdata/`, PR-2 used inline Go source via the existing `buildSSAFromSource` helper (`goastssa/mapper_test.go`). This matches the pattern already used by every other mapper test and avoids a `testdata/narrow/` go.mod. The tests live in `goastssa/narrow_test.go`.
 
-| Fixture | Expected types | Expected confidence |
+Go-side coverage (all passing):
+
+| Test | Case | Expected |
 |---|---|---|
-| `narrow_direct.go` — returns `*Foo{}` | `{*Foo}` | `narrow` |
-| `narrow_phi.go` — if-else returning `*Foo` vs `*Bar` | `{*Foo, *Bar}` | `narrow` |
-| `narrow_helper.go` — calls `helper()` which returns `*Foo` | `{*Foo}` | `narrow` |
-| `narrow_helper_phi.go` — helper has its own phi-union | union of helper's types | `narrow` |
-| `narrow_cycle.go` — A calls B, B calls A | whatever types are reached before cycle-break | `widened` with reason=`cycle` |
-| `narrow_assertion.go` — `v.(*Foo)` | `{*Foo}` | `narrow` |
-| `narrow_parameter.go` — returns a parameter of interface type | `{}` | `widened` with reason=`parameter` |
-| `narrow_global.go` — returns a global `interface{}` value | `{}` | `widened` with reason=`global-load` |
-| `narrow_tuple.go` — `x, _ := f()` where f returns `(*Foo, bool)` | `{*Foo}` | `narrow` |
+| `TestNarrowDirectAlloc` | `return &Bar{}` | `{*testpkg.Bar}`, `narrow` |
+| `TestNarrowBinOpReturn` | `return a + b` (int) | `{int}`, `narrow` |
+| `TestNarrowPhi` | if/else assign to `v`, return v | `{*testpkg.Bar, *testpkg.Baz}`, `narrow` |
+| `TestNarrowTypeAssert` | `return x.(*Bar)` | `{*testpkg.Bar}`, `narrow` |
+| `TestNarrowExtractTuple` | `v, _ := m["k"]` | `{int}`, `narrow` |
+| `TestNarrowInterProceduralStaticCall` | `return helper()` where helper returns `*Bar` | `{*testpkg.Bar}`, `narrow` |
+| `TestNarrowParameterWidens` | `return x` (parameter) | `widened`, `{parameter}` |
+| `TestNarrowInvokeWidens` | `s.String()` on interface | `widened`, `{interface-method-dispatch}` |
+| `TestNarrowGlobalLoadWidens` | `return G` (global interface) | `widened` |
+| `TestNarrowCycleDetected` | Mutually recursive A↔B | `widened` (cycle) or `narrow` if inlined |
+| `TestNarrowMergeResultsEmpty` | Merge no inputs | `no-paths` |
+| `TestNarrowMergeResultsWidenedWins` | Merge narrow + widened | `widened`, preserved reason |
+| `TestNarrowMergeResultsAllNoPaths` | Merge no-paths inputs | `no-paths` |
+| `TestNarrowMergeResultsDeduplicatesTypes` | Union type sets | sorted, deduplicated |
 
-Scheme integration test per fixture: `(go-ssa-narrow <value-from-fixture>)` — assert exact tuple match.
+Scheme-level integration in `cmd/wile-goast/narrow_integration_test.go`:
+
+| Test | Strategy | Assertion |
+|---|---|---|
+| `TestGoSSANarrowPrimitiveRegistered` | Call with nonexistent value name | `narrow-result` alist, confidence `no-paths` |
+| `TestGoSSANarrowParameterWidens` | Narrow first function's first parameter in `wile-goast/goast` | confidence `widened`, reason `parameter` |
+| `TestGoSSANarrowConcreteAlloc` | Walk blocks to find first `ssa-alloc`, narrow it | confidence `narrow`, non-empty type list |
+
+The Scheme tests avoid hardcoded SSA value names (which drift across toolchain versions) by walking SSA in Scheme with `(nf)` / `(tag?)` to find the value dynamically.
 
 ---
 
