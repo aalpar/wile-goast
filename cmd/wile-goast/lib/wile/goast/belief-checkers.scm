@@ -90,9 +90,11 @@
 
 ;; (ordered op-a op-b) — checks whether op-a's SSA block dominates op-b's block.
 ;; Uses SSA representation (blocks have instrs + idom). Does not require go-cfg.
-;; Returns: 'a-dominates-b, 'b-dominates-a, 'same-block, 'unordered, or 'missing
+;; Returns: 'a-dominates-b, 'b-dominates-a, 'same-block, 'unordered, 'missing,
+;; or 'malformed-ssa (idom chain is broken — data error distinct from
+;; 'unordered's "no dominance relationship" verdict).
 (define (ordered op-a op-b)
-  "Property checker: verify that OP-A's SSA block dominates OP-B's block.\nReturns 'a-dominates-b, 'b-dominates-a, 'same-block, or 'unordered.\n\nParameters:\n  op-a : string\n  op-b : string\nReturns: procedure\nCategory: goast-belief\n\nExamples:\n  (ordered \"Validate\" \"Execute\")\n\nSee also: `paired-with', `checked-before-use'."
+  "Property checker: verify that OP-A's SSA block dominates OP-B's block.\nReturns 'a-dominates-b, 'b-dominates-a, 'same-block, 'unordered, 'missing,\nor 'malformed-ssa (idom chain is broken — distinct from 'unordered's\nlegitimate 'no dominance' verdict).\n\nParameters:\n  op-a : string\n  op-b : string\nReturns: procedure\nCategory: goast-belief\n\nExamples:\n  (ordered \"Validate\" \"Execute\")\n\nSee also: `paired-with', `checked-before-use'."
   (lambda (site ctx)
     (let* ((fname (nf site 'name))
            (pkg-path (nf site 'pkg-path))
@@ -115,9 +117,15 @@
                  ((or (not pos-a) (not pos-b)) 'unordered)
                  ((< pos-a pos-b) 'a-dominates-b)
                  (else 'b-dominates-a))))
-            ((ssa-dominates? blocks (car a-blocks) (car b-blocks)) 'a-dominates-b)
-            ((ssa-dominates? blocks (car b-blocks) (car a-blocks)) 'b-dominates-a)
-            (else 'unordered)))))))
+            (else
+              (let ((ab (ssa-dominates? blocks (car a-blocks) (car b-blocks)))
+                    (ba (ssa-dominates? blocks (car b-blocks) (car a-blocks))))
+                (cond
+                  ((or (eq? ab 'malformed-idom) (eq? ba 'malformed-idom))
+                   'malformed-ssa)
+                  (ab 'a-dominates-b)
+                  (ba 'b-dominates-a)
+                  (else 'unordered))))))))))
 
 ;; Find SSA block indices containing a call to the named function.
 ;; Walks SSA instructions (not AST statements). Checks both static
@@ -151,7 +159,13 @@
         (else (loop (cdr is) (+ pos 1)))))))
 
 ;; Check whether block a-idx dominates block b-idx using the idom chain.
-;; Walks b's immediate dominator chain upward. If a is encountered, a dominates b.
+;; Walks b's immediate dominator chain upward. Returns:
+;;   #t              — a dominates b (found in chain)
+;;   #f              — b's chain reached entry block without a
+;;   'malformed-idom — chain references a block not in block-map, or a
+;;                     non-entry block has no idom field
+;; By SSA convention, the entry block (index 0) has no idom field OR
+;; idom == itself. Missing idom on any other block signals data error.
 (define (ssa-dominates? blocks a-idx b-idx)
   (let ((block-map (map (lambda (b) (cons (nf b 'index) b))
                         (if (pair? blocks) blocks '()))))
@@ -160,11 +174,15 @@
         ((= current a-idx) #t)
         (else
           (let ((entry (assoc current block-map)))
-            (if (not entry) #f
-              (let ((idom (nf (cdr entry) 'idom)))
-                (if (or (not idom) (eq? idom #f) (= idom current))
-                  #f
-                  (loop idom))))))))))
+            (cond
+              ((not entry) 'malformed-idom)  ;; block referenced but missing
+              (else
+                (let ((idom (nf (cdr entry) 'idom)))
+                  (cond
+                    ;; idom missing or same as self: end of chain
+                    ((or (not idom) (= idom current))
+                     (if (= current 0) #f 'malformed-idom))
+                    (else (loop idom))))))))))))
 
 ;; (co-mutated field ...) — checks whether all named fields are stored
 ;; together in the function. Uses the pre-built field index from Go.
