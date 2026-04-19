@@ -25,10 +25,11 @@ import (
 	qt "github.com/frankban/quicktest"
 )
 
-// TestGoSSANarrowPrimitiveRegistered verifies the go-ssa-narrow primitive is
-// callable and returns a well-shaped narrow-result alist. Semantic narrowing
-// cases are covered by Go-side fixture tests in goastssa/narrow_test.go.
-func TestGoSSANarrowPrimitiveRegistered(t *testing.T) {
+// TestGoSSANarrowValueNotFoundErrors verifies that an unknown value name
+// raises an error rather than synthesizing a no-paths verdict. A caller
+// who mistypes a value name gets told immediately; they don't silently
+// receive a plausible 'no producing paths' claim.
+func TestGoSSANarrowValueNotFoundErrors(t *testing.T) {
 	goast.ResetTargetState()
 	t.Setenv("WILE_GOAST_TARGET", "")
 
@@ -38,25 +39,13 @@ func TestGoSSANarrowPrimitiveRegistered(t *testing.T) {
 
 	const pkg = "github.com/aalpar/wile-goast/goast"
 
-	result := testutil.RunScheme(t, engine,
+	_, err := engine.EvalMultiple(ctx,
 		`(parameterize ((current-go-target "`+pkg+`"))
 		   (let* ((funcs (go-ssa-build))
 		          (f (car funcs)))
 		     (go-ssa-narrow f "nonexistent")))`)
-
-	// narrow-result should be a tagged alist; the stub returns
-	// (narrow-result (types ()) (confidence no-paths) (reasons (value-not-found))).
-	pair, ok := result.Internal().(*values.Pair)
-	qt.Assert(t, ok, qt.IsTrue, qt.Commentf("result is %T, want *values.Pair", result.Internal()))
-	tag, ok := pair.Car().(*values.Symbol)
-	qt.Assert(t, ok, qt.IsTrue)
-	qt.Assert(t, tag.Key, qt.Equals, "narrow-result")
-
-	conf, ok := goast.GetField(pair.Cdr(), "confidence")
-	qt.Assert(t, ok, qt.IsTrue)
-	confSym, ok := conf.(*values.Symbol)
-	qt.Assert(t, ok, qt.IsTrue)
-	qt.Assert(t, confSym.Key, qt.Equals, "no-paths")
+	qt.Assert(t, err, qt.IsNotNil)
+	qt.Assert(t, err.Error(), qt.Contains, "no value named")
 }
 
 // TestGoSSANarrowParameterWidens exercises the successful end-to-end path:

@@ -52,8 +52,13 @@ func PrimGoSSANarrow(mc machine.CallContext) error {
 
 	v, ok := findValueByName(fn, nameArg.Value)
 	if !ok {
-		mc.SetValue(buildNarrowResult(nil, "no-paths", []string{"value-not-found"}))
-		return nil
+		// Argument error, not an analysis verdict. Distinguishes from
+		// the algorithm's legitimate 'no-paths' result — a caller who
+		// mistypes a value name gets told, rather than seeing a
+		// plausible 'this value has no producing paths' claim.
+		return werr.WrapForeignErrorf(errSSANarrow,
+			"go-ssa-narrow: no value named %q in function %s",
+			nameArg.Value, fn.Name())
 	}
 
 	result := narrow(fn, v)

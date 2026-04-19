@@ -124,6 +124,43 @@ func Foo(x int) interface{} {
 		qt.Commentf("expected Baz in %v", r.Types))
 }
 
+// TestNarrowPhiDAGReconvergence verifies that when two phi edges reach
+// the same shared producer, the second edge is not misclassified as a
+// cycle. Before the fix, visited was a persistent set; edge 0 marked
+// the shared producer, edge 1 saw it as visited and returned 'cycle.
+// After the fix, visited is per-path (defer delete on return).
+func TestNarrowPhiDAGReconvergence(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	// Both phi edges wrap the SAME parameter into an interface. SSA
+	// produces a Phi whose edges both resolve to the same Parameter —
+	// a diamond where both paths share the original producer.
+	fn := buildSSAFromSource(t, dir, `
+package testpkg
+
+func Foo(x *int, cond bool) interface{} {
+	var v interface{}
+	if cond {
+		v = x
+	} else {
+		v = x
+	}
+	return v
+}
+`, "Foo")
+
+	r := narrowReturn(t, fn)
+	// Correct behavior: the shared producer is a Parameter, so widen
+	// with reason "parameter" — NOT "cycle". Before the fix this
+	// returned widened/cycle because edge 1 hit visited[x] left from
+	// edge 0.
+	c.Assert(r.Confidence, qt.Equals, "widened")
+	for _, reason := range r.Reasons {
+		c.Assert(reason, qt.Not(qt.Equals), "cycle",
+			qt.Commentf("DAG reconvergence misclassified as cycle: %v", r.Reasons))
+	}
+}
+
 func TestNarrowTypeAssert(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()

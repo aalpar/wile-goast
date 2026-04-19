@@ -40,6 +40,7 @@
 package goastssa
 
 import (
+	"fmt"
 	"go/types"
 
 	"golang.org/x/tools/go/ssa"
@@ -60,14 +61,20 @@ func narrow(fn *ssa.Function, v ssa.Value) *narrowResult {
 }
 
 // narrowWalk performs the backward SSA traversal.
+//
+// visited tracks values currently *on the descent stack* — classic DFS
+// cycle detection. Entries are removed on return (see defer below) so
+// a DAG reconvergence point (e.g., same value reached via two phi
+// edges) is not misclassified as a cycle.
 func narrowWalk(fn *ssa.Function, v ssa.Value, visited map[ssa.Value]bool) *narrowResult {
 	if v == nil {
-		return &narrowResult{Confidence: "no-paths"}
+		return &narrowResult{Confidence: "no-paths", Reasons: []string{"nil-input"}}
 	}
 	if visited[v] {
 		return &narrowResult{Confidence: "widened", Reasons: []string{"cycle"}}
 	}
 	visited[v] = true
+	defer delete(visited, v)
 
 	switch x := v.(type) {
 	case *ssa.Alloc:
@@ -150,7 +157,13 @@ func narrowWalk(fn *ssa.Function, v ssa.Value, visited map[ssa.Value]bool) *narr
 	case *ssa.Builtin:
 		return &narrowResult{Confidence: "widened", Reasons: []string{"unresolvable-callee"}}
 	}
-	return &narrowResult{Confidence: "widened", Reasons: []string{"unhandled"}}
+	// Unknown SSA opcode. Include the Go type name so future toolchain
+	// additions (or forgotten switch cases) produce a traceable reason
+	// instead of silently falling into a generic "widened" bucket.
+	return &narrowResult{
+		Confidence: "widened",
+		Reasons:    []string{fmt.Sprintf("unhandled:%T", v)},
+	}
 }
 
 // narrowFromConcreteType returns a narrow result if t is a concrete
@@ -193,7 +206,7 @@ func narrowFromPhi(fn *ssa.Function, phi *ssa.Phi, visited map[ssa.Value]bool) *
 // refine beyond what the tuple as a whole yields, so the merge is conservative.
 func narrowFromExtract(fn *ssa.Function, ex *ssa.Extract, visited map[ssa.Value]bool) *narrowResult {
 	if ex.Tuple == nil {
-		return &narrowResult{Confidence: "no-paths"}
+		return &narrowResult{Confidence: "no-paths", Reasons: []string{"nil-tuple"}}
 	}
 	tupleType := ex.Tuple.Type()
 	tup, ok := tupleType.(*types.Tuple)
@@ -252,7 +265,9 @@ func narrowFromCalleeReturns(callee *ssa.Function, visited map[ssa.Value]bool) *
 		}
 	}
 	if len(results) == 0 {
-		return &narrowResult{Confidence: "no-paths"}
+		// Callee has no Return instructions (panic-only, infinite loop,
+		// etc.). Distinct from "I couldn't find paths" or "input was nil".
+		return &narrowResult{Confidence: "no-paths", Reasons: []string{"callee-no-returns"}}
 	}
 	return mergeResults(results)
 }
