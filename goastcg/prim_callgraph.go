@@ -36,7 +36,7 @@ import (
 )
 
 var (
-	errCGBuildError       = werr.NewStaticError("callgraph build error")
+	errCGBuild            = werr.NewStaticError("callgraph build error")
 	errCGInvalidAlgorithm = werr.NewStaticError("invalid callgraph algorithm")
 	errCGNoMainFunction   = werr.NewStaticError("no main function for rta")
 )
@@ -87,7 +87,7 @@ func callgraphFromPattern(mc machine.CallContext, pattern *values.String, algori
 		packages.NeedName|packages.NeedFiles|packages.NeedSyntax|
 			packages.NeedTypes|packages.NeedTypesInfo|
 			packages.NeedImports|packages.NeedDeps,
-		fset, errCGBuildError, "go-callgraph",
+		fset, errCGBuild, "go-callgraph",
 		pattern.Value)
 	if err != nil {
 		return err

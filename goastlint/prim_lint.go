@@ -65,9 +65,9 @@ func parseAnalyzerNames(rest values.Value) ([]*analysis.Analyzer, error) {
 }
 
 var (
-	errLintBuildError  = werr.NewStaticError("analyze build error")
+	errLintBuild       = werr.NewStaticError("analyze build error")
 	errLintUnknownName = werr.NewStaticError("unknown analyzer name")
-	errLintRunError    = werr.NewStaticError("analyzer run error")
+	errLintRun         = werr.NewStaticError("analyzer run error")
 )
 
 // PrimGoAnalyze implements (go-analyze target analyzer-name ...).
@@ -100,7 +100,7 @@ func PrimGoAnalyze(mc machine.CallContext) error {
 func analyzeFromSession(mc machine.CallContext, session *goast.GoSession, analyzers []*analysis.Analyzer) error {
 	graph, analyzeErr := checker.Analyze(analyzers, session.Packages(), nil)
 	if analyzeErr != nil {
-		return werr.WrapForeignErrorf(errLintRunError,
+		return werr.WrapForeignErrorf(errLintRun,
 			"go-analyze: %s", analyzeErr)
 	}
 	return collectDiagnostics(mc, graph, session.FileSet())
@@ -111,7 +111,7 @@ func analyzeFromPattern(mc machine.CallContext, patterns []string, analyzers []*
 
 	pkgs, err := goast.LoadPackagesChecked(mc,
 		packages.LoadAllSyntax,
-		fset, errLintBuildError, "go-analyze",
+		fset, errLintBuild, "go-analyze",
 		patterns...)
 	if err != nil {
 		return err
@@ -119,7 +119,7 @@ func analyzeFromPattern(mc machine.CallContext, patterns []string, analyzers []*
 
 	graph, analyzeErr := checker.Analyze(analyzers, pkgs, nil)
 	if analyzeErr != nil {
-		return werr.WrapForeignErrorf(errLintRunError,
+		return werr.WrapForeignErrorf(errLintRun,
 			"go-analyze: %s", analyzeErr)
 	}
 	return collectDiagnostics(mc, graph, fset)
@@ -129,7 +129,7 @@ func collectDiagnostics(mc machine.CallContext, graph *checker.Graph, fset *toke
 	var result []values.Value
 	for _, act := range graph.Roots {
 		if act.Err != nil {
-			return werr.WrapForeignErrorf(errLintRunError,
+			return werr.WrapForeignErrorf(errLintRun,
 				"go-analyze: analyzer %q on %s: %s",
 				act.Analyzer.Name, act.Package.PkgPath, act.Err)
 		}

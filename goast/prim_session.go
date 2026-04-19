@@ -31,7 +31,7 @@ import (
 func PrimGoLoad(mc machine.CallContext) error {
 	mctx, ok := mc.(*machine.MachineContext)
 	if !ok {
-		return werr.WrapForeignErrorf(errGoLoadError,
+		return werr.WrapForeignErrorf(errGoLoad,
 			"go-load: CallContext is not *MachineContext")
 	}
 	arg, rest, err := ExtractTargetAndRest(mctx, mc.Arg(0))
@@ -62,11 +62,11 @@ func PrimGoLoad(mc machine.CallContext) error {
 				if v.Key == "lint" {
 					lintMode = true
 				} else {
-					return werr.WrapForeignErrorf(errGoLoadError,
+					return werr.WrapForeignErrorf(errGoLoad,
 						"go-load: unknown option '%s'; valid options: lint", v.Key)
 				}
 			default:
-				return werr.WrapForeignErrorf(errGoLoadError,
+				return werr.WrapForeignErrorf(errGoLoad,
 					"go-load: expected string or symbol, got %T", pair.Car())
 			}
 			tuple, ok = pair.Cdr().(values.Tuple)
@@ -89,7 +89,7 @@ func PrimGoLoad(mc machine.CallContext) error {
 	}
 
 	pkgs, err := LoadPackagesChecked(mc, mode, fset,
-		errGoLoadError, "go-load", patterns...)
+		errGoLoad, "go-load", patterns...)
 	if err != nil {
 		return err
 	}
@@ -130,7 +130,7 @@ func PrimGoListDeps(mc machine.CallContext) error {
 			}
 			sv, sok := pair.Car().(*values.String)
 			if !sok {
-				return werr.WrapForeignErrorf(errGoLoadError,
+				return werr.WrapForeignErrorf(errGoLoad,
 					"go-list-deps: expected string, got %T", pair.Car())
 			}
 			patterns = append(patterns, sv.Value)
@@ -143,7 +143,7 @@ func PrimGoListDeps(mc machine.CallContext) error {
 
 	pkgs, err := LoadPackagesChecked(mc,
 		packages.NeedName|packages.NeedImports,
-		nil, errGoLoadError, "go-list-deps",
+		nil, errGoLoad, "go-list-deps",
 		patterns...)
 	if err != nil {
 		return err

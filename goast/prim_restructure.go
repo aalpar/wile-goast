@@ -27,7 +27,7 @@ import (
 // PrimGoCFGToStructured implements (go-cfg-to-structured block [func-type]).
 // Takes a block s-expression. Returns a restructured block where early
 // returns and gotos are eliminated (single exit point), or the block
-// unchanged if no early returns or gotos. Raises errGoRestructureError
+// unchanged if no early returns or gotos. Raises errGoRestructure
 // if the block contains control flow it cannot restructure.
 //
 // Optional second argument: a func-type s-expression for result variable
@@ -43,13 +43,13 @@ func PrimGoCFGToStructured(mc machine.CallContext) error {
 
 	node, err := unmapNode(blockVal)
 	if err != nil {
-		return werr.WrapForeignErrorf(errGoRestructureError,
+		return werr.WrapForeignErrorf(errGoRestructure,
 			"go-cfg-to-structured: %s", err)
 	}
 
 	block, ok := node.(*ast.BlockStmt)
 	if !ok {
-		return werr.WrapForeignErrorf(errGoRestructureError,
+		return werr.WrapForeignErrorf(errGoRestructure,
 			"go-cfg-to-structured: expected block, got %T", node)
 	}
 
@@ -63,12 +63,12 @@ func PrimGoCFGToStructured(mc machine.CallContext) error {
 			if ftVal != values.FalseValue {
 				ftNode, err := unmapNode(ftVal)
 				if err != nil {
-					return werr.WrapForeignErrorf(errGoRestructureError,
+					return werr.WrapForeignErrorf(errGoRestructure,
 						"go-cfg-to-structured: func-type: %s", err)
 				}
 				ft, ftOk := ftNode.(*ast.FuncType)
 				if !ftOk {
-					return werr.WrapForeignErrorf(errGoRestructureError,
+					return werr.WrapForeignErrorf(errGoRestructure,
 						"go-cfg-to-structured: expected func-type, got %T", ftNode)
 				}
 				if ft.Results != nil {
@@ -78,7 +78,7 @@ func PrimGoCFGToStructured(mc machine.CallContext) error {
 			// Reject extra arguments.
 			cdr, cdrok := pair.Cdr().(values.Tuple)
 			if cdrok && !values.IsEmptyList(cdr) {
-				return werr.WrapForeignErrorf(errGoRestructureError,
+				return werr.WrapForeignErrorf(errGoRestructure,
 					"go-cfg-to-structured: expected at most 1 optional argument, got extra")
 			}
 		}
@@ -86,7 +86,7 @@ func PrimGoCFGToStructured(mc machine.CallContext) error {
 
 	gc := classifyGotos(block)
 	if gc == gotoCrossBranch {
-		return werr.WrapForeignErrorf(errGoRestructureError,
+		return werr.WrapForeignErrorf(errGoRestructure,
 			"go-cfg-to-structured: cross-branch goto (target label inside nested block)")
 	}
 
@@ -108,7 +108,7 @@ func PrimGoCFGToStructured(mc machine.CallContext) error {
 	// Post-restructuring validation: if any gotos survived the pattern
 	// matchers, bail honestly rather than returning an AST with gotos.
 	if gc != gotoNone && containsGoto(&ast.BlockStmt{List: stmts}) {
-		return werr.WrapForeignErrorf(errGoRestructureError,
+		return werr.WrapForeignErrorf(errGoRestructure,
 			"go-cfg-to-structured: goto pattern not recognized after restructuring")
 	}
 
@@ -117,7 +117,7 @@ func PrimGoCFGToStructured(mc machine.CallContext) error {
 		lw := loopRewriter{resultTypes: resultTypes}
 		newStmts, ok := lw.rewriteLoops(stmts)
 		if !ok {
-			return werr.WrapForeignErrorf(errGoRestructureError,
+			return werr.WrapForeignErrorf(errGoRestructure,
 				"go-cfg-to-structured: unrewritable return in loop (naked return or multi-value call)")
 		}
 		stmts = newStmts

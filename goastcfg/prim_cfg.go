@@ -31,7 +31,7 @@ import (
 )
 
 var (
-	errCFGBuildError   = werr.NewStaticError("cfg build error")
+	errCFGBuild        = werr.NewStaticError("cfg build error")
 	errCFGFuncNotFound = werr.NewStaticError("function not found in package")
 )
 
@@ -127,14 +127,14 @@ func parseCFGOpts(rest values.Value, fset *token.FileSet) (*cfgMapper, error) {
 		}
 		s, ok := pair.Car().(*values.Symbol)
 		if !ok {
-			return nil, werr.WrapForeignErrorf(errCFGBuildError,
+			return nil, werr.WrapForeignErrorf(errCFGBuild,
 				"go-cfg: options must be symbols, got %T", pair.Car())
 		}
 		switch s.Key {
 		case "positions":
 			opts.positions = true
 		default:
-			return nil, werr.WrapForeignErrorf(errCFGBuildError,
+			return nil, werr.WrapForeignErrorf(errCFGBuild,
 				"go-cfg: unknown option '%s'; valid options: positions", s.Key)
 		}
 		cdr, ok := pair.Cdr().(values.Tuple)
@@ -245,7 +245,7 @@ func cfgFromPattern(mc machine.CallContext, pattern *values.String, funcName str
 		packages.NeedName|packages.NeedFiles|packages.NeedSyntax|
 			packages.NeedTypes|packages.NeedTypesInfo|
 			packages.NeedImports|packages.NeedDeps,
-		fset, errCFGBuildError, "go-cfg",
+		fset, errCFGBuild, "go-cfg",
 		pattern.Value)
 	if err != nil {
 		return err

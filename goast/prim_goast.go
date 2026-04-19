@@ -48,7 +48,7 @@ func parseOpts(rest values.Value, fset *token.FileSet) (*mapperOpts, parser.Mode
 		}
 		s, ok := pair.Car().(*values.Symbol)
 		if !ok {
-			return nil, 0, werr.WrapForeignErrorf(errGoParseError,
+			return nil, 0, werr.WrapForeignErrorf(errGoParse,
 				"go-parse: options must be symbols, got %T", pair.Car())
 		}
 		switch s.Key {
@@ -58,7 +58,7 @@ func parseOpts(rest values.Value, fset *token.FileSet) (*mapperOpts, parser.Mode
 			opts.comments = true
 			mode |= parser.ParseComments
 		default:
-			return nil, 0, werr.WrapForeignErrorf(errGoParseError,
+			return nil, 0, werr.WrapForeignErrorf(errGoParse,
 				"go-parse: unknown option '%s'; valid options: positions, comments", s.Key)
 		}
 		cdr, ok := pair.Cdr().(values.Tuple)
@@ -95,7 +95,7 @@ func PrimGoParseFile(mc machine.CallContext) error {
 
 	f, parseErr := parser.ParseFile(fset, filename.Value, nil, mode)
 	if parseErr != nil {
-		return werr.WrapForeignErrorf(errGoParseError,
+		return werr.WrapForeignErrorf(errGoParse,
 			"go-parse-file: %s: %s", filename.Value, parseErr)
 	}
 
@@ -119,7 +119,7 @@ func PrimGoParseString(mc machine.CallContext) error {
 
 	f, parseErr := parser.ParseFile(fset, "source.go", source.Value, mode)
 	if parseErr != nil {
-		return werr.WrapForeignErrorf(errGoParseError,
+		return werr.WrapForeignErrorf(errGoParse,
 			"go-parse-string: %s", parseErr)
 	}
 
@@ -137,7 +137,7 @@ func PrimGoParseExpr(mc machine.CallContext) error {
 
 	expr, parseErr := parser.ParseExpr(source.Value)
 	if parseErr != nil {
-		return werr.WrapForeignErrorf(errGoParseError,
+		return werr.WrapForeignErrorf(errGoParse,
 			"go-parse-expr: %s", parseErr)
 	}
 
@@ -240,7 +240,7 @@ func mapPackage(pkg *packages.Package, baseOpts *mapperOpts) values.Value {
 func PrimGoTypecheckPackage(mc machine.CallContext) error {
 	mctx, ok := mc.(*machine.MachineContext)
 	if !ok {
-		return werr.WrapForeignErrorf(errGoPackageLoadError,
+		return werr.WrapForeignErrorf(errGoPackageLoad,
 			"go-typecheck-package: CallContext is not *MachineContext")
 	}
 	arg, rest, err := ExtractTargetAndRest(mctx, mc.Arg(0))
@@ -282,7 +282,7 @@ func typecheckFromPatternWithRest(mc machine.CallContext, pattern *values.String
 	pkgs, err := LoadPackagesChecked(mc,
 		packages.NeedName|packages.NeedFiles|packages.NeedSyntax|
 			packages.NeedTypes|packages.NeedTypesInfo,
-		fset, errGoPackageLoadError, "go-typecheck-package",
+		fset, errGoPackageLoad, "go-typecheck-package",
 		pattern.Value)
 	if err != nil {
 		return err
@@ -326,7 +326,7 @@ func implementorsFromSession(mc machine.CallContext, ifaceName string, session *
 func implementorsFromPattern(mc machine.CallContext, ifaceName string, pattern *values.String) error {
 	pkgs, err := LoadPackagesChecked(mc,
 		packages.NeedName|packages.NeedTypes,
-		nil, errGoPackageLoadError, "go-interface-implementors",
+		nil, errGoPackageLoad, "go-interface-implementors",
 		pattern.Value)
 	if err != nil {
 		return err

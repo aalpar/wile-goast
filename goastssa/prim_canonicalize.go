@@ -56,13 +56,13 @@ func PrimGoSSACanonicalize(mc machine.CallContext) error {
 	arg := mc.Arg(0)
 	node, ok := arg.(*values.Pair)
 	if !ok {
-		return werr.WrapForeignErrorf(errSSACanonicalizeError,
+		return werr.WrapForeignErrorf(errSSACanonicalize,
 			"go-ssa-canonicalize: expected pair, got %T", arg)
 	}
 
 	tag, ok := node.Car().(*values.Symbol)
 	if !ok || tag.Key != "ssa-func" {
-		return werr.WrapForeignErrorf(errSSACanonicalizeError,
+		return werr.WrapForeignErrorf(errSSACanonicalize,
 			"go-ssa-canonicalize: expected ssa-func node, got %v", node.Car())
 	}
 
@@ -145,12 +145,12 @@ func parseSSAParams(paramsList values.Value) ([]ssaParamData, error) {
 	for !values.IsEmptyList(cur) {
 		pair, ok := cur.(*values.Pair)
 		if !ok {
-			return nil, werr.WrapForeignErrorf(errSSACanonicalizeError,
+			return nil, werr.WrapForeignErrorf(errSSACanonicalize,
 				"go-ssa-canonicalize: malformed params list")
 		}
 		paramNode, ok := pair.Car().(*values.Pair)
 		if !ok {
-			return nil, werr.WrapForeignErrorf(errSSACanonicalizeError,
+			return nil, werr.WrapForeignErrorf(errSSACanonicalize,
 				"go-ssa-canonicalize: expected pair in params list")
 		}
 
@@ -189,12 +189,12 @@ func parseSSABlocks(blocksList values.Value) ([]ssaBlockData, error) {
 	for !values.IsEmptyList(cur) {
 		pair, ok := cur.(*values.Pair)
 		if !ok {
-			return nil, werr.WrapForeignErrorf(errSSACanonicalizeError,
+			return nil, werr.WrapForeignErrorf(errSSACanonicalize,
 				"go-ssa-canonicalize: malformed blocks list")
 		}
 		blockNode, ok := pair.Car().(*values.Pair)
 		if !ok {
-			return nil, werr.WrapForeignErrorf(errSSACanonicalizeError,
+			return nil, werr.WrapForeignErrorf(errSSACanonicalize,
 				"go-ssa-canonicalize: expected pair in blocks list")
 		}
 
@@ -218,7 +218,7 @@ func parseSSABlock(fields values.Value) (ssaBlockData, error) {
 	}
 	idx, ok := idxVal.(*values.Integer)
 	if !ok {
-		return bd, werr.WrapForeignErrorf(errSSACanonicalizeError,
+		return bd, werr.WrapForeignErrorf(errSSACanonicalize,
 			"go-ssa-canonicalize: block index expected integer")
 	}
 	bd.index = idx.Value
@@ -228,7 +228,7 @@ func parseSSABlock(fields values.Value) (ssaBlockData, error) {
 	if found {
 		idom, ok := idomVal.(*values.Integer)
 		if !ok {
-			return bd, werr.WrapForeignErrorf(errSSACanonicalizeError,
+			return bd, werr.WrapForeignErrorf(errSSACanonicalize,
 				"go-ssa-canonicalize: block idom expected integer")
 		}
 		bd.idom = idom.Value
@@ -250,7 +250,7 @@ func parseSSABlock(fields values.Value) (ssaBlockData, error) {
 	if found {
 		s, ok := commentVal.(*values.String)
 		if !ok {
-			return bd, werr.WrapForeignErrorf(errSSACanonicalizeError,
+			return bd, werr.WrapForeignErrorf(errSSACanonicalize,
 				"go-ssa-canonicalize: block comment expected string")
 		}
 		bd.comment = s.Value
@@ -276,12 +276,12 @@ func parseIntList(fields values.Value, key string) ([]int64, error) {
 	for !values.IsEmptyList(cur) {
 		pair, ok := cur.(*values.Pair)
 		if !ok {
-			return nil, werr.WrapForeignErrorf(errSSACanonicalizeError,
+			return nil, werr.WrapForeignErrorf(errSSACanonicalize,
 				"go-ssa-canonicalize: malformed %s list", key)
 		}
 		n, ok := pair.Car().(*values.Integer)
 		if !ok {
-			return nil, werr.WrapForeignErrorf(errSSACanonicalizeError,
+			return nil, werr.WrapForeignErrorf(errSSACanonicalize,
 				"go-ssa-canonicalize: %s expected integer element", key)
 		}
 		result = append(result, n.Value)
@@ -323,7 +323,7 @@ func canonicalizeBlockOrder(fd *ssaFuncData) error {
 		}
 	}
 	if entryIdx == -1 {
-		return werr.WrapForeignErrorf(errSSACanonicalizeError,
+		return werr.WrapForeignErrorf(errSSACanonicalize,
 			"go-ssa-canonicalize: no entry block (idom == -1) found")
 	}
 
@@ -339,7 +339,7 @@ func canonicalizeBlockOrder(fd *ssaFuncData) error {
 	dfs(entryIdx)
 
 	if len(order) != len(fd.blocks) {
-		return werr.WrapForeignErrorf(errSSACanonicalizeError,
+		return werr.WrapForeignErrorf(errSSACanonicalize,
 			"go-ssa-canonicalize: dominator tree covers %d of %d blocks",
 			len(order), len(fd.blocks))
 	}

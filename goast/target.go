@@ -51,8 +51,8 @@ const (
 	targetDefaultPattern = "./..."
 )
 
-// errExtractTargetError is the sentinel for ExtractTargetAndRest failures.
-var errExtractTargetError = werr.NewStaticError("target extraction error")
+// errExtractTarget is the sentinel for ExtractTargetAndRest failures.
+var errExtractTarget = werr.NewStaticError("target extraction error")
 
 var (
 	targetOnce  sync.Once
@@ -70,7 +70,7 @@ var (
 func ExtractTargetAndRest(mc *machine.MachineContext, restArg values.Value) (values.Value, values.Value, error) {
 	tuple, ok := restArg.(values.Tuple)
 	if !ok {
-		return nil, nil, werr.WrapForeignErrorf(errExtractTargetError,
+		return nil, nil, werr.WrapForeignErrorf(errExtractTarget,
 			"ExtractTargetAndRest: rest arg is %T, not a values.Tuple", restArg)
 	}
 	if values.IsEmptyList(tuple) {
@@ -79,7 +79,7 @@ func ExtractTargetAndRest(mc *machine.MachineContext, restArg values.Value) (val
 	}
 	pair, ok := tuple.(*values.Pair)
 	if !ok {
-		return nil, nil, werr.WrapForeignErrorf(errExtractTargetError,
+		return nil, nil, werr.WrapForeignErrorf(errExtractTarget,
 			"ExtractTargetAndRest: non-empty rest is %T, not a *values.Pair", tuple)
 	}
 	return pair.Car(), pair.Cdr(), nil

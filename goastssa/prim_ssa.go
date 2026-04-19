@@ -29,9 +29,9 @@ import (
 )
 
 var (
-	errSSABuildError        = werr.NewStaticError("ssa build error")
-	errSSAFieldIndexError   = werr.NewStaticError("ssa field index error")
-	errSSACanonicalizeError = werr.NewStaticError("ssa canonicalize error")
+	errSSABuild        = werr.NewStaticError("ssa build error")
+	errSSAFieldIndex   = werr.NewStaticError("ssa field index error")
+	errSSACanonicalize = werr.NewStaticError("ssa canonicalize error")
 )
 
 // parseSSAOpts extracts mapper options from a variadic rest-arg list.
@@ -49,14 +49,14 @@ func parseSSAOpts(rest values.Value, fset *token.FileSet) (*ssaMapper, error) {
 		}
 		s, ok := pair.Car().(*values.Symbol)
 		if !ok {
-			return nil, werr.WrapForeignErrorf(errSSABuildError,
+			return nil, werr.WrapForeignErrorf(errSSABuild,
 				"go-ssa-build: options must be symbols, got %T", pair.Car())
 		}
 		switch s.Key {
 		case "positions":
 			opts.positions = true
 		default:
-			return nil, werr.WrapForeignErrorf(errSSABuildError,
+			return nil, werr.WrapForeignErrorf(errSSABuild,
 				"go-ssa-build: unknown option '%s'; valid options: positions", s.Key)
 		}
 		cdr, ok := pair.Cdr().(values.Tuple)
@@ -74,7 +74,7 @@ func parseSSAOpts(rest values.Value, fset *token.FileSet) (*ssaMapper, error) {
 func PrimGoSSABuild(mc machine.CallContext) error {
 	mctx, ok := mc.(*machine.MachineContext)
 	if !ok {
-		return werr.WrapForeignErrorf(errSSABuildError,
+		return werr.WrapForeignErrorf(errSSABuild,
 			"go-ssa-build: CallContext is not *MachineContext")
 	}
 	arg, rest, err := goast.ExtractTargetAndRest(mctx, mc.Arg(0))
@@ -106,7 +106,7 @@ func ssaBuildFromPatternWithRest(mc machine.CallContext, pattern *values.String,
 		packages.NeedName|packages.NeedFiles|packages.NeedSyntax|
 			packages.NeedTypes|packages.NeedTypesInfo|
 			packages.NeedImports|packages.NeedDeps,
-		fset, errSSABuildError, "go-ssa-build",
+		fset, errSSABuild, "go-ssa-build",
 		pattern.Value)
 	if err != nil {
 		return err
@@ -197,7 +197,7 @@ func fieldIndexFromPattern(mc machine.CallContext, pattern *values.String) error
 		packages.NeedName|packages.NeedFiles|packages.NeedSyntax|
 			packages.NeedTypes|packages.NeedTypesInfo|
 			packages.NeedImports|packages.NeedDeps,
-		fset, errSSAFieldIndexError, "go-ssa-field-index",
+		fset, errSSAFieldIndex, "go-ssa-field-index",
 		pattern.Value)
 	if err != nil {
 		return err

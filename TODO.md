@@ -501,14 +501,19 @@ Effort tags: S (hours), M (day), L (multi-day).
       `werr.WrapForeignErrorf` sites with no error-case tests. Add table-driven
       `TestPrim<X>Errors` per package covering documented sentinels. **[S]**
 
-- [ ] **Error sentinel naming inconsistency** — Prefix and suffix drift across
-      packages: `errGo*` / `errCFG*` / `errCG*` / `errLint*`, some with `Error`
-      suffix, some without. Sites: `goast/helpers.go:24-29`,
-      `goastcfg/prim_cfg.go:30-31`, `goastcg/prim_callgraph.go:45-48`,
-      `goastlint/prim_lint.go:~55-70`. Pick `err<Pkg><Category>` (no `Error`
-      suffix — type name carries it), apply repo-wide, add a ruleguard rule
-      once `ruleguard/rules.go` is wired to CI (see prior staff-engineer finding
-      above on ruleguard integration). **[S]**
+- [x] **Error sentinel naming inconsistency** — Renamed 12 sentinels across
+      5 packages to drop the redundant `Error` suffix:
+      `errGoParseError` → `errGoParse`, `errGoPackageLoadError` → `errGoPackageLoad`,
+      `errGoLoadError` → `errGoLoad`, `errGoRestructureError` → `errGoRestructure`,
+      `errExtractTargetError` → `errExtractTarget`,
+      `errSSABuildError` → `errSSABuild`, `errSSAFieldIndexError` → `errSSAFieldIndex`,
+      `errSSACanonicalizeError` → `errSSACanonicalize`,
+      `errCFGBuildError` → `errCFGBuild`, `errCGBuildError` → `errCGBuild`,
+      `errLintBuildError` → `errLintBuild`, `errLintRunError` → `errLintRun`.
+      Convention is now consistent: `err<Pkg><Category>`, no `Error` suffix.
+      Ruleguard rule deferred (no ruleguard CI integration yet — tracked
+      separately under TODO.md "Fix `/staff-engineer` findings" §9).
+      **[S]** — done 2026-04-19
 
 ### Low
 

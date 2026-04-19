@@ -21,12 +21,12 @@ import (
 
 // Extension-local error sentinels.
 var (
-	errGoParseError        = werr.NewStaticError("go parse error")
+	errGoParse             = werr.NewStaticError("go parse error")
 	errMalformedGoAST      = werr.NewStaticError("malformed go ast")
-	errGoPackageLoadError  = werr.NewStaticError("go package load error")
+	errGoPackageLoad       = werr.NewStaticError("go package load error")
 	errGoInterfaceNotFound = werr.NewStaticError("go interface not found")
-	errGoLoadError         = werr.NewStaticError("go load error")
-	errGoRestructureError  = werr.NewStaticError("go restructure error")
+	errGoLoad              = werr.NewStaticError("go load error")
+	errGoRestructure       = werr.NewStaticError("go restructure error")
 )
 
 // Tag returns a symbol value for a node tag name.

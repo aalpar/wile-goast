@@ -55,7 +55,7 @@ func funcRefsFromPattern(mc machine.CallContext, pattern *values.String) error {
 	pkgs, err := LoadPackagesChecked(mc,
 		packages.NeedName|packages.NeedFiles|packages.NeedSyntax|
 			packages.NeedTypes|packages.NeedTypesInfo,
-		fset, errGoPackageLoadError, "go-func-refs",
+		fset, errGoPackageLoad, "go-func-refs",
 		pattern.Value)
 	if err != nil {
 		return err
