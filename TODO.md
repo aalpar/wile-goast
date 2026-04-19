@@ -106,6 +106,48 @@ See `plans/2026-03-26-c3-domains-design.md`.
 - [ ] Belief graduation — 100% adherence beliefs become dataflow assertions
 - [ ] Belief-defined lattices — express belief checkers as lattice transfer functions
 
+## Track D: Duplicate Detection — Feasibility Probe (2026-04-18)
+
+Probe before committing to full impl. Design doc:
+`plans/2026-04-17-fca-duplicate-detection-design.md`.
+
+Hypothesis: the dumbest cross-function SSA block-sequence detector may
+catch most real duplicates without FCA prefiltering. If so, simplify the
+impl. If not, the miss set informs whether FCA (Track 1) or aggressive
+inlining (Track 2) earns its cost.
+
+### D1. Ground truth — hand-labeled corpus
+
+- [ ] Pick target: `wile-goast` itself (~300 funcs), single package or whole repo?
+- [ ] Hand-label 15–20 function pairs believed to be duplicates / near-duplicates
+- [ ] Classify each pair: structural / algebraic / semantic (same intent, different impl)
+- [ ] Save as `plans/2026-04-18-dup-detect-corpus.md` (or similar)
+
+### D2. Minimal detector prototype
+
+- [ ] Flatten each function's SSA to instruction-tag sequence (ignore operands)
+- [ ] Find repeated sub-sequences of length ≥ K across any two functions
+- [ ] Rank matches by length × inverse-frequency of constituent ops
+- [ ] Output: ranked list of (func-a, func-b, match-length, match-location)
+- [ ] Prototype in `examples/goast-query/` — not a library yet
+
+### D3. Measure + decide
+
+- [ ] Run prototype on corpus target
+- [ ] Compute recall against hand-labels
+- [ ] Compute precision on top-N candidates (spot-check)
+- [ ] Decide next track based on results:
+  - \>80% recall → simplify FCA plan, maybe skip prefilter entirely
+  - 30–80% → proceed with FCA duplicate detection impl plan as written
+  - <30% → pivot to inlining / boundary-discovery design doc (Track E)
+
+### D4. Open design question (document outcome)
+
+- [ ] If pursuing inlining (Track E): which functions should NOT be inlined?
+  Candidates: unbounded loops, interface dispatch sites, cross-cohesion
+  boundaries, strongly-named intent functions, exported API. Needs a rule
+  that matches human intuition, documented in a design doc before impl.
+
 ## MCP / Belief API Mismatch
 
 - [ ] `run-beliefs` returns `#<void>` and writes results via `display` to stdout.
