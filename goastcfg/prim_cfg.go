@@ -204,22 +204,13 @@ func findFunction(prog *ssa.Program, ssaPkg *ssa.Package, name string) *ssa.Func
 // PrimGoCFG implements (go-cfg target func-name . options).
 // target is a package pattern string or a GoSession from go-load.
 func PrimGoCFG(mc machine.CallContext) error {
-	arg := mc.Arg(0)
 	funcName, err := helpers.RequireArg[*values.String](mc, 1, werr.ErrNotAString, "go-cfg")
 	if err != nil {
 		return err
 	}
-
-	session, ok := goast.UnwrapSession(arg)
-	if ok {
-		return cfgFromSession(mc, session, funcName.Value)
-	}
-	pat, ok := arg.(*values.String)
-	if !ok {
-		return werr.WrapForeignErrorf(werr.ErrNotAString,
-			"go-cfg: expected string or go-session, got %T", arg)
-	}
-	return cfgFromPattern(mc, pat, funcName.Value)
+	return goast.DispatchSessionOrPattern(mc.Arg(0), "go-cfg",
+		func(s *goast.GoSession) error { return cfgFromSession(mc, s, funcName.Value) },
+		func(p *values.String) error { return cfgFromPattern(mc, p, funcName.Value) })
 }
 
 func cfgFromSession(mc machine.CallContext, session *goast.GoSession, funcName string) error {

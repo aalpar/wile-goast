@@ -58,3 +58,47 @@ func TestWrapSession_Identity(t *testing.T) {
 	c.Assert(w1.EqualTo(w2), qt.IsFalse)
 	c.Assert(w1.EqualTo(w1), qt.IsTrue)
 }
+
+func TestDispatchSessionOrPattern_Session(t *testing.T) {
+	c := qt.New(t)
+	s := goast.NewGoSession([]string{"x/y"}, nil, nil, false)
+	wrapped := goast.WrapSession(s)
+
+	var gotSession *goast.GoSession
+	var patternCalls int
+	err := goast.DispatchSessionOrPattern(wrapped, "go-test",
+		func(sess *goast.GoSession) error { gotSession = sess; return nil },
+		func(*values.String) error { patternCalls++; return nil })
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(gotSession, qt.Equals, s)
+	c.Assert(patternCalls, qt.Equals, 0)
+}
+
+func TestDispatchSessionOrPattern_Pattern(t *testing.T) {
+	c := qt.New(t)
+	pat := values.NewString("my/pkg/...")
+
+	var sessionCalls int
+	var gotPattern *values.String
+	err := goast.DispatchSessionOrPattern(pat, "go-test",
+		func(*goast.GoSession) error { sessionCalls++; return nil },
+		func(p *values.String) error { gotPattern = p; return nil })
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(sessionCalls, qt.Equals, 0)
+	c.Assert(gotPattern, qt.Equals, pat)
+}
+
+func TestDispatchSessionOrPattern_WrongType(t *testing.T) {
+	c := qt.New(t)
+	arg := values.NewInteger(42)
+
+	err := goast.DispatchSessionOrPattern(arg, "go-probe",
+		func(*goast.GoSession) error { return nil },
+		func(*values.String) error { return nil })
+
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(err.Error(), qt.Contains, "go-probe")
+	c.Assert(err.Error(), qt.Contains, "string or go-session")
+}

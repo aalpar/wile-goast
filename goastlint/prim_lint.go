@@ -74,8 +74,6 @@ var (
 // target is a package pattern string or a GoSession from go-load.
 // If given a GoSession loaded without 'lint mode, falls back to fresh loading.
 func PrimGoAnalyze(mc machine.CallContext) error {
-	arg := mc.Arg(0)
-
 	analyzers, err := parseAnalyzerNames(mc.Arg(1))
 	if err != nil {
 		return err
@@ -86,20 +84,17 @@ func PrimGoAnalyze(mc machine.CallContext) error {
 		return nil
 	}
 
-	session, ok := goast.UnwrapSession(arg)
-	if ok {
-		if session.IsLintMode() {
-			return analyzeFromSession(mc, session, analyzers)
-		}
-		// Non-lint session: fall back to fresh load with LoadAllSyntax.
-		return analyzeFromPattern(mc, session.Patterns(), analyzers)
-	}
-	pat, ok := arg.(*values.String)
-	if !ok {
-		return werr.WrapForeignErrorf(werr.ErrNotAString,
-			"go-analyze: expected string or go-session, got %T", arg)
-	}
-	return analyzeFromPattern(mc, []string{pat.Value}, analyzers)
+	return goast.DispatchSessionOrPattern(mc.Arg(0), "go-analyze",
+		func(s *goast.GoSession) error {
+			if s.IsLintMode() {
+				return analyzeFromSession(mc, s, analyzers)
+			}
+			// Non-lint session: fall back to fresh load with LoadAllSyntax.
+			return analyzeFromPattern(mc, s.Patterns(), analyzers)
+		},
+		func(p *values.String) error {
+			return analyzeFromPattern(mc, []string{p.Value}, analyzers)
+		})
 }
 
 func analyzeFromSession(mc machine.CallContext, session *goast.GoSession, analyzers []*analysis.Analyzer) error {

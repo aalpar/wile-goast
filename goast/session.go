@@ -23,6 +23,7 @@ import (
 	"golang.org/x/tools/go/ssa/ssautil"
 
 	"github.com/aalpar/wile/values"
+	"github.com/aalpar/wile/werr"
 )
 
 // GoSession holds loaded Go packages and lazily-built analysis state.
@@ -70,6 +71,31 @@ func UnwrapSession(v values.Value) (*GoSession, bool) {
 	}
 	s, ok := o.Unwrap().(*GoSession)
 	return s, ok
+}
+
+// DispatchSessionOrPattern routes arg to sessionFn if it unwraps to a
+// GoSession, or to patternFn if arg is a *values.String. Otherwise returns
+// a werr.ErrNotAString error scoped to primName.
+//
+// Every package-loading primitive in the sub-extensions needs this shape.
+// Centralizing it keeps the error message consistent and removes four
+// near-identical dispatch blocks.
+func DispatchSessionOrPattern(
+	arg values.Value,
+	primName string,
+	sessionFn func(*GoSession) error,
+	patternFn func(*values.String) error,
+) error {
+	session, ok := UnwrapSession(arg)
+	if ok {
+		return sessionFn(session)
+	}
+	pat, ok := arg.(*values.String)
+	if !ok {
+		return werr.WrapForeignErrorf(werr.ErrNotAString,
+			"%s: expected string or go-session, got %T", primName, arg)
+	}
+	return patternFn(pat)
 }
 
 // Packages returns the loaded packages.

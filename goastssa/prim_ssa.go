@@ -81,16 +81,9 @@ func PrimGoSSABuild(mc machine.CallContext) error {
 	if err != nil {
 		return err
 	}
-	session, ok := goast.UnwrapSession(arg)
-	if ok {
-		return ssaBuildFromSessionWithRest(mc, session, rest)
-	}
-	pat, ok := arg.(*values.String)
-	if !ok {
-		return werr.WrapForeignErrorf(werr.ErrNotAString,
-			"go-ssa-build: expected string or go-session, got %T", arg)
-	}
-	return ssaBuildFromPatternWithRest(mc, pat, rest)
+	return goast.DispatchSessionOrPattern(arg, "go-ssa-build",
+		func(s *goast.GoSession) error { return ssaBuildFromSessionWithRest(mc, s, rest) },
+		func(p *values.String) error { return ssaBuildFromPatternWithRest(mc, p, rest) })
 }
 
 func ssaBuildFromSessionWithRest(mc machine.CallContext, session *goast.GoSession, rest values.Value) error {

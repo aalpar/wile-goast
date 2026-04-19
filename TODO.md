@@ -426,12 +426,12 @@ Effort tags: S (hours), M (day), L (multi-day).
 
 ### High
 
-- [ ] **Session/pattern dispatch duplicated 4×** — Extract shared helper in `goast`.
-      Sites: `goastssa/prim_ssa.go:105-119`, `goastcfg/prim_cfg.go:246-260`,
-      `goastcg/prim_callgraph.go:92-109`, `goastlint/prim_lint.go` (session-or-string
-      dispatch). Add `goast.DispatchSessionOrPattern(values.Value) (*GoSession,
-      *values.String, error)`, replace all 4 copies. Do before PR-2 (go-ssa-narrow)
-      lands and it gets copied a 5th time. **[S]**
+- [x] **Session/pattern dispatch duplicated 4×** — Added
+      `goast.DispatchSessionOrPattern(arg, primName, sessionFn, patternFn) error`
+      in `goast/session.go`. Replaced dispatch blocks in `goastssa/prim_ssa.go`,
+      `goastcfg/prim_cfg.go`, `goastcg/prim_callgraph.go`, `goastlint/prim_lint.go`.
+      Closure-per-site carries the extra args (rest/funcName/algo/analyzers).
+      TDD: three tests in `goast/session_test.go`. **[S]** — done 2026-04-19
 
 - [ ] **`belief.scm` god-object (1018 lines)** — Extract `(wile goast belief-checkers)`
       library containing property checkers (`paired-with`, `ordered`, `contains-call`,

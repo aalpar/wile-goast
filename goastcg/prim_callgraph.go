@@ -52,8 +52,6 @@ var validAlgorithms = map[string]bool{
 // PrimGoCallgraph implements (go-callgraph target algorithm).
 // target is a package pattern string or a GoSession from go-load.
 func PrimGoCallgraph(mc machine.CallContext) error {
-	arg := mc.Arg(0)
-
 	algo, err := helpers.RequireArg[*values.Symbol](mc, 1, werr.ErrNotASymbol, "go-callgraph")
 	if err != nil {
 		return err
@@ -64,16 +62,9 @@ func PrimGoCallgraph(mc machine.CallContext) error {
 			"go-callgraph: algorithm must be static, cha, rta, or vta; got %s", algo.Key)
 	}
 
-	session, ok := goast.UnwrapSession(arg)
-	if ok {
-		return callgraphFromSession(mc, session, algo.Key)
-	}
-	pat, ok := arg.(*values.String)
-	if !ok {
-		return werr.WrapForeignErrorf(werr.ErrNotAString,
-			"go-callgraph: expected string or go-session, got %T", arg)
-	}
-	return callgraphFromPattern(mc, pat, algo.Key)
+	return goast.DispatchSessionOrPattern(mc.Arg(0), "go-callgraph",
+		func(s *goast.GoSession) error { return callgraphFromSession(mc, s, algo.Key) },
+		func(p *values.String) error { return callgraphFromPattern(mc, p, algo.Key) })
 }
 
 func callgraphFromSession(mc machine.CallContext, session *goast.GoSession, algorithm string) error {
