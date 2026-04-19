@@ -150,6 +150,129 @@
            (else (instr-loop (cdr is) acc2))))))))
 
 ;; ---------------------------------------------------------------------------
+;; Function resolution from manifest entry to SSA function
+;; ---------------------------------------------------------------------------
+
+;; build-func-index returns an alist mapping (fn-name-string . ssa-func-alist).
+;; Linear construction, then O(log N) lookups via assoc on the hot path.
+(define (build-func-index ssa-funcs)
+  (map (lambda (f) (cons (nf f 'name) f)) ssa-funcs))
+
+;; resolve-function looks up a manifest entry in a func-index. Returns the
+;; matching (ssa-func ...) alist, or #f for binding-only primitives (Impl is
+;; nil — about 47 in the current manifest) or for primitives whose Go
+;; function lives in an SSA-package not loaded in this run.
+(define (resolve-function entry func-index)
+  (let* ((go-fn (entry-go-function entry))
+         (hit (assoc go-fn func-index)))
+    (if hit (cdr hit) #f)))
+
+;; ---------------------------------------------------------------------------
+;; Per-primitive narrowing pipeline
+;; ---------------------------------------------------------------------------
+
+;; string-member? — membership by string=? (not eq?).
+(define (string-member? s lst)
+  (cond
+    ((null? lst) #f)
+    ((string=? s (car lst)) #t)
+    (else (string-member? s (cdr lst)))))
+
+;; union-strings deduplicates a list of strings (preserves first-seen order).
+(define (union-strings xs)
+  (let loop ((xs xs) (acc '()))
+    (cond
+      ((null? xs) (reverse acc))
+      ((string-member? (car xs) acc) (loop (cdr xs) acc))
+      (else (loop (cdr xs) (cons (car xs) acc))))))
+
+;; union-symbols deduplicates a list of symbols.
+(define (union-symbols xs)
+  (let loop ((xs xs) (acc '()))
+    (cond
+      ((null? xs) (reverse acc))
+      ((memq (car xs) acc) (loop (cdr xs) acc))
+      (else (loop (cdr xs) (cons (car xs) acc))))))
+
+;; merge-narrow-results — Scheme-side mirror of Go-side mergeResults. Unions
+;; types + reasons across all inputs; confidence picks 'widened if any is
+;; widened, else 'no-paths if all are no-paths, else 'narrow.
+(define (merge-narrow-results rs)
+  (if (null? rs)
+      (list 'narrow-result
+            (cons 'types '())
+            (cons 'confidence 'no-paths)
+            (cons 'reasons '()))
+      (let loop ((rs rs)
+                 (types '())
+                 (reasons '())
+                 (any-widened #f)
+                 (all-no-paths #t))
+        (cond
+          ((null? rs)
+           (let ((conf (cond (any-widened 'widened)
+                             (all-no-paths 'no-paths)
+                             (else 'narrow))))
+             (list 'narrow-result
+                   (cons 'types (union-strings (reverse types)))
+                   (cons 'confidence conf)
+                   (cons 'reasons (union-symbols (reverse reasons))))))
+          (else
+           (let* ((r (car rs))
+                  (r-types (or (nf r 'types) '()))
+                  (r-reasons (or (nf r 'reasons) '()))
+                  (r-conf (nf r 'confidence))
+                  (now-any-widened (or any-widened (eq? r-conf 'widened)))
+                  (now-all-no-paths (and all-no-paths
+                                         (eq? r-conf 'no-paths))))
+             (loop (cdr rs)
+                   (append (reverse r-types) types)
+                   (append (reverse r-reasons) reasons)
+                   now-any-widened
+                   now-all-no-paths)))))))
+
+;; narrow-sink-call invokes go-ssa-narrow on the value-arg of a sink call.
+;; Returns the narrow-result alist.
+(define (narrow-sink-call ssa-func sink-info)
+  (let ((arg-name (nf sink-info 'value-arg)))
+    (if arg-name
+        (go-ssa-narrow ssa-func arg-name)
+        (list 'narrow-result
+              (cons 'types '())
+              (cons 'confidence 'no-paths)
+              (cons 'reasons '(missing-arg))))))
+
+;; analyze-primitive orchestrates resolution → sink enumeration → narrowing →
+;; merge, returning an (axis-b-entry ...) alist. For unresolved entries
+;; (binding-only, or out-of-package), emits an axis-b-entry with
+;; (status unresolved).
+(define (analyze-primitive entry func-index)
+  (let ((fn (resolve-function entry func-index)))
+    (if (not fn)
+        (list 'axis-b-entry
+              (cons 'name (entry-name entry))
+              (cons 'declared-return-type (entry-declared-return entry))
+              (cons 'go-function (entry-go-function entry))
+              (cons 'go-source (entry-go-source entry))
+              (cons 'status 'unresolved)
+              (cons 'narrowed '())
+              (cons 'confidence 'no-paths)
+              (cons 'reasons '()))
+        (let* ((sinks (find-sink-calls fn))
+               (narrows (map (lambda (s) (narrow-sink-call fn s)) sinks))
+               (merged (merge-narrow-results narrows)))
+          (list 'axis-b-entry
+                (cons 'name (entry-name entry))
+                (cons 'declared-return-type (entry-declared-return entry))
+                (cons 'go-function (entry-go-function entry))
+                (cons 'go-source (entry-go-source entry))
+                (cons 'status 'resolved)
+                (cons 'sink-count (length sinks))
+                (cons 'narrowed (nf merged 'types))
+                (cons 'confidence (nf merged 'confidence))
+                (cons 'reasons (nf merged 'reasons)))))))
+
+;; ---------------------------------------------------------------------------
 ;; Main entry
 ;; ---------------------------------------------------------------------------
 
@@ -161,27 +284,28 @@
     (display " primitives from ")
     (display mpath)
     (newline)
-    ;; Sanity probe: build SSA for wile's registry/core and report the sink
-    ;; call count for a known-simple primitive (PrimCons).
+    ;; Sanity probe: build SSA for wile's registry/core, build the func
+    ;; index, and analyze a few known primitives to exercise the pipeline.
     (parameterize ((current-go-target "github.com/aalpar/wile/registry/core"))
       (let* ((funcs (go-ssa-build))
-             (cons-fn (let loop ((fs funcs))
-                        (cond ((null? fs) #f)
-                              ((string=? (nf (car fs) 'name)
-                                         "github.com/aalpar/wile/registry/core.PrimCons")
-                               (car fs))
-                              (else (loop (cdr fs)))))))
-        (if cons-fn
-            (let ((sinks (find-sink-calls cons-fn)))
-              (display "  PrimCons sink calls: ")
-              (display (length sinks))
-              (newline)
-              (for-each
-               (lambda (s)
-                 (display "    ")
-                 (display s)
-                 (newline))
-               sinks))
-            (display "  (PrimCons not found in registry/core SSA)\n"))))))
+             (idx (build-func-index funcs))
+             (probes '("cons" "null?" "length" "car")))
+        (display "  pipeline probe (core primitives):") (newline)
+        (for-each
+         (lambda (name)
+           (let ((e (let loop ((es entries))
+                      (cond ((null? es) #f)
+                            ((string=? (entry-name (car es)) name) (car es))
+                            (else (loop (cdr es)))))))
+             (if e
+                 (let ((r (analyze-primitive e idx)))
+                   (display "    ") (display name)
+                   (display ": conf=") (display (nf r 'confidence))
+                   (display " types=") (display (nf r 'narrowed))
+                   (display " reasons=") (display (nf r 'reasons))
+                   (newline))
+                 (begin (display "    ") (display name)
+                        (display ": (not in manifest)") (newline)))))
+         probes)))))
 
 (main)
