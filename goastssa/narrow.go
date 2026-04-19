@@ -41,6 +41,7 @@ package goastssa
 
 import (
 	"fmt"
+	"go/token"
 	"go/types"
 
 	"golang.org/x/tools/go/ssa"
@@ -110,10 +111,19 @@ func narrowWalk(fn *ssa.Function, v ssa.Value, visited map[ssa.Value]bool) *narr
 	case *ssa.BinOp:
 		return narrowFromConcreteType(x.Type())
 	case *ssa.UnOp:
-		// Dereference (op == *): reading from a pointer cell. Widen with field-load
-		// unless the result type is itself concrete and we can use it.
+		// UnOp covers *, !, -, ^, and <-. Only the memory-loading ops
+		// (pointer dereference and channel receive) produce values whose
+		// concrete type we can't know statically. ! / - / ^ operate on
+		// already-narrowed values and yield concrete types.
 		if isInterfaceResult(x.Type()) {
-			return &narrowResult{Confidence: "widened", Reasons: []string{"field-load"}}
+			reason := "unexpected-unop"
+			switch x.Op {
+			case token.MUL:
+				reason = "pointer-load"
+			case token.ARROW:
+				reason = "channel-receive"
+			}
+			return &narrowResult{Confidence: "widened", Reasons: []string{reason}}
 		}
 		return narrowFromConcreteType(x.Type())
 	case *ssa.Field:
@@ -123,7 +133,7 @@ func narrowWalk(fn *ssa.Function, v ssa.Value, visited map[ssa.Value]bool) *narr
 		return narrowFromConcreteType(x.Type())
 	case *ssa.FieldAddr:
 		if isInterfaceResult(x.Type()) {
-			return &narrowResult{Confidence: "widened", Reasons: []string{"field-load"}}
+			return &narrowResult{Confidence: "widened", Reasons: []string{"field-addr"}}
 		}
 		return narrowFromConcreteType(x.Type())
 	case *ssa.Index:
@@ -132,7 +142,7 @@ func narrowWalk(fn *ssa.Function, v ssa.Value, visited map[ssa.Value]bool) *narr
 		return narrowFromConcreteType(x.Type())
 	case *ssa.Lookup:
 		if isInterfaceResult(x.Type()) {
-			return &narrowResult{Confidence: "widened", Reasons: []string{"field-load"}}
+			return &narrowResult{Confidence: "widened", Reasons: []string{"map-lookup"}}
 		}
 		return narrowFromConcreteType(x.Type())
 	case *ssa.Slice:
@@ -167,13 +177,16 @@ func narrowWalk(fn *ssa.Function, v ssa.Value, visited map[ssa.Value]bool) *narr
 }
 
 // narrowFromConcreteType returns a narrow result if t is a concrete
-// (non-interface) Go type, widened with field-load otherwise.
+// (non-interface) Go type, widened with interface-result otherwise.
 func narrowFromConcreteType(t types.Type) *narrowResult {
 	if t == nil {
-		return &narrowResult{Confidence: "no-paths"}
+		// Nil types.Type is an invariant violation (SSA values should
+		// always carry a type). Tag it distinctly so debuggers can tell
+		// this from a legitimate callee-no-returns 'no-paths'.
+		return &narrowResult{Confidence: "no-paths", Reasons: []string{"nil-type"}}
 	}
 	if isInterfaceResult(t) {
-		return &narrowResult{Confidence: "widened", Reasons: []string{"field-load"}}
+		return &narrowResult{Confidence: "widened", Reasons: []string{"interface-result"}}
 	}
 	return &narrowResult{
 		Types:      []string{types.TypeString(t, nil)},
@@ -181,7 +194,11 @@ func narrowFromConcreteType(t types.Type) *narrowResult {
 	}
 }
 
-// isInterfaceResult reports whether t is an interface type (possibly pointer-to).
+// isInterfaceResult reports whether t's underlying type is an interface.
+// Pointer-to-interface is NOT detected — callers that want to distinguish
+// *io.Reader from io.Reader must unwrap the pointer first. (This matches
+// the reality of the call sites: they pass ssa.Value.Type() and treat
+// pointer-to-interface as concrete.)
 func isInterfaceResult(t types.Type) bool {
 	if t == nil {
 		return false
