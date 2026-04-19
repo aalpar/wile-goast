@@ -94,9 +94,10 @@ func addPrimitives(r *registry.Registry) error {
 				"See also: `go-parse-file', `nf', `tag?'.",
 			ParamNames: []string{"ast"}, Category: "goast",
 			ParamTypes: []values.TypeConstraint{values.TypeList}},
-		{Name: "go-typecheck-package", ParamCount: 2, IsVariadic: true, Impl: PrimGoTypecheckPackage,
+		{Name: "go-typecheck-package", ParamCount: 1, IsVariadic: true, Impl: PrimGoTypecheckPackage,
 			Doc: "Loads a Go package with full type information and returns annotated ASTs.\n" +
 				"First arg is a package pattern or GoSession. Options: 'debug.\n" +
+				"If no first arg provided, uses (current-go-target).\n" +
 				"Returns a list of package alists. Each has: name, path, files.\n" +
 				"Type annotations appear as inferred-type fields on AST nodes.\n\n" +
 				"Examples:\n" +
@@ -107,7 +108,7 @@ func addPrimitives(r *registry.Registry) error {
 				"  (define files (nf (car pkgs) 'files))\n" +
 				"  (nf (car (nf (car files) 'decls)) 'name)  ; => \"main\"\n\n" +
 				"See also: `go-load', `go-ssa-build', `go-interface-implementors'.",
-			ParamNames: []string{"pattern", "options"}, Category: "goast",
+			ParamNames: []string{"target", "rest"}, Category: "goast",
 			ReturnType: values.TypeList},
 		{Name: "go-interface-implementors", ParamCount: 2, Impl: PrimInterfaceImplementors,
 			Doc: "Finds all concrete types implementing a named interface.\n" +

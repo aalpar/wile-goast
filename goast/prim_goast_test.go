@@ -485,6 +485,31 @@ func TestGoFuncRefs_SelfAnalysis(t *testing.T) {
 	})
 }
 
+func TestGoTypecheckPackageUsesCurrentGoTarget(t *testing.T) {
+	extgoast.ResetTargetState()
+	t.Setenv("WILE_GOAST_TARGET", "")
+
+	engine := newEngine(t)
+	defer func() { _ = engine.Close() }()
+
+	result := eval(t, engine,
+		`(parameterize ((current-go-target "github.com/aalpar/wile-goast/goast"))
+		   (pair? (go-typecheck-package)))`)
+	qt.New(t).Assert(result.Internal(), qt.Equals, values.TrueValue)
+}
+
+func TestGoTypecheckPackageExplicitArgStillWorks(t *testing.T) {
+	extgoast.ResetTargetState()
+	t.Setenv("WILE_GOAST_TARGET", "")
+
+	engine := newEngine(t)
+	defer func() { _ = engine.Close() }()
+
+	result := eval(t, engine,
+		`(pair? (go-typecheck-package "github.com/aalpar/wile-goast/goast"))`)
+	qt.New(t).Assert(result.Internal(), qt.Equals, values.TrueValue)
+}
+
 // schemeStringLiteral wraps a Go string as a Scheme string literal,
 // escaping backslashes, double quotes, and newlines.
 func schemeStringLiteral(s string) string {

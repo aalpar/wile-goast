@@ -232,26 +232,35 @@ func mapPackage(pkg *packages.Package, baseOpts *mapperOpts) values.Value {
 	)
 }
 
-// PrimGoTypecheckPackage implements (go-typecheck-package target . options).
+// PrimGoTypecheckPackage implements (go-typecheck-package [target] . options).
 // target is a package pattern string or a GoSession from go-load.
+// If not provided, uses (current-go-target).
 // Loads a Go package using go/packages (module-aware via go list), type-checks it,
 // and returns a list of annotated (package ...) s-expression nodes.
 func PrimGoTypecheckPackage(mc machine.CallContext) error {
-	arg := mc.Arg(0)
+	mctx, ok := mc.(*machine.MachineContext)
+	if !ok {
+		return werr.WrapForeignErrorf(errGoPackageLoadError,
+			"go-typecheck-package: CallContext is not *MachineContext")
+	}
+	arg, rest, err := ExtractTargetAndRest(mctx, mc.Arg(0))
+	if err != nil {
+		return err
+	}
 	session, ok := UnwrapSession(arg)
 	if ok {
-		return typecheckFromSession(mc, session)
+		return typecheckFromSessionWithRest(mc, session, rest)
 	}
 	pat, ok := arg.(*values.String)
 	if !ok {
 		return werr.WrapForeignErrorf(werr.ErrNotAString,
 			"go-typecheck-package: expected string or go-session, got %T", arg)
 	}
-	return typecheckFromPattern(mc, pat)
+	return typecheckFromPatternWithRest(mc, pat, rest)
 }
 
-func typecheckFromSession(mc machine.CallContext, session *GoSession) error {
-	baseOpts, _, optErr := parseOpts(mc.Arg(1), session.FileSet())
+func typecheckFromSessionWithRest(mc machine.CallContext, session *GoSession, rest values.Value) error {
+	baseOpts, _, optErr := parseOpts(rest, session.FileSet())
 	if optErr != nil {
 		return optErr
 	}
@@ -263,9 +272,9 @@ func typecheckFromSession(mc machine.CallContext, session *GoSession) error {
 	return nil
 }
 
-func typecheckFromPattern(mc machine.CallContext, pattern *values.String) error {
+func typecheckFromPatternWithRest(mc machine.CallContext, pattern *values.String, rest values.Value) error {
 	fset := token.NewFileSet()
-	baseOpts, _, optErr := parseOpts(mc.Arg(1), fset)
+	baseOpts, _, optErr := parseOpts(rest, fset)
 	if optErr != nil {
 		return optErr
 	}

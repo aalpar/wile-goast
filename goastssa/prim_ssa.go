@@ -34,29 +34,6 @@ var (
 	errSSACanonicalizeError = werr.NewStaticError("ssa canonicalize error")
 )
 
-// extractTargetAndRest unpacks the rest-list arg of a pattern-accepting
-// primitive. If the rest list is non-empty, returns the first element
-// (which the caller dispatches as string or GoSession) plus the remaining
-// rest list. If the rest list is empty, reads the current-go-target
-// parameter and returns its value plus an empty rest list.
-func extractTargetAndRest(mc *machine.MachineContext, restArg values.Value) (values.Value, values.Value, error) {
-	tuple, ok := restArg.(values.Tuple)
-	if !ok {
-		return nil, nil, werr.WrapForeignErrorf(errSSABuildError,
-			"extractTargetAndRest: rest arg is %T, not a values.Tuple", restArg)
-	}
-	if values.IsEmptyList(tuple) {
-		param := goast.GetCurrentGoTargetParam()
-		return mc.ResolveParameterValue(param), tuple, nil
-	}
-	pair, ok := tuple.(*values.Pair)
-	if !ok {
-		return nil, nil, werr.WrapForeignErrorf(errSSABuildError,
-			"extractTargetAndRest: non-empty rest is %T, not a *values.Pair", tuple)
-	}
-	return pair.Car(), pair.Cdr(), nil
-}
-
 // parseSSAOpts extracts mapper options from a variadic rest-arg list.
 // Returns an error for non-symbol values or unrecognized option names.
 func parseSSAOpts(rest values.Value, fset *token.FileSet) (*ssaMapper, error) {
@@ -100,7 +77,7 @@ func PrimGoSSABuild(mc machine.CallContext) error {
 		return werr.WrapForeignErrorf(errSSABuildError,
 			"go-ssa-build: CallContext is not *MachineContext")
 	}
-	arg, rest, err := extractTargetAndRest(mctx, mc.Arg(0))
+	arg, rest, err := goast.ExtractTargetAndRest(mctx, mc.Arg(0))
 	if err != nil {
 		return err
 	}
