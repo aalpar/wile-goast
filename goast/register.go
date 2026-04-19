@@ -23,7 +23,7 @@ import (
 var Extension = registry.NewExtension("goast", AddToRegistry)
 
 // Builder aggregates all Go AST registration functions.
-var Builder = registry.NewRegistryBuilder(addPrimitives)
+var Builder = registry.NewRegistryBuilder(addPrimitives, addTargetParam)
 
 // AddToRegistry registers all Go AST primitives.
 var AddToRegistry = Builder.AddToRegistry
@@ -183,5 +183,12 @@ func addPrimitives(r *registry.Registry) error {
 			ParamNames: []string{"block", "rest"}, Category: "goast",
 			ReturnType: values.TypeList},
 	}, registry.PhaseRuntime)
+	return nil
+}
+
+// addTargetParam registers the current-go-target R7RS parameter as a
+// global binding. See goast/target.go for the parameter's semantics.
+func addTargetParam(r *registry.Registry) error {
+	r.AddGlobalValue("current-go-target", GetCurrentGoTargetParam())
 	return nil
 }
