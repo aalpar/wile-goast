@@ -247,16 +247,9 @@ func PrimGoTypecheckPackage(mc machine.CallContext) error {
 	if err != nil {
 		return err
 	}
-	session, ok := UnwrapSession(arg)
-	if ok {
-		return typecheckFromSessionWithRest(mc, session, rest)
-	}
-	pat, ok := arg.(*values.String)
-	if !ok {
-		return werr.WrapForeignErrorf(werr.ErrNotAString,
-			"go-typecheck-package: expected string or go-session, got %T", arg)
-	}
-	return typecheckFromPatternWithRest(mc, pat, rest)
+	return DispatchSessionOrPattern(arg, "go-typecheck-package",
+		func(s *GoSession) error { return typecheckFromSessionWithRest(mc, s, rest) },
+		func(p *values.String) error { return typecheckFromPatternWithRest(mc, p, rest) })
 }
 
 func typecheckFromSessionWithRest(mc machine.CallContext, session *GoSession, rest values.Value) error {
@@ -305,18 +298,9 @@ func PrimInterfaceImplementors(mc machine.CallContext) error {
 	if err != nil {
 		return err
 	}
-
-	arg1 := mc.Arg(1)
-	session, ok := UnwrapSession(arg1)
-	if ok {
-		return implementorsFromSession(mc, ifaceName.Value, session)
-	}
-	pat, ok := arg1.(*values.String)
-	if !ok {
-		return werr.WrapForeignErrorf(werr.ErrNotAString,
-			"go-interface-implementors: expected string or go-session, got %T", arg1)
-	}
-	return implementorsFromPattern(mc, ifaceName.Value, pat)
+	return DispatchSessionOrPattern(mc.Arg(1), "go-interface-implementors",
+		func(s *GoSession) error { return implementorsFromSession(mc, ifaceName.Value, s) },
+		func(p *values.String) error { return implementorsFromPattern(mc, ifaceName.Value, p) })
 }
 
 func implementorsFromSession(mc machine.CallContext, ifaceName string, session *GoSession) error {
