@@ -19,6 +19,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 	"golang.org/x/tools/go/ssa"
+
+	"github.com/aalpar/wile/values"
 )
 
 func TestFindValueByName(t *testing.T) {
@@ -86,8 +88,29 @@ func TestWrapUnwrapSSAFunctionRef(t *testing.T) {
 	c.Assert(got, qt.Equals, fn)
 }
 
-func TestUnwrapSSAFunctionRefWrongTag(t *testing.T) {
+func TestUnwrapSSAFunctionRef_WrongType(t *testing.T) {
 	c := qt.New(t)
 	_, ok := UnwrapSSAFunctionRef(nil)
+	c.Assert(ok, qt.IsFalse)
+	_, ok = UnwrapSSAFunctionRef(values.NewString("not opaque"))
+	c.Assert(ok, qt.IsFalse)
+}
+
+func TestUnwrapSSAFunctionRef_WrongTag(t *testing.T) {
+	c := qt.New(t)
+	// Opaque value with the right payload type but a different tag —
+	// simulates the sibling GoSession wrapper's failure mode.
+	other := values.NewOpaqueValue("some-other-tag", &ssa.Function{})
+	_, ok := UnwrapSSAFunctionRef(other)
+	c.Assert(ok, qt.IsFalse)
+}
+
+func TestUnwrapSSAFunctionRef_CorruptedPayload(t *testing.T) {
+	c := qt.New(t)
+	// Right tag, wrong payload type. Internal invariant violation; the
+	// public API still returns (nil, false) — callers treat all three
+	// failure modes the same.
+	corrupted := values.NewOpaqueValue(ssaFunctionRefTag, "not a function")
+	_, ok := UnwrapSSAFunctionRef(corrupted)
 	c.Assert(ok, qt.IsFalse)
 }

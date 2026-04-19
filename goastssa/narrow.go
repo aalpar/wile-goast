@@ -43,9 +43,17 @@ import (
 	"fmt"
 	"go/token"
 	"go/types"
+	"sort"
 
 	"golang.org/x/tools/go/ssa"
 )
+
+// widened is a small constructor for the common widened-with-reason result
+// shape. Reduces a 4-line struct literal to a one-liner; every reason
+// string in this file flows through here.
+func widened(reason string) *narrowResult {
+	return &narrowResult{Confidence: "widened", Reasons: []string{reason}}
+}
 
 // narrowResult is the Go-side narrowing output. Converted to Scheme by
 // buildNarrowResult in prim_narrow.go.
@@ -72,7 +80,7 @@ func narrowWalk(fn *ssa.Function, v ssa.Value, visited map[ssa.Value]bool) *narr
 		return &narrowResult{Confidence: "no-paths", Reasons: []string{"nil-input"}}
 	}
 	if visited[v] {
-		return &narrowResult{Confidence: "widened", Reasons: []string{"cycle"}}
+		return widened("cycle")
 	}
 	visited[v] = true
 	defer delete(visited, v)
@@ -123,17 +131,17 @@ func narrowWalk(fn *ssa.Function, v ssa.Value, visited map[ssa.Value]bool) *narr
 			case token.ARROW:
 				reason = "channel-receive"
 			}
-			return &narrowResult{Confidence: "widened", Reasons: []string{reason}}
+			return widened(reason)
 		}
 		return narrowFromConcreteType(x.Type())
 	case *ssa.Field:
 		if isInterfaceResult(x.Type()) {
-			return &narrowResult{Confidence: "widened", Reasons: []string{"field-load"}}
+			return widened("field-load")
 		}
 		return narrowFromConcreteType(x.Type())
 	case *ssa.FieldAddr:
 		if isInterfaceResult(x.Type()) {
-			return &narrowResult{Confidence: "widened", Reasons: []string{"field-addr"}}
+			return widened("field-addr")
 		}
 		return narrowFromConcreteType(x.Type())
 	case *ssa.Index:
@@ -142,7 +150,7 @@ func narrowWalk(fn *ssa.Function, v ssa.Value, visited map[ssa.Value]bool) *narr
 		return narrowFromConcreteType(x.Type())
 	case *ssa.Lookup:
 		if isInterfaceResult(x.Type()) {
-			return &narrowResult{Confidence: "widened", Reasons: []string{"map-lookup"}}
+			return widened("map-lookup")
 		}
 		return narrowFromConcreteType(x.Type())
 	case *ssa.Slice:
@@ -153,27 +161,24 @@ func narrowWalk(fn *ssa.Function, v ssa.Value, visited map[ssa.Value]bool) *narr
 		return narrowFromConcreteType(x.Type())
 	case *ssa.Const:
 		if x.IsNil() {
-			return &narrowResult{Confidence: "widened", Reasons: []string{"nil-constant"}}
+			return widened("nil-constant")
 		}
 		return narrowFromConcreteType(x.Type())
 	case *ssa.Parameter:
-		return &narrowResult{Confidence: "widened", Reasons: []string{"parameter"}}
+		return widened("parameter")
 	case *ssa.FreeVar:
-		return &narrowResult{Confidence: "widened", Reasons: []string{"free-var"}}
+		return widened("free-var")
 	case *ssa.Global:
-		return &narrowResult{Confidence: "widened", Reasons: []string{"global-load"}}
+		return widened("global-load")
 	case *ssa.Function:
 		return narrowFromConcreteType(x.Type())
 	case *ssa.Builtin:
-		return &narrowResult{Confidence: "widened", Reasons: []string{"unresolvable-callee"}}
+		return widened("unresolvable-callee")
 	}
 	// Unknown SSA opcode. Include the Go type name so future toolchain
 	// additions (or forgotten switch cases) produce a traceable reason
 	// instead of silently falling into a generic "widened" bucket.
-	return &narrowResult{
-		Confidence: "widened",
-		Reasons:    []string{fmt.Sprintf("unhandled:%T", v)},
-	}
+	return widened(fmt.Sprintf("unhandled:%T", v))
 }
 
 // narrowFromConcreteType returns a narrow result if t is a concrete
@@ -186,7 +191,7 @@ func narrowFromConcreteType(t types.Type) *narrowResult {
 		return &narrowResult{Confidence: "no-paths", Reasons: []string{"nil-type"}}
 	}
 	if isInterfaceResult(t) {
-		return &narrowResult{Confidence: "widened", Reasons: []string{"interface-result"}}
+		return widened("interface-result")
 	}
 	return &narrowResult{
 		Types:      []string{types.TypeString(t, nil)},
@@ -242,11 +247,11 @@ func narrowFromExtract(fn *ssa.Function, ex *ssa.Extract, visited map[ssa.Value]
 // (widened with interface-method-dispatch).
 func narrowFromCall(call *ssa.Call, visited map[ssa.Value]bool) *narrowResult {
 	if call.Call.IsInvoke() {
-		return &narrowResult{Confidence: "widened", Reasons: []string{"interface-method-dispatch"}}
+		return widened("interface-method-dispatch")
 	}
 	callee := staticCallee(call)
 	if callee == nil {
-		return &narrowResult{Confidence: "widened", Reasons: []string{"unresolvable-callee"}}
+		return widened("unresolvable-callee")
 	}
 	if !isInterfaceResult(call.Type()) {
 		return narrowFromConcreteType(call.Type())
@@ -334,16 +339,6 @@ func keysSorted(m map[string]bool) []string {
 	for k := range m {
 		out = append(out, k)
 	}
-	sortStrings(out)
+	sort.Strings(out)
 	return out
-}
-
-// sortStrings sorts s in place (standard-library sort, extracted so the
-// import list stays small).
-func sortStrings(s []string) {
-	for i := 1; i < len(s); i++ {
-		for j := i; j > 0 && s[j-1] > s[j]; j-- {
-			s[j-1], s[j] = s[j], s[j-1]
-		}
-	}
 }

@@ -40,8 +40,12 @@ func PrimGoSSANarrow(mc machine.CallContext) error {
 	}
 	fn, ok := UnwrapSSAFunctionRef(refField)
 	if !ok {
+		// Three failure modes collapse here: refField isn't an OpaqueValue,
+		// the tag doesn't match, or the payload was corrupted. Acknowledge
+		// all three so a user debugging a weird session sees the full shape.
 		return werr.WrapForeignErrorf(errSSANarrow,
-			"go-ssa-narrow: ref field is not an ssa-function-ref")
+			"go-ssa-narrow: ref field is not a valid ssa-function-ref "+
+				"(wrong type, wrong tag, or corrupted payload)")
 	}
 
 	nameArg, ok := mc.Arg(1).(*values.String)
