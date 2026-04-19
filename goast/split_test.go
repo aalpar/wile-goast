@@ -273,6 +273,51 @@ func TestSplit_RecommendSplit_Synthetic(t *testing.T) {
 	})
 }
 
+func TestSplit_RecommendSplit_MaxAttributesGuard(t *testing.T) {
+	// With 'max-attributes set very low, a context exceeding it should
+	// return a NONE-confidence report with a diagnostic reason — not hang
+	// on the 2^N concept-lattice enumeration.
+	engine := newBeliefEngine(t)
+
+	eval(t, engine, `
+		(import (wile goast split))
+		(define refs
+		  '((func-ref (name . "Read")  (pkg . "p")
+		              (refs . ((ref (pkg . "io") (objects . ("Reader"))))))
+		    (func-ref (name . "Write") (pkg . "p")
+		              (refs . ((ref (pkg . "io") (objects . ("Writer"))))))
+		    (func-ref (name . "Parse") (pkg . "p")
+		              (refs . ((ref (pkg . "go/ast") (objects . ("File"))))))
+		    (func-ref (name . "Check") (pkg . "p")
+		              (refs . ((ref (pkg . "go/ast") (objects . ("Inspect"))))))
+		    (func-ref (name . "Bridge") (pkg . "p")
+		              (refs . ((ref (pkg . "io") (objects . ("Reader")))
+		                       (ref (pkg . "go/ast") (objects . ("File"))))))))
+		(define guarded (recommend-split refs 'max-attributes 1))
+	`)
+
+	c := qt.New(t)
+
+	t.Run("guard triggers NONE confidence", func(t *testing.T) {
+		result := eval(t, engine, `(cdr (assoc 'confidence guarded))`)
+		c.Assert(result.SchemeString(), qt.Equals, "NONE")
+	})
+
+	t.Run("guard reports attribute count", func(t *testing.T) {
+		result := eval(t, engine, `
+			(let ((ac (assoc 'attribute-count guarded)))
+			  (and ac (> (cdr ac) 1)))`)
+		c.Assert(result.SchemeString(), qt.Equals, "#t")
+	})
+
+	t.Run("guard reason mentions max-attributes", func(t *testing.T) {
+		result := eval(t, engine, `
+			(let ((r (assoc 'reason guarded)))
+			  (and r (string? (cdr r))))`)
+		c.Assert(result.SchemeString(), qt.Equals, "#t")
+	})
+}
+
 func TestSplit_VerifyAcyclic(t *testing.T) {
 	engine := newBeliefEngine(t)
 

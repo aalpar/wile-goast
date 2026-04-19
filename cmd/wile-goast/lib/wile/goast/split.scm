@@ -334,8 +334,10 @@ finds min-cut partition, and verifies acyclicity.
 Parameters:
   func-refs : list — output from (go-func-refs ...)
   opts      : optional — keyword options:
-              'idf-threshold N (default 0.36)
-              'refine         (use API-surface refinement)
+              'idf-threshold N  (default 0.36)
+              'refine           (use API-surface refinement)
+              'max-attributes N (default 30 — fails fast if context
+                                 exceeds this; concept-lattice is 2^N)
 Returns: alist with keys:
   functions  — total function count
   high-idf   — high-IDF packages with scores
@@ -358,6 +360,7 @@ See also: `import-signatures', `find-split', `verify-acyclic'."
             (cons 'confidence 'NONE)
             (cons 'reason "too few functions for split analysis"))
       (let* ((threshold (opt-ref opts 'idf-threshold 0.36))
+             (max-attrs (opt-ref opts 'max-attributes 30))
              (refine? (memq 'refine opts))
              (sigs (import-signatures func-refs))
              (idf (compute-idf sigs))
@@ -365,7 +368,22 @@ See also: `import-signatures', `find-split', `verify-acyclic'."
              (context (if refine?
                         (refine-by-api-surface func-refs filtered)
                         (build-package-context filtered)))
-             (lattice (concept-lattice context))
+             (attr-count (length (context-attributes context))))
+        (if (> attr-count max-attrs)
+          ;; Fail fast — concept-lattice is 2^N in attribute count.
+          (list (cons 'functions n)
+                (cons 'high-idf (filter (lambda (e) (>= (cdr e) threshold)) idf))
+                (cons 'groups '((group-a) (group-b) (cut) (cut-ratio . 1.0)))
+                (cons 'acyclic '((acyclic . #t) (a-refs-b . 0) (b-refs-a . 0)))
+                (cons 'confidence 'NONE)
+                (cons 'attribute-count attr-count)
+                (cons 'max-attributes max-attrs)
+                (cons 'reason
+                      (string-append
+                        "context has too many attributes for concept-lattice enumeration; "
+                        "tighten 'idf-threshold, add 'refine, or raise 'max-attributes "
+                        "(warning: 2^N growth)")))
+      (let* ((lattice (concept-lattice context))
              (groups (find-split context lattice))
              (group-a (cdr (assoc 'group-a groups)))
              (group-b (cdr (assoc 'group-b groups)))
@@ -382,7 +400,7 @@ See also: `import-signatures', `find-split', `verify-acyclic'."
                           (cons 'confidence confidence))))
           (if reason
             (append base (list (cons 'reason reason)))
-            base))))))
+            base))))))))
 
 (define (compute-confidence groups acyclic-info)
   "Compute confidence level from split quality metrics."

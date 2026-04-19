@@ -491,12 +491,19 @@ Effort tags: S (hours), M (day), L (multi-day).
       methods on `*ssaMapper` / `*cfgMapper` / `*cgMapper`. Converge on
       receiver-method style across all four. **[M]**
 
-- [ ] **FCA concept lattice scaling wall (2^|attributes|)** —
-      `cmd/wile-goast/lib/wile/goast/fca.scm` (`concept-lattice` via NextClosure)
-      enumerates all formal concepts up front. Worst case explodes at >100
-      functions × >50 dependency attributes. Consumers: `recommend-split`,
-      `single-cluster` aggregate belief. Add bounded variant with `'max-concepts`
-      and `'min-extent` keyword arguments; keep exhaustive as default. **[M]**
+- [x] **FCA concept lattice scaling wall (2^|attributes|)** — Partial fix:
+      added `'max-attributes` keyword guard to `recommend-split` (default 30).
+      When the filtered context exceeds the bound, returns a NONE-confidence
+      report with diagnostic fields (attribute-count, max-attributes, reason)
+      instead of hanging on the 2^N enumeration. Suggests three remedies:
+      tighten `'idf-threshold`, add `'refine`, or raise `'max-attributes`.
+      **Note:** Full bounded-enumeration belongs upstream in
+      `(wile algebra fca)` — the `concept-lattice` function is imported from
+      there, not implemented in wile-goast. This guard is the correct
+      wile-goast-layer fix; the exponential enumeration still happens when
+      under the bound, but users now fail fast on unsolvable inputs.
+      Tests: `TestSplit_RecommendSplit_MaxAttributesGuard` (3 subtests).
+      **[M]** — done 2026-04-19
 
 - [x] **Hardcoded limits buried in library code** —
       * `belief.scm:735` fuel=5: added `'fuel N` keyword arg to
