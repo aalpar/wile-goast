@@ -439,11 +439,11 @@ Effort tags: S (hours), M (day), L (multi-day).
       `cmd/wile-goast/lib/wile/goast/belief.scm:571-755`. Leave registry, selectors,
       runner, and emit in `belief.scm`. **[M]**
 
-- [ ] **`filter` reimplemented in 4 Scheme libraries** — Add `filter` (and likely
-      `find`, `position`) to `cmd/wile-goast/lib/wile/goast/utils.scm` + `utils.sld`
-      exports. Delete local copies at `domains.scm:23`, `split.scm:20`,
-      `fca-recommend.scm:24`, `unify.scm:33`. Two different idioms in use
-      (named-let accumulator vs filter-map wrapper); canonicalize on one. **[S]**
+- [x] **`filter` reimplemented in 4 Scheme libraries** — Added `filter` to
+      `utils.scm` (named-let version, correct for #f elements) + exported from
+      `utils.sld`. Deleted local copies at `domains.scm:23`, `split.scm:20`,
+      `fca-recommend.scm:24`, `unify.scm:33`. Find/position were not duplicated.
+      **[S]** — done 2026-04-19
 
 - [ ] **AST tag addition touches 6 files** — Convert mapper/unmapper dispatch in
       `goast/mapper.go` (852 lines) + `goast/unmapper.go` + `unmapper_{decl,stmt,expr,

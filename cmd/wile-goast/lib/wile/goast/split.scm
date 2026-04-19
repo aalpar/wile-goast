@@ -17,9 +17,6 @@
 ;;; Analyzes a Go package's functions by their external dependency profiles
 ;;; to discover natural package boundaries.
 
-(define (filter pred lst)
-  (filter-map (lambda (x) (and (pred x) x)) lst))
-
 (define (import-signatures func-refs)
   "Extract per-function import signatures from go-func-refs output.
 Each function maps to the set of external package paths it references.

@@ -29,9 +29,18 @@
   "Test whether NODE is a tagged-alist with tag T.\nReturns #t if node is a pair whose car is T.\n\nParameters:\n  node : list\n  t : symbol\nReturns: boolean\nCategory: goast-utils\n\nExamples:\n  (tag? node 'func-decl)    ; => #t or #f\n\nSee also: `nf', `walk'."
   (and (pair? node) (eq? (car node) t)))
 
+;; Keep elements where predicate returns true. Correct for #f elements
+;; (unlike (filter-map (lambda (x) (and (pred x) x)) lst), which drops #f).
+(define (filter pred lst)
+  "Return the elements of LST for which PRED returns a true value.\nPreserves #f elements when PRED accepts them (unlike filter-map wrappers).\n\nParameters:\n  pred : procedure\n  lst : list\nReturns: list\nCategory: goast-utils\n\nExamples:\n  (filter odd? '(1 2 3 4))  ; => (1 3)\n\nSee also: `filter-map'."
+  (let loop ((xs lst) (acc '()))
+    (if (null? xs) (reverse acc)
+      (loop (cdr xs)
+            (if (pred (car xs)) (cons (car xs) acc) acc)))))
+
 ;; Map keeping only non-#f results
 (define (filter-map f lst)
-  "Apply F to each element of LST, keeping only non-#f results.\n\nParameters:\n  f : procedure\n  lst : list\nReturns: list\nCategory: goast-utils\n\nExamples:\n  (filter-map (lambda (x) (and (> x 2) x)) '(1 2 3 4))  ; => (3 4)\n\nSee also: `flat-map'."
+  "Apply F to each element of LST, keeping only non-#f results.\n\nParameters:\n  f : procedure\n  lst : list\nReturns: list\nCategory: goast-utils\n\nExamples:\n  (filter-map (lambda (x) (and (> x 2) x)) '(1 2 3 4))  ; => (3 4)\n\nSee also: `flat-map', `filter'."
   (let loop ((xs lst) (acc '()))
     (if (null? xs) (reverse acc)
       (let ((v (f (car xs))))

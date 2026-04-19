@@ -30,11 +30,6 @@
   (if (null? (cdr lst)) (car lst)
     (last-element (cdr lst))))
 
-(define (filter pred lst)
-  (let loop ((xs lst) (acc '()))
-    (if (null? xs) (reverse acc)
-      (loop (cdr xs)
-            (if (pred (car xs)) (cons (car xs) acc) acc)))))
 
 ;; ══════════════════════════════════════════════════════════
 ;; Core data structures

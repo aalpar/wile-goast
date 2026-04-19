@@ -21,9 +21,6 @@
 
 ;;; ── Local utilities ─────────────────────────────────────
 
-(define (filter pred lst)
-  (filter-map (lambda (x) (and (pred x) x)) lst))
-
 (define (string-suffix? suffix s)
   (let ((slen (string-length s))
         (sufflen (string-length suffix)))

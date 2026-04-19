@@ -18,14 +18,6 @@
 ;;; sign analysis, interval analysis. All built on (wile goast dataflow)
 ;;; run-analysis and (wile algebra) lattice constructors.
 
-;; ─── Local utilities ────────────────────────────
-
-(define (filter pred lst)
-  (let loop ((xs lst) (acc '()))
-    (if (null? xs) (reverse acc)
-      (loop (cdr xs)
-            (if (pred (car xs)) (cons (car xs) acc) acc)))))
-
 ;; ─── String helpers ─────────────────────────────
 
 (define (find-char str ch)
