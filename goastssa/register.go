@@ -95,6 +95,23 @@ func addPrimitives(r *registry.Registry) error {
 			ParamNames: []string{"ssa-func"}, Category: "goast-ssa",
 			ParamTypes: []values.TypeConstraint{values.TypeList},
 			ReturnType: values.TypeList},
+		{Name: "go-ssa-narrow", ParamCount: 2, Impl: PrimGoSSANarrow,
+			Doc: "Narrows an SSA value to its set of concrete producing types.\n" +
+				"First arg: an (ssa-func ...) alist from go-ssa-build.\n" +
+				"Second arg: a value name (string) — matches ssa.Value.Name().\n" +
+				"Returns (narrow-result (types (string ...)) (confidence narrow|widened|no-paths) (reasons (symbol ...))).\n" +
+				"Confidence 'widened' means at least one path hit an untyped boundary; reasons\n" +
+				"enumerates which: parameter, global-load, field-load, nil-constant, cycle,\n" +
+				"interface-method-dispatch.\n\n" +
+				"Examples:\n" +
+				"  (import (wile goast utils))\n" +
+				"  (define funcs (go-ssa-build \"./...\"))\n" +
+				"  (define f (car funcs))\n" +
+				"  (go-ssa-narrow f \"t0\")\n" +
+				"  ;; => (narrow-result (types (\"*foo.Bar\")) (confidence narrow) (reasons ()))\n\n" +
+				"See also: `go-ssa-build'.",
+			ParamNames: []string{"ssa-func", "value-name"}, Category: "goast-ssa",
+			ReturnType: values.TypeList},
 	}, registry.PhaseRuntime)
 	return nil
 }
