@@ -107,27 +107,17 @@ Scripts read via `(current-go-target)` and override via `parameterize`. Fluid-bi
 
 Five Go-side primitives become optional-arg: if no arg, read `(current-go-target)` from the engine and use that; otherwise use the explicit arg (existing behavior preserved).
 
-| Primitive | File | Notes |
+| Primitive | File | Status in PR-1 |
 |---|---|---|
-| `go-ssa-build` | `goastssa/` | Already variadic for options; add pattern-from-parameter fallback |
-| `go-callgraph` | `goastcg/` | Same treatment |
-| `go-typecheck-package` | `goast/` | Same |
-| `go-parse-file` | `goast/` | Same (if applicable — parse-file takes a path, not a pattern; verify during implementation) |
-| `go-load` | `goast/` | Session constructor; pattern fallback |
+| `go-ssa-build` | `goastssa/register.go` + `goastssa/prim_ssa.go` | Shipped — pattern optional |
+| `go-typecheck-package` | `goast/register.go` + `goast/prim_goast.go` | Shipped — pattern optional |
+| `go-load` | `goast/register.go` + `goast/prim_session.go` | Shipped — pattern optional |
+| `go-callgraph` | `goastcg/` | Excluded — second arg (algorithm) is required. Making pattern optional would require type-disambiguated dispatch (string vs symbol). Not needed for axis-b; follow-up PR if a consumer appears. |
+| `go-parse-file` | `goast/` | Excluded — takes a filename, not a Go package pattern. Not applicable. |
 
-A shared Go helper — `resolveTarget(args, engine)` — handles the check:
-```go
-func resolveTarget(args []values.Value, eng *wile.Engine) (string, error) {
-    if len(args) > 0 {
-        return coerceStringArg(args[0])
-    }
-    val, err := eng.InvokeParameter("current-go-target")
-    if err != nil {
-        return "", err
-    }
-    return coerceString(val)
-}
-```
+The shared helper lives in `goast/target.go` as exported `ExtractTargetAndRest(mc *machine.MachineContext, restArg values.Value) (values.Value, values.Value, error)`. `goastssa/prim_ssa.go` imports `goast` and calls `goast.ExtractTargetAndRest`. Local sentinel `errExtractTargetError` lives alongside the helper.
+
+Each modified primitive's Go-side logic is: cast `CallContext` to `*MachineContext`, call `ExtractTargetAndRest` to unpack the rest list (with parameter fallback), then dispatch to existing session vs string helpers which were renamed `*WithRest` and accept the rest-list directly instead of reading `mc.Arg(1)`.
 
 ### 5.3 The top-level-function-default rule
 
