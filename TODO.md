@@ -458,7 +458,12 @@ Effort tags: S (hours), M (day), L (multi-day).
       `goast/mapper.go` (852 lines) + `goast/unmapper.go` + `unmapper_{decl,stmt,expr,
       types,comments}.go` to a registration table keyed by AST tag
       (`map[reflect.Type]mapperFn`), collocating forward + reverse mapping per
-      node type. Reduces per-tag extension cost from 6 files to 1. **[L]**
+      node type. Reduces per-tag extension cost from 6 files to 1.
+      **Deferred: L effort, needs a dedicated session.** This is a fundamental
+      restructuring of how AST ↔ alist mapping works, with 50+ node types to
+      migrate one-by-one under full test coverage. Feasible but not an
+      opportunistic fix. Do this when a Go toolchain upgrade forces the
+      cadence, or when a new node type actually needs to be added. **[L]**
 
 - [x] **10 of 12 embedded Scheme libraries have no integration test** — The
       audit agent missed most of the existing test files. Verified actual state:
@@ -486,10 +491,16 @@ Effort tags: S (hours), M (day), L (multi-day).
       **[S]** — done 2026-04-19
 
 - [ ] **`mapper.go` idiom divergence (free fns vs receiver methods)** —
-      `goast/mapper.go` uses free functions with `*mapperOpts` struct-passing;
-      `goastssa/mapper.go`, `goastcfg/mapper.go`, `goastcg/mapper.go` use receiver
-      methods on `*ssaMapper` / `*cfgMapper` / `*cgMapper`. Converge on
-      receiver-method style across all four. **[M]**
+      **REASSESSED: effort is L, not M.** `goast/mapper.go` has 60+ free
+      functions taking `opts *mapperOpts` plus call sites throughout
+      `unmapper_*.go`, tests, and `prim_*.go`. Mechanical rename to methods
+      on `*mapperOpts` is straightforward but risky without an IDE-assisted
+      refactor (gorename) — one missed call site breaks the build, and
+      `unparam` linter will flag every newly-unused `opts` parameter.
+      Deferring to a dedicated session with gorename. The divergence is
+      cosmetic: both idioms work, tests are green in the current state.
+      Sub-extensions (goastssa, goastcfg, goastcg) already use
+      receiver-method style; goast is the one outlier. **[L, deferred]**
 
 - [x] **FCA concept lattice scaling wall (2^|attributes|)** — Partial fix:
       added `'max-attributes` keyword guard to `recommend-split` (default 30).
