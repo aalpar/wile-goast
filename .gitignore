@@ -4,7 +4,9 @@ private/
 # Build outputs
 dist/
 build/
-wile-goast
+# Compiled binary at repo root only — anchored with leading slash so it
+# doesn't match the "wile-goast" path segment in cmd/wile-goast/...
+/wile-goast
 
 # IDE and editor directories
 .idea/
