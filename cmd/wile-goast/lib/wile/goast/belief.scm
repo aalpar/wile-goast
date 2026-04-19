@@ -730,9 +730,9 @@
 ;; def-use graph. Uses (wile algebra) fixpoint over a product lattice
 ;; (powerset x boolean) for early exit when the guard is found.
 ;; Returns: 'guarded, 'unguarded, or 'missing (SSA lookup failed)
-(define (checked-before-use value-pattern)
-  "Property checker: verify that a value matching VALUE-PATTERN is tested\nbefore use. Uses bounded def-use reachability (fuel=5) to check whether\nthe value flows through a comparison before reaching a non-guard use.\nReturns 'guarded or 'unguarded.\n\nParameters:\n  value-pattern : string\nReturns: procedure\nCategory: goast-belief\n\nExamples:\n  (checked-before-use \"err\")\n\nSee also: `ordered', `defuse-reachable?'."
-  (define fuel 5) ;; max-hops + 1: fixpoint needs one extra iteration to confirm convergence
+(define (checked-before-use value-pattern . opts)
+  "Property checker: verify that a value matching VALUE-PATTERN is tested\nbefore use. Uses bounded def-use reachability to check whether the value\nflows through a comparison before reaching a non-guard use.\nReturns 'guarded or 'unguarded.\n\nParameters:\n  value-pattern : string\n  opts : keyword list — optional 'fuel N (default 5, max def-use hops + 1)\nReturns: procedure\nCategory: goast-belief\n\nExamples:\n  (checked-before-use \"err\")\n  (checked-before-use \"err\" 'fuel 10)\n\nSee also: `ordered', `defuse-reachable?'."
+  (define fuel (opt-ref opts 'fuel 5)) ;; max-hops + 1: fixpoint needs one extra iteration to confirm convergence
   (lambda (site ctx)
     (let* ((fname (nf site 'name))
            (pkg-path (nf site 'pkg-path))

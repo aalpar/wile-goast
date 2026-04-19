@@ -482,14 +482,18 @@ Effort tags: S (hours), M (day), L (multi-day).
       `single-cluster` aggregate belief. Add bounded variant with `'max-concepts`
       and `'min-extent` keyword arguments; keep exhaustive as default. **[M]**
 
-- [ ] **Hardcoded limits buried in library code** — Expose as keyword arguments
-      with documented defaults:
-      `cmd/wile-goast/lib/wile/goast/split.scm:95,363` (IDF threshold 0.36 —
-      tunable via keyword but default undocumented);
-      `cmd/wile-goast/scripts/unify-detect-pkg.scm:547` (similarity 0.60 — not
-      tunable, requires source edit);
-      `cmd/wile-goast/lib/wile/goast/belief.scm:735` (fuel=5 in
-      `checked-before-use` — silently caps reachability). **[S]**
+- [x] **Hardcoded limits buried in library code** —
+      * `belief.scm:735` fuel=5: added `'fuel N` keyword arg to
+        `checked-before-use`. Default unchanged. TDD covered by
+        `TestCheckedBeforeUse_FuelKeyword` (2 subtests).
+      * `split.scm:95,363` IDF threshold 0.36: already tunable via keyword;
+        audit claim of "undocumented default" was wrong — docstrings at
+        `filter-noise:76` and `recommend-split:349` already document it.
+      * `unify-detect-pkg.scm:547` similarity 0.60: this is a *script*, not a
+        library — scripts are user-editable by design. The library's
+        `unifiable?` already takes threshold as a parameter.
+      * Side effect: moved `opt-ref` from `split.scm` to `utils.scm` since
+        `belief.scm` now needs it too. **[S]** — done 2026-04-19
 
 - [ ] **Error-path test gaps in sub-extensions** — Coverage headlines hide
       untested error branches: `goastssa` 67% test/src ratio, `goastlint` 59%,

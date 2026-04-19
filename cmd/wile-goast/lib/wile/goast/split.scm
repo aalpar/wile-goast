@@ -384,15 +384,6 @@ See also: `import-signatures', `find-split', `verify-acyclic'."
             (append base (list (cons 'reason reason)))
             base))))))
 
-(define (opt-ref opts key default)
-  "Look up a keyword option: (opt-ref '(key1 val1 key2 val2) 'key1 #f) => val1."
-  (let loop ((os opts))
-    (cond ((null? os) default)
-          ((and (not (null? (cdr os)))
-                (eq? (car os) key))
-           (cadr os))
-          (else (loop (cdr os))))))
-
 (define (compute-confidence groups acyclic-info)
   "Compute confidence level from split quality metrics."
   (let* ((cut-ratio (cdr (assoc 'cut-ratio groups)))

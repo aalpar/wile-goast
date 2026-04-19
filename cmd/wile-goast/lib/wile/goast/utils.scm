@@ -133,6 +133,16 @@
         ;; Atom
         (else node)))))
 
+;; Keyword option lookup — (opt-ref '(k1 v1 k2 v2) 'k1 default) => v1
+(define (opt-ref opts key default)
+  "Look up a keyword option in an alternating key/value list.\nReturns the associated value, or DEFAULT if KEY is not present.\n\nParameters:\n  opts : list\n  key : symbol\n  default : any\nReturns: any\nCategory: goast-utils\n\nExamples:\n  (opt-ref '(fuel 10 mode 'fast) 'fuel 5)  ; => 10\n  (opt-ref '() 'fuel 5)                    ; => 5\n\nSee also: `take', `drop'."
+  (let loop ((os opts))
+    (cond ((null? os) default)
+          ((and (not (null? (cdr os)))
+                (eq? (car os) key))
+           (cadr os))
+          (else (loop (cdr os))))))
+
 ;; Flat-mapping rewriter for lists (e.g. statement lists).
 ;; f returns a list (splice in place) or #f (keep original element).
 (define (ast-splice lst f)

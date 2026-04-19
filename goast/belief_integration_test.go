@@ -477,6 +477,42 @@ func TestBeliefCategory2_Check(t *testing.T) {
 	})
 }
 
+func TestCheckedBeforeUse_FuelKeyword(t *testing.T) {
+	engine := newBeliefEngine(t)
+
+	eval(t, engine, `
+		(import (wile goast belief))
+		(define ctx (make-context
+		              "github.com/aalpar/wile-goast/examples/goast-query/testdata/checking"))
+		(define sites ((functions-matching (has-params "error")) ctx))
+
+		(define checker-explicit (checked-before-use "err" 'fuel 5))
+		(define results-explicit
+		  (map (lambda (s) (checker-explicit s ctx)) sites))
+
+		(define checker-default (checked-before-use "err"))
+		(define results-default
+		  (map (lambda (s) (checker-default s ctx)) sites))
+	`)
+
+	t.Run("explicit fuel keyword matches default", func(t *testing.T) {
+		result := eval(t, engine, `(equal? results-explicit results-default)`)
+		qt.New(t).Assert(result.SchemeString(), qt.Equals, "#t")
+	})
+
+	t.Run("fuel=1 changes classification vs default", func(t *testing.T) {
+		// Low fuel starves the fixpoint — fewer guarded sites than fuel=5.
+		// This proves fuel actually threads through to defuse-reachable?.
+		result := eval(t, engine, `
+			(define checker-small (checked-before-use "err" 'fuel 1))
+			(define results-small
+			  (map (lambda (s) (checker-small s ctx)) sites))
+			(equal? results-small results-default)
+		`)
+		qt.New(t).Assert(result.SchemeString(), qt.Equals, "#f")
+	})
+}
+
 func TestBeliefCategory4_SameBlockOrdering(t *testing.T) {
 	engine := newBeliefEngine(t)
 

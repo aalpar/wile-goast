@@ -19,5 +19,6 @@
     member? unique has-char?
     ordered-pairs
     take drop
+    opt-ref
     ast-transform ast-splice)
   (include "utils.scm"))
