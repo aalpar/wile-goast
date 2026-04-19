@@ -231,6 +231,103 @@
                    now-any-widened
                    now-all-no-paths)))))))
 
+;; ---------------------------------------------------------------------------
+;; Go → wile type name mapping  (defined before analyze-primitive uses it)
+;; ---------------------------------------------------------------------------
+
+;; Maps the fully-qualified Go pointer-type strings that go-ssa-narrow
+;; emits into the wile-facing type names from values/value_type.go. Keep
+;; synchronized with wile/values/value_type.go typeNames table.
+(define go-type->wile-type-table
+  '(;; Numbers
+    ("*github.com/aalpar/wile/values.Integer"             . "integer")
+    ("*github.com/aalpar/wile/values.BigInteger"          . "integer")
+    ("*github.com/aalpar/wile/values.Float"               . "flonum")
+    ("*github.com/aalpar/wile/values.BigFloat"            . "flonum")
+    ("*github.com/aalpar/wile/values.Rational"            . "rational")
+    ("*github.com/aalpar/wile/values.Complex"             . "complex")
+    ("*github.com/aalpar/wile/values.BigComplex"          . "complex")
+    ;; Basic values
+    ("*github.com/aalpar/wile/values.Boolean"             . "boolean")
+    ("*github.com/aalpar/wile/values.Character"           . "character")
+    ("*github.com/aalpar/wile/values.String"              . "string")
+    ("*github.com/aalpar/wile/values.Symbol"              . "symbol")
+    ("*github.com/aalpar/wile/values.Byte"                . "byte")
+    ;; Collections
+    ("*github.com/aalpar/wile/values.Pair"                . "pair")
+    ("*github.com/aalpar/wile/values.Vector"              . "vector")
+    ("*github.com/aalpar/wile/values.ByteVector"          . "bytevector")
+    ("*github.com/aalpar/wile/values.Hashtable"           . "hashtable")
+    ;; Ports — map to textual/binary input/output per R7RS
+    ("*github.com/aalpar/wile/values.CharacterInputPort"  . "textual-input-port")
+    ("*github.com/aalpar/wile/values.CharacterOutputPort" . "textual-output-port")
+    ("*github.com/aalpar/wile/values.BinaryInputPort"     . "binary-input-port")
+    ("*github.com/aalpar/wile/values.BinaryOutputPort"    . "binary-output-port")
+    ("*github.com/aalpar/wile/values.StringInputPort"     . "textual-input-port")
+    ("*github.com/aalpar/wile/values.StringOutputPort"    . "textual-output-port")
+    ("*github.com/aalpar/wile/values.ByteVectorInputPort" . "binary-input-port")
+    ("*github.com/aalpar/wile/values.ByteVectorOutputPort" . "binary-output-port")
+    ;; Closures and procedures
+    ("*github.com/aalpar/wile/values.MachineClosure"      . "procedure")
+    ("*github.com/aalpar/wile/values.CaseLambdaClosure"   . "procedure")
+    ("*github.com/aalpar/wile/machine.MachineClosure"     . "procedure")
+    ;; Singletons (Void / EofObject / EmptyList) — record their wile form
+    ("*github.com/aalpar/wile/values.voidType"            . "void")
+    ("github.com/aalpar/wile/values.emptyListType"        . "list")
+    ;; Opaque / record / advanced
+    ("*github.com/aalpar/wile/values.Record"              . "record")
+    ("*github.com/aalpar/wile/values.RecordType"          . "record-type")
+    ("*github.com/aalpar/wile/values.Promise"             . "promise")
+    ("*github.com/aalpar/wile/values.Box"                 . "box")
+    ("*github.com/aalpar/wile/values.OpaqueValue"         . "opaque")))
+
+;; go-type->wile-type returns the wile-facing name for a Go type string,
+;; or the original string if unmapped (so unmapped types are visible in the
+;; output and can be added to the table later).
+(define (go-type->wile-type go-type)
+  (let ((hit (assoc go-type go-type->wile-type-table)))
+    (if hit (cdr hit) go-type)))
+
+;; map-go-types applies go-type->wile-type across a list, deduplicates, and
+;; preserves first-seen order.
+(define (map-go-types go-types)
+  (union-strings (map go-type->wile-type go-types)))
+
+;; ---------------------------------------------------------------------------
+;; Bucket classification
+;; ---------------------------------------------------------------------------
+
+;; Seven buckets per plans/2026-04-19-axis-b-analyzer-design.md §5.
+;; Decision tree:
+;;   no-paths confidence               -> Side-effecting
+;;   widened confidence                -> Helper-widened
+;;   narrowed set has 0 types          -> Helper-widened  (defensive)
+;;   narrowed set has 1 type           -> Single
+;;   narrowed set = {T, boolean}       -> Maybe(T)    (Racket-style #f sentinel)
+;;   narrowed set has 2-3 types        -> Narrow-union
+;;   narrowed set has 4+ types         -> Broad-union
+
+(define (classify-bucket wile-types confidence reasons)
+  (cond
+    ((eq? confidence 'no-paths)
+     'Side-effecting)
+    ((eq? confidence 'widened)
+     'Helper-widened)
+    ((null? wile-types)
+     'Helper-widened)
+    ((= (length wile-types) 1)
+     'Single)
+    ((and (= (length wile-types) 2)
+          (or (string-member? "boolean" wile-types)
+              (string-member? "list" wile-types)))
+     ;; {T, boolean} — the common Maybe(T) shape where #f signals absence.
+     ;; {T, list} — also flagged since empty list sometimes plays the same role.
+     'Maybe)
+    ((<= (length wile-types) 3)
+     'Narrow-union)
+    (else
+     'Broad-union)))
+
 ;; narrow-sink-call invokes go-ssa-narrow on the value-arg of a sink call.
 ;; Returns the narrow-result alist.
 (define (narrow-sink-call ssa-func sink-info)
@@ -260,7 +357,12 @@
               (cons 'reasons '()))
         (let* ((sinks (find-sink-calls fn))
                (narrows (map (lambda (s) (narrow-sink-call fn s)) sinks))
-               (merged (merge-narrow-results narrows)))
+               (merged (merge-narrow-results narrows))
+               (go-types (nf merged 'types))
+               (wile-types (map-go-types go-types))
+               (conf (nf merged 'confidence))
+               (reasons (nf merged 'reasons))
+               (bucket (classify-bucket wile-types conf reasons)))
           (list 'axis-b-entry
                 (cons 'name (entry-name entry))
                 (cons 'declared-return-type (entry-declared-return entry))
@@ -268,9 +370,11 @@
                 (cons 'go-source (entry-go-source entry))
                 (cons 'status 'resolved)
                 (cons 'sink-count (length sinks))
-                (cons 'narrowed (nf merged 'types))
-                (cons 'confidence (nf merged 'confidence))
-                (cons 'reasons (nf merged 'reasons)))))))
+                (cons 'narrowed-go go-types)
+                (cons 'narrowed wile-types)
+                (cons 'confidence conf)
+                (cons 'reasons reasons)
+                (cons 'bucket bucket))))))
 
 ;; ---------------------------------------------------------------------------
 ;; Main entry
@@ -300,9 +404,11 @@
              (if e
                  (let ((r (analyze-primitive e idx)))
                    (display "    ") (display name)
-                   (display ": conf=") (display (nf r 'confidence))
-                   (display " types=") (display (nf r 'narrowed))
-                   (display " reasons=") (display (nf r 'reasons))
+                   (display " -> bucket=") (display (nf r 'bucket))
+                   (display " conf=") (display (nf r 'confidence))
+                   (display " wile-types=") (display (nf r 'narrowed))
+                   (when (pair? (nf r 'reasons))
+                     (display " reasons=") (display (nf r 'reasons)))
                    (newline))
                  (begin (display "    ") (display name)
                         (display ": (not in manifest)") (newline)))))
