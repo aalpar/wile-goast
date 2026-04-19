@@ -28,6 +28,12 @@ import (
 	"github.com/aalpar/wile/werr"
 )
 
+var (
+	errLintBuild       = werr.NewStaticError("analyze build error")
+	errLintUnknownName = werr.NewStaticError("unknown analyzer name")
+	errLintRun         = werr.NewStaticError("analyzer run error")
+)
+
 // parseAnalyzerNames collects and validates the variadic analyzer-name arguments.
 // Returns an error on an improper list, a non-string element, or an unknown name.
 func parseAnalyzerNames(rest values.Value) ([]*analysis.Analyzer, error) {
@@ -63,12 +69,6 @@ func parseAnalyzerNames(rest values.Value) ([]*analysis.Analyzer, error) {
 	}
 	return analyzers, nil
 }
-
-var (
-	errLintBuild       = werr.NewStaticError("analyze build error")
-	errLintUnknownName = werr.NewStaticError("unknown analyzer name")
-	errLintRun         = werr.NewStaticError("analyzer run error")
-)
 
 // PrimGoAnalyze implements (go-analyze target analyzer-name ...).
 // target is a package pattern string or a GoSession from go-load.

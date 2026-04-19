@@ -16,7 +16,7 @@
   (export
     nf tag? walk
     filter filter-map flat-map
-    member? unique has-char?
+    member? unique has-char? string-contains
     ordered-pairs
     take drop
     opt-ref

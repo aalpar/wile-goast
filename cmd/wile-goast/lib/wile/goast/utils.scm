@@ -91,6 +91,16 @@
           ((char=? (string-ref s i) c) #t)
           (else (loop (+ i 1))))))
 
+;; String contains substring?
+(define (string-contains s sub)
+  "Test whether string S contains substring SUB.\nReturns #t if SUB appears anywhere in S (including as a prefix or suffix).\nAn empty SUB matches any S. O(|S| * |SUB|) naive scan.\n\nParameters:\n  s : string\n  sub : string\nReturns: boolean\nCategory: goast-utils\n\nSee also: `has-char?'."
+  (let ((slen (string-length s))
+        (sublen (string-length sub)))
+    (let loop ((i 0))
+      (cond ((> (+ i sublen) slen) #f)
+            ((string=? (substring s i (+ i sublen)) sub) #t)
+            (else (loop (+ i 1)))))))
+
 ;; All unordered pairs from a list (each pair once, in order)
 (define (ordered-pairs lst)
   "Return all ordered pairs from LST. Each pair appears once.\nUseful for pairwise comparison of functions.\n\nParameters:\n  lst : list\nReturns: list\nCategory: goast-utils\n\nExamples:\n  (ordered-pairs '(a b c))  ; => ((a b) (a c) (b c))"

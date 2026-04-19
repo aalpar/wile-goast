@@ -17,7 +17,8 @@
     ;; Core
     define-belief run-beliefs reset-beliefs! *beliefs* emit-beliefs
     define-aggregate-belief register-aggregate-belief! *aggregate-beliefs*
-    aggregate-beliefs string-contains
+    aggregate-beliefs
+    string-contains ;; re-exported from (wile goast utils) for API stability
     ;; Context (needed by custom lambdas)
     make-context ctx-pkgs ctx-ssa ctx-callgraph ctx-find-ssa-func ctx-field-index
     ctx-session

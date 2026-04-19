@@ -491,15 +491,6 @@
     (let ((name (nf fn 'name)))
       (and name (string-contains name pattern)))))
 
-;; Helper: does string s contain substring sub?
-(define (string-contains s sub)
-  (let ((slen (string-length s))
-        (sublen (string-length sub)))
-    (let loop ((i 0))
-      (cond ((> (+ i sublen) slen) #f)
-            ((string=? (substring s i (+ i sublen)) sub) #t)
-            (else (loop (+ i 1)))))))
-
 ;; Extract short package name from full import path.
 ;; "k8s.io/kubernetes/pkg/kubelet/kuberuntime" -> "kuberuntime"
 (define (package-short-name path)
