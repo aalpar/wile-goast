@@ -461,13 +461,13 @@ Effort tags: S (hours), M (day), L (multi-day).
 
 ### Medium
 
-- [ ] **`register.go` LibraryNamer divergence** — Sub-extensions wrap with custom
-      struct (`goastssa/register.go:7-10`, `goastcfg/register.go:7-10`,
-      `goastcg/register.go:7-10`, `goastlint/register.go:7-10`); `goast/register.go`
-      does not. Prior staff-engineer finding (TODO.md §Fix "/staff-engineer" findings,
-      Low #9 above) called it "correct by design" but undocumented. At minimum:
-      add the one-line comment. Preferably: unify the pattern so new sub-extensions
-      have a single template. **[S]**
+- [x] **`register.go` LibraryNamer divergence** — Confirmed correct by design
+      and documented. `registry.NewExtension("goast", ...)` gets library name
+      `(wile goast)` from the default `(wile <ext-name>)` rule in
+      `wile/registry/extension.go:27`. Sub-extensions need the wrapper because
+      `goast-ssa` would render as `(wile goast-ssa)` not `(wile goast ssa)`.
+      Added multi-line comment in `goast/register.go` explaining the rationale.
+      **[S]** — done 2026-04-19
 
 - [ ] **`mapper.go` idiom divergence (free fns vs receiver methods)** —
       `goast/mapper.go` uses free functions with `*mapperOpts` struct-passing;
