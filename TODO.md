@@ -495,11 +495,17 @@ Effort tags: S (hours), M (day), L (multi-day).
       * Side effect: moved `opt-ref` from `split.scm` to `utils.scm` since
         `belief.scm` now needs it too. **[S]** — done 2026-04-19
 
-- [ ] **Error-path test gaps in sub-extensions** — Coverage headlines hide
-      untested error branches: `goastssa` 67% test/src ratio, `goastlint` 59%,
-      `goastcfg` 74%. Primary offender: `goastssa/prim_canonicalize.go` has 10+
-      `werr.WrapForeignErrorf` sites with no error-case tests. Add table-driven
-      `TestPrim<X>Errors` per package covering documented sentinels. **[S]**
+- [x] **Error-path test gaps in sub-extensions** —
+      * Extended `TestGoSSACanonicalize_Errors` with 5 new subtests covering
+        malformed params, non-integer block index/idom, missing entry block,
+        and missing name field. Now 7 error subtests (was 2).
+      * Extended `TestGoAnalyze_Errors` with 3 subtests covering non-string
+        analyzer names and empty-list-returns-empty. Now 6 error cases.
+      * Verified existing coverage: `goastcfg/TestGoCFG_Errors` (6 cases),
+        `goastcg/TestGoCallgraph_Errors` (4 cases),
+        `goastssa/TestGoSSABuild_Errors` (2 cases),
+        `goastssa/TestGoSSAFieldIndex_Errors` (2 cases).
+      **[S]** — done 2026-04-19
 
 - [x] **Error sentinel naming inconsistency** — Renamed 12 sentinels across
       5 packages to drop the redundant `Error` suffix:

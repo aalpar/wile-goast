@@ -32,6 +32,52 @@ func TestGoSSACanonicalize_Errors(t *testing.T) {
 	t.Run("wrong tag", func(t *testing.T) {
 		evalExpectError(t, engine, `(go-ssa-canonicalize '(ssa-block (index . 0)))`)
 	})
+
+	t.Run("missing required name field", func(t *testing.T) {
+		evalExpectError(t, engine, `(go-ssa-canonicalize '(ssa-func (blocks . ())))`)
+	})
+
+	t.Run("non-integer block index", func(t *testing.T) {
+		evalExpectError(t, engine, `
+			(go-ssa-canonicalize
+			  '(ssa-func
+			     (name . "F") (signature . "func()") (pkg . "p")
+			     (params . ()) (free-vars . ())
+			     (blocks . ((ssa-block (index . "not-an-int") (preds . ()) (succs . ()) (instrs . ()))))))`)
+	})
+
+	t.Run("non-integer idom", func(t *testing.T) {
+		evalExpectError(t, engine, `
+			(go-ssa-canonicalize
+			  '(ssa-func
+			     (name . "F") (signature . "func()") (pkg . "p")
+			     (params . ()) (free-vars . ())
+			     (blocks . ((ssa-block (index . 0) (idom . "bad")
+			                (preds . ()) (succs . ()) (instrs . ()))))))`)
+	})
+
+	t.Run("no entry block (all blocks have idom)", func(t *testing.T) {
+		// Every block has an idom field, so entryIdx stays -1.
+		evalExpectError(t, engine, `
+			(go-ssa-canonicalize
+			  '(ssa-func
+			     (name . "F") (signature . "func()") (pkg . "p")
+			     (params . ()) (free-vars . ())
+			     (blocks . ((ssa-block (index . 0) (idom . 1)
+			                 (preds . ()) (succs . ()) (instrs . ()))
+			                (ssa-block (index . 1) (idom . 0)
+			                 (preds . ()) (succs . ()) (instrs . ()))))))`)
+	})
+
+	t.Run("malformed params list (not a pair)", func(t *testing.T) {
+		evalExpectError(t, engine, `
+			(go-ssa-canonicalize
+			  '(ssa-func
+			     (name . "F") (signature . "func()") (pkg . "p")
+			     (params . (42))
+			     (free-vars . ())
+			     (blocks . ())))`)
+	})
 }
 
 func TestGoSSACanonicalize_SingleBlock(t *testing.T) {

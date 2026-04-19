@@ -159,6 +159,9 @@ func TestGoAnalyze_Errors(t *testing.T) {
 		{name: "wrong pattern type", code: `(go-analyze 42 "assign")`},
 		{name: "unknown analyzer name", code: `(go-analyze "github.com/aalpar/wile-goast/goast" "no-such-analyzer")`},
 		{name: "nonexistent package", code: `(go-analyze "github.com/aalpar/wile/does-not-exist-xyz" "assign")`},
+		{name: "non-string analyzer name (integer)", code: `(go-analyze "github.com/aalpar/wile-goast/goast" 42)`},
+		{name: "non-string analyzer name (symbol)", code: `(go-analyze "github.com/aalpar/wile-goast/goast" 'assign)`},
+		{name: "empty analyzer list returns empty (not error)", code: `(car (go-analyze "github.com/aalpar/wile-goast/goast"))`},
 	}
 	for _, tc := range tcs {
 		t.Run(tc.name, func(t *testing.T) {
