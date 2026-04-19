@@ -157,7 +157,7 @@ func runWithEngine(ctx context.Context) error {
 
 func buildEngineOrError(ctx context.Context) (*wile.Engine, error) {
 	return wile.NewEngine(ctx,
-		wile.WithSafeExtensions(),
+		wile.WithProfile(wile.KitchenSink),
 		wile.WithSourceFS(wile.StdLibFS),
 		wile.WithSourceFS(embeddedLib),
 		wile.WithLibraryPaths("lib"),

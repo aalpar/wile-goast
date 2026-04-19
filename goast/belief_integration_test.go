@@ -35,7 +35,7 @@ import (
 func newBeliefEngine(t *testing.T) *wile.Engine {
 	t.Helper()
 	engine, err := wile.NewEngine(context.Background(),
-		wile.WithSafeExtensions(),
+		wile.WithProfile(wile.KitchenSink),
 		wile.WithSourceFS(wile.StdLibFS),
 		wile.WithSourceFS(os.DirFS("../cmd/wile-goast")),
 		wile.WithLibraryPaths("lib"),

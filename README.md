@@ -205,7 +205,7 @@ If you want to embed the analysis in your own tooling:
 
 ```go
 engine, err := wile.NewEngine(ctx,
-    wile.WithSafeExtensions(),
+    wile.WithProfile(wile.KitchenSink),
     wile.WithExtension(goast.Extension),
     wile.WithExtension(goastssa.Extension),
     wile.WithExtension(goastcfg.Extension),
