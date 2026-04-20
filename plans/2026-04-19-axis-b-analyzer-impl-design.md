@@ -468,6 +468,45 @@ Final reason-tag distribution (36 widened primitives, 54 reason tags):
 
 Zero regressions: no primitive that previously narrowed moved into widened. The 105 recovered global-load primitives redistributed as Single: +53, Maybe: +20, Narrow-union: +15 vs. the intermediate baseline — consistent with the Go idiom "package-scoped singleton returned from primitive" being either exactly-one-concrete-type (Single) or interface-global-holding-2-to-3-types (Maybe / Narrow-union).
 
+### 7.11 PR-2''' — invoke dispatch and concrete-parameter narrowing
+
+Third narrowing extension shipped 2026-04-20 (commit `fd609ce`). Three coordinated changes in `goastssa/narrow.go`:
+
+1. **`narrowFromInvokeDispatch`**: enumerate every concrete type in the program implementing the receiver's interface, resolve the specific method on each (value and pointer receiver forms), and union over each implementation's return-path narrowings. Uses `prog.AllPackages()` + `types.Implements` + `prog.MethodSets.MethodSet` + `prog.MethodValue`. Synthetic wrapper functions skipped.
+
+2. **Concrete-return short-circuit** in `narrowFromCall`: calls whose declared return type is already concrete (static or invoke) narrow from type alone — the callee internals cannot refine what's already tight. Short-circuits the (potentially expensive) all-implementors enumeration for invokes returning concrete types.
+
+3. **Concrete-parameter narrowing** in `narrowWalk`'s `*ssa.Parameter` case: parameters with concrete types narrow from type alone; only interface-typed parameters widen with `"parameter"`. The dominant beneficiary is method receivers — `func (c *Cat) Get() { return c }` now narrows to `*Cat` even though `c` is a Parameter.
+
+Third-run results against `wile/...` (same 3180 SSA functions, 500 primitives):
+
+| Bucket | Before PR-2''' | After PR-2''' | Δ |
+|---|---|---|---|
+| Single | 215 | 217 | +2 |
+| Maybe | 32 | 32 | 0 |
+| Narrow-union | 22 | 26 | +4 |
+| Broad-union | 3 | 3 | 0 |
+| **Helper-widened** | **36 (10.0%)** | **30 (8.3%)** | **-6** |
+| Side-effecting | 52 | 52 | 0 |
+| Unresolved | 140 | 140 | 0 |
+
+Reason-tag shifts (30 widened primitives, 55 reason tags total):
+
+| Reason | Before | After | Note |
+|---|---|---|---|
+| `interface-method-dispatch` | 18 | **0** | Bucket eliminated. |
+| `field-deref-load` | 10 | 15 | +5 — previously masked by dispatch widening on the same primitive. |
+| `slice-deref-load` | 1 | 8 | +7 — same masking effect. |
+| `cycle` | 7 | 8 | +1 — one new cycle in the invoke recursion path. |
+| `callee-no-returns` | 0 | 7 | NEW — invoke dispatch reaching methods whose bodies panic / never return. |
+| `nil-constant` | 8 | 8 | Unchanged. |
+| `interface-result` | 5 | 5 | Unchanged. |
+| `parameter` | 3 | 3 | Unchanged (all remaining parameter reasons are interface-typed). |
+| `narrow-error` | 1 | 1 | Unchanged. |
+| `unresolvable-callee` | 1 | 0 | Cleared (builtin/closure cases now resolve). |
+
+**Onion-peeling observation**: removing `interface-method-dispatch` surfaced `field-deref-load` and `slice-deref-load` reasons that were previously masked when those primitives had dispatch *also* in their reason list. The Helper-widened count dropped less than the dispatch-reason count because 12 primitives had multi-reason widenings. This is diagnostic for the next PR-2'''' target: `field-deref-load` (15) and `slice-deref-load` (8) together cover 23 reasons across the remaining 30 widened primitives. Their narrowing would use a `narrowFromFieldStores` / `narrowFromSliceStores` pattern similar to `narrowFromGlobalInit`, but store sites can come from any function in the program rather than the single Init, making it more expensive.
+
 ---
 
 ## 8. File structure
