@@ -419,6 +419,14 @@ inlining (Track 2) earns its cost.
       At this project stage (v0.5.x, zero consumers, same author for both repos), copying is the pragmatic choice. The drift risk is low because you're the only consumer, and the rules are small enough to eyeball.
       ─────────────────────────────────────────────────
 
+## Directions — Gated on Funding
+
+Capability bets identified in wile's Directions documents. Not scoped as individual tasks.
+
+- [ ] **goastgraph/ — gonum-powered graph analytics** [Directions]: `wile/plans/2026-04-18-gonum-integration-directions.md` §5.1 identifies generic graph-analytics gaps in wile-goast — SCC, Louvain community detection, centrality, all-pairs reachability. Architecture: `x/tools` builds language-aware graphs, gonum analyzes them (they do not compete). Ships ~300–500 LOC; pure Go, no CGo, one `go.mod` entry. Independent track from the companion wile `bench-stats/` work (see wile TODO). Distinct algebraic setting from `(wile algebra matrix)`: gonum is field-valued (ℝ/ℂ), not semiring-parameterized.
+
+- [ ] **AC-matching consumer — replace `discover-equivalences` workaround** [Directions, downstream of wile]: Once wile ships §5.3 AC-matching from `wile/plans/2026-04-17-algebra-foundations-directions.md`, swap the exponential `discover-equivalences` workaround in `symbolic.scm` / `rewrite.scm` for the polynomial AC-match. Gated on wile's algebra roadmap (§5.1 matrix blocks §5.3 AC-matching).
+
 ## Staff-Engineer Findings 2026-04-19 — Next to Address
 
 All items below must be fixed. Priority reflects ordering, not optionality.

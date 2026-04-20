@@ -27,6 +27,7 @@
 | `2026-04-17-fca-duplicate-detection-design.md` | FCA-clustered duplicate function detection: reference-FCA + structural diff + algebraic equivalence + LLM residue | Design draft, impl pending |
 | `2026-04-19-llm-concept-filter-design.md` | LLM as precision-oriented semantic filter on FCA concepts (cross-cutting, annotate-only default) | Design draft, impl pending |
 | `2026-04-19-mcp-tool-surface-design.md` | Post-filter MCP tool surface: pipeline-shaped tools returning structured reports instead of `eval`-driven orchestration | Design draft, impl pending (Phase 1 next) |
+| `2026-04-20-receiver-parameter-asymmetry-design.md` | Detect methods whose receiver contributes a single contextual read while a parameter drives the logic (Connascence of Meaning hidden by receiver syntax). Belief-based L1 rule + semantic joint-use predicate (L2). Surfaced by wile G.1 mid-parse-EOF fix. | Design draft, impl pending |
 
 ## Completed Plans (moved to `memory/`)
 
