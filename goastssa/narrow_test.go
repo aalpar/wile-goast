@@ -254,9 +254,12 @@ func Foo(s Stringer) string {
 	c.Assert(r.Reasons, qt.DeepEquals, []string{"interface-method-dispatch"})
 }
 
-func TestNarrowGlobalLoadWidens(t *testing.T) {
+func TestNarrowGlobalInitNarrows(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
+	// Package-level var with declaration RHS gets lowered to a Store in the
+	// synthetic init function. narrowFromGlobalInit walks those stores and
+	// recovers the concrete stored type.
 	fn := buildSSAFromSource(t, dir, `
 package testpkg
 
@@ -268,9 +271,28 @@ func Foo() interface{} {
 `, "Foo")
 
 	r := narrowReturn(t, fn)
+	c.Assert(r.Confidence, qt.Equals, "narrow")
+	c.Assert(r.Types, qt.DeepEquals, []string{"int"})
+}
+
+func TestNarrowGlobalInitNoStores(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	// Declared-but-uninitialized global: no Store emitted in init, so the
+	// walker widens with "global-no-stores".
+	fn := buildSSAFromSource(t, dir, `
+package testpkg
+
+var G interface{}
+
+func Foo() interface{} {
+	return G
+}
+`, "Foo")
+
+	r := narrowReturn(t, fn)
 	c.Assert(r.Confidence, qt.Equals, "widened")
-	// Either global-load (direct) or field-load (if loaded through UnOp).
-	c.Assert(len(r.Reasons) >= 1, qt.IsTrue, qt.Commentf("reasons=%v", r.Reasons))
+	c.Assert(r.Reasons, qt.Contains, "global-no-stores")
 }
 
 func TestNarrowCycleDetected(t *testing.T) {

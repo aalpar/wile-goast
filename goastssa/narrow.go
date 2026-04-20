@@ -196,7 +196,7 @@ func narrowWalk(fn *ssa.Function, v ssa.Value, visited map[ssa.Value]bool) *narr
 func narrowPointerLoad(x *ssa.UnOp, visited map[ssa.Value]bool) *narrowResult {
 	switch src := x.X.(type) {
 	case *ssa.Global:
-		return widened("global-load")
+		return narrowFromGlobalInit(src, visited)
 	case *ssa.Alloc:
 		return narrowFromAllocStores(src, visited)
 	case *ssa.FieldAddr:
@@ -205,6 +205,50 @@ func narrowPointerLoad(x *ssa.UnOp, visited map[ssa.Value]bool) *narrowResult {
 		return widened("slice-deref-load")
 	}
 	return widened("pointer-load")
+}
+
+// narrowFromGlobalInit finds every Store instruction in g.Pkg.Init
+// (the synthetic package init function) whose Addr is the given
+// global, unions the narrowed types of the stored values, and returns
+// the merged result.
+//
+// Strategy: init-only. We trust that package-level globals holding
+// interface values are assigned at declaration time and walk only the
+// single Init function. Runtime reassignments from other functions
+// are NOT tracked. This is a conservative-correctness trade-off: it
+// may over-narrow globals that are swapped at runtime (e.g., by tests
+// or plug-in registration), but catches the dominant Go idiom
+// `var Foo Interface = &Concrete{}`.
+//
+// Widening reasons produced:
+//   - "global-no-pkg"    -> Global has no associated package (rare; build issue)
+//   - "global-no-init"   -> package has no synthetic Init function
+//   - "global-no-stores" -> Init exists but never writes the global
+func narrowFromGlobalInit(g *ssa.Global, visited map[ssa.Value]bool) *narrowResult {
+	if g.Pkg == nil {
+		return widened("global-no-pkg")
+	}
+	initFn := g.Pkg.Func("init")
+	if initFn == nil {
+		return widened("global-no-init")
+	}
+	results := make([]*narrowResult, 0, 4)
+	for _, b := range initFn.Blocks {
+		for _, instr := range b.Instrs {
+			store, ok := instr.(*ssa.Store)
+			if !ok {
+				continue
+			}
+			if store.Addr != ssa.Value(g) {
+				continue
+			}
+			results = append(results, narrowWalk(initFn, store.Val, visited))
+		}
+	}
+	if len(results) == 0 {
+		return widened("global-no-stores")
+	}
+	return mergeResults(results)
 }
 
 // narrowFromAllocStores finds every Store instruction in alloc.Parent()
