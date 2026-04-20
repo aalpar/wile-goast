@@ -263,13 +263,15 @@ The Scheme tests avoid hardcoded SSA value names (which drift across toolchain v
 
 ---
 
-## 7. PR-3 — axis-b analyzer script
+## 7. PR-3 — axis-b analyzer script — **shipped**
+
+PR-3 landed in commits `293e6d5` (impl plan), `2f97362` (scaffold + manifest), `82524af` (sink enumeration), `32b9938` (narrowing pipeline), `ecb10ee` (type mapping + bucketing), `deee08e` (output formats + summary), `c62dc4d` (smoke test).
 
 ### 7.1 Script location and invocation
 
-New file: `cmd/wile-goast/scripts/wile-axis-b.scm`.
+Committed: `cmd/wile-goast/scripts/wile-axis-b.scm` (~420 LOC Scheme).
 
-Invocation: `wile-goast --run wile-axis-b`.
+Invocation: `wile-goast --run wile-axis-b` (requires a rebuilt binary since scripts are `go:embed`-ed).
 
 ### 7.2 Inputs
 
@@ -325,14 +327,15 @@ Key Scheme-layer responsibilities — deliberately small:
 
 All real analysis work is in `go-ssa-narrow`.
 
-### 7.5 Sink enumeration — first step of PR-3 implementation
+### 7.5 Sink enumeration — **complete**
 
-A one-shot research task before any script code. Read `machine/machine_context.go` (and any related files) and enumerate every function/method that writes to result state — `SetValue`, `PushValue`, plus any tail-call-style continuation handover that assigns a value. Output is:
+Research done during PR-3 planning. The `CallContext` interface (`wile/machine/call_context.go`) exposes exactly two result-writing methods: `SetValue(v)` and `SetValues(vs...)`. Primitives call them either via the interface (invoke-mode, most common) or on `*MachineContext` directly (static call, when the primitive type-asserts for full VM access). Four SSA-visible names total, well under the 15-name kill-criterion threshold.
 
-- A Scheme constant list (the `sink-functions` above) in `cmd/wile-goast/scripts/wile-axis-b.scm`.
-- A commit-level note documenting what was read and what's covered.
+```scheme
+(define sink-method-names '("SetValue" "SetValues"))
+```
 
-If the list exceeds ~15 distinct names, §9 kill criterion triggers — stop and revisit the approach.
+Matched against both invoke-mode `method` field and static-call `func` field in `ssa-call` nodes.
 
 ### 7.6 Raw output format
 
@@ -359,21 +362,54 @@ Matches parent Phase 3 design §7.1 — one section per bucket (Single, Maybe(T)
 
 Final section: "Type-system recommendations" — three to five distilled bullets for Extension Contracts Phase 2+.
 
-### 7.8 Smoke test
+### 7.8 Smoke test — **shipped**
 
-Go test at `goastssa/axis_b_smoke_test.go` (or similar) invoking the analyzer script against a five-entry fixture-manifest and asserting exact output tuples.
+`goastssa/axis_b_smoke_test.go` runs the script via `go run ./cmd/wile-goast --run wile-axis-b` against a 4-entry fixture manifest (`goastssa/testdata/axis-b-fixture-manifest.scm`): `cons`, `null?`, `length`, `car`. The test asserts each primitive appears in the generated raw output and that the stdout summary reports 4 primitives. It does NOT pin exact bucket assignments — those are subject to PR-2' narrowing improvements; the test is a regression guard against "script crashes / output format drifts", not a pin against specific buckets.
 
-| Primitive | Expected narrowed types (Go) | Expected confidence | Expected reasons |
+Actual bucket assignments from the first full run against `github.com/aalpar/wile/...`:
+
+| Primitive | Narrowed (wile types) | Confidence | Bucket |
 |---|---|---|---|
-| `cons` | `{*values.Pair}` | `narrow` | — |
-| `null?` | `{*values.Boolean}` | `narrow` | — |
-| `length` | `{*values.Integer}` | `narrow` | — |
-| `car` | `{}` (reads `pair.Car` — a `values.Value` interface field) | `widened` | `field-load` |
-| `+` | `{*values.Integer, *values.BigFloat, ...}` — ≥ 2 numeric concretes | `narrow` | — |
+| `cons` | `{pair}` | narrow | Single |
+| `null?` | `{boolean}` | narrow | Single |
+| `length` | `{integer}` | narrow | Single |
+| `car` | `{}` | widened | Helper-widened (reason: `interface-method-dispatch`) |
 
-The smoke test uses a hand-written fixture-manifest with exactly these five entries. It bypasses the real wile manifest so it can assert exact output. Failure of any row fails the test with a diff — this is the canonical regression guard against any future drift in either the primitive or the script.
+`car` widens because `pair.Car()` is an interface method call in Go (the `Tuple` interface) — not a field access. Fixing this would require interface-method dispatch resolution in PR-2' (narrow the receiver to a concrete type, then union over concrete method implementations).
 
-**The expected values in the table are informed predictions at design time.** During PR-2/PR-3 implementation, the first successful run against these five primitives is used to lock in the *actual* expected values. If `+`'s narrowing produces `widened` rather than `narrow` (because numeric dispatch crosses an unresolvable boundary), the test table is updated to reflect reality and a reason tag is captured. The smoke test's purpose is regression prevention, not design verification — the design-time predictions are rough guides, not specifications.
+### 7.9 First-run findings
+
+Full run against `wile/...` (3168 SSA functions indexed, all 475 manifest entries analyzed):
+
+| Bucket | Count | % of resolved |
+|---|---|---|
+| Single | 154 | 44% |
+| Maybe | 12 | 3% |
+| Narrow-union | 6 | 2% |
+| Broad-union | 2 | <1% |
+| Helper-widened | 125 | **36%** |
+| Side-effecting | 52 | 15% |
+| Unresolved | 124 | (n/a — 46 binding-only + 57 init-closure + 21 other) |
+
+**Kill criterion triggered**: Helper-widened at 36% exceeds the 30% threshold from §9. Per the plan, the inventory does NOT land in the wile repo (Phase 3.C) until PR-2' extends narrowing.
+
+Reason-tag distribution for widened primitives (109 total):
+
+| Reason | Count | Implied PR-2' work |
+|---|---|---|
+| `pointer-load` | 109 | **Store-site tracking for locals**: trace `*Alloc` through `Store`/`UnOp` to recover the stored value type. Dominant hitter. |
+| `interface-method-dispatch` | 18 | Receiver-type-aware method resolution: narrow the receiver, union over concrete method implementations. |
+| `nil-constant` | 8 | Context-aware handling: nil as error signal vs nil as Value. |
+| `cycle` | 7 | Review cycle detection — expected small. |
+| `interface-result` | 5 | Investigate — possibly generics or embedded interfaces. |
+| `parameter` | 3 | Call-graph-context parameter narrowing. |
+
+The `pointer-load` dominance (>75% of widened reasons) points clearly at the highest-value PR-2' extension: any primitive writing a local `var result values.Value` and setting from conditional branches hits this pattern, and the fix is tracking Alloc→Store→UnOp triples.
+
+Unresolved breakdown:
+- 46 binding-only primitives (expected — Impl is nil, go-function is empty string)
+- 57 init-closure primitives (e.g., `init.MakeTypePredicate.func36`) — `runtime.FuncForPC` reports a closure name that doesn't round-trip through `ssa.Function.String()`. The manifest generator (PR Phase 3.A) has a gap here: SSA doesn't expose these closures as top-level functions.
+- 21 other — mix of missing-package primitives and suspected minor matching bugs worth investigating before the inventory lands.
 
 ---
 
