@@ -19,6 +19,9 @@
     ssa-rule-identity
     ssa-rule-commutative
     ssa-rule-annihilation
+    ssa-rule-idempotence
+    ssa-rule-absorption
+    ssa-rule-associativity
     ;; v2: named theory for discover-equivalences
     ssa-theory
     ssa-binop-protocol)
