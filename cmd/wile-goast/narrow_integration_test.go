@@ -48,12 +48,15 @@ func TestGoSSANarrowValueNotFoundErrors(t *testing.T) {
 	qt.Assert(t, err.Error(), qt.Contains, "no value named")
 }
 
-// TestGoSSANarrowParameterWidens exercises the successful end-to-end path:
+// TestGoSSANarrowParameterShape exercises the successful end-to-end path:
 // build SSA for a real package, find the first function with at least one
-// parameter, narrow its first parameter name via go-ssa-narrow. Any
-// parameter narrows to (widened (parameter)) regardless of the package —
-// no hardcoded SSA value names, so stable across toolchain upgrades.
-func TestGoSSANarrowParameterWidens(t *testing.T) {
+// parameter, narrow its first parameter name via go-ssa-narrow. The
+// narrowing outcome depends on the parameter's type (concrete narrows from
+// type, interface widens with 'parameter), so the assertion here is on the
+// result *shape* — it must be a narrow-result record with a valid confidence
+// symbol. Locking the specific confidence would couple the test to whichever
+// function happens to come first in the package's SSA member list.
+func TestGoSSANarrowParameterShape(t *testing.T) {
 	goast.ResetTargetState()
 	t.Setenv("WILE_GOAST_TARGET", "")
 
@@ -88,17 +91,10 @@ func TestGoSSANarrowParameterWidens(t *testing.T) {
 	qt.Assert(t, ok, qt.IsTrue)
 	confSym, ok := conf.(*values.Symbol)
 	qt.Assert(t, ok, qt.IsTrue)
-	qt.Assert(t, confSym.Key, qt.Equals, "widened")
-
-	reasons, ok := goast.GetField(pair.Cdr(), "reasons")
-	qt.Assert(t, ok, qt.IsTrue)
-	// reasons is a list containing the single symbol 'parameter.
-	reasonsPair, ok := reasons.(*values.Pair)
-	qt.Assert(t, ok, qt.IsTrue,
-		qt.Commentf("reasons is %T, want *values.Pair", reasons))
-	firstReason, ok := reasonsPair.Car().(*values.Symbol)
-	qt.Assert(t, ok, qt.IsTrue)
-	qt.Assert(t, firstReason.Key, qt.Equals, "parameter")
+	// Any of the three valid confidence values is acceptable here.
+	validConf := confSym.Key == "widened" || confSym.Key == "narrow" || confSym.Key == "no-paths"
+	qt.Assert(t, validConf, qt.IsTrue,
+		qt.Commentf("confidence=%q is not one of {widened, narrow, no-paths}", confSym.Key))
 }
 
 // TestGoSSANarrowConcreteAlloc exercises the narrow-confidence path: find

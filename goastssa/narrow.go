@@ -208,11 +208,115 @@ func narrowPointerLoad(x *ssa.UnOp, visited map[ssa.Value]bool) *narrowResult {
 	case *ssa.Alloc:
 		return narrowFromAllocStores(src, visited)
 	case *ssa.FieldAddr:
-		return widened("field-deref-load")
+		return narrowFromFieldStores(src, visited)
 	case *ssa.IndexAddr:
 		return widened("slice-deref-load")
 	}
 	return widened("pointer-load")
+}
+
+// narrowFromFieldStores enumerates every Store instruction in the program
+// whose Addr is a FieldAddr referencing the same (struct type, field index)
+// as the target, and unions the narrowed types of the stored values.
+//
+// Matching is per-(struct-type, field-index) rather than per-FieldAddr:
+// `p1.Car = v1` and `p2.Car = v2` both count toward narrowing any subsequent
+// `_ = _.Car` load on *Pair. This is the correct aliasing assumption for
+// fields — per-instance distinction isn't available statically.
+//
+// Unlike narrowFromGlobalInit (which searches a single Init function), this
+// searches every function in every package reachable through prog.AllPackages().
+// Store sites for struct fields can appear anywhere in the program, not just
+// package initialization. This is O(functions × instructions) per call; for
+// typical programs the traversal completes quickly but the cost scales with
+// program size.
+//
+// Widening reasons produced:
+//   - "field-no-prog"        -> FieldAddr's parent function has no program
+//   - "field-no-struct-type" -> couldn't extract the struct type from FieldAddr.X
+//   - "field-no-stores"      -> no matching Store found anywhere in the program
+func narrowFromFieldStores(fa *ssa.FieldAddr, visited map[ssa.Value]bool) *narrowResult {
+	fn := fa.Parent()
+	if fn == nil || fn.Prog == nil {
+		return widened("field-no-prog")
+	}
+	targetStruct := fieldAddrStructType(fa)
+	if targetStruct == nil {
+		return widened("field-no-struct-type")
+	}
+
+	results := make([]*narrowResult, 0, 4)
+	for _, pkg := range fn.Prog.AllPackages() {
+		if pkg == nil {
+			continue
+		}
+		for _, mem := range pkg.Members {
+			memFn, ok := mem.(*ssa.Function)
+			if !ok {
+				continue
+			}
+			results = appendFieldStoreResults(results, memFn, targetStruct, fa.Field, visited)
+			for _, anon := range memFn.AnonFuncs {
+				results = appendFieldStoreResults(results, anon, targetStruct, fa.Field, visited)
+			}
+		}
+	}
+
+	if len(results) == 0 {
+		return widened("field-no-stores")
+	}
+	return mergeResults(results)
+}
+
+// appendFieldStoreResults scans fn.Blocks for Store instructions whose Addr
+// is a FieldAddr matching (targetStruct, fieldIndex) and appends the
+// narrowed stored-value result for each.
+func appendFieldStoreResults(results []*narrowResult, fn *ssa.Function, targetStruct types.Type, fieldIndex int, visited map[ssa.Value]bool) []*narrowResult {
+	for _, b := range fn.Blocks {
+		for _, instr := range b.Instrs {
+			store, ok := instr.(*ssa.Store)
+			if !ok {
+				continue
+			}
+			storeFA, ok := store.Addr.(*ssa.FieldAddr)
+			if !ok {
+				continue
+			}
+			if storeFA.Field != fieldIndex {
+				continue
+			}
+			if !sameStructType(fieldAddrStructType(storeFA), targetStruct) {
+				continue
+			}
+			results = append(results, narrowWalk(fn, store.Val, visited))
+		}
+	}
+	return results
+}
+
+// fieldAddrStructType unwraps FieldAddr.X's type to the *types.Named struct
+// being indexed. FieldAddr.X is always a pointer to a struct; this returns
+// the pointee's named type (or the underlying struct if unnamed).
+func fieldAddrStructType(fa *ssa.FieldAddr) types.Type {
+	t := fa.X.Type()
+	if t == nil {
+		return nil
+	}
+	ptr, ok := t.Underlying().(*types.Pointer)
+	if !ok {
+		return nil
+	}
+	return ptr.Elem()
+}
+
+// sameStructType compares two struct types for matching identity. Uses
+// types.Identical for named types; falls back to Underlying comparison
+// for the rare unnamed-struct case.
+func sameStructType(a, b types.Type) bool {
+	if a == nil || b == nil {
+		return false
+	}
+	return types.Identical(a, b)
 }
 
 // narrowFromGlobalInit finds every Store instruction in g.Pkg.Init

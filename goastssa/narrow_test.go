@@ -528,3 +528,97 @@ func TestNarrowMergeResultsDeduplicatesTypes(t *testing.T) {
 	c.Assert(r.Confidence, qt.Equals, "narrow")
 	c.Assert(r.Types, qt.DeepEquals, []string{"*foo.Bar", "*foo.Baz"})
 }
+
+func TestNarrowFieldStoreSingleSite(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	// A struct field holds interface. One store site in the program assigns
+	// a concrete type to it. Load should narrow to that concrete type.
+	fn := buildSSAFromSource(t, dir, `
+package testpkg
+
+type Pair struct {
+	Car interface{}
+}
+
+type Cat struct{}
+
+func NewPair() *Pair {
+	p := &Pair{}
+	p.Car = &Cat{}
+	return p
+}
+
+func LoadCar(p *Pair) interface{} {
+	return p.Car
+}
+`, "LoadCar")
+
+	r := narrowReturn(t, fn)
+	c.Assert(r.Confidence, qt.Equals, "narrow")
+	c.Assert(r.Types, qt.DeepEquals, []string{"*testpkg.Cat"})
+}
+
+func TestNarrowFieldStoreMultipleSites(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	// Two store sites in different functions write different concrete types
+	// into the same struct field. Load should union both.
+	fn := buildSSAFromSource(t, dir, `
+package testpkg
+
+type Pair struct {
+	Car interface{}
+}
+
+type Cat struct{}
+type Dog struct{}
+
+func NewCatPair() *Pair {
+	p := &Pair{}
+	p.Car = &Cat{}
+	return p
+}
+
+func NewDogPair() *Pair {
+	p := &Pair{}
+	p.Car = &Dog{}
+	return p
+}
+
+func LoadCar(p *Pair) interface{} {
+	return p.Car
+}
+`, "LoadCar")
+
+	r := narrowReturn(t, fn)
+	c.Assert(r.Confidence, qt.Equals, "narrow")
+	c.Assert(len(r.Types), qt.Equals, 2)
+	seen := map[string]bool{}
+	for _, tt := range r.Types {
+		seen[tt] = true
+	}
+	c.Assert(seen["*testpkg.Cat"], qt.IsTrue)
+	c.Assert(seen["*testpkg.Dog"], qt.IsTrue)
+}
+
+func TestNarrowFieldStoreNoStores(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	// Declared-but-never-written field. Load widens with "field-no-stores".
+	fn := buildSSAFromSource(t, dir, `
+package testpkg
+
+type Pair struct {
+	Car interface{}
+}
+
+func LoadCar(p *Pair) interface{} {
+	return p.Car
+}
+`, "LoadCar")
+
+	r := narrowReturn(t, fn)
+	c.Assert(r.Confidence, qt.Equals, "widened")
+	c.Assert(r.Reasons, qt.Contains, "field-no-stores")
+}
