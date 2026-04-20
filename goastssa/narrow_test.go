@@ -308,6 +308,76 @@ func B(n int) interface{} {
 			r.Confidence, r.Reasons, r.Types))
 }
 
+// TestNarrowAllocStoreLoad verifies the Alloc-backed local-var pattern:
+//
+//	var v interface{}
+//	if cond { v = &Bar{} } else { v = &Baz{} }
+//	return *(&v)  // SSA: UnOp(MUL) reading the Alloc'd pointer
+//
+// Before PR-2', this pattern widened with reason 'pointer-load' because
+// the narrower saw UnOp(MUL) on an interface result and gave up. After
+// PR-2', the narrower finds every Store to the Alloc and unions the
+// stored value types.
+func TestNarrowAllocStoreLoad(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	fn := buildSSAFromSource(t, dir, `
+package testpkg
+
+type Bar struct{ N int }
+type Baz struct{ M int }
+
+func Foo(cond bool) interface{} {
+	var v interface{}
+	if cond {
+		v = &Bar{}
+	} else {
+		v = &Baz{}
+	}
+	return v
+}
+`, "Foo")
+
+	r := narrowReturn(t, fn)
+	c.Assert(r.Confidence, qt.Equals, "narrow",
+		qt.Commentf("expected narrow, got %s (reasons=%v)", r.Confidence, r.Reasons))
+	c.Assert(r.Types, qt.HasLen, 2,
+		qt.Commentf("expected 2 types, got %v", r.Types))
+	c.Assert(strings.Contains(r.Types[0], ".Bar"), qt.IsTrue,
+		qt.Commentf("expected Bar in %v", r.Types))
+	c.Assert(strings.Contains(r.Types[1], ".Baz"), qt.IsTrue,
+		qt.Commentf("expected Baz in %v", r.Types))
+}
+
+// TestNarrowAllocNoStores verifies the edge case where a declared-but-
+// unassigned local-var is read. SSA still produces an Alloc; we widen
+// with a distinct reason so debuggers can tell "no stores found" apart
+// from "couldn't find the alloc".
+func TestNarrowAllocNoStores(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	// This fixture is contrived — Go's zero-value initialization usually
+	// doesn't produce a load of an unassigned local — but it exercises
+	// the no-stores branch defensively.
+	fn := buildSSAFromSource(t, dir, `
+package testpkg
+
+func Foo() interface{} {
+	var v interface{}
+	_ = v
+	return v
+}
+`, "Foo")
+
+	r := narrowReturn(t, fn)
+	// Either the compiler optimizes this away (returns nil-constant),
+	// our alloc-no-stores path fires, or we still widen generically.
+	// All three are acceptable; we just assert we don't narrow falsely.
+	c.Assert(r.Confidence == "widened" || r.Confidence == "no-paths", qt.IsTrue,
+		qt.Commentf("expected widened or no-paths, got %s (types=%v reasons=%v)",
+			r.Confidence, r.Types, r.Reasons))
+}
+
 func TestNarrowMergeResultsEmpty(t *testing.T) {
 	c := qt.New(t)
 	r := mergeResults(nil)

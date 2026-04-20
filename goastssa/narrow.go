@@ -119,19 +119,18 @@ func narrowWalk(fn *ssa.Function, v ssa.Value, visited map[ssa.Value]bool) *narr
 	case *ssa.BinOp:
 		return narrowFromConcreteType(x.Type())
 	case *ssa.UnOp:
-		// UnOp covers *, !, -, ^, and <-. Only the memory-loading ops
-		// (pointer dereference and channel receive) produce values whose
-		// concrete type we can't know statically. ! / - / ^ operate on
-		// already-narrowed values and yield concrete types.
+		// UnOp covers *, !, -, ^, and <-. ! / - / ^ yield concrete types.
+		// Channel receive (<-) and pointer deref (*) may produce interface
+		// results — classify by load source so the axis-b inventory shows
+		// where narrowing can be extended.
 		if isInterfaceResult(x.Type()) {
-			reason := "unexpected-unop"
 			switch x.Op {
 			case token.MUL:
-				reason = "pointer-load"
+				return narrowPointerLoad(x, visited)
 			case token.ARROW:
-				reason = "channel-receive"
+				return widened("channel-receive")
 			}
-			return widened(reason)
+			return widened("unexpected-unop")
 		}
 		return narrowFromConcreteType(x.Type())
 	case *ssa.Field:
@@ -179,6 +178,62 @@ func narrowWalk(fn *ssa.Function, v ssa.Value, visited map[ssa.Value]bool) *narr
 	// additions (or forgotten switch cases) produce a traceable reason
 	// instead of silently falling into a generic "widened" bucket.
 	return widened(fmt.Sprintf("unhandled:%T", v))
+}
+
+// narrowPointerLoad classifies an interface-typed UnOp(*) by the kind
+// of address being dereferenced. This replaces the previous catch-all
+// "pointer-load" reason with specific tags that reveal where narrowing
+// could be extended:
+//
+//	Global                  -> "global-load"       (package-level var)
+//	Alloc (local var)       -> narrowFromAllocStores (recovers stored types)
+//	FieldAddr (struct field)-> "field-deref-load"
+//	IndexAddr (slice/array) -> "slice-deref-load"
+//	other                   -> "pointer-load"      (residual bucket)
+//
+// The Alloc case is the only one that attempts real narrowing; the
+// others widen with an informative reason.
+func narrowPointerLoad(x *ssa.UnOp, visited map[ssa.Value]bool) *narrowResult {
+	switch src := x.X.(type) {
+	case *ssa.Global:
+		return widened("global-load")
+	case *ssa.Alloc:
+		return narrowFromAllocStores(src, visited)
+	case *ssa.FieldAddr:
+		return widened("field-deref-load")
+	case *ssa.IndexAddr:
+		return widened("slice-deref-load")
+	}
+	return widened("pointer-load")
+}
+
+// narrowFromAllocStores finds every Store instruction in alloc.Parent()
+// whose Addr is the given alloc, unions the narrowed types of the
+// stored values, and returns the merged result. If no stores are found
+// (defensive — Go's zero-value init may skip explicit Store ops),
+// widens with "alloc-no-stores".
+func narrowFromAllocStores(alloc *ssa.Alloc, visited map[ssa.Value]bool) *narrowResult {
+	fn := alloc.Parent()
+	if fn == nil {
+		return widened("alloc-orphan")
+	}
+	results := make([]*narrowResult, 0, 4)
+	for _, b := range fn.Blocks {
+		for _, instr := range b.Instrs {
+			store, ok := instr.(*ssa.Store)
+			if !ok {
+				continue
+			}
+			if store.Addr != ssa.Value(alloc) {
+				continue
+			}
+			results = append(results, narrowWalk(fn, store.Val, visited))
+		}
+	}
+	if len(results) == 0 {
+		return widened("alloc-no-stores")
+	}
+	return mergeResults(results)
 }
 
 // narrowFromConcreteType returns a narrow result if t is a concrete
