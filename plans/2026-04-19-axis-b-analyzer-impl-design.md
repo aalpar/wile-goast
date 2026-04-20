@@ -263,15 +263,30 @@ The Scheme tests avoid hardcoded SSA value names (which drift across toolchain v
 
 ---
 
-## 7. PR-3 — axis-b analyzer script — **shipped**
+## 7. PR-3 — axis-b analyzer script — **shipped, then moved to wile**
 
-PR-3 landed in commits `293e6d5` (impl plan), `2f97362` (scaffold + manifest), `82524af` (sink enumeration), `32b9938` (narrowing pipeline), `ecb10ee` (type mapping + bucketing), `deee08e` (output formats + summary), `c62dc4d` (smoke test).
+PR-3 initially landed in wile-goast (commits `293e6d5` through `c21dc6e`, 8 commits). **The script was subsequently moved to the wile repo** because its content is wile-specific (sink methods on wile's `CallContext`, Go→wile value-type mapping, declared-return-type comparison against wile's `TypeConstraint` vocabulary), and keeping it in wile-goast inverted the "generic tool, specific users" architecture: wile-goast is a general Go-static-analysis tool, wile is the specific consumer.
 
 ### 7.1 Script location and invocation
 
-Committed: `cmd/wile-goast/scripts/wile-axis-b.scm` (~420 LOC Scheme).
+**Current location (after move):** `wile/audit/wile-axis-b.scm` in the wile repo.
 
-Invocation: `wile-goast --run wile-axis-b` (requires a rebuilt binary since scripts are `go:embed`-ed).
+**Invocation (from wile repo root):** `wile-goast -f audit/wile-axis-b.scm`.
+
+This uses the already-supported `-f <path>` CLI flag rather than `--run` (which requires `go:embed`-ed scripts). The script consumes the generic `go-ssa-build` / `go-ssa-narrow` primitives that remain in wile-goast.
+
+### 7.2 Why the script moved
+
+The script hardcodes four wile-specific concerns:
+
+1. Sink method names — `SetValue` / `SetValues` on wile's `CallContext` interface.
+2. Go→wile type mapping — 30+ entries mapping `*values.Integer` → `"integer"` etc.
+3. Bucket semantics — tuned for wile's `TypeConstraint` vocabulary decision.
+4. Default output paths — point into the wile repo's `plans/` directory.
+
+None of these are meaningful to other wile-goast users. Keeping the script in wile-goast made wile-goast know wile's internal structure; moving it inverts that. wile-goast now contains only generic SSA-analysis primitives (plus their unit tests and a few demo scripts); wile owns the wile-specific analyzer that invokes those primitives.
+
+The wile-goast smoke test `goastssa/axis_b_smoke_test.go` was deleted along with the script and moved to `wile/audit_axis_b_test.go`.
 
 ### 7.2 Inputs
 
