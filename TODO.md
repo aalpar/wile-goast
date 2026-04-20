@@ -118,17 +118,22 @@ See `plans/2026-03-26-c3-domains-design.md`.
 ### C7. ssa-normalize axiom adoption
 
 Wile ships seven axiom record types in `(wile algebra rewrite)`; ssa-normalize
-currently uses only three (identity, absorbing, commutativity). Adopting the
-remaining four is wile-goast-local — no wile-side gap.
+currently uses six (identity, absorbing, commutativity, + three added 2026-04-20).
 
-- [ ] Idempotence — `(make-idempotence-axiom op)`. Candidates: `x & x = x`,
-      `x | x = x`.
-- [ ] Involution — `(make-involution-axiom op)`. Candidate: `!!x = x` (boolean).
-- [ ] Absorption — `(make-absorption-axiom op-outer op-inner)`. Candidates:
-      `x | (x & y) = x`, `x & (x | y) = x`. Multi-operator.
-- [ ] Associativity — `(make-associativity-axiom op)`. Directional. Investigation
-      question: do `(a + b) + c` rewrites fire productively on real Go SSA,
-      or does SSA flatten these?
+- [x] Idempotence — `(make-idempotence-axiom op)`. `x & x = x`, `x | x = x`.
+      Fires on flat SSA (operand-name string equality).
+- [ ] Involution — `(make-involution-axiom op)`. `!!x = x`, `--x = x`, `^^x = x`.
+      **Deferred**: Go SSA encodes these as UnOp nodes, not BinOp. Adoption
+      requires a new term protocol for unary SSA operations (`ssa-unop-protocol`).
+- [x] Absorption — `(make-absorption-axiom op-outer op-inner)`.
+      `x | (x & y) = x`, `x & (x | y) = x`. Requires nested binop terms —
+      doesn't fire during flat-SSA normalization (operand fields hold names,
+      not sub-trees). Fires in `discover-equivalences` contexts.
+- [x] Associativity — `(make-associativity-axiom op)`. Directional,
+      `(a + b) + c -> a + (b + c)`. Same nested-term requirement as absorption.
+      SSA construction also pre-normalizes left-associative chains during IR
+      build, so fire-rate expected low even with nested terms. Retained for
+      unification detection where synthetic nested terms arise.
 
 ## Track D: Duplicate Detection — Feasibility Probe (2026-04-18)
 
