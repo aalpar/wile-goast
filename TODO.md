@@ -46,12 +46,15 @@ See `plans/2026-03-25-b3-c2-c6-design.md` (B3 design).
 - [x] Handle switch/select with early returns inside loops (labeled break)
 - [x] Handle multiple return values (_r0, _r1, ...)
 
-## Track C: Static Analysis Forms (depends on Wile algebra library)
+## Track C: Static Analysis Forms (on Wile algebra library)
 
-Wile gets a general-purpose algebra library (`(wile algebra)` or similar).
-wile-goast builds static-analysis combinators on top. Items below are
-wile-goast consumers — they migrate to or are built on the Wile algebra API
-once it exists.
+Wile ships 21 algebra libraries as of v1.13.x (boolean, category, closure,
+differential, fca, galois, graph, group, heyting, interval, lattice, monoid,
+order, pareto, polynomial, rewrite, ring, semiring, setoid, symbolic).
+wile-goast builds static-analysis combinators on top.
+
+Remaining **wile-side** gap: CFL-reachability semiring (C4 third bullet).
+All other Track C items are wile-goast-local adoption work.
 
 ### C1. Migrate existing hand-rolled algebra — DONE
 
@@ -93,18 +96,39 @@ See `plans/2026-03-26-c3-domains-design.md`.
 
 - [x] Boolean semiring — reachability (generalize `go-callgraph-reachable`)
 - [x] Tropical semiring — shortest/longest call chains
-- [ ] CFL-reachability — context-sensitive analysis
+- [ ] CFL-reachability — context-sensitive analysis (**wile-side gap**: needs
+      new `(wile algebra cfl)` or extension of `semiring.scm`. Composition
+      rule is grammar-constrained, not free-semigroup; can't be parameterized
+      from existing semiring API. Reps/Horwitz/Sagiv 1995.)
 
 ### C5. Galois connections for abstract interpretation
 
-- [ ] Abstraction/concretization pair interface
-- [ ] Soundness check (alpha ∘ gamma ⊒ id)
-- [ ] Connect Go concrete values to abstract domains
+- [x] Abstraction/concretization pair interface — shipped in
+      `(wile algebra galois)` as `make-galois-connection` + `gc-alpha` / `gc-gamma`.
+- [x] Soundness check (alpha ∘ gamma ⊒ id) — shipped as `gc-sound?`.
+- [ ] Connect Go concrete values to abstract domains — wile-goast-local:
+      instantiate `make-galois-connection` with `(wile goast domains)` sign /
+      interval / etc. as the abstract lattice.
 
 ### C6. Belief DSL integration
 
 - [ ] Belief graduation — 100% adherence beliefs become dataflow assertions
 - [ ] Belief-defined lattices — express belief checkers as lattice transfer functions
+
+### C7. ssa-normalize axiom adoption
+
+Wile ships seven axiom record types in `(wile algebra rewrite)`; ssa-normalize
+currently uses only three (identity, absorbing, commutativity). Adopting the
+remaining four is wile-goast-local — no wile-side gap.
+
+- [ ] Idempotence — `(make-idempotence-axiom op)`. Candidates: `x & x = x`,
+      `x | x = x`.
+- [ ] Involution — `(make-involution-axiom op)`. Candidate: `!!x = x` (boolean).
+- [ ] Absorption — `(make-absorption-axiom op-outer op-inner)`. Candidates:
+      `x | (x & y) = x`, `x & (x | y) = x`. Multi-operator.
+- [ ] Associativity — `(make-associativity-axiom op)`. Directional. Investigation
+      question: do `(a + b) + c` rewrites fire productively on real Go SSA,
+      or does SSA flatten these?
 
 ## Track D: Duplicate Detection — Feasibility Probe (2026-04-18)
 
