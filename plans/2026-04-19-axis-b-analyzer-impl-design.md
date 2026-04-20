@@ -392,7 +392,7 @@ Actual bucket assignments from the first full run against `github.com/aalpar/wil
 
 `car` widens because `pair.Car()` is an interface method call in Go (the `Tuple` interface) — not a field access. Fixing this would require interface-method dispatch resolution in PR-2' (narrow the receiver to a concrete type, then union over concrete method implementations).
 
-### 7.9 First-run findings
+### 7.9 First-run findings (historical — triggered kill criterion)
 
 Full run against `wile/...` (3168 SSA functions indexed, all 475 manifest entries analyzed):
 
@@ -406,7 +406,7 @@ Full run against `wile/...` (3168 SSA functions indexed, all 475 manifest entrie
 | Side-effecting | 52 | 15% |
 | Unresolved | 124 | (n/a — 46 binding-only + 57 init-closure + 21 other) |
 
-**Kill criterion triggered**: Helper-widened at 36% exceeds the 30% threshold from §9. Per the plan, the inventory does NOT land in the wile repo (Phase 3.C) until PR-2' extends narrowing.
+**Kill criterion triggered**: Helper-widened at 36% exceeded the 30% threshold from §9. The inventory did NOT land in the wile repo (Phase 3.C) until PR-2' extended narrowing.
 
 Reason-tag distribution for widened primitives (109 total):
 
@@ -419,12 +419,54 @@ Reason-tag distribution for widened primitives (109 total):
 | `interface-result` | 5 | Investigate — possibly generics or embedded interfaces. |
 | `parameter` | 3 | Call-graph-context parameter narrowing. |
 
-The `pointer-load` dominance (>75% of widened reasons) points clearly at the highest-value PR-2' extension: any primitive writing a local `var result values.Value` and setting from conditional branches hits this pattern, and the fix is tracking Alloc→Store→UnOp triples.
+The `pointer-load` dominance (>75% of widened reasons) pointed clearly at the highest-value PR-2' extension: any primitive writing a local `var result values.Value` and setting from conditional branches hits this pattern, and the fix is tracking Alloc→Store→UnOp triples.
 
 Unresolved breakdown:
 - 46 binding-only primitives (expected — Impl is nil, go-function is empty string)
 - 57 init-closure primitives (e.g., `init.MakeTypePredicate.func36`) — `runtime.FuncForPC` reports a closure name that doesn't round-trip through `ssa.Function.String()`. The manifest generator (PR Phase 3.A) has a gap here: SSA doesn't expose these closures as top-level functions.
 - 21 other — mix of missing-package primitives and suspected minor matching bugs worth investigating before the inventory lands.
+
+### 7.10 PR-2' progression and kill-criterion clearance
+
+Two narrowing extensions shipped after the first run:
+
+1. **f6bb925** — `narrowFromAllocStores`: walks `alloc.Parent()` blocks for Store instructions whose Addr is a local Alloc; recovers stored-value types. Also split the opaque `pointer-load` reason into five specific tags (`global-load`, `field-deref-load`, `slice-deref-load`, residual `pointer-load`, Alloc-narrowing path).
+
+   Effect on the bucket distribution was *diagnostic more than corrective*: Helper-widened stayed at 125 (34.7% of resolved), but the reason-tag split revealed that 105 of the 109 "pointer-load" instances were actually **global-load** — loading package-level singletons like `values.Void`. Alloc was not the bottleneck; globals were.
+
+2. **c7729bd** — `narrowFromGlobalInit`: walks `g.Pkg.Func("init")` for Store instructions whose Addr is the global, unions narrowed types. Strategy is init-only — runtime reassignments from non-init functions are NOT tracked. SSA lowers package-level var declarations (`var G Iface = &Concrete{}`) into init-function Stores, so this naturally handles the dominant Go idiom without AST-level work.
+
+   Widening reasons introduced: `global-no-pkg`, `global-no-init`, `global-no-stores`.
+
+Second-run results (same `wile/...` target, 3179 SSA functions indexed, 500 primitives analyzed — 475 → 500 reflects wile's v1.x growth between runs):
+
+| Bucket | Before (first run) | After (intermediate, f6bb925) | After (final, c7729bd) |
+|---|---|---|---|
+| Single | 154 | 162 | **215** (+61 vs first) |
+| Maybe | 12 | 12 | **32** (+20) |
+| Narrow-union | 6 | 7 | **22** (+16) |
+| Broad-union | 2 | 2 | 3 |
+| **Helper-widened** | **125 (36%)** | **125 (34.7%)** | **36 (10.0%)** |
+| Side-effecting | 52 | 52 | 52 |
+| Unresolved | 124 | 140 | 140 |
+
+**Kill criterion cleared**: 36 / 360 = **10.0%** Helper-widened, well under the 30% threshold. PR-3 inventory is unblocked for Phase 3.C landing in the wile repo.
+
+Final reason-tag distribution (36 widened primitives, 54 reason tags):
+
+| Reason | Count | Note |
+|---|---|---|
+| `interface-method-dispatch` | 18 | Largest remaining bucket; addressing would require receiver-type narrowing + method-set resolution. |
+| `field-deref-load` | 10 | Struct-field interface loads — analogous to globals but with per-instance stores. |
+| `nil-constant` | 8 | Expected; nil as error signal vs nil as Value is context-dependent. |
+| `cycle` | 7 | Expected small; cycle detection working as designed. |
+| `interface-result` | 5 | Possibly generics or embedded interfaces. |
+| `parameter` | 3 | Call-graph-context parameter narrowing would address. |
+| `slice-deref-load` | 1 | Rare. |
+| `narrow-error` | 1 | Internal error — worth investigating before Phase 3.C. |
+| `unresolvable-callee` | 1 | Builtin/closure dispatch. |
+
+Zero regressions: no primitive that previously narrowed moved into widened. The 105 recovered global-load primitives redistributed as Single: +53, Maybe: +20, Narrow-union: +15 vs. the intermediate baseline — consistent with the Go idiom "package-scoped singleton returned from primitive" being either exactly-one-concrete-type (Single) or interface-global-holding-2-to-3-types (Maybe / Narrow-union).
 
 ---
 
