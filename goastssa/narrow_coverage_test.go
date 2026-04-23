@@ -6,6 +6,12 @@
 //
 //     http://www.apache.org/licenses/LICENSE-2.0
 //
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 // Targeted tests for narrow.go paths that are hard to hit via typical
 // fixtures: narrowFromAllocStores (Alloc+Store+Load pattern), the
 // non-Alloc arms of narrowPointerLoad, and the rarer narrowWalk branches
@@ -45,19 +51,16 @@ func Foo() interface{} {
 `, "Foo")
 
 	r := narrowReturn(t, fn)
-	// Outcome options accepted:
-	//   - narrow to *Bar (alloc-store-load path succeeded)
-	//   - widened with "alloc-no-stores" (if SSA elides the store)
-	//   - widened with any pointer-load/field-load reason
-	// We only assert we don't produce a FALSE narrow or a crash.
-	switch r.Confidence {
-	case "narrow":
-		c.Assert(len(r.Types), qt.Not(qt.Equals), 0)
-	case "widened", "no-paths":
-		c.Assert(len(r.Reasons), qt.Not(qt.Equals), 0)
-	default:
-		c.Fatalf("unexpected confidence %q", r.Confidence)
-	}
+	// Outer passes &v to assign() — the Store of the concrete value
+	// happens inside the callee, not at alloc.Parent(). narrowPointerLoad
+	// → narrowFromAllocStores scans the current function only, so no
+	// matching store exists; we widen with "alloc-no-stores". This is
+	// the documented conservative-correctness trade-off — an escape
+	// through a callee is out of scope for alloc-store search.
+	c.Assert(r.Confidence, qt.Equals, confWidened,
+		qt.Commentf("expected widened from alloc-no-stores; got %s reasons=%v types=%v",
+			r.Confidence, r.Reasons, r.Types))
+	c.Assert(r.Reasons, qt.DeepEquals, []string{reasonAllocNoStores})
 }
 
 // TestNarrowPointerLoadIndexAddr exercises the slice-element pointer
@@ -78,7 +81,7 @@ func Load(xs []interface{}, i int) interface{} {
 	// This path should widen with slice-deref-load or a similar
 	// pointer-load reason; the important coverage point is that
 	// narrowPointerLoad executed.
-	c.Assert(r.Confidence, qt.Equals, "widened")
+	c.Assert(r.Confidence, qt.Equals, confWidened)
 	c.Assert(len(r.Reasons), qt.Not(qt.Equals), 0)
 }
 
@@ -104,7 +107,7 @@ func Load(h *Holder) interface{} {
 	// Without any Store sites for Holder.V in the program, the
 	// field-store search returns field-no-stores. Any widened reason
 	// is acceptable; the coverage goal is to execute the FieldAddr arm.
-	c.Assert(r.Confidence, qt.Equals, "widened")
+	c.Assert(r.Confidence, qt.Equals, confWidened)
 }
 
 // TestNarrowWalkBuiltinCall covers the narrowFromCall → Builtin arm
@@ -123,7 +126,7 @@ func Foo() chan int {
 `, "Foo")
 
 	r := narrowReturn(t, fn)
-	c.Assert(r.Confidence, qt.Equals, "narrow")
+	c.Assert(r.Confidence, qt.Equals, confNarrow)
 	c.Assert(len(r.Types), qt.Equals, 1)
 }
 
@@ -140,7 +143,7 @@ func Foo() map[string]int {
 `, "Foo")
 
 	r := narrowReturn(t, fn)
-	c.Assert(r.Confidence, qt.Equals, "narrow")
+	c.Assert(r.Confidence, qt.Equals, confNarrow)
 }
 
 // TestNarrowWalkSlice covers the *ssa.Slice arm of narrowWalk by
@@ -157,7 +160,7 @@ func Foo(xs []int) []int {
 `, "Foo")
 
 	r := narrowReturn(t, fn)
-	c.Assert(r.Confidence, qt.Equals, "narrow")
+	c.Assert(r.Confidence, qt.Equals, confNarrow)
 }
 
 // TestNarrowWalkFunctionReference covers the *ssa.Function arm of
@@ -178,7 +181,7 @@ func Foo() func(int) int {
 
 	r := narrowReturn(t, fn)
 	// func(int) int is concrete → narrow expected.
-	c.Assert(r.Confidence, qt.Equals, "narrow")
+	c.Assert(r.Confidence, qt.Equals, confNarrow)
 }
 
 // TestNarrowWalkClosureFreeVar covers FreeVar. A closure capturing
@@ -207,17 +210,14 @@ func Outer() func() interface{} {
 	closure := outer.AnonFuncs[0]
 
 	r := narrow(closure, firstReturnValue(t, closure))
-	// Expect widened with free-var; if the compiler optimizes capture,
-	// it may narrow — either outcome exercises the FreeVar branch path
-	// or a nearby narrowWalk arm.
-	switch r.Confidence {
-	case "widened":
-		c.Assert(len(r.Reasons), qt.Not(qt.Equals), 0)
-	case "narrow":
-		c.Assert(len(r.Types), qt.Not(qt.Equals), 0)
-	default:
-		c.Fatalf("unexpected confidence %q", r.Confidence)
-	}
+	// Closure body is `return v` where v is a FreeVar captured from
+	// Outer. SSA lowers this to UnOp(*, FreeVar). narrowPointerLoad has
+	// no FreeVar arm, so it falls through to the residual "pointer-load"
+	// bucket. A regression that re-adds FreeVar handling should flip
+	// this assertion — intentionally so.
+	c.Assert(r.Confidence, qt.Equals, confWidened,
+		qt.Commentf("expected widened from pointer-load; got %s reasons=%v", r.Confidence, r.Reasons))
+	c.Assert(r.Reasons, qt.DeepEquals, []string{reasonPointerLoad})
 }
 
 // TestNarrowWalkRangeNext exercises the *ssa.Next / *ssa.Range arms
@@ -238,7 +238,7 @@ func Foo(m map[string]int) int {
 `, "Foo")
 
 	r := narrowReturn(t, fn)
-	c.Assert(r.Confidence, qt.Equals, "narrow")
+	c.Assert(r.Confidence, qt.Equals, confNarrow)
 }
 
 // TestNarrowWalkIndexLookup covers the *ssa.Index (array/slice) and
@@ -255,7 +255,7 @@ func Foo(arr [3]int) int {
 `, "Foo")
 
 	r := narrowReturn(t, fn)
-	c.Assert(r.Confidence, qt.Equals, "narrow")
+	c.Assert(r.Confidence, qt.Equals, confNarrow)
 }
 
 func TestNarrowWalkMapLookupConcrete(t *testing.T) {
@@ -270,7 +270,7 @@ func Foo(m map[string]int) int {
 `, "Foo")
 
 	r := narrowReturn(t, fn)
-	c.Assert(r.Confidence, qt.Equals, "narrow")
+	c.Assert(r.Confidence, qt.Equals, confNarrow)
 }
 
 // TestNarrowWalkMapLookupInterface exercises the interface-Lookup
@@ -287,7 +287,7 @@ func Foo(m map[string]interface{}) interface{} {
 `, "Foo")
 
 	r := narrowReturn(t, fn)
-	c.Assert(r.Confidence, qt.Equals, "widened")
+	c.Assert(r.Confidence, qt.Equals, confWidened)
 	c.Assert(r.Reasons, qt.Contains, "map-lookup")
 }
 
@@ -306,7 +306,7 @@ func Foo(x int) int {
 `, "Foo")
 
 	r := narrowReturn(t, fn)
-	c.Assert(r.Confidence, qt.Equals, "narrow")
+	c.Assert(r.Confidence, qt.Equals, confNarrow)
 }
 
 // TestNarrowWalkUnOpChannelRecv covers UnOp(ARROW) for channel receive
@@ -324,7 +324,7 @@ func Foo(ch chan interface{}) interface{} {
 `, "Foo")
 
 	r := narrowReturn(t, fn)
-	c.Assert(r.Confidence, qt.Equals, "widened")
+	c.Assert(r.Confidence, qt.Equals, confWidened)
 	c.Assert(r.Reasons, qt.Contains, "channel-receive")
 }
 
@@ -341,5 +341,5 @@ func Foo() int {
 `, "Foo")
 
 	r := narrowReturn(t, fn)
-	c.Assert(r.Confidence, qt.Equals, "narrow")
+	c.Assert(r.Confidence, qt.Equals, confNarrow)
 }

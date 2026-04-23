@@ -6,6 +6,12 @@
 //
 //     http://www.apache.org/licenses/LICENSE-2.0
 //
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 // Coverage-targeted tests for mapper.go paths that don't arise from
 // typical Go source: mapMultiConvert (requires generic type parameter
 // conversion) and mapUnknown (defensive default branch, rarely hit
@@ -18,6 +24,7 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"golang.org/x/tools/go/ssa"
 
 	"github.com/aalpar/wile/values"
 )
@@ -29,6 +36,13 @@ import (
 // `string | []byte` (two different underlying layouts) forces the
 // multi-form; a single-type constraint like `~string` lowers to a
 // plain *ssa.Convert.
+//
+// The toolchain may elide MultiConvert for the entry function in
+// favor of a plain Convert after specialization; we therefore scan
+// every function in every loaded package (including the generic
+// definition pre-specialization) for a MultiConvert instance. If the
+// loaded program has none, the fixture needs updating for the current
+// toolchain — failing is more actionable than skipping.
 func TestMapMultiConvertGeneric(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
@@ -48,14 +62,63 @@ func Foo() string {
 }
 `, "Conv")
 
-	mapper := &ssaMapper{fset: token.NewFileSet()}
-	result := mapper.mapFunction(fn)
+	mc := findMultiConvert(fn.Prog)
+	c.Assert(mc, qt.IsNotNil,
+		qt.Commentf("no *ssa.MultiConvert found in the loaded program; fixture likely needs updating for this Go toolchain"))
 
-	found := findNodeByTag(result, "ssa-multi-convert")
-	if found == nil {
-		t.Skip("Go toolchain did not emit ssa.MultiConvert for this fixture; coverage not exercised.")
+	mapper := &ssaMapper{fset: token.NewFileSet()}
+	node := mapper.mapMultiConvert(mc)
+	c.Assert(node, qt.IsNotNil)
+
+	// Lock the Scheme shape: tagged as ssa-multi-convert with name, x,
+	// type, operands fields.
+	pair, ok := node.(*values.Pair)
+	c.Assert(ok, qt.IsTrue)
+	tag, ok := pair.Car().(*values.Symbol)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(tag.Key, qt.Equals, "ssa-multi-convert")
+}
+
+// findMultiConvert walks every function in every package of prog and
+// returns the first *ssa.MultiConvert it finds, or nil.
+func findMultiConvert(prog *ssa.Program) *ssa.MultiConvert {
+	if prog == nil {
+		return nil
 	}
-	c.Assert(found, qt.IsNotNil)
+	for _, pkg := range prog.AllPackages() {
+		if pkg == nil {
+			continue
+		}
+		for _, mem := range pkg.Members {
+			fn, ok := mem.(*ssa.Function)
+			if !ok {
+				continue
+			}
+			mc := findMultiConvertInFunc(fn)
+			if mc != nil {
+				return mc
+			}
+			for _, anon := range fn.AnonFuncs {
+				anonMC := findMultiConvertInFunc(anon)
+				if anonMC != nil {
+					return anonMC
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func findMultiConvertInFunc(fn *ssa.Function) *ssa.MultiConvert {
+	for _, b := range fn.Blocks {
+		for _, instr := range b.Instrs {
+			mc, ok := instr.(*ssa.MultiConvert)
+			if ok {
+				return mc
+			}
+		}
+	}
+	return nil
 }
 
 // TestMapUnknownDirect unit-tests mapUnknown by calling it directly

@@ -5,6 +5,12 @@
 // You may obtain a copy of the License at
 //
 //     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 package goast_test
 
@@ -117,5 +123,58 @@ func TestSSANormalize_Associativity(t *testing.T) {
 			              (type . "float64") (operands "r1" "r2"))))
 				(equal? (ssa-normalize node (ssa-rule-associativity)) node))`)
 		c.Assert(result.Internal(), qt.Equals, values.TrueValue)
+	})
+
+	// Positive rewrite: (a+b)+c rotates to right-nested a+(b+c).
+	// Structural check: after normalization, x is the leaf "a" and y is
+	// a nested ssa-binop whose operands are b and c.
+	t.Run("left-nested (a+b)+c rotates to right-nested a+(b+c)", func(t *testing.T) {
+		c := qt.New(t)
+		result := eval(t, engine, `
+			(let* ((inner (list 'ssa-binop (cons 'name "t0") (cons 'op '+)
+			                    (cons 'x "a") (cons 'y "b")
+			                    (cons 'type "int") (cons 'operands (list "a" "b"))))
+			       (outer (list 'ssa-binop (cons 'name "t1") (cons 'op '+)
+			                    (cons 'x inner) (cons 'y "c")
+			                    (cons 'type "int") (cons 'operands (list inner "c"))))
+			       (norm (ssa-normalize outer (ssa-rule-associativity))))
+			  (and (equal? (nf norm 'x) "a")
+			       (tag? (nf norm 'y) 'ssa-binop)
+			       (equal? (nf (nf norm 'y) 'x) "b")
+			       (equal? (nf (nf norm 'y) 'y) "c")))`)
+		c.Assert(result.Internal(), qt.Equals, values.TrueValue,
+			qt.Commentf("expected (a+b)+c to rewrite to a+(b+c) structure"))
+	})
+
+	// Equivalence: (a+b)+c and a+(b+c) share a canonical form under the
+	// associativity rule. Compares structural shape while ignoring the
+	// per-input 'name' bookkeeping.
+	t.Run("both bracketings normalize to the same structural layout", func(t *testing.T) {
+		c := qt.New(t)
+		result := eval(t, engine, `
+			(define (same-shape? a b)
+			  (cond ((and (pair? a) (pair? b)
+			              (eq? (car a) 'ssa-binop) (eq? (car b) 'ssa-binop))
+			         (and (equal? (nf a 'op) (nf b 'op))
+			              (same-shape? (nf a 'x) (nf b 'x))
+			              (same-shape? (nf a 'y) (nf b 'y))))
+			        (else (equal? a b))))
+			(let* ((lhs-inner (list 'ssa-binop (cons 'name "t0") (cons 'op '+)
+			                        (cons 'x "a") (cons 'y "b")
+			                        (cons 'type "int") (cons 'operands (list "a" "b"))))
+			       (lhs (list 'ssa-binop (cons 'name "t1") (cons 'op '+)
+			                  (cons 'x lhs-inner) (cons 'y "c")
+			                  (cons 'type "int") (cons 'operands (list lhs-inner "c"))))
+			       (rhs-inner (list 'ssa-binop (cons 'name "t2") (cons 'op '+)
+			                        (cons 'x "b") (cons 'y "c")
+			                        (cons 'type "int") (cons 'operands (list "b" "c"))))
+			       (rhs (list 'ssa-binop (cons 'name "t3") (cons 'op '+)
+			                  (cons 'x "a") (cons 'y rhs-inner)
+			                  (cons 'type "int") (cons 'operands (list "a" rhs-inner))))
+			       (lhs-norm (ssa-normalize lhs (ssa-rule-associativity)))
+			       (rhs-norm (ssa-normalize rhs (ssa-rule-associativity))))
+			  (same-shape? lhs-norm rhs-norm))`)
+		c.Assert(result.Internal(), qt.Equals, values.TrueValue,
+			qt.Commentf("(a+b)+c and a+(b+c) should share a canonical form"))
 	})
 }

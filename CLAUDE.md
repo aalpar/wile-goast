@@ -100,12 +100,14 @@ Two facilities: def-use reachability (`defuse-reachable?`) and a general worklis
 
 | Export | Description |
 |--------|-------------|
-| `run-analysis` | Worklist-based forward/backward analysis: `(run-analysis direction lattice transfer ssa-fn [initial-state] ['check-monotone])` |
-| `analysis-in` | Query in-state at block: `(analysis-in result block-idx)` |
-| `analysis-out` | Query out-state at block: `(analysis-out result block-idx)` |
-| `analysis-states` | Full result alist: `((idx in out) ...)` |
+| `run-analysis` | Worklist-based forward/backward analysis: `(run-analysis direction lattice transfer ssa-fn protocol [initial-state] ['check-monotone])`. Re-exported from `(wile algebra dataflow)`. |
+| `analysis-in` | Query in-state at block: `(analysis-in result block-idx)`. Re-exported. |
+| `analysis-out` | Query out-state at block: `(analysis-out result block-idx)`. Re-exported. |
+| `analysis-states` | Full result alist: `((idx in out) ...)`. Re-exported. |
+| `ssa-cfg-protocol` | CFG-protocol adapter bridging SSA-function shape to the generic MFP solver. Pass as `protocol` argument to `run-analysis`. |
 | `block-instrs` | Extract instruction list from SSA block |
 | `defuse-reachable?` | Bounded def-use chain reachability via product lattice fixpoint |
+| `make-reachability-transfer` | Product-lattice transfer closure used by `defuse-reachable?` |
 | `boolean-lattice` | `{#f, #t}` lattice (utility) |
 | `ssa-all-instrs` | Flatten all instructions from SSA function |
 | `ssa-instruction-names` | All named values in SSA function |
@@ -120,10 +122,9 @@ Pre-built abstract domains that plug into C2's `run-analysis`. Each domain is a 
 | `make-reaching-definitions` | Forward reaching definitions (powerset lattice) |
 | `make-liveness` | Backward liveness analysis (powerset lattice) |
 | `make-constant-propagation` | Forward constant propagation (flat + map-lattice) |
-| `sign-lattice` | Construct the 5-element sign lattice: {bot, neg, zero, pos, top} |
+| `sign-lattice` | Construct the 5-element sign lattice: {bot, neg, zero, pos, top}. Re-exported from `(wile algebra)`. |
 | `make-sign-analysis` | Forward sign analysis with transfer tables |
-| `interval-lattice` | Construct interval lattice with infinity-aware arithmetic |
-| `make-interval-analysis` | Forward interval analysis with per-block widening |
+| `make-interval-analysis` | Forward interval analysis with per-block widening. Interval lattice supplied by `(wile algebra interval)`. |
 
 ## SSA Normalization — `(wile goast ssa-normalize)`
 
@@ -135,6 +136,9 @@ Algebraic normalization rules for SSA binop nodes. Axioms are declared as `named
 | `ssa-rule-commutative` | Sort operands lexicographically for commutative ops |
 | `ssa-rule-identity` | `x + 0 → x`, `x * 1 → x`, etc. (integer types only) |
 | `ssa-rule-annihilation` | `x * 0 → 0`, `x & 0 → 0` (integer types only) |
+| `ssa-rule-idempotence` | `x & x → x`, `x \| x → x` (integer types only) |
+| `ssa-rule-absorption` | `x & (x \| y) → x`, `x \| (x & y) → x` (integer types only) |
+| `ssa-rule-associativity` | Right-associate chained operations for canonical form |
 | `ssa-rule-set` | Compose rules: first non-`#f` wins |
 | `ssa-theory` | Named theory for `discover-equivalences` (all SSA axioms) |
 | `ssa-binop-protocol` | Term protocol for SSA binop nodes |
@@ -304,7 +308,7 @@ make ci          # Full CI: lint + build + test + covercheck + verify-mod
 
 - **Commits:** No Co-Authored-By lines. Direct push to master at this stage.
 - **Dependencies:** `github.com/aalpar/wile` + `golang.org/x/tools` + `mark3labs/mcp-go`. Prefer standard library otherwise.
-- **Version:** v0.5.50 (see `VERSION`).
+- **Version:** v0.5.189 (see `VERSION`).
 - **Coverage:** 80% threshold enforced by `tools/sh/covercheck.sh`. `cmd/wile-goast` excluded.
 - **Error handling:** Follow wile's sentinel + wrap pattern (`werr.WrapForeignErrorf`).
 

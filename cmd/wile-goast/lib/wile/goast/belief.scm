@@ -639,6 +639,41 @@
     (display val port)
     (get-output-string port)))
 
+;; ── Error classification ──────────────────────────────
+;;
+;; run-beliefs wraps every belief evaluation in (guard (exn (#t ...)))
+;; so one bad belief doesn't abort an entire batch. The broad catch
+;; also swallows Scheme-level developer errors (undefined bindings,
+;; arity mismatches) that should be visible as "your belief code is
+;; broken" rather than "this belief didn't match". classify-belief-error
+;; tags results with 'developer (likely a Scheme-level bug in the
+;; belief code) or 'belief (domain/runtime error during evaluation).
+;;
+;; The tagging is a best-effort heuristic on the error message; the
+;; full message is always retained in the 'message field so callers
+;; can do their own triage. When in doubt, we tag as 'belief to avoid
+;; false positives — a Scheme bug will usually still be obvious from
+;; the message content.
+
+(define (classify-belief-error msg)
+  "Classify a belief-evaluation error message as 'developer or 'belief.\n\nThe classifier matches on substrings that wile's evaluator uses for\ncommon developer bugs: undefined bindings, arity mismatches, and\nmacro/hygiene errors. Anything else tags as 'belief (a\ndomain/runtime error during belief evaluation).\n\nParameters:\n  msg : string-or-any\nReturns: symbol (developer | belief)\nCategory: goast-belief"
+  (cond
+    ((not (string? msg)) 'belief)
+    ((or (string-contains msg "no such binding")
+         (string-contains msg "unbound")
+         (string-contains msg "undefined")
+         (string-contains msg "wrong number of arguments")
+         (string-contains msg "wrong-number-of-arguments")
+         (string-contains msg "compilation"))
+     'developer)
+    (else 'belief)))
+
+(define (exn->message exn)
+  "Extract a printable message from a condition object."
+  (if (error-object? exn)
+      (error-object-message exn)
+      (display-to-string exn)))
+
 
 ;; ── Aggregate belief evaluation ────────────────────────
 
@@ -650,17 +685,16 @@
       (let* ((belief (car beliefs))
              (name (aggregate-belief-name belief)))
         (guard (exn
-                 (#t (loop (cdr beliefs)
-                           (cons (list (cons 'name name)
-                                       (cons 'type 'aggregate)
-                                       (cons 'status 'error)
-                                       (cons 'message
-                                             (if (error-object? exn)
-                                               (error-object-message exn)
-                                               (display-to-string exn)))
-                                       (cons 'sites-expr (aggregate-belief-sites-expr belief))
-                                       (cons 'analyze-expr (aggregate-belief-analyze-expr belief)))
-                                 results))))
+                 (#t (let ((msg (exn->message exn)))
+                       (loop (cdr beliefs)
+                             (cons (list (cons 'name name)
+                                         (cons 'type 'aggregate)
+                                         (cons 'status 'error)
+                                         (cons 'error-kind (classify-belief-error msg))
+                                         (cons 'message msg)
+                                         (cons 'sites-expr (aggregate-belief-sites-expr belief))
+                                         (cons 'analyze-expr (aggregate-belief-analyze-expr belief)))
+                                   results)))))
           (let* ((sites-fn (aggregate-belief-sites-fn belief))
                  (analyzer (aggregate-belief-analyzer belief))
                  (sites (sites-fn ctx))
@@ -689,10 +723,7 @@
                (name (belief-name belief))
                (result
                  (guard (exn
-                          (#t (cons 'error
-                                (if (error-object? exn)
-                                  (error-object-message exn)
-                                  (display-to-string exn)))))
+                          (#t (cons 'error (exn->message exn))))
                    (evaluate-belief belief ctx))))
           (cond
             ((and (pair? result) (eq? (car result) 'error))
@@ -700,6 +731,7 @@
                    (cons (list (cons 'name name)
                                (cons 'type 'per-site)
                                (cons 'status 'error)
+                               (cons 'error-kind (classify-belief-error (cdr result)))
                                (cons 'message (cdr result))
                                (cons 'sites-expr (belief-sites-expr belief))
                                (cons 'expect-expr (belief-expect-expr belief)))

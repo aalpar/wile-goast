@@ -30,9 +30,9 @@
 //   - Parameter -> "parameter"
 //   - Global / Field / FieldAddr / UnOp load / Lookup -> "global-load" / "field-load"
 //   - nil Const -> "nil-constant"
-//   - Invoke-mode Call -> "interface-method-dispatch"
+//   - Invoke-mode Call -> one of "dispatch-*" (see reason constants)
 //   - Builtin / closure call with unresolvable callee -> "unresolvable-callee"
-//   - Unrecognized instruction -> "unhandled"
+//   - Unrecognized instruction -> "unhandled:<T>"
 //   - Cycle in recursion -> "cycle"
 //
 // See plans/2026-04-19-axis-b-analyzer-impl-design.md §6.
@@ -48,66 +48,244 @@ import (
 	"golang.org/x/tools/go/ssa"
 )
 
-// widened is a small constructor for the common widened-with-reason result
-// shape. Reduces a 4-line struct literal to a one-liner; every reason
-// string in this file flows through here.
-func widened(reason string) *narrowResult {
-	return &narrowResult{Confidence: "widened", Reasons: []string{reason}}
+// confidence classifies a narrowResult. Typed enum over string literals
+// so typos fail to compile and exhaustive switches over outcomes stay
+// tractable. Scheme wire format (see prim_narrow.go) is the String()
+// output — that mapping is the only place the string spelling lives.
+//
+// The zero value (confUnknown) is reserved as a safety net for
+// uninitialized results and intentionally NOT part of the user-visible
+// wire format; production constructors always set one of the three
+// defined states.
+type confidence int
+
+const (
+	confUnknown confidence = iota
+	confNarrow
+	confWidened
+	confNoPaths
+)
+
+// String returns the Scheme-visible symbol name for c. The switch is
+// exhaustive over the declared states; confUnknown (and any unexpected
+// value) returns "" so mis-construction surfaces loudly at the bridge
+// instead of producing a plausible-looking symbol.
+func (c confidence) String() string {
+	switch c {
+	case confNarrow:
+		return "narrow"
+	case confWidened:
+		return "widened"
+	case confNoPaths:
+		return "no-paths"
+	default:
+		return ""
+	}
 }
 
+// Reason constants used for widened and no-paths results. Scheme callers
+// see these as symbols; Go callers should reference them by name so
+// typos fail to compile and grep-for-all-reasons works. Tests assert
+// against these identifiers rather than string literals.
+//
+// Widened reasons — classify WHY the narrowing gave up.
+const (
+	// Structural / traversal reasons.
+	reasonCycle              = "cycle"
+	reasonChannelReceive     = "channel-receive"
+	reasonUnexpectedUnop     = "unexpected-unop"
+	reasonFieldLoad          = "field-load"
+	reasonFieldAddr          = "field-addr"
+	reasonMapLookup          = "map-lookup"
+	reasonNilConstant        = "nil-constant"
+	reasonParameter          = "parameter"
+	reasonFreeVar            = "free-var"
+	reasonGlobalLoad         = "global-load"
+	reasonUnresolvableCallee = "unresolvable-callee"
+	reasonInterfaceResult    = "interface-result"
+
+	// Pointer-load classification (narrowPointerLoad).
+	reasonSliceDerefLoad = "slice-deref-load"
+	reasonPointerLoad    = "pointer-load"
+
+	// Field-store backward search.
+	reasonFieldNoProg       = "field-no-prog"
+	reasonFieldNoStructType = "field-no-struct-type"
+	reasonFieldNoStores     = "field-no-stores"
+
+	// Global-init backward search.
+	reasonGlobalNoPkg    = "global-no-pkg"
+	reasonGlobalNoInit   = "global-no-init"
+	reasonGlobalNoStores = "global-no-stores"
+
+	// Alloc-store backward search.
+	reasonAllocOrphan   = "alloc-orphan"
+	reasonAllocNoStores = "alloc-no-stores"
+
+	// Interface-method invoke dispatch. These distinguish legitimate
+	// "no implementors" cases from ill-formed invokes (SSA-build
+	// invariant violations) — both produced the same tag previously.
+	reasonDispatchNoProg           = "dispatch-no-prog"
+	reasonDispatchNilMethod        = "dispatch-nil-method"
+	reasonDispatchBadSignature     = "dispatch-bad-signature"
+	reasonDispatchNonInterfaceRecv = "dispatch-non-interface-recv"
+	reasonDispatchAllSynthetic     = "dispatch-all-synthetic"
+	reasonDispatchNoImplementors   = "dispatch-no-implementors"
+)
+
+// No-paths reasons — classify WHY the input/callee had nothing to walk.
+const (
+	reasonNilInput        = "nil-input"
+	reasonNilType         = "nil-type"
+	reasonNilTuple        = "nil-tuple"
+	reasonCalleeNoReturns = "callee-no-returns"
+)
+
 // narrowResult is the Go-side narrowing output. Converted to Scheme by
-// buildNarrowResult in prim_narrow.go.
+// buildNarrowResult in prim_narrow.go (Confidence is serialized as the
+// symbol returned by Confidence.String()).
+//
+// Fields are populated according to Confidence:
+//
+//	confNarrow    : Types non-empty; Reasons empty.
+//	confWidened   : Reasons non-empty; Types may be empty.
+//	confNoPaths   : Types empty; Reasons optionally explains why.
+//
+// Every construction site routes through widened / newNarrow / newNoPaths
+// so the invariants stay local to this file.
 type narrowResult struct {
 	Types      []string
-	Confidence string
+	Confidence confidence
 	Reasons    []string
 }
 
-// narrow is the public entry point. Wraps narrowWalk with a fresh visited set.
+// widened constructs a confWidened result carrying a single reason tag.
+// Every "I can't narrow further, here's why" exit in this file flows
+// through this constructor.
+func widened(reason string) *narrowResult {
+	return &narrowResult{Confidence: confWidened, Reasons: []string{reason}}
+}
+
+// newNarrow constructs a confNarrow result for a single concrete Go
+// type. Callers stringify via types.TypeString before the call.
+func newNarrow(typeStr string) *narrowResult {
+	return &narrowResult{Confidence: confNarrow, Types: []string{typeStr}}
+}
+
+// newNoPaths constructs a confNoPaths result. If reason is empty the
+// Reasons slice is left nil (legitimate "no sites matched" has no
+// tag); otherwise the reason is recorded for debuggers.
+func newNoPaths(reason string) *narrowResult {
+	if reason == "" {
+		return &narrowResult{Confidence: confNoPaths}
+	}
+	return &narrowResult{Confidence: confNoPaths, Reasons: []string{reason}}
+}
+
+// narrowCtx carries the shared state for a single narrow() invocation.
+// Replaces a hand-threaded visited map and ambient prog lookups:
+//
+//   - visited tracks the current descent stack for cycle detection.
+//     Callers use enter/leave to maintain the invariant; the DFS
+//     discipline is hidden behind methods instead of scattered
+//     `defer delete(visited, v)` calls.
+//
+//   - prog is cached from the initial function's Program and used by
+//     helpers that enumerate packages (field stores, invoke dispatch).
+//
+//   - allPackages caches prog.AllPackages() on first access. An invoke
+//     dispatch can trigger N field-store searches, each of which would
+//     otherwise re-enumerate the package list; lazy caching flattens
+//     that cost.
+//
+// A fresh ctx is created per narrow() call so caches don't persist
+// between queries on the same program.
+type narrowCtx struct {
+	prog        *ssa.Program
+	visited     map[ssa.Value]bool
+	allPackages []*ssa.Package
+}
+
+// newNarrowCtx constructs a ctx from the entry function. fn may carry
+// a nil Prog (isolated SSA fragments in tests); helpers check prog
+// nullability before dereferencing.
+func newNarrowCtx(fn *ssa.Function) *narrowCtx {
+	c := &narrowCtx{visited: make(map[ssa.Value]bool)}
+	if fn != nil {
+		c.prog = fn.Prog
+	}
+	return c
+}
+
+// enter records v as being on the descent stack. Returns false when v
+// is already present (cycle detected); callers should widen with
+// reasonCycle in that case. A successful enter MUST be paired with a
+// deferred leave so DAG reconvergence (same value reached via two phi
+// edges at different stack depths) is not misclassified as a cycle.
+func (c *narrowCtx) enter(v ssa.Value) bool {
+	if c.visited[v] {
+		return false
+	}
+	c.visited[v] = true
+	return true
+}
+
+// leave removes v from the descent stack.
+func (c *narrowCtx) leave(v ssa.Value) {
+	delete(c.visited, v)
+}
+
+// packages returns prog.AllPackages() with first-call caching. Safe to
+// call when prog is nil; returns a nil slice in that case.
+func (c *narrowCtx) packages() []*ssa.Package {
+	if c.allPackages != nil || c.prog == nil {
+		return c.allPackages
+	}
+	c.allPackages = c.prog.AllPackages()
+	return c.allPackages
+}
+
+// narrow is the public entry point. Wraps narrowWalk with a fresh ctx.
 func narrow(fn *ssa.Function, v ssa.Value) *narrowResult {
-	visited := make(map[ssa.Value]bool)
-	return narrowWalk(fn, v, visited)
+	return narrowWalk(newNarrowCtx(fn), v)
 }
 
 // narrowWalk performs the backward SSA traversal.
 //
-// visited tracks values currently *on the descent stack* — classic DFS
-// cycle detection. Entries are removed on return (see defer below) so
-// a DAG reconvergence point (e.g., same value reached via two phi
-// edges) is not misclassified as a cycle.
-func narrowWalk(fn *ssa.Function, v ssa.Value, visited map[ssa.Value]bool) *narrowResult {
+// Cycle detection uses ctx.enter/leave so entries are removed on
+// return; DAG reconvergence is not misclassified as a cycle.
+func narrowWalk(ctx *narrowCtx, v ssa.Value) *narrowResult {
 	if v == nil {
-		return &narrowResult{Confidence: "no-paths", Reasons: []string{"nil-input"}}
+		return newNoPaths(reasonNilInput)
 	}
-	if visited[v] {
-		return widened("cycle")
+	if !ctx.enter(v) {
+		return widened(reasonCycle)
 	}
-	visited[v] = true
-	defer delete(visited, v)
+	defer ctx.leave(v)
 
 	switch x := v.(type) {
 	case *ssa.Alloc:
 		return narrowFromConcreteType(x.Type())
 	case *ssa.MakeInterface:
-		return narrowWalk(fn, x.X, visited)
+		return narrowWalk(ctx, x.X)
 	case *ssa.ChangeType:
-		return narrowWalk(fn, x.X, visited)
+		return narrowWalk(ctx, x.X)
 	case *ssa.ChangeInterface:
-		return narrowWalk(fn, x.X, visited)
+		return narrowWalk(ctx, x.X)
 	case *ssa.Convert:
-		return narrowWalk(fn, x.X, visited)
+		return narrowWalk(ctx, x.X)
 	case *ssa.MultiConvert:
-		return narrowWalk(fn, x.X, visited)
+		return narrowWalk(ctx, x.X)
 	case *ssa.SliceToArrayPointer:
 		return narrowFromConcreteType(x.Type())
 	case *ssa.TypeAssert:
 		return narrowFromConcreteType(x.AssertedType)
 	case *ssa.Phi:
-		return narrowFromPhi(fn, x, visited)
+		return narrowFromPhi(ctx, x)
 	case *ssa.Extract:
-		return narrowFromExtract(fn, x, visited)
+		return narrowFromExtract(ctx, x)
 	case *ssa.Call:
-		return narrowFromCall(x, visited)
+		return narrowFromCall(ctx, x)
 	case *ssa.MakeClosure:
 		return narrowFromConcreteType(x.Type())
 	case *ssa.MakeMap:
@@ -126,21 +304,21 @@ func narrowWalk(fn *ssa.Function, v ssa.Value, visited map[ssa.Value]bool) *narr
 		if isInterfaceResult(x.Type()) {
 			switch x.Op {
 			case token.MUL:
-				return narrowPointerLoad(x, visited)
+				return narrowPointerLoad(ctx, x)
 			case token.ARROW:
-				return widened("channel-receive")
+				return widened(reasonChannelReceive)
 			}
-			return widened("unexpected-unop")
+			return widened(reasonUnexpectedUnop)
 		}
 		return narrowFromConcreteType(x.Type())
 	case *ssa.Field:
 		if isInterfaceResult(x.Type()) {
-			return widened("field-load")
+			return widened(reasonFieldLoad)
 		}
 		return narrowFromConcreteType(x.Type())
 	case *ssa.FieldAddr:
 		if isInterfaceResult(x.Type()) {
-			return widened("field-addr")
+			return widened(reasonFieldAddr)
 		}
 		return narrowFromConcreteType(x.Type())
 	case *ssa.Index:
@@ -149,7 +327,7 @@ func narrowWalk(fn *ssa.Function, v ssa.Value, visited map[ssa.Value]bool) *narr
 		return narrowFromConcreteType(x.Type())
 	case *ssa.Lookup:
 		if isInterfaceResult(x.Type()) {
-			return widened("map-lookup")
+			return widened(reasonMapLookup)
 		}
 		return narrowFromConcreteType(x.Type())
 	case *ssa.Slice:
@@ -160,7 +338,7 @@ func narrowWalk(fn *ssa.Function, v ssa.Value, visited map[ssa.Value]bool) *narr
 		return narrowFromConcreteType(x.Type())
 	case *ssa.Const:
 		if x.IsNil() {
-			return widened("nil-constant")
+			return widened(reasonNilConstant)
 		}
 		return narrowFromConcreteType(x.Type())
 	case *ssa.Parameter:
@@ -172,15 +350,15 @@ func narrowWalk(fn *ssa.Function, v ssa.Value, visited map[ssa.Value]bool) *narr
 		if !isInterfaceResult(x.Type()) {
 			return narrowFromConcreteType(x.Type())
 		}
-		return widened("parameter")
+		return widened(reasonParameter)
 	case *ssa.FreeVar:
-		return widened("free-var")
+		return widened(reasonFreeVar)
 	case *ssa.Global:
-		return widened("global-load")
+		return widened(reasonGlobalLoad)
 	case *ssa.Function:
 		return narrowFromConcreteType(x.Type())
 	case *ssa.Builtin:
-		return widened("unresolvable-callee")
+		return widened(reasonUnresolvableCallee)
 	}
 	// Unknown SSA opcode. Include the Go type name so future toolchain
 	// additions (or forgotten switch cases) produce a traceable reason
@@ -193,26 +371,26 @@ func narrowWalk(fn *ssa.Function, v ssa.Value, visited map[ssa.Value]bool) *narr
 // "pointer-load" reason with specific tags that reveal where narrowing
 // could be extended:
 //
-//	Global                  -> "global-load"       (package-level var)
-//	Alloc (local var)       -> narrowFromAllocStores (recovers stored types)
-//	FieldAddr (struct field)-> "field-deref-load"
+//	Global                  -> narrowFromGlobalInit   (package-level var)
+//	Alloc (local var)       -> narrowFromAllocStores  (recovers stored types)
+//	FieldAddr (struct field)-> narrowFromFieldStores
 //	IndexAddr (slice/array) -> "slice-deref-load"
-//	other                   -> "pointer-load"      (residual bucket)
+//	other                   -> "pointer-load"         (residual bucket)
 //
 // The Alloc case is the only one that attempts real narrowing; the
 // others widen with an informative reason.
-func narrowPointerLoad(x *ssa.UnOp, visited map[ssa.Value]bool) *narrowResult {
+func narrowPointerLoad(ctx *narrowCtx, x *ssa.UnOp) *narrowResult {
 	switch src := x.X.(type) {
 	case *ssa.Global:
-		return narrowFromGlobalInit(src, visited)
+		return narrowFromGlobalInit(ctx, src)
 	case *ssa.Alloc:
-		return narrowFromAllocStores(src, visited)
+		return narrowFromAllocStores(ctx, src)
 	case *ssa.FieldAddr:
-		return narrowFromFieldStores(src, visited)
+		return narrowFromFieldStores(ctx, src)
 	case *ssa.IndexAddr:
-		return widened("slice-deref-load")
+		return widened(reasonSliceDerefLoad)
 	}
-	return widened("pointer-load")
+	return widened(reasonPointerLoad)
 }
 
 // narrowFromFieldStores enumerates every Store instruction in the program
@@ -225,7 +403,7 @@ func narrowPointerLoad(x *ssa.UnOp, visited map[ssa.Value]bool) *narrowResult {
 // fields — per-instance distinction isn't available statically.
 //
 // Unlike narrowFromGlobalInit (which searches a single Init function), this
-// searches every function in every package reachable through prog.AllPackages().
+// searches every function in every package reachable through ctx.packages().
 // Store sites for struct fields can appear anywhere in the program, not just
 // package initialization. This is O(functions × instructions) per call; for
 // typical programs the traversal completes quickly but the cost scales with
@@ -235,18 +413,18 @@ func narrowPointerLoad(x *ssa.UnOp, visited map[ssa.Value]bool) *narrowResult {
 //   - "field-no-prog"        -> FieldAddr's parent function has no program
 //   - "field-no-struct-type" -> couldn't extract the struct type from FieldAddr.X
 //   - "field-no-stores"      -> no matching Store found anywhere in the program
-func narrowFromFieldStores(fa *ssa.FieldAddr, visited map[ssa.Value]bool) *narrowResult {
+func narrowFromFieldStores(ctx *narrowCtx, fa *ssa.FieldAddr) *narrowResult {
 	fn := fa.Parent()
 	if fn == nil || fn.Prog == nil {
-		return widened("field-no-prog")
+		return widened(reasonFieldNoProg)
 	}
 	targetStruct := fieldAddrStructType(fa)
 	if targetStruct == nil {
-		return widened("field-no-struct-type")
+		return widened(reasonFieldNoStructType)
 	}
 
 	results := make([]*narrowResult, 0, 4)
-	for _, pkg := range fn.Prog.AllPackages() {
+	for _, pkg := range ctx.packages() {
 		if pkg == nil {
 			continue
 		}
@@ -255,15 +433,15 @@ func narrowFromFieldStores(fa *ssa.FieldAddr, visited map[ssa.Value]bool) *narro
 			if !ok {
 				continue
 			}
-			results = appendFieldStoreResults(results, memFn, targetStruct, fa.Field, visited)
+			results = appendFieldStoreResults(ctx, results, memFn, targetStruct, fa.Field)
 			for _, anon := range memFn.AnonFuncs {
-				results = appendFieldStoreResults(results, anon, targetStruct, fa.Field, visited)
+				results = appendFieldStoreResults(ctx, results, anon, targetStruct, fa.Field)
 			}
 		}
 	}
 
 	if len(results) == 0 {
-		return widened("field-no-stores")
+		return widened(reasonFieldNoStores)
 	}
 	return mergeResults(results)
 }
@@ -271,7 +449,7 @@ func narrowFromFieldStores(fa *ssa.FieldAddr, visited map[ssa.Value]bool) *narro
 // appendFieldStoreResults scans fn.Blocks for Store instructions whose Addr
 // is a FieldAddr matching (targetStruct, fieldIndex) and appends the
 // narrowed stored-value result for each.
-func appendFieldStoreResults(results []*narrowResult, fn *ssa.Function, targetStruct types.Type, fieldIndex int, visited map[ssa.Value]bool) []*narrowResult {
+func appendFieldStoreResults(ctx *narrowCtx, results []*narrowResult, fn *ssa.Function, targetStruct types.Type, fieldIndex int) []*narrowResult {
 	for _, b := range fn.Blocks {
 		for _, instr := range b.Instrs {
 			store, ok := instr.(*ssa.Store)
@@ -288,7 +466,7 @@ func appendFieldStoreResults(results []*narrowResult, fn *ssa.Function, targetSt
 			if !sameStructType(fieldAddrStructType(storeFA), targetStruct) {
 				continue
 			}
-			results = append(results, narrowWalk(fn, store.Val, visited))
+			results = append(results, narrowWalk(ctx, store.Val))
 		}
 	}
 	return results
@@ -309,9 +487,11 @@ func fieldAddrStructType(fa *ssa.FieldAddr) types.Type {
 	return ptr.Elem()
 }
 
-// sameStructType compares two struct types for matching identity. Uses
-// types.Identical for named types; falls back to Underlying comparison
-// for the rare unnamed-struct case.
+// sameStructType compares two struct types for matching identity.
+// types.Identical handles both named and unnamed (anonymous) struct
+// cases correctly: named types compare by declaration identity,
+// unnamed types compare by structural shape. No separate Underlying
+// fallback is needed.
 func sameStructType(a, b types.Type) bool {
 	if a == nil || b == nil {
 		return false
@@ -336,13 +516,13 @@ func sameStructType(a, b types.Type) bool {
 //   - "global-no-pkg"    -> Global has no associated package (rare; build issue)
 //   - "global-no-init"   -> package has no synthetic Init function
 //   - "global-no-stores" -> Init exists but never writes the global
-func narrowFromGlobalInit(g *ssa.Global, visited map[ssa.Value]bool) *narrowResult {
+func narrowFromGlobalInit(ctx *narrowCtx, g *ssa.Global) *narrowResult {
 	if g.Pkg == nil {
-		return widened("global-no-pkg")
+		return widened(reasonGlobalNoPkg)
 	}
 	initFn := g.Pkg.Func("init")
 	if initFn == nil {
-		return widened("global-no-init")
+		return widened(reasonGlobalNoInit)
 	}
 	results := make([]*narrowResult, 0, 4)
 	for _, b := range initFn.Blocks {
@@ -354,11 +534,11 @@ func narrowFromGlobalInit(g *ssa.Global, visited map[ssa.Value]bool) *narrowResu
 			if store.Addr != ssa.Value(g) {
 				continue
 			}
-			results = append(results, narrowWalk(initFn, store.Val, visited))
+			results = append(results, narrowWalk(ctx, store.Val))
 		}
 	}
 	if len(results) == 0 {
-		return widened("global-no-stores")
+		return widened(reasonGlobalNoStores)
 	}
 	return mergeResults(results)
 }
@@ -368,10 +548,10 @@ func narrowFromGlobalInit(g *ssa.Global, visited map[ssa.Value]bool) *narrowResu
 // stored values, and returns the merged result. If no stores are found
 // (defensive — Go's zero-value init may skip explicit Store ops),
 // widens with "alloc-no-stores".
-func narrowFromAllocStores(alloc *ssa.Alloc, visited map[ssa.Value]bool) *narrowResult {
+func narrowFromAllocStores(ctx *narrowCtx, alloc *ssa.Alloc) *narrowResult {
 	fn := alloc.Parent()
 	if fn == nil {
-		return widened("alloc-orphan")
+		return widened(reasonAllocOrphan)
 	}
 	results := make([]*narrowResult, 0, 4)
 	for _, b := range fn.Blocks {
@@ -383,11 +563,11 @@ func narrowFromAllocStores(alloc *ssa.Alloc, visited map[ssa.Value]bool) *narrow
 			if store.Addr != ssa.Value(alloc) {
 				continue
 			}
-			results = append(results, narrowWalk(fn, store.Val, visited))
+			results = append(results, narrowWalk(ctx, store.Val))
 		}
 	}
 	if len(results) == 0 {
-		return widened("alloc-no-stores")
+		return widened(reasonAllocNoStores)
 	}
 	return mergeResults(results)
 }
@@ -399,15 +579,12 @@ func narrowFromConcreteType(t types.Type) *narrowResult {
 		// Nil types.Type is an invariant violation (SSA values should
 		// always carry a type). Tag it distinctly so debuggers can tell
 		// this from a legitimate callee-no-returns 'no-paths'.
-		return &narrowResult{Confidence: "no-paths", Reasons: []string{"nil-type"}}
+		return newNoPaths(reasonNilType)
 	}
 	if isInterfaceResult(t) {
-		return widened("interface-result")
+		return widened(reasonInterfaceResult)
 	}
-	return &narrowResult{
-		Types:      []string{types.TypeString(t, nil)},
-		Confidence: "narrow",
-	}
+	return newNarrow(types.TypeString(t, nil))
 }
 
 // isInterfaceResult reports whether t's underlying type is an interface.
@@ -424,33 +601,33 @@ func isInterfaceResult(t types.Type) bool {
 }
 
 // narrowFromPhi unions the narrow results of every incoming edge.
-func narrowFromPhi(fn *ssa.Function, phi *ssa.Phi, visited map[ssa.Value]bool) *narrowResult {
+func narrowFromPhi(ctx *narrowCtx, phi *ssa.Phi) *narrowResult {
 	results := make([]*narrowResult, 0, len(phi.Edges))
 	for _, e := range phi.Edges {
 		if e == nil {
 			continue
 		}
-		results = append(results, narrowWalk(fn, e, visited))
+		results = append(results, narrowWalk(ctx, e))
 	}
 	return mergeResults(results)
 }
 
 // narrowFromExtract narrows the tuple operand. Extract at a given index cannot
 // refine beyond what the tuple as a whole yields, so the merge is conservative.
-func narrowFromExtract(fn *ssa.Function, ex *ssa.Extract, visited map[ssa.Value]bool) *narrowResult {
+func narrowFromExtract(ctx *narrowCtx, ex *ssa.Extract) *narrowResult {
 	if ex.Tuple == nil {
-		return &narrowResult{Confidence: "no-paths", Reasons: []string{"nil-tuple"}}
+		return newNoPaths(reasonNilTuple)
 	}
 	tupleType := ex.Tuple.Type()
 	tup, ok := tupleType.(*types.Tuple)
 	if ok && ex.Index < tup.Len() {
 		elem := tup.At(ex.Index).Type()
 		inner := narrowFromConcreteType(elem)
-		if inner.Confidence == "narrow" {
+		if inner.Confidence == confNarrow {
 			return inner
 		}
 	}
-	return narrowWalk(fn, ex.Tuple, visited)
+	return narrowWalk(ctx, ex.Tuple)
 }
 
 // narrowFromCall handles static calls (may recurse into callee's return paths
@@ -460,18 +637,18 @@ func narrowFromExtract(fn *ssa.Function, ex *ssa.Extract, visited map[ssa.Value]
 // Concrete-return short-circuit: if the call result type is already concrete,
 // the callee's internals tell us nothing narrower — the declared return type
 // IS the narrowing. Applies uniformly to static and invoke calls.
-func narrowFromCall(call *ssa.Call, visited map[ssa.Value]bool) *narrowResult {
+func narrowFromCall(ctx *narrowCtx, call *ssa.Call) *narrowResult {
 	if !isInterfaceResult(call.Type()) {
 		return narrowFromConcreteType(call.Type())
 	}
 	if call.Call.IsInvoke() {
-		return narrowFromInvokeDispatch(call, visited)
+		return narrowFromInvokeDispatch(ctx, call)
 	}
 	callee := staticCallee(call)
 	if callee == nil {
-		return widened("unresolvable-callee")
+		return widened(reasonUnresolvableCallee)
 	}
-	return narrowFromCalleeReturns(callee, visited)
+	return narrowFromCalleeReturns(ctx, callee)
 }
 
 // narrowFromInvokeDispatch resolves an interface-method call by enumerating
@@ -490,31 +667,39 @@ func narrowFromCall(call *ssa.Call, visited map[ssa.Value]bool) *narrowResult {
 // to the underlying implementation, which we reach directly via the non-
 // synthetic candidate. Including both would double-count.
 //
-// Widens with "interface-method-dispatch" when:
-//   - call has no parent function or program (defensive; shouldn't happen)
-//   - method is nil or lacks a receiver (ill-formed invoke)
-//   - no concrete implementors of the interface are visible in the program
-func narrowFromInvokeDispatch(call *ssa.Call, visited map[ssa.Value]bool) *narrowResult {
+// Widening reasons — distinct tags so debuggers can separate ill-formed
+// invokes (SSA invariant violations) from legitimate "empty interface"
+// situations:
+//   - "dispatch-no-prog"            -> call has no parent function or program (defensive)
+//   - "dispatch-nil-method"         -> Call.Method is nil (defensive)
+//   - "dispatch-bad-signature"      -> method's type is not *types.Signature or lacks a receiver
+//   - "dispatch-non-interface-recv" -> receiver's underlying type is not an interface
+//   - "dispatch-all-synthetic"      -> implementations exist but every candidate was synthetic
+//   - "dispatch-no-implementors"    -> no concrete type in the program implements the interface
+func narrowFromInvokeDispatch(ctx *narrowCtx, call *ssa.Call) *narrowResult {
 	fn := call.Parent()
 	if fn == nil || fn.Prog == nil {
-		return widened("interface-method-dispatch")
+		return widened(reasonDispatchNoProg)
 	}
-	prog := fn.Prog
 	method := call.Call.Method
 	if method == nil {
-		return widened("interface-method-dispatch")
+		return widened(reasonDispatchNilMethod)
 	}
 	sig, ok := method.Type().(*types.Signature)
 	if !ok || sig.Recv() == nil {
-		return widened("interface-method-dispatch")
+		return widened(reasonDispatchBadSignature)
 	}
 	iface, ok := sig.Recv().Type().Underlying().(*types.Interface)
 	if !ok {
-		return widened("interface-method-dispatch")
+		return widened(reasonDispatchNonInterfaceRecv)
 	}
 
+	// Track the two failure modes separately: sawImplementor distinguishes
+	// "no candidate implements" from "candidates implement but all were
+	// synthetic". Debuggers reach very different conclusions from each.
+	sawImplementor := false
 	results := make([]*narrowResult, 0, 8)
-	for _, pkg := range prog.AllPackages() {
+	for _, pkg := range ctx.packages() {
 		if pkg == nil {
 			continue
 		}
@@ -528,22 +713,29 @@ func narrowFromInvokeDispatch(call *ssa.Call, visited map[ssa.Value]bool) *narro
 				if !types.Implements(candidate, iface) {
 					continue
 				}
-				mset := prog.MethodSets.MethodSet(candidate)
+				mset := fn.Prog.MethodSets.MethodSet(candidate)
 				sel := mset.Lookup(method.Pkg(), method.Name())
 				if sel == nil {
 					continue
 				}
-				impl := prog.MethodValue(sel)
-				if impl == nil || impl.Synthetic != "" {
+				impl := fn.Prog.MethodValue(sel)
+				if impl == nil {
 					continue
 				}
-				results = append(results, narrowFromCalleeReturns(impl, visited))
+				sawImplementor = true
+				if impl.Synthetic != "" {
+					continue
+				}
+				results = append(results, narrowFromCalleeReturns(ctx, impl))
 			}
 		}
 	}
 
 	if len(results) == 0 {
-		return widened("interface-method-dispatch")
+		if sawImplementor {
+			return widened(reasonDispatchAllSynthetic)
+		}
+		return widened(reasonDispatchNoImplementors)
 	}
 	return mergeResults(results)
 }
@@ -561,7 +753,7 @@ func staticCallee(call *ssa.Call) *ssa.Function {
 // narrowFromCalleeReturns walks every Return instruction in callee and narrows
 // the result operand at index 0 (interfaces are always single-return by the
 // time we reach here — multi-return functions hit Extract before Call).
-func narrowFromCalleeReturns(callee *ssa.Function, visited map[ssa.Value]bool) *narrowResult {
+func narrowFromCalleeReturns(ctx *narrowCtx, callee *ssa.Function) *narrowResult {
 	results := make([]*narrowResult, 0, 4)
 	for _, b := range callee.Blocks {
 		for _, instr := range b.Instrs {
@@ -572,13 +764,13 @@ func narrowFromCalleeReturns(callee *ssa.Function, visited map[ssa.Value]bool) *
 			if len(ret.Results) == 0 {
 				continue
 			}
-			results = append(results, narrowWalk(callee, ret.Results[0], visited))
+			results = append(results, narrowWalk(ctx, ret.Results[0]))
 		}
 	}
 	if len(results) == 0 {
 		// Callee has no Return instructions (panic-only, infinite loop,
 		// etc.). Distinct from "I couldn't find paths" or "input was nil".
-		return &narrowResult{Confidence: "no-paths", Reasons: []string{"callee-no-returns"}}
+		return newNoPaths(reasonCalleeNoReturns)
 	}
 	return mergeResults(results)
 }
@@ -587,7 +779,7 @@ func narrowFromCalleeReturns(callee *ssa.Function, visited map[ssa.Value]bool) *
 // reasons and taking the weakest confidence.
 func mergeResults(rs []*narrowResult) *narrowResult {
 	if len(rs) == 0 {
-		return &narrowResult{Confidence: "no-paths"}
+		return newNoPaths("")
 	}
 	typeSet := make(map[string]bool)
 	reasonSet := make(map[string]bool)
@@ -603,22 +795,28 @@ func mergeResults(rs []*narrowResult) *narrowResult {
 		for _, reason := range r.Reasons {
 			reasonSet[reason] = true
 		}
-		if r.Confidence == "widened" {
+		switch r.Confidence {
+		case confWidened:
 			anyWidened = true
 			allNoPaths = false
-		} else if r.Confidence != "no-paths" {
+		case confNoPaths:
+			// unchanged
+		default:
 			allNoPaths = false
 		}
 	}
-	types := keysSorted(typeSet)
-	reasons := keysSorted(reasonSet)
-	conf := "narrow"
-	if anyWidened {
-		conf = "widened"
-	} else if allNoPaths {
-		conf = "no-paths"
+	conf := confNarrow
+	switch {
+	case anyWidened:
+		conf = confWidened
+	case allNoPaths:
+		conf = confNoPaths
 	}
-	return &narrowResult{Types: types, Confidence: conf, Reasons: reasons}
+	return &narrowResult{
+		Types:      keysSorted(typeSet),
+		Confidence: conf,
+		Reasons:    keysSorted(reasonSet),
+	}
 }
 
 // keysSorted returns the keys of m in deterministic order. Callers rely on

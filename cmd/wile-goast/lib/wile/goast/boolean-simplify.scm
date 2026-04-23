@@ -23,8 +23,13 @@
 
 ;;; ── Re-bind upstream normalizer ─────────────────────────
 
-(define boolean-normalize symbolic-boolean-normalize)
-(define boolean-equivalent? symbolic-boolean-equivalent?)
+(define (boolean-normalize term)
+  "Normalize a boolean S-expression under the Boolean equational theory.\n\nThin goast-layer alias for `symbolic-boolean-normalize' from\n(wile algebra symbolic). Exposed under this name for use by the\nGo-specific projection layer (`selector->symbolic',\n`ast-condition->symbolic') and related belief machinery.\n\nReturns two values: the canonical normal form and the rewrite trace.\n\nParameters:\n  term : any\nReturns: any (two values)\nCategory: goast-boolean\n\nExamples:\n  (boolean-normalize '(and x (or x y)))  ; absorption => x\n  (boolean-normalize '(not (not x)))     ; involution => x\n\nSee also: `boolean-equivalent?', `selector->symbolic',\n`ast-condition->symbolic', `symbolic-boolean-normalize'."
+  (symbolic-boolean-normalize term))
+
+(define (boolean-equivalent? term1 term2)
+  "Test whether two boolean S-expression terms share a canonical form.\n\nThin goast-layer alias for `symbolic-boolean-equivalent?' from\n(wile algebra symbolic). Both terms are normalized via\n`boolean-normalize' and compared with `equal?'.\n\nEquivalence is decided up to the axioms exposed by the underlying\nBoolean theory (commutativity, associativity, identity, idempotence,\nabsorption, involution) — NOT full Boolean-algebra equivalence.\n\nParameters:\n  term1 : any\n  term2 : any\nReturns: boolean\nCategory: goast-boolean\n\nExamples:\n  (boolean-equivalent? '(and a b) '(and b a))      ; => #t\n  (boolean-equivalent? '(and x (or x y)) 'x)       ; => #t\n\nSee also: `boolean-normalize', `symbolic-boolean-equivalent?'."
+  (symbolic-boolean-equivalent? term1 term2))
 
 ;;; ── Belief selector projection ──────────────────────────
 

@@ -72,7 +72,7 @@ func Foo() *Bar {
 `, "Foo")
 
 	r := narrowReturn(t, fn)
-	c.Assert(r.Confidence, qt.Equals, "narrow")
+	c.Assert(r.Confidence, qt.Equals, confNarrow)
 	assertTypeSuffix(t, c, r.Types, ".Bar")
 	c.Assert(r.Reasons, qt.HasLen, 0)
 }
@@ -89,7 +89,7 @@ func Add(a, b int) int {
 `, "Add")
 
 	r := narrowReturn(t, fn)
-	c.Assert(r.Confidence, qt.Equals, "narrow")
+	c.Assert(r.Confidence, qt.Equals, confNarrow)
 	c.Assert(r.Types, qt.DeepEquals, []string{"int"})
 }
 
@@ -116,7 +116,7 @@ func Foo(x int) interface{} {
 `, "Foo")
 
 	r := narrowReturn(t, fn)
-	c.Assert(r.Confidence, qt.Equals, "narrow")
+	c.Assert(r.Confidence, qt.Equals, confNarrow)
 	c.Assert(r.Types, qt.HasLen, 2)
 	c.Assert(strings.Contains(r.Types[0], ".Bar"), qt.IsTrue,
 		qt.Commentf("expected Bar in %v", r.Types))
@@ -153,7 +153,7 @@ func Foo(x *int, cond bool) interface{} {
 `, "Foo")
 
 	r := narrowReturn(t, fn)
-	c.Assert(r.Confidence, qt.Equals, "narrow")
+	c.Assert(r.Confidence, qt.Equals, confNarrow)
 	c.Assert(r.Types, qt.DeepEquals, []string{"*int"})
 	for _, reason := range r.Reasons {
 		c.Assert(reason, qt.Not(qt.Equals), "cycle",
@@ -175,7 +175,7 @@ func Foo(x interface{}) *Bar {
 `, "Foo")
 
 	r := narrowReturn(t, fn)
-	c.Assert(r.Confidence, qt.Equals, "narrow")
+	c.Assert(r.Confidence, qt.Equals, confNarrow)
 	assertTypeSuffix(t, c, r.Types, ".Bar")
 }
 
@@ -192,7 +192,7 @@ func Foo(m map[string]int) int {
 `, "Foo")
 
 	r := narrowReturn(t, fn)
-	c.Assert(r.Confidence, qt.Equals, "narrow")
+	c.Assert(r.Confidence, qt.Equals, confNarrow)
 	c.Assert(r.Types, qt.DeepEquals, []string{"int"})
 }
 
@@ -214,7 +214,7 @@ func Foo() interface{} {
 `, "Foo")
 
 	r := narrowReturn(t, fn)
-	c.Assert(r.Confidence, qt.Equals, "narrow")
+	c.Assert(r.Confidence, qt.Equals, confNarrow)
 	assertTypeSuffix(t, c, r.Types, ".Bar")
 }
 
@@ -230,8 +230,33 @@ func Foo(x interface{}) interface{} {
 `, "Foo")
 
 	r := narrowReturn(t, fn)
-	c.Assert(r.Confidence, qt.Equals, "widened")
-	c.Assert(r.Reasons, qt.DeepEquals, []string{"parameter"})
+	c.Assert(r.Confidence, qt.Equals, confWidened)
+	c.Assert(r.Reasons, qt.DeepEquals, []string{reasonParameter})
+}
+
+// TestNarrowConcreteParameterNarrows locks the concrete-parameter rule
+// at narrow.go:172-175. A parameter whose declared type is already
+// concrete carries no call-site ambiguity, so narrowing succeeds from
+// the declared type alone — no "parameter" widening. Regressions that
+// revert to widening all parameters (as pre-concrete-param behavior did)
+// would flip this assertion.
+func TestNarrowConcreteParameterNarrows(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	fn := buildSSAFromSource(t, dir, `
+package testpkg
+
+type Bar struct{}
+
+func Foo(x *Bar) *Bar {
+	return x
+}
+`, "Foo")
+
+	r := narrowReturn(t, fn)
+	c.Assert(r.Confidence, qt.Equals, confNarrow)
+	c.Assert(r.Types, qt.DeepEquals, []string{"*testpkg.Bar"})
+	c.Assert(r.Reasons, qt.HasLen, 0)
 }
 
 func TestNarrowInvokeConcreteReturn(t *testing.T) {
@@ -253,7 +278,7 @@ func Foo(s Stringer) string {
 `, "Foo")
 
 	r := narrowReturn(t, fn)
-	c.Assert(r.Confidence, qt.Equals, "narrow")
+	c.Assert(r.Confidence, qt.Equals, confNarrow)
 	c.Assert(r.Types, qt.DeepEquals, []string{"string"})
 }
 
@@ -261,8 +286,9 @@ func TestNarrowInvokeWidensNoImplementors(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	// Invoke call with interface-typed return and NO concrete implementors
-	// in the program → widen with interface-method-dispatch. Proves the
-	// invoke-dispatch path widens correctly when enumeration finds nothing.
+	// in the program → widen with "dispatch-no-implementors". Proves the
+	// invoke-dispatch path distinguishes "empty implementor set" from the
+	// ill-formed-invoke defensive paths.
 	fn := buildSSAFromSource(t, dir, `
 package testpkg
 
@@ -276,8 +302,8 @@ func Foo(p Producer) interface{} {
 `, "Foo")
 
 	r := narrowReturn(t, fn)
-	c.Assert(r.Confidence, qt.Equals, "widened")
-	c.Assert(r.Reasons, qt.DeepEquals, []string{"interface-method-dispatch"})
+	c.Assert(r.Confidence, qt.Equals, confWidened)
+	c.Assert(r.Reasons, qt.DeepEquals, []string{reasonDispatchNoImplementors})
 }
 
 func TestNarrowInvokeDispatchResolvesImplementor(t *testing.T) {
@@ -306,7 +332,7 @@ func Foo(a Animal) interface{} {
 `, "Foo")
 
 	r := narrowReturn(t, fn)
-	c.Assert(r.Confidence, qt.Equals, "narrow")
+	c.Assert(r.Confidence, qt.Equals, confNarrow)
 	c.Assert(r.Types, qt.DeepEquals, []string{"*testpkg.Cat"})
 }
 
@@ -334,7 +360,7 @@ func Foo(a Animal) interface{} {
 `, "Foo")
 
 	r := narrowReturn(t, fn)
-	c.Assert(r.Confidence, qt.Equals, "narrow")
+	c.Assert(r.Confidence, qt.Equals, confNarrow)
 	// Union of *Cat and *Dog. Order is set-driven; assert set equality.
 	c.Assert(len(r.Types), qt.Equals, 2)
 	seen := map[string]bool{}
@@ -343,6 +369,51 @@ func Foo(a Animal) interface{} {
 	}
 	c.Assert(seen["*testpkg.Cat"], qt.IsTrue)
 	c.Assert(seen["*testpkg.Dog"], qt.IsTrue)
+}
+
+// TestNarrowInvokeDispatchSkipsSyntheticWrappers exercises the synthetic
+// skip at narrow.go:537. Value-receiver methods generate method set
+// entries for both the value type (real method) AND the pointer type
+// (auto-generated wrapper marked as Synthetic). Without the skip,
+// enumeration walks both; with the skip, only the real method
+// contributes — avoiding redundant work and mis-attributed reasons.
+//
+// The observable contract: dispatch on a value-receiver fixture yields
+// exactly one concrete type with no widening reasons. mergeResults'
+// type dedup would mask a doubling regression in the Types slice, so
+// the stricter check here is that Reasons is empty — a regression that
+// walked synthetic wrappers would surface any widenings those walks
+// produce.
+func TestNarrowInvokeDispatchSkipsSyntheticWrappers(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	fn := buildSSAFromSource(t, dir, `
+package testpkg
+
+type Result struct{}
+
+type Getter interface {
+	Get() interface{}
+}
+
+type Holder struct{}
+
+// Value receiver: method set of Holder has Get directly; method set of
+// *Holder has a synthetic pointer-to-value wrapper that forwards here.
+func (h Holder) Get() interface{} {
+	return &Result{}
+}
+
+func Use(g Getter) interface{} {
+	return g.Get()
+}
+`, "Use")
+
+	r := narrowReturn(t, fn)
+	c.Assert(r.Confidence, qt.Equals, confNarrow)
+	c.Assert(r.Types, qt.DeepEquals, []string{"*testpkg.Result"})
+	c.Assert(r.Reasons, qt.HasLen, 0,
+		qt.Commentf("reasons should be empty; non-empty signals synthetic wrapper contributed: %v", r.Reasons))
 }
 
 func TestNarrowGlobalInitNarrows(t *testing.T) {
@@ -362,7 +433,7 @@ func Foo() interface{} {
 `, "Foo")
 
 	r := narrowReturn(t, fn)
-	c.Assert(r.Confidence, qt.Equals, "narrow")
+	c.Assert(r.Confidence, qt.Equals, confNarrow)
 	c.Assert(r.Types, qt.DeepEquals, []string{"int"})
 }
 
@@ -382,7 +453,7 @@ func Foo() interface{} {
 `, "Foo")
 
 	r := narrowReturn(t, fn)
-	c.Assert(r.Confidence, qt.Equals, "widened")
+	c.Assert(r.Confidence, qt.Equals, confWidened)
 	c.Assert(r.Reasons, qt.Contains, "global-no-stores")
 }
 
@@ -412,13 +483,17 @@ func B(n int) interface{} {
 `, "A")
 
 	r := narrowReturn(t, fn)
-	// The visited-set key is (*ssa.Function, ssa.Value). Cross-function recursion
-	// with the same SSA value reappearing triggers cycle. We assert widened or
-	// narrow: if the SSA compiler inlines the recursion away, the walker simply
-	// finds concrete return paths — that's also correct.
-	c.Assert(r.Confidence == "widened" || r.Confidence == "narrow", qt.IsTrue,
-		qt.Commentf("unexpected confidence %q, reasons=%v, types=%v",
-			r.Confidence, r.Reasons, r.Types))
+	// Cross-function recursion: A's return path A→B→A hits the same
+	// *ssa.Call (to B) already on the descent stack, producing
+	// widened(cycle) on that arm. A's other arm returns MakeInterface
+	// over an int constant, narrowing to "int". mergeResults unions:
+	// overall widened, types=[int], reasons includes "cycle".
+	c.Assert(r.Confidence, qt.Equals, confWidened,
+		qt.Commentf("expected widened from cycle detection, got %s", r.Confidence))
+	c.Assert(r.Reasons, qt.Contains, reasonCycle,
+		qt.Commentf("cycle detection should contribute reason 'cycle', got %v", r.Reasons))
+	c.Assert(r.Types, qt.DeepEquals, []string{"int"},
+		qt.Commentf("non-cycle arm should narrow to int, got %v", r.Types))
 }
 
 // TestNarrowAllocStoreLoad verifies the Alloc-backed local-var pattern:
@@ -452,7 +527,7 @@ func Foo(cond bool) interface{} {
 `, "Foo")
 
 	r := narrowReturn(t, fn)
-	c.Assert(r.Confidence, qt.Equals, "narrow",
+	c.Assert(r.Confidence, qt.Equals, confNarrow,
 		qt.Commentf("expected narrow, got %s (reasons=%v)", r.Confidence, r.Reasons))
 	c.Assert(r.Types, qt.HasLen, 2,
 		qt.Commentf("expected 2 types, got %v", r.Types))
@@ -483,18 +558,19 @@ func Foo() interface{} {
 `, "Foo")
 
 	r := narrowReturn(t, fn)
-	// Either the compiler optimizes this away (returns nil-constant),
-	// our alloc-no-stores path fires, or we still widen generically.
-	// All three are acceptable; we just assert we don't narrow falsely.
-	c.Assert(r.Confidence == "widened" || r.Confidence == "no-paths", qt.IsTrue,
-		qt.Commentf("expected widened or no-paths, got %s (types=%v reasons=%v)",
-			r.Confidence, r.Types, r.Reasons))
+	// The Go SSA builder optimizes `var v interface{}; _ = v; return v`
+	// to `return nil:interface{}` — the Alloc is elided entirely. So the
+	// return walks to a nil Const, not an UnOp(*, Alloc). This is the
+	// realistic behavior; a future toolchain that preserves the Alloc
+	// would instead hit alloc-no-stores via narrowFromAllocStores.
+	c.Assert(r.Confidence, qt.Equals, confWidened)
+	c.Assert(r.Reasons, qt.DeepEquals, []string{reasonNilConstant})
 }
 
 func TestNarrowMergeResultsEmpty(t *testing.T) {
 	c := qt.New(t)
 	r := mergeResults(nil)
-	c.Assert(r.Confidence, qt.Equals, "no-paths")
+	c.Assert(r.Confidence, qt.Equals, confNoPaths)
 	c.Assert(r.Types, qt.HasLen, 0)
 	c.Assert(r.Reasons, qt.HasLen, 0)
 }
@@ -502,10 +578,10 @@ func TestNarrowMergeResultsEmpty(t *testing.T) {
 func TestNarrowMergeResultsWidenedWins(t *testing.T) {
 	c := qt.New(t)
 	r := mergeResults([]*narrowResult{
-		{Types: []string{"*foo.Bar"}, Confidence: "narrow"},
-		{Confidence: "widened", Reasons: []string{"parameter"}},
+		{Types: []string{"*foo.Bar"}, Confidence: confNarrow},
+		{Confidence: confWidened, Reasons: []string{"parameter"}},
 	})
-	c.Assert(r.Confidence, qt.Equals, "widened")
+	c.Assert(r.Confidence, qt.Equals, confWidened)
 	c.Assert(r.Types, qt.DeepEquals, []string{"*foo.Bar"})
 	c.Assert(r.Reasons, qt.DeepEquals, []string{"parameter"})
 }
@@ -513,19 +589,19 @@ func TestNarrowMergeResultsWidenedWins(t *testing.T) {
 func TestNarrowMergeResultsAllNoPaths(t *testing.T) {
 	c := qt.New(t)
 	r := mergeResults([]*narrowResult{
-		{Confidence: "no-paths"},
-		{Confidence: "no-paths"},
+		{Confidence: confNoPaths},
+		{Confidence: confNoPaths},
 	})
-	c.Assert(r.Confidence, qt.Equals, "no-paths")
+	c.Assert(r.Confidence, qt.Equals, confNoPaths)
 }
 
 func TestNarrowMergeResultsDeduplicatesTypes(t *testing.T) {
 	c := qt.New(t)
 	r := mergeResults([]*narrowResult{
-		{Types: []string{"*foo.Bar"}, Confidence: "narrow"},
-		{Types: []string{"*foo.Bar", "*foo.Baz"}, Confidence: "narrow"},
+		{Types: []string{"*foo.Bar"}, Confidence: confNarrow},
+		{Types: []string{"*foo.Bar", "*foo.Baz"}, Confidence: confNarrow},
 	})
-	c.Assert(r.Confidence, qt.Equals, "narrow")
+	c.Assert(r.Confidence, qt.Equals, confNarrow)
 	c.Assert(r.Types, qt.DeepEquals, []string{"*foo.Bar", "*foo.Baz"})
 }
 
@@ -555,7 +631,7 @@ func LoadCar(p *Pair) interface{} {
 `, "LoadCar")
 
 	r := narrowReturn(t, fn)
-	c.Assert(r.Confidence, qt.Equals, "narrow")
+	c.Assert(r.Confidence, qt.Equals, confNarrow)
 	c.Assert(r.Types, qt.DeepEquals, []string{"*testpkg.Cat"})
 }
 
@@ -592,7 +668,7 @@ func LoadCar(p *Pair) interface{} {
 `, "LoadCar")
 
 	r := narrowReturn(t, fn)
-	c.Assert(r.Confidence, qt.Equals, "narrow")
+	c.Assert(r.Confidence, qt.Equals, confNarrow)
 	c.Assert(len(r.Types), qt.Equals, 2)
 	seen := map[string]bool{}
 	for _, tt := range r.Types {
@@ -619,6 +695,6 @@ func LoadCar(p *Pair) interface{} {
 `, "LoadCar")
 
 	r := narrowReturn(t, fn)
-	c.Assert(r.Confidence, qt.Equals, "widened")
+	c.Assert(r.Confidence, qt.Equals, confWidened)
 	c.Assert(r.Reasons, qt.Contains, "field-no-stores")
 }

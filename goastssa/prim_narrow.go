@@ -66,7 +66,7 @@ func PrimGoSSANarrow(mc machine.CallContext) error {
 	}
 
 	result := narrow(fn, v)
-	mc.SetValue(buildNarrowResult(result.Types, result.Confidence, result.Reasons))
+	mc.SetValue(buildNarrowResult(result.Types, result.Confidence.String(), result.Reasons))
 	return nil
 }
 

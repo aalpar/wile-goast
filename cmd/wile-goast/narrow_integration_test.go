@@ -48,15 +48,17 @@ func TestGoSSANarrowValueNotFoundErrors(t *testing.T) {
 	qt.Assert(t, err.Error(), qt.Contains, "no value named")
 }
 
-// TestGoSSANarrowParameterShape exercises the successful end-to-end path:
-// build SSA for a real package, find the first function with at least one
-// parameter, narrow its first parameter name via go-ssa-narrow. The
-// narrowing outcome depends on the parameter's type (concrete narrows from
-// type, interface widens with 'parameter), so the assertion here is on the
-// result *shape* — it must be a narrow-result record with a valid confidence
-// symbol. Locking the specific confidence would couple the test to whichever
-// function happens to come first in the package's SSA member list.
-func TestGoSSANarrowParameterShape(t *testing.T) {
+// TestGoSSANarrowParameterWidens exercises the end-to-end Scheme binding
+// on a function whose first parameter is interface-typed: the runtime
+// value depends on call-site context, so narrowing must widen with the
+// "parameter" reason. This mirrors goastssa.TestNarrowParameterWidens at
+// the Scheme-binding layer.
+//
+// The fixture scans the goast package for the first function whose first
+// parameter's type string contains "values.Value" — an interface from
+// github.com/aalpar/wile. Matching by type-string keeps the test decoupled
+// from SSA-member-list ordering without sacrificing outcome determinism.
+func TestGoSSANarrowParameterWidens(t *testing.T) {
 	goast.ResetTargetState()
 	t.Setenv("WILE_GOAST_TARGET", "")
 
@@ -74,14 +76,15 @@ func TestGoSSANarrowParameterShape(t *testing.T) {
 		           (else
 		            (let* ((f (car funcs))
 		                   (params (nf f 'params)))
-		              (if (or (not params) (null? params))
-		                  (loop (cdr funcs))
-		                  (let ((pname (nf (car params) 'name)))
-		                    (go-ssa-narrow f pname))))))))`)
+		              (cond ((or (not params) (null? params))
+		                     (loop (cdr funcs)))
+		                    ((string-contains (nf (car params) 'type) "values.Value")
+		                     (go-ssa-narrow f (nf (car params) 'name)))
+		                    (else (loop (cdr funcs))))))))) `)
 
 	pair, ok := result.Internal().(*values.Pair)
 	qt.Assert(t, ok, qt.IsTrue,
-		qt.Commentf("result is %T, want *values.Pair", result.Internal()))
+		qt.Commentf("result is %T, want *values.Pair (no interface-typed parameter found?)", result.Internal()))
 
 	tag, ok := pair.Car().(*values.Symbol)
 	qt.Assert(t, ok, qt.IsTrue)
@@ -91,10 +94,18 @@ func TestGoSSANarrowParameterShape(t *testing.T) {
 	qt.Assert(t, ok, qt.IsTrue)
 	confSym, ok := conf.(*values.Symbol)
 	qt.Assert(t, ok, qt.IsTrue)
-	// Any of the three valid confidence values is acceptable here.
-	validConf := confSym.Key == "widened" || confSym.Key == "narrow" || confSym.Key == "no-paths"
-	qt.Assert(t, validConf, qt.IsTrue,
-		qt.Commentf("confidence=%q is not one of {widened, narrow, no-paths}", confSym.Key))
+	qt.Assert(t, confSym.Key, qt.Equals, "widened",
+		qt.Commentf("interface-typed parameter must widen, got confidence=%q", confSym.Key))
+
+	reasons, ok := goast.GetField(pair.Cdr(), "reasons")
+	qt.Assert(t, ok, qt.IsTrue)
+	reasonsPair, ok := reasons.(*values.Pair)
+	qt.Assert(t, ok, qt.IsTrue,
+		qt.Commentf("reasons is %T, want *values.Pair", reasons))
+	firstReason, ok := reasonsPair.Car().(*values.Symbol)
+	qt.Assert(t, ok, qt.IsTrue)
+	qt.Assert(t, firstReason.Key, qt.Equals, "parameter",
+		qt.Commentf("expected first reason=parameter for interface-typed param, got %q", firstReason.Key))
 }
 
 // TestGoSSANarrowConcreteAlloc exercises the narrow-confidence path: find

@@ -191,6 +191,22 @@
           ((parse-ssa-const name) => abstract-sign)
           (else 'flat-top))))
 
+;; warn-unknown-opcode emits a one-line diagnostic to current-error-port
+;; when a Go operator symbol has no `go-token->opcode` mapping. This is
+;; distinct from "recognized but unsupported" (div/rem/bitwise) which is
+;; a documented design choice — unknown operators indicate either a new
+;; Go toolchain introducing operators wile-goast doesn't yet recognize,
+;; or an SSA-producer bug. Both lattice paths still return the
+;; conservative top element, but callers can observe the distinction
+;; via stderr.
+(define (warn-unknown-opcode tag raw-op)
+  (display (string-append "[" tag "] unknown Go opcode: "
+                          (if (symbol? raw-op)
+                              (symbol->string raw-op)
+                              (if (string? raw-op) raw-op ""))
+                          " (returning conservative top)\n")
+           (current-error-port)))
+
 (define (make-sign-analysis ssa-fn)
   "Forward sign analysis using the 5-element sign lattice.\nState maps each SSA name to neg, zero, pos, flat-bottom, or flat-top.\n\nParameters:\n  ssa-fn : list\nReturns: list\nCategory: goast-domains\n\nSee also: `sign-lattice', `make-constant-propagation', `run-analysis'."
   (let* ((names (ssa-instruction-names ssa-fn))
@@ -205,15 +221,25 @@
                        (cond
                          ((tag? instr 'ssa-binop)
                           (let* ((nm (nf instr 'name))
-                                 (opcode (go-token->opcode (nf instr 'op)))
+                                 (raw-op (nf instr 'op))
+                                 (opcode (go-token->opcode raw-op))
                                  (v1 (resolve-sign st (nf instr 'x)))
                                  (v2 (resolve-sign st (nf instr 'y)))
-                                 ;; sign-binop only accepts add/sub/mul;
-                                 ;; fall through to flat-top for other
-                                 ;; recognized ops (div/rem/bitwise).
-                                 (result (if (memq opcode '(add sub mul))
-                                             (sign-binop opcode v1 v2)
-                                             'flat-top)))
+                                 (result
+                                   (cond
+                                     ;; Known and supported: compute via
+                                     ;; sign-binop.
+                                     ((memq opcode '(add sub mul))
+                                      (sign-binop opcode v1 v2))
+                                     ;; Unrecognized Go operator: likely a
+                                     ;; wile-goast/toolchain mismatch. Warn
+                                     ;; so the condition is observable.
+                                     ((not opcode)
+                                      (warn-unknown-opcode "sign-analysis" raw-op)
+                                      'flat-top)
+                                     ;; Known but unsupported (div/rem/bit).
+                                     ;; Silent top is the documented choice.
+                                     (else 'flat-top))))
                             (if nm (state-update st nm result) st)))
 
                          ((tag? instr 'ssa-phi)
@@ -292,23 +318,36 @@
                                 (cond
                                   ((tag? instr 'ssa-binop)
                                    (let* ((nm (nf instr 'name))
-                                          (opcode (go-token->opcode
-                                                    (nf instr 'op)))
+                                          (raw-op (nf instr 'op))
+                                          (opcode (go-token->opcode raw-op))
                                           (v1 (resolve-interval
                                                 st (nf instr 'x)))
                                           (v2 (resolve-interval
                                                 st (nf instr 'y)))
                                           (result
                                             (cond
+                                              ;; Either operand bottom:
+                                              ;; result is bottom (no
+                                              ;; valid values flow).
                                               ((or (eq? v1 'interval-bot)
                                                    (eq? v2 'interval-bot))
                                                'interval-bot)
+                                              ;; Known and supported.
+                                              ((memq opcode '(add sub mul))
+                                               (case opcode
+                                                 ((add) (interval-add v1 v2))
+                                                 ((sub) (interval-sub v1 v2))
+                                                 ((mul) (interval-mul v1 v2))))
+                                              ;; Unrecognized Go operator.
+                                              ;; Warn and widen to infinity.
+                                              ((not opcode)
+                                               (warn-unknown-opcode
+                                                 "interval-analysis" raw-op)
+                                               (cons 'neg-inf 'pos-inf))
+                                              ;; Known but unsupported
+                                              ;; (div/rem/bit): silent top.
                                               (else
-                                                (case opcode
-                                                  ((add) (interval-add v1 v2))
-                                                  ((sub) (interval-sub v1 v2))
-                                                  ((mul) (interval-mul v1 v2))
-                                                  (else (cons 'neg-inf 'pos-inf)))))))
+                                                (cons 'neg-inf 'pos-inf)))))
                                      (if nm
                                          (state-update st nm result)
                                          st)))
