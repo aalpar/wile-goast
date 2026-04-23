@@ -12,61 +12,19 @@
 ;; See the License for the specific language governing permissions and
 ;; limitations under the License.
 
-;;; boolean-simplify.scm — Boolean normalization for predicates and Go AST conditions
+;;; boolean-simplify.scm — Boolean projections for predicates and Go AST conditions
 ;;;
-;;; Normalizes boolean S-expression terms using (wile algebra symbolic)'s
-;;; recursive normalizer with a Boolean algebra theory. Supports two
-;;; projection modes:
-;;;   1. Belief selector expressions (quoted predicate combinators)
-;;;   2. Go AST condition expressions (binary-expr/unary-expr nodes)
+;;; The core normalizer (Boolean equational-theory rewriting) lives in
+;;; (wile algebra symbolic) as `symbolic-boolean-normalize` /
+;;; `symbolic-boolean-equivalent?`. This file re-binds those under the
+;;; shorter internal names `boolean-normalize` / `boolean-equivalent?` for
+;;; the Go-specific projection layer below, which converts belief selector
+;;; expressions and Go AST condition nodes into symbolic boolean terms.
 
-;;; ── Shared boolean algebra and normalizer ───────────────
+;;; ── Re-bind upstream normalizer ─────────────────────────
 
-;; Singleton boolean theory and normalizer, constructed lazily.
-;; Uses a minimal powerset Boolean algebra — the specific universe
-;; doesn't matter since we only use the equational theory (commutativity,
-;; absorption, idempotence, involution), not ground-truth computation.
-
-(define *bool-theory* #f)
-(define *bool-normalizer* #f)
-
-(define (atom-compare a b)
-  ;; Lexicographic ordering for commutativity normalization.
-  ;; Atoms are arbitrary S-expressions; convert to string for comparison.
-  (let ((sa (let ((p (open-output-string))) (write a p) (get-output-string p)))
-        (sb (let ((p (open-output-string))) (write b p) (get-output-string p))))
-    (string<? sa sb)))
-
-;; Initialize the normalizer. Checks *bool-normalizer* (the last thing set)
-;; so that a partial failure leaves the guard open for retry.
-(define (ensure-normalizer!)
-  (unless *bool-normalizer*
-    (let* ((B (powerset-boolean '(_)))
-           (th (boolean->theory B 'or 'and 'not))
-           (proto (sexp-term-protocol atom-compare))
-           (norm (make-recursive-normalizer th proto)))
-      (set! *bool-normalizer* norm)
-      (set! *bool-theory* th))))
-
-;;; ── Core normalization ──────────────────────────────────
-
-;; Normalize a boolean S-expression term.
-;; Returns two values: the normal form and the rewrite trace.
-;; Terms use (and ...), (or ...), (not ...) as operators.
-;; All other forms are treated as opaque atoms.
-(define (boolean-normalize term)
-  "Normalize a boolean S-expression under standard Boolean algebra laws.\nReturns two values: the normal form and the rewrite trace.\n\nParameters:\n  term : any\nReturns: any\nCategory: goast-boolean\n\nExamples:\n  (boolean-normalize '(and x (or x y)))  ; => x, (trace...)\n  (boolean-normalize '(not (not x)))      ; => x, (trace...)\n\nSee also: `boolean-equivalent?', `selector->symbolic'."
-  (ensure-normalizer!)
-  (*bool-normalizer* term))
-
-;; Check if two boolean S-expression terms are equivalent
-;; under Boolean algebra laws.
-(define (boolean-equivalent? term1 term2)
-  "Check if two boolean S-expression terms normalize to the same form.\n\nParameters:\n  term1 : any\n  term2 : any\nReturns: boolean\nCategory: goast-boolean\n\nExamples:\n  (boolean-equivalent? '(and a b) '(and b a))  ; => #t\n\nSee also: `boolean-normalize'."
-  (ensure-normalizer!)
-  (let-values (((n1 _t1) (*bool-normalizer* term1))
-               ((n2 _t2) (*bool-normalizer* term2)))
-    (equal? n1 n2)))
+(define boolean-normalize symbolic-boolean-normalize)
+(define boolean-equivalent? symbolic-boolean-equivalent?)
 
 ;;; ── Belief selector projection ──────────────────────────
 

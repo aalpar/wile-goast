@@ -95,7 +95,7 @@
                                     (lambda (i) (nf i 'name))
                                     (block-instrs block))))
                        (lattice-join lat state names)))))
-    (run-analysis 'forward lat transfer ssa-fn)))
+    (run-analysis 'forward lat transfer ssa-fn (ssa-cfg-protocol))))
 
 ;; ─── Domain 2: Liveness (backward, powerset) ──────────────
 
@@ -119,7 +119,7 @@
                           (used (filter (lambda (o) (member o universe)) ops))
                           (st2 (lattice-join lat st1 used)))
                      (loop (cdr instrs) st2)))))))
-    (run-analysis 'backward lat transfer ssa-fn)))
+    (run-analysis 'backward lat transfer ssa-fn (ssa-cfg-protocol))))
 
 ;; ─── Domain 3: Constant Propagation (forward, flat + map-lattice) ─
 
@@ -172,45 +172,17 @@
 
                          ;; No name (store, jump, etc.): pass through
                          (else st)))))))))
-    (run-analysis 'forward lat transfer ssa-fn)))
+    (run-analysis 'forward lat transfer ssa-fn (ssa-cfg-protocol))))
 
 ;; ─── Domain 4: Sign Analysis (forward, 5-element) ────────
-
-(define (sign-lattice)
-  "Construct the sign lattice: {flat-bottom, neg, zero, pos, flat-top}.\nThe three middle elements are incomparable.\n\nReturns: lattice\nCategory: goast-domains\n\nSee also: `make-sign-analysis'."
-  (flat-lattice '(neg zero pos) eq?))
-
-;; Abstract a concrete integer to its sign.
-(define (abstract-sign n)
-  (cond ((< n 0) 'neg)
-        ((= n 0) 'zero)
-        (else    'pos)))
-
-;; Sign transfer tables: (op sign-a sign-b) -> sign-result
-(define (sign-binop op a b)
-  (let ((bot 'flat-bottom) (top 'flat-top))
-    (cond
-      ((or (eq? a bot) (eq? b bot)) bot)
-      ((and (eq? op 'mul) (or (eq? a 'zero) (eq? b 'zero))) 'zero)
-      ((or (eq? a top) (eq? b top)) top)
-      (else
-        (case op
-          ((add)
-           (case a
-             ((neg)  (case b ((neg) 'neg)  ((zero) 'neg) ((pos) top)))
-             ((zero) b)
-             ((pos)  (case b ((neg) top)   ((zero) 'pos) ((pos) 'pos)))))
-          ((sub)
-           (case a
-             ((neg)  (case b ((neg) top)   ((zero) 'neg) ((pos) 'neg)))
-             ((zero) (case b ((neg) 'pos)  ((zero) 'zero) ((pos) 'neg)))
-             ((pos)  (case b ((neg) 'pos)  ((zero) 'pos) ((pos) top)))))
-          ((mul)
-           (case a
-             ((neg)  (case b ((neg) 'pos)  ((zero) 'zero) ((pos) 'neg)))
-             ((zero) 'zero)
-             ((pos)  (case b ((neg) 'neg)  ((zero) 'zero) ((pos) 'pos)))))
-          (else top))))))
+;;
+;; `sign-lattice`, `abstract-sign`, and `sign-binop` now come from
+;; (wile algebra abstract-domain) — extracted upstream. sign-binop's
+;; error semantics tightened upstream: invalid sign operands now raise
+;; instead of returning unspecified; unknown operators raise instead
+;; of returning `flat-top`. Go SSA integer-opcode strings from
+;; `go-token->opcode` that map to unsupported ops (return #f) are
+;; filtered by `make-sign-analysis` below before calling sign-binop.
 
 ;; Resolve an operand to a sign value.
 (define (resolve-sign state name)
@@ -236,7 +208,10 @@
                                  (opcode (go-token->opcode (nf instr 'op)))
                                  (v1 (resolve-sign st (nf instr 'x)))
                                  (v2 (resolve-sign st (nf instr 'y)))
-                                 (result (if opcode
+                                 ;; sign-binop only accepts add/sub/mul;
+                                 ;; fall through to flat-top for other
+                                 ;; recognized ops (div/rem/bitwise).
+                                 (result (if (memq opcode '(add sub mul))
                                              (sign-binop opcode v1 v2)
                                              'flat-top)))
                             (if nm (state-update st nm result) st)))
@@ -256,7 +231,7 @@
                           (state-update st (nf instr 'name) 'flat-top))
 
                          (else st)))))))))
-    (run-analysis 'forward lat transfer ssa-fn)))
+    (run-analysis 'forward lat transfer ssa-fn (ssa-cfg-protocol))))
 
 ;; ─── Domain 5: Interval Analysis (forward, widening) ──────
 
@@ -363,4 +338,4 @@
                (if (> visits threshold)
                    (widen-state state raw-result)
                    raw-result)))))
-    (run-analysis 'forward lat transfer ssa-fn)))
+    (run-analysis 'forward lat transfer ssa-fn (ssa-cfg-protocol))))
