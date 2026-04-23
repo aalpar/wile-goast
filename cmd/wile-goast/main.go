@@ -160,6 +160,9 @@ func buildEngineOrError(ctx context.Context) (*wile.Engine, error) {
 		wile.WithProfile(wile.KitchenSink),
 		wile.WithSourceFS(wile.StdLibFS),
 		wile.WithSourceFS(embeddedLib),
+		// OS filesystem as last-resort resolver so scripts can reference
+		// arbitrary paths (e.g., committed belief directories) via load.
+		wile.WithSourceOS(),
 		wile.WithLibraryPaths("lib"),
 		wile.WithExtension(goast.Extension),
 		wile.WithExtension(goastssa.Extension),

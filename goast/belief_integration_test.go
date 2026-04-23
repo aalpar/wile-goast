@@ -17,6 +17,8 @@ package goast_test
 import (
 	"context"
 	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/aalpar/wile"
@@ -38,6 +40,9 @@ func newBeliefEngine(t *testing.T) *wile.Engine {
 		wile.WithProfile(wile.KitchenSink),
 		wile.WithSourceFS(wile.StdLibFS),
 		wile.WithSourceFS(os.DirFS("../cmd/wile-goast")),
+		// OS filesystem as last-resort resolver so load-committed-beliefs
+		// tests can write to t.TempDir() (absolute /tmp paths) and load them.
+		wile.WithSourceOS(),
 		wile.WithLibraryPaths("lib"),
 		wile.WithExtension(goast.Extension),
 		wile.WithExtension(goastssa.Extension),
@@ -2022,4 +2027,338 @@ func TestAggregateBeliefExpressionMetadata(t *testing.T) {
 		result := eval(t, engine, `(cdr (assoc 'analyze-expr (car results)))`)
 		c.Assert(result.SchemeString(), qt.Matches, `.*aggregate-custom.*lambda.*`)
 	})
+}
+
+// ── Belief suppression tests ────────────────────────────
+
+// mustWriteFile writes content to path and fails the test on error.
+func mustWriteFile(t *testing.T, path, content string) {
+	t.Helper()
+	err := os.WriteFile(path, []byte(content), 0o644)
+	if err != nil {
+		t.Fatalf("write %s: %v", path, err)
+	}
+}
+
+// schemeStr wraps a Go string as a Scheme string literal, escaping
+// backslashes and double quotes. Adequate for filesystem paths in tests.
+func schemeStr(s string) string {
+	r := strings.ReplaceAll(s, `\`, `\\`)
+	r = strings.ReplaceAll(r, `"`, `\"`)
+	return `"` + r + `"`
+}
+
+func TestWithBeliefScope_Restores(t *testing.T) {
+	engine := newBeliefEngine(t)
+	c := qt.New(t)
+
+	result := eval(t, engine, `
+		(import (wile goast belief))
+		(reset-beliefs!)
+		(define-belief "outer"
+		  (sites (functions-matching (name-matches "X")))
+		  (expect (contains-call "Foo"))
+		  (threshold 0.9 3))
+		(define inside-count 0)
+		(with-belief-scope
+		  (lambda ()
+		    (define-belief "inner"
+		      (sites (functions-matching (name-matches "Y")))
+		      (expect (contains-call "Bar"))
+		      (threshold 0.9 3))
+		    (set! inside-count (length (current-beliefs)))))
+		(list inside-count (length (current-beliefs)) (car (car (current-beliefs))))
+	`)
+	c.Assert(result.SchemeString(), qt.Equals, `(1 1 "outer")`)
+}
+
+func TestWithBeliefScope_RestoresOnEscape(t *testing.T) {
+	engine := newBeliefEngine(t)
+	c := qt.New(t)
+
+	result := eval(t, engine, `
+		(import (wile goast belief))
+		(reset-beliefs!)
+		(define-belief "outer"
+		  (sites (functions-matching (name-matches "X")))
+		  (expect (contains-call "Foo"))
+		  (threshold 0.9 3))
+		(guard (exn (#t 'caught))
+		  (with-belief-scope
+		    (lambda ()
+		      (define-belief "inner"
+		        (sites (functions-matching (name-matches "Y")))
+		        (expect (contains-call "Bar"))
+		        (threshold 0.9 3))
+		      (error "forced escape"))))
+		(list (length (current-beliefs)) (car (car (current-beliefs))))
+	`)
+	c.Assert(result.SchemeString(), qt.Equals, `(1 "outer")`)
+}
+
+func TestLoadCommittedBeliefs_Directory(t *testing.T) {
+	engine := newBeliefEngine(t)
+	c := qt.New(t)
+
+	dir := t.TempDir()
+	fileA := filepath.Join(dir, "a.scm")
+	fileB := filepath.Join(dir, "b.scm")
+	mustWriteFile(t, fileA, `
+		(import (wile goast belief))
+		(define-belief "belief-a"
+		  (sites (functions-matching (name-matches "A")))
+		  (expect (contains-call "FooA"))
+		  (threshold 0.9 3))
+	`)
+	mustWriteFile(t, fileB, `
+		(import (wile goast belief))
+		(define-belief "belief-b"
+		  (sites (functions-matching (name-matches "B")))
+		  (expect (contains-call "FooB"))
+		  (threshold 0.9 3))
+	`)
+
+	result := eval(t, engine, `
+		(import (wile goast belief))
+		(reset-beliefs!)
+		(define committed (load-committed-beliefs `+schemeStr(dir)+`))
+		(list (length (car committed))
+		      (length (cdr committed))
+		      (length (current-beliefs)))
+	`)
+	c.Assert(result.SchemeString(), qt.Equals, `(2 0 0)`)
+}
+
+func TestLoadCommittedBeliefs_File(t *testing.T) {
+	engine := newBeliefEngine(t)
+	c := qt.New(t)
+
+	dir := t.TempDir()
+	file := filepath.Join(dir, "single.scm")
+	mustWriteFile(t, file, `
+		(import (wile goast belief))
+		(define-belief "only-belief"
+		  (sites (functions-matching (name-matches "Z")))
+		  (expect (contains-call "FooZ"))
+		  (threshold 0.9 3))
+	`)
+
+	result := eval(t, engine, `
+		(import (wile goast belief))
+		(reset-beliefs!)
+		(define committed (load-committed-beliefs `+schemeStr(file)+`))
+		(list (length (car committed)) (length (cdr committed)))
+	`)
+	c.Assert(result.SchemeString(), qt.Equals, `(1 0)`)
+}
+
+func TestLoadCommittedBeliefs_SkipsBadFiles(t *testing.T) {
+	engine := newBeliefEngine(t)
+	c := qt.New(t)
+
+	dir := t.TempDir()
+	good := filepath.Join(dir, "good.scm")
+	bad := filepath.Join(dir, "bad.scm")
+	mustWriteFile(t, good, `
+		(import (wile goast belief))
+		(define-belief "good-one"
+		  (sites (functions-matching (name-matches "G")))
+		  (expect (contains-call "FooG"))
+		  (threshold 0.9 3))
+	`)
+	mustWriteFile(t, bad, `(this is (not valid scheme`)
+
+	result := eval(t, engine, `
+		(import (wile goast belief))
+		(reset-beliefs!)
+		(define committed (load-committed-beliefs `+schemeStr(dir)+`))
+		(list (length (car committed))
+		      (car (car (car committed))))
+	`)
+	c.Assert(result.SchemeString(), qt.Equals, `(1 "good-one")`)
+}
+
+func TestLoadCommittedBeliefs_NonexistentPath(t *testing.T) {
+	engine := newBeliefEngine(t)
+	c := qt.New(t)
+
+	_, err := engine.EvalMultiple(context.Background(), `
+		(import (wile goast belief))
+		(load-committed-beliefs "/nonexistent/path/to/nowhere/xyzzy")
+	`)
+	c.Assert(err, qt.IsNotNil)
+}
+
+func TestSuppressKnown_PerSiteMatch(t *testing.T) {
+	engine := newBeliefEngine(t)
+	c := qt.New(t)
+
+	result := eval(t, engine, `
+		(import (wile goast belief))
+		(define results
+		  (list
+		    (list (cons 'name "r1")
+		          (cons 'type 'per-site)
+		          (cons 'status 'strong)
+		          (cons 'sites-expr '(sites (functions-matching (name-matches "X"))))
+		          (cons 'expect-expr '(expect (contains-call "Foo"))))))
+		(define committed
+		  (cons
+		    (list (list "committed-name" #f #f 0.9 3
+		                '(sites (functions-matching (name-matches "X")))
+		                '(expect (contains-call "Foo"))))
+		    '()))
+		(length (suppress-known results committed))
+	`)
+	c.Assert(result.SchemeString(), qt.Equals, "0")
+}
+
+func TestSuppressKnown_RenameIgnored(t *testing.T) {
+	engine := newBeliefEngine(t)
+	c := qt.New(t)
+
+	result := eval(t, engine, `
+		(import (wile goast belief))
+		(define results
+		  (list
+		    (list (cons 'name "result-new-name")
+		          (cons 'type 'per-site)
+		          (cons 'sites-expr '(sites (functions-matching (name-matches "X"))))
+		          (cons 'expect-expr '(expect (contains-call "Foo"))))))
+		(define committed
+		  (cons
+		    (list (list "committed-old-name" #f #f 0.9 3
+		                '(sites (functions-matching (name-matches "X")))
+		                '(expect (contains-call "Foo"))))
+		    '()))
+		(length (suppress-known results committed))
+	`)
+	c.Assert(result.SchemeString(), qt.Equals, "0")
+}
+
+func TestSuppressKnown_ThresholdIgnored(t *testing.T) {
+	engine := newBeliefEngine(t)
+	c := qt.New(t)
+
+	result := eval(t, engine, `
+		(import (wile goast belief))
+		(define results
+		  (list
+		    (list (cons 'name "r")
+		          (cons 'type 'per-site)
+		          (cons 'min-adherence 0.9)
+		          (cons 'sites-expr '(sites (functions-matching (name-matches "X"))))
+		          (cons 'expect-expr '(expect (contains-call "Foo"))))))
+		(define committed
+		  (cons
+		    (list (list "committed" #f #f 0.8 5
+		                '(sites (functions-matching (name-matches "X")))
+		                '(expect (contains-call "Foo"))))
+		    '()))
+		(length (suppress-known results committed))
+	`)
+	c.Assert(result.SchemeString(), qt.Equals, "0")
+}
+
+func TestSuppressKnown_AggregateMatch(t *testing.T) {
+	engine := newBeliefEngine(t)
+	c := qt.New(t)
+
+	result := eval(t, engine, `
+		(import (wile goast belief))
+		(define results
+		  (list
+		    (list (cons 'name "agg-r")
+		          (cons 'type 'aggregate)
+		          (cons 'status 'ok)
+		          (cons 'sites-expr '(sites (all-functions-in)))
+		          (cons 'analyze-expr '(analyze (single-cluster))))))
+		(define committed
+		  (cons
+		    '()
+		    (list (list "committed-agg" #f #f
+		                '(sites (all-functions-in))
+		                '(analyze (single-cluster))))))
+		(length (suppress-known results committed))
+	`)
+	c.Assert(result.SchemeString(), qt.Equals, "0")
+}
+
+func TestSuppressKnown_NoMatch(t *testing.T) {
+	engine := newBeliefEngine(t)
+	c := qt.New(t)
+
+	result := eval(t, engine, `
+		(import (wile goast belief))
+		(define results
+		  (list
+		    (list (cons 'name "r-unique")
+		          (cons 'type 'per-site)
+		          (cons 'sites-expr '(sites (functions-matching (name-matches "DIFFERENT"))))
+		          (cons 'expect-expr '(expect (contains-call "DifferentCall"))))))
+		(define committed
+		  (cons
+		    (list (list "committed" #f #f 0.9 3
+		                '(sites (functions-matching (name-matches "X")))
+		                '(expect (contains-call "Foo"))))
+		    '()))
+		(length (suppress-known results committed))
+	`)
+	c.Assert(result.SchemeString(), qt.Equals, "1")
+}
+
+func TestSuppressKnown_MissingTypePassesThrough(t *testing.T) {
+	engine := newBeliefEngine(t)
+	c := qt.New(t)
+
+	result := eval(t, engine, `
+		(import (wile goast belief))
+		(define results
+		  (list
+		    (list (cons 'name "typeless")
+		          (cons 'sites-expr '(sites (functions-matching (name-matches "X"))))
+		          (cons 'expect-expr '(expect (contains-call "Foo"))))))
+		(define committed
+		  (cons
+		    (list (list "committed" #f #f 0.9 3
+		                '(sites (functions-matching (name-matches "X")))
+		                '(expect (contains-call "Foo"))))
+		    '()))
+		(length (suppress-known results committed))
+	`)
+	c.Assert(result.SchemeString(), qt.Equals, "1")
+}
+
+func TestSuppressKnown_EndToEnd(t *testing.T) {
+	engine := newBeliefEngine(t)
+	c := qt.New(t)
+
+	dir := t.TempDir()
+	file := filepath.Join(dir, "committed.scm")
+	mustWriteFile(t, file, `
+		(import (wile goast belief))
+		(define-belief "prim-have-body"
+		  (sites (functions-matching (name-matches "Prim")))
+		  (expect (custom (lambda (site ctx)
+		    (if (nf site 'body) 'has-body 'no-body))))
+		  (threshold 0.9 3))
+	`)
+
+	result := eval(t, engine, `
+		(import (wile goast belief))
+		(import (wile goast utils))
+		(reset-beliefs!)
+		(define results
+		  (with-belief-scope
+		    (lambda ()
+		      (define-belief "prim-have-body"
+		        (sites (functions-matching (name-matches "Prim")))
+		        (expect (custom (lambda (site ctx)
+		          (if (nf site 'body) 'has-body 'no-body))))
+		        (threshold 0.9 3))
+		      (run-beliefs "github.com/aalpar/wile-goast/goast"))))
+		(define committed (load-committed-beliefs `+schemeStr(dir)+`))
+		(length (suppress-known results committed))
+	`)
+	c.Assert(result.SchemeString(), qt.Equals, "0")
 }

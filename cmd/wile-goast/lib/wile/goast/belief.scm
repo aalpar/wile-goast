@@ -39,6 +39,10 @@
   "Return the current list of registered aggregate beliefs.\n\nCategory: goast-belief\n\nSee also: `define-aggregate-belief', `reset-beliefs!'."
   *aggregate-beliefs*)
 
+(define (current-beliefs)
+  "Return the current list of registered per-site beliefs.\n\nReading *beliefs* directly from user code returns a stale snapshot under\nWile's library import semantics; this procedure closes over the live\nbinding inside the library and returns its current value. Symmetric to\n`aggregate-beliefs'.\n\nCategory: goast-belief\n\nSee also: `define-belief', `aggregate-beliefs', `reset-beliefs!'."
+  *beliefs*)
+
 (define (reset-beliefs!)
   "Clear all registered beliefs (per-site and aggregate).\n\nCategory: goast-belief\n\nSee also: `run-beliefs'."
   (set! *beliefs* '())
@@ -860,5 +864,187 @@
     (display "  " port) (write sites-expr port) (newline port)
     (display "  " port) (write analyze-expr port) (display ")" port) (newline port)
     (newline port)))
+
+;; ── Belief suppression ──────────────────────────────────
+;;
+;; Close the discover → review → commit → enforce lifecycle.
+;; `with-belief-scope` isolates a thunk from the caller's belief registry;
+;; `load-committed-beliefs` snapshots a directory or file of .scm beliefs;
+;; `suppress-known` drops results whose sites+expect/analyze expressions
+;; match any committed belief structurally (via equal?).
+
+(define (with-belief-scope thunk)
+  "Save the belief registry, reset it, invoke THUNK, then restore.
+Uses dynamic-wind so the registry is restored even on early exit.
+
+Parameters:
+  thunk : procedure of zero arguments
+Returns: the value returned by THUNK
+Category: goast-belief
+
+See also: `load-committed-beliefs', `reset-beliefs!'."
+  (let ((saved-per-site *beliefs*)
+        (saved-aggregate *aggregate-beliefs*))
+    (dynamic-wind
+      (lambda () (reset-beliefs!))
+      thunk
+      (lambda ()
+        (set! *beliefs* saved-per-site)
+        (set! *aggregate-beliefs* saved-aggregate)))))
+
+;; Insertion-sort a list of strings lexicographically.
+;; Used for deterministic directory-load order.
+(define (sort-scheme-filenames lst)
+  (define (insert x sorted)
+    (cond
+      ((null? sorted) (list x))
+      ((string<? x (car sorted)) (cons x sorted))
+      (else (cons (car sorted) (insert x (cdr sorted))))))
+  (let loop ((xs lst) (acc '()))
+    (if (null? xs)
+      acc
+      (loop (cdr xs) (insert (car xs) acc)))))
+
+;; Return the list of .scm file paths (full paths) directly under DIR.
+;; Top-level only — no recursion. Sorted lexicographically.
+(define (list-scheme-files-in-dir dir)
+  (let* ((names (directory-files dir))
+         (scm-only
+           (let loop ((ns names) (acc '()))
+             (cond
+               ((null? ns) acc)
+               ((and (>= (string-length (car ns)) 4)
+                     (string=? (substring (car ns)
+                                          (- (string-length (car ns)) 4)
+                                          (string-length (car ns)))
+                               ".scm"))
+                (loop (cdr ns) (cons (car ns) acc)))
+               (else (loop (cdr ns) acc)))))
+         (sorted (sort-scheme-filenames scm-only)))
+    (map (lambda (n) (string-append dir "/" n)) sorted)))
+
+;; Load a single .scm file into the current registry. On failure,
+;; write "wile-goast: skipping <path>: <msg>\n" to (current-error-port)
+;; and return #f. On success, return #t.
+(define (load-belief-file path)
+  (guard (exn (#t
+               (let ((msg (cond
+                            ((error-object? exn)
+                             (error-object-message exn))
+                            (else "unknown error"))))
+                 (display "wile-goast: skipping " (current-error-port))
+                 (display path (current-error-port))
+                 (display ": " (current-error-port))
+                 (display msg (current-error-port))
+                 (newline (current-error-port))
+                 #f)))
+    (load path)
+    #t))
+
+(define (load-committed-beliefs path)
+  "Load committed beliefs from PATH (a directory or a single .scm file).
+Each .scm file is evaluated with `load` inside `with-belief-scope`, so
+the caller's belief registry is not clobbered.
+
+Returns a pair:
+  (per-site-snapshot . aggregate-snapshot)
+
+where each snapshot is the list of belief tuples (7-tuples for per-site,
+5-tuples for aggregate) in registration order.
+
+Files that fail to load are skipped with a stderr warning; the partial
+snapshot is still returned. A nonexistent PATH raises an error.
+
+Parameters:
+  path : string — directory or file path
+Returns: pair of (list . list)
+Category: goast-belief
+
+See also: `suppress-known', `with-belief-scope'."
+  (cond
+    ((not (file-exists? path))
+     (error "load-committed-beliefs: path does not exist" path))
+    (else
+      (with-belief-scope
+        (lambda ()
+          ;; Probe directory-files to distinguish directory vs file.
+          ;; Success => directory; exception => treat as single file.
+          (let ((files
+                  (guard (exn (#t (list path)))
+                    (list-scheme-files-in-dir path))))
+            (for-each load-belief-file files)
+            (cons *beliefs* *aggregate-beliefs*)))))))
+
+;; Structural equality on a pair of belief expression keys.
+;; Returns #t if both keys match in both RESULT and TUPLE.
+;; Committed per-site tuple layout:
+;;   (name fn fn min-adh min-n sites-expr expect-expr)
+;; Committed aggregate tuple layout:
+;;   (name fn analyzer sites-expr analyze-expr)
+(define (belief-expressions-match? result result-sites-key result-expect-key
+                                    tuple-sites-getter tuple-expect-getter
+                                    tuple)
+  (let ((r-sites (assoc result-sites-key result))
+        (r-expect (assoc result-expect-key result)))
+    (and r-sites r-expect
+         (equal? (cdr r-sites) (tuple-sites-getter tuple))
+         (equal? (cdr r-expect) (tuple-expect-getter tuple)))))
+
+;; Walk a list of committed tuples; return #t if any matches RESULT's
+;; expressions under the given key + getter pair.
+(define (any-tuple-matches? result r-sites-key r-expect-key
+                             tuple-sites-getter tuple-expect-getter
+                             tuples)
+  (let loop ((ts tuples))
+    (cond
+      ((null? ts) #f)
+      ((belief-expressions-match? result r-sites-key r-expect-key
+                                   tuple-sites-getter tuple-expect-getter
+                                   (car ts)) #t)
+      (else (loop (cdr ts))))))
+
+;; Dispatch on RESULT's 'type key:
+;;   'per-site   => compare (sites-expr, expect-expr) to per-site tuples.
+;;   'aggregate  => compare (sites-expr, analyze-expr) to aggregate tuples.
+;;   missing/other => #f (pass through).
+(define (result-matches-any? result per-site-tuples aggregate-tuples)
+  (let ((type-entry (assoc 'type result)))
+    (cond
+      ((not type-entry) #f)
+      ((eq? (cdr type-entry) 'per-site)
+       (any-tuple-matches? result 'sites-expr 'expect-expr
+                           belief-sites-expr belief-expect-expr
+                           per-site-tuples))
+      ((eq? (cdr type-entry) 'aggregate)
+       (any-tuple-matches? result 'sites-expr 'analyze-expr
+                           aggregate-belief-sites-expr
+                           aggregate-belief-analyze-expr
+                           aggregate-tuples))
+      (else #f))))
+
+(define (suppress-known results committed)
+  "Filter RESULTS (output of run-beliefs), dropping any whose
+expressions match a belief in COMMITTED (output of
+load-committed-beliefs). Matching is structural via `equal?' on
+`sites-expr' / `expect-expr' (per-site) or `sites-expr' /
+`analyze-expr' (aggregate). Names, thresholds, ratios, and all
+other fields are ignored.
+
+Parameters:
+  results   : list of result alists
+  committed : pair of (per-site-tuples . aggregate-tuples) from
+              load-committed-beliefs
+Returns: list of result alists (filtered)
+Category: goast-belief
+
+See also: `load-committed-beliefs', `emit-beliefs'."
+  (let ((per-site (car committed))
+        (aggregate (cdr committed)))
+    (let loop ((rs results) (acc '()))
+      (cond
+        ((null? rs) (reverse acc))
+        ((result-matches-any? (car rs) per-site aggregate)
+         (loop (cdr rs) acc))
+        (else (loop (cdr rs) (cons (car rs) acc)))))))
 
 ;; string-join: moved to (wile goast utils)
