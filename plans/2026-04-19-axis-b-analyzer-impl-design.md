@@ -468,6 +468,96 @@ Final reason-tag distribution (36 widened primitives, 54 reason tags):
 
 Zero regressions: no primitive that previously narrowed moved into widened. The 105 recovered global-load primitives redistributed as Single: +53, Maybe: +20, Narrow-union: +15 vs. the intermediate baseline — consistent with the Go idiom "package-scoped singleton returned from primitive" being either exactly-one-concrete-type (Single) or interface-global-holding-2-to-3-types (Maybe / Narrow-union).
 
+### 7.11 PR-2''' — invoke dispatch and concrete-parameter narrowing
+
+Third narrowing extension shipped 2026-04-20 (commit `fd609ce`). Three coordinated changes in `goastssa/narrow.go`:
+
+1. **`narrowFromInvokeDispatch`**: enumerate every concrete type in the program implementing the receiver's interface, resolve the specific method on each (value and pointer receiver forms), and union over each implementation's return-path narrowings. Uses `prog.AllPackages()` + `types.Implements` + `prog.MethodSets.MethodSet` + `prog.MethodValue`. Synthetic wrapper functions skipped.
+
+2. **Concrete-return short-circuit** in `narrowFromCall`: calls whose declared return type is already concrete (static or invoke) narrow from type alone — the callee internals cannot refine what's already tight. Short-circuits the (potentially expensive) all-implementors enumeration for invokes returning concrete types.
+
+3. **Concrete-parameter narrowing** in `narrowWalk`'s `*ssa.Parameter` case: parameters with concrete types narrow from type alone; only interface-typed parameters widen with `"parameter"`. The dominant beneficiary is method receivers — `func (c *Cat) Get() { return c }` now narrows to `*Cat` even though `c` is a Parameter.
+
+Third-run results against `wile/...` (same 3180 SSA functions, 500 primitives):
+
+| Bucket | Before PR-2''' | After PR-2''' | Δ |
+|---|---|---|---|
+| Single | 215 | 217 | +2 |
+| Maybe | 32 | 32 | 0 |
+| Narrow-union | 22 | 26 | +4 |
+| Broad-union | 3 | 3 | 0 |
+| **Helper-widened** | **36 (10.0%)** | **30 (8.3%)** | **-6** |
+| Side-effecting | 52 | 52 | 0 |
+| Unresolved | 140 | 140 | 0 |
+
+Reason-tag shifts (30 widened primitives, 55 reason tags total):
+
+| Reason | Before | After | Note |
+|---|---|---|---|
+| `interface-method-dispatch` | 18 | **0** | Bucket eliminated. |
+| `field-deref-load` | 10 | 15 | +5 — previously masked by dispatch widening on the same primitive. |
+| `slice-deref-load` | 1 | 8 | +7 — same masking effect. |
+| `cycle` | 7 | 8 | +1 — one new cycle in the invoke recursion path. |
+| `callee-no-returns` | 0 | 7 | NEW — invoke dispatch reaching methods whose bodies panic / never return. |
+| `nil-constant` | 8 | 8 | Unchanged. |
+| `interface-result` | 5 | 5 | Unchanged. |
+| `parameter` | 3 | 3 | Unchanged (all remaining parameter reasons are interface-typed). |
+| `narrow-error` | 1 | 1 | Unchanged. |
+| `unresolvable-callee` | 1 | 0 | Cleared (builtin/closure cases now resolve). |
+
+**Onion-peeling observation**: removing `interface-method-dispatch` surfaced `field-deref-load` and `slice-deref-load` reasons that were previously masked when those primitives had dispatch *also* in their reason list. The Helper-widened count dropped less than the dispatch-reason count because 12 primitives had multi-reason widenings. This is diagnostic for the next PR-2'''' target: `field-deref-load` (15) and `slice-deref-load` (8) together cover 23 reasons across the remaining 30 widened primitives. Their narrowing would use a `narrowFromFieldStores` / `narrowFromSliceStores` pattern similar to `narrowFromGlobalInit`, but store sites can come from any function in the program rather than the single Init, making it more expensive.
+
+### 7.12 PR-2'''' — field-store narrowing and diminishing returns
+
+Fourth narrowing extension shipped 2026-04-20 (commit `8ac4896`). One change in `goastssa/narrow.go`:
+
+- **`narrowFromFieldStores`**: replaces the terminal `field-deref-load` widening. Enumerates every Store instruction in every function across `prog.AllPackages()` whose Addr is a FieldAddr matching the target (struct type, field index), unions the narrowed stored-value types. Matching is per-(struct-type, field-index) — all FieldAddr references to the same field of the same struct type are aliased for narrowing purposes, which is the correct static assumption. Widens with `field-no-prog`, `field-no-struct-type`, or `field-no-stores` when resolution is impossible.
+
+Fourth-run results against `wile/...`:
+
+| Bucket | After PR-2''' | After PR-2'''' | Δ |
+|---|---|---|---|
+| Single | 217 | 217 | 0 |
+| Maybe | 32 | 33 | +1 |
+| Narrow-union | 26 | 26 | 0 |
+| Broad-union | 3 | 3 | 0 |
+| **Helper-widened** | **30 (8.3%)** | **29 (8.1%)** | **-1** |
+| Side-effecting | 52 | 52 | 0 |
+| Unresolved | 140 | 140 | 0 |
+
+Reason-tag shifts:
+
+| Reason | Before | After | Note |
+|---|---|---|---|
+| `field-deref-load` | 15 | **0** | Bucket eliminated. 10 primitives recovered; 5 stayed as `field-no-stores`. |
+| `field-no-stores` | 0 | 5 | NEW — declared-but-unwritten fields. Cannot be further narrowed. |
+| `parameter` | 3 | 12 | +9 — field-store walk exposed paths tracing back to interface-typed parameters. |
+| `nil-constant` | 8 | 8 | Unchanged. |
+| `cycle` | 8 | 8 | Unchanged. |
+| `slice-deref-load` | 8 | 8 | Unchanged. |
+| `callee-no-returns` | 7 | 7 | Unchanged. |
+| `interface-result` | 5 | 5 | Unchanged. |
+| `narrow-error` | 1 | 1 | Unchanged. |
+| `interface-method-dispatch` | 0 | 0 | Stayed eliminated. |
+
+**Diminishing-returns inflection**. The ratio of newly-surfaced reasons to bucket movement is growing:
+
+| Extension | Reasons eliminated | Widened Δ | New reasons surfaced |
+|---|---|---|---|
+| PR-2' (f6bb925) | (diagnostic split only) | 0 | n/a |
+| PR-2'' (c7729bd) | `global-load` (105) | −89 | 0 |
+| PR-2''' (fd609ce) | `interface-method-dispatch` (18) | −6 | 12 |
+| PR-2'''' (8ac4896) | `field-deref-load` (15) | −1 | 14 |
+
+Each extension reveals more than it resolves. The remaining 29 widened primitives each hit multiple limitations; no single narrowing extension can move them individually. Further narrowing would require *coordinated* improvements to multiple paths (call-graph-context parameter narrowing, slice-store tracking, nil-semantics awareness) to recover them as a group.
+
+**Total progression**:
+- First run: 125 widened (36% of resolved)
+- After PR-2'''': 29 widened (8.1% of resolved)
+- Four reason buckets fully eliminated: `pointer-load` (undifferentiated), `global-load`, `interface-method-dispatch`, `field-deref-load`.
+
+Further PR investment should pivot to *consuming* the inventory (Phase 3.D annotation-bug sweep in wile) rather than *refining* it further. The marginal cost per PR is rising faster than the marginal value.
+
 ---
 
 ## 8. File structure

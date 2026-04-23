@@ -164,6 +164,14 @@ func narrowWalk(fn *ssa.Function, v ssa.Value, visited map[ssa.Value]bool) *narr
 		}
 		return narrowFromConcreteType(x.Type())
 	case *ssa.Parameter:
+		// Concrete-typed parameters narrow from type alone. The historical
+		// "parameter" widening was motivated by interface-typed parameters
+		// whose runtime value depends on call-site context; concrete-typed
+		// parameters carry no such ambiguity. Receiver parameters of methods
+		// are the dominant concrete case and matter for narrowFromInvokeDispatch.
+		if !isInterfaceResult(x.Type()) {
+			return narrowFromConcreteType(x.Type())
+		}
 		return widened("parameter")
 	case *ssa.FreeVar:
 		return widened("free-var")
@@ -200,11 +208,115 @@ func narrowPointerLoad(x *ssa.UnOp, visited map[ssa.Value]bool) *narrowResult {
 	case *ssa.Alloc:
 		return narrowFromAllocStores(src, visited)
 	case *ssa.FieldAddr:
-		return widened("field-deref-load")
+		return narrowFromFieldStores(src, visited)
 	case *ssa.IndexAddr:
 		return widened("slice-deref-load")
 	}
 	return widened("pointer-load")
+}
+
+// narrowFromFieldStores enumerates every Store instruction in the program
+// whose Addr is a FieldAddr referencing the same (struct type, field index)
+// as the target, and unions the narrowed types of the stored values.
+//
+// Matching is per-(struct-type, field-index) rather than per-FieldAddr:
+// `p1.Car = v1` and `p2.Car = v2` both count toward narrowing any subsequent
+// `_ = _.Car` load on *Pair. This is the correct aliasing assumption for
+// fields — per-instance distinction isn't available statically.
+//
+// Unlike narrowFromGlobalInit (which searches a single Init function), this
+// searches every function in every package reachable through prog.AllPackages().
+// Store sites for struct fields can appear anywhere in the program, not just
+// package initialization. This is O(functions × instructions) per call; for
+// typical programs the traversal completes quickly but the cost scales with
+// program size.
+//
+// Widening reasons produced:
+//   - "field-no-prog"        -> FieldAddr's parent function has no program
+//   - "field-no-struct-type" -> couldn't extract the struct type from FieldAddr.X
+//   - "field-no-stores"      -> no matching Store found anywhere in the program
+func narrowFromFieldStores(fa *ssa.FieldAddr, visited map[ssa.Value]bool) *narrowResult {
+	fn := fa.Parent()
+	if fn == nil || fn.Prog == nil {
+		return widened("field-no-prog")
+	}
+	targetStruct := fieldAddrStructType(fa)
+	if targetStruct == nil {
+		return widened("field-no-struct-type")
+	}
+
+	results := make([]*narrowResult, 0, 4)
+	for _, pkg := range fn.Prog.AllPackages() {
+		if pkg == nil {
+			continue
+		}
+		for _, mem := range pkg.Members {
+			memFn, ok := mem.(*ssa.Function)
+			if !ok {
+				continue
+			}
+			results = appendFieldStoreResults(results, memFn, targetStruct, fa.Field, visited)
+			for _, anon := range memFn.AnonFuncs {
+				results = appendFieldStoreResults(results, anon, targetStruct, fa.Field, visited)
+			}
+		}
+	}
+
+	if len(results) == 0 {
+		return widened("field-no-stores")
+	}
+	return mergeResults(results)
+}
+
+// appendFieldStoreResults scans fn.Blocks for Store instructions whose Addr
+// is a FieldAddr matching (targetStruct, fieldIndex) and appends the
+// narrowed stored-value result for each.
+func appendFieldStoreResults(results []*narrowResult, fn *ssa.Function, targetStruct types.Type, fieldIndex int, visited map[ssa.Value]bool) []*narrowResult {
+	for _, b := range fn.Blocks {
+		for _, instr := range b.Instrs {
+			store, ok := instr.(*ssa.Store)
+			if !ok {
+				continue
+			}
+			storeFA, ok := store.Addr.(*ssa.FieldAddr)
+			if !ok {
+				continue
+			}
+			if storeFA.Field != fieldIndex {
+				continue
+			}
+			if !sameStructType(fieldAddrStructType(storeFA), targetStruct) {
+				continue
+			}
+			results = append(results, narrowWalk(fn, store.Val, visited))
+		}
+	}
+	return results
+}
+
+// fieldAddrStructType unwraps FieldAddr.X's type to the *types.Named struct
+// being indexed. FieldAddr.X is always a pointer to a struct; this returns
+// the pointee's named type (or the underlying struct if unnamed).
+func fieldAddrStructType(fa *ssa.FieldAddr) types.Type {
+	t := fa.X.Type()
+	if t == nil {
+		return nil
+	}
+	ptr, ok := t.Underlying().(*types.Pointer)
+	if !ok {
+		return nil
+	}
+	return ptr.Elem()
+}
+
+// sameStructType compares two struct types for matching identity. Uses
+// types.Identical for named types; falls back to Underlying comparison
+// for the rare unnamed-struct case.
+func sameStructType(a, b types.Type) bool {
+	if a == nil || b == nil {
+		return false
+	}
+	return types.Identical(a, b)
 }
 
 // narrowFromGlobalInit finds every Store instruction in g.Pkg.Init
@@ -343,19 +455,97 @@ func narrowFromExtract(fn *ssa.Function, ex *ssa.Extract, visited map[ssa.Value]
 
 // narrowFromCall handles static calls (may recurse into callee's return paths
 // when the return type is an interface) and interface-method invokes
-// (widened with interface-method-dispatch).
+// (resolved via narrowFromInvokeDispatch).
+//
+// Concrete-return short-circuit: if the call result type is already concrete,
+// the callee's internals tell us nothing narrower — the declared return type
+// IS the narrowing. Applies uniformly to static and invoke calls.
 func narrowFromCall(call *ssa.Call, visited map[ssa.Value]bool) *narrowResult {
+	if !isInterfaceResult(call.Type()) {
+		return narrowFromConcreteType(call.Type())
+	}
 	if call.Call.IsInvoke() {
-		return widened("interface-method-dispatch")
+		return narrowFromInvokeDispatch(call, visited)
 	}
 	callee := staticCallee(call)
 	if callee == nil {
 		return widened("unresolvable-callee")
 	}
-	if !isInterfaceResult(call.Type()) {
-		return narrowFromConcreteType(call.Type())
-	}
 	return narrowFromCalleeReturns(callee, visited)
+}
+
+// narrowFromInvokeDispatch resolves an interface-method call by enumerating
+// every concrete type in the program that implements the interface,
+// resolving the specific method on each, and unioning the narrowed return
+// types across all implementations.
+//
+// The interface type is extracted from the method's receiver signature.
+// Both value-receiver and pointer-receiver forms of each concrete type are
+// checked; a type can satisfy an interface through either, and Go's method
+// set rules (pointer receiver methods are in the method set of the pointer
+// type, not the value type) mean we must check both to avoid missing
+// implementations.
+//
+// Synthetic functions (wrappers, bound methods) are skipped — they forward
+// to the underlying implementation, which we reach directly via the non-
+// synthetic candidate. Including both would double-count.
+//
+// Widens with "interface-method-dispatch" when:
+//   - call has no parent function or program (defensive; shouldn't happen)
+//   - method is nil or lacks a receiver (ill-formed invoke)
+//   - no concrete implementors of the interface are visible in the program
+func narrowFromInvokeDispatch(call *ssa.Call, visited map[ssa.Value]bool) *narrowResult {
+	fn := call.Parent()
+	if fn == nil || fn.Prog == nil {
+		return widened("interface-method-dispatch")
+	}
+	prog := fn.Prog
+	method := call.Call.Method
+	if method == nil {
+		return widened("interface-method-dispatch")
+	}
+	sig, ok := method.Type().(*types.Signature)
+	if !ok || sig.Recv() == nil {
+		return widened("interface-method-dispatch")
+	}
+	iface, ok := sig.Recv().Type().Underlying().(*types.Interface)
+	if !ok {
+		return widened("interface-method-dispatch")
+	}
+
+	results := make([]*narrowResult, 0, 8)
+	for _, pkg := range prog.AllPackages() {
+		if pkg == nil {
+			continue
+		}
+		for _, mem := range pkg.Members {
+			typ, ok := mem.(*ssa.Type)
+			if !ok {
+				continue
+			}
+			namedType := typ.Type()
+			for _, candidate := range []types.Type{namedType, types.NewPointer(namedType)} {
+				if !types.Implements(candidate, iface) {
+					continue
+				}
+				mset := prog.MethodSets.MethodSet(candidate)
+				sel := mset.Lookup(method.Pkg(), method.Name())
+				if sel == nil {
+					continue
+				}
+				impl := prog.MethodValue(sel)
+				if impl == nil || impl.Synthetic != "" {
+					continue
+				}
+				results = append(results, narrowFromCalleeReturns(impl, visited))
+			}
+		}
+	}
+
+	if len(results) == 0 {
+		return widened("interface-method-dispatch")
+	}
+	return mergeResults(results)
 }
 
 // staticCallee returns the concrete callee *ssa.Function if the call is a static

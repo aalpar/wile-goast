@@ -14,7 +14,10 @@
 
 (define-library (wile goast boolean-simplify)
   (export
-    ;; Core normalization
+    ;; Core normalization — aliases defined in boolean-simplify.scm
+    ;; binding to (wile algebra symbolic)'s symbolic-boolean-normalize /
+    ;; symbolic-boolean-equivalent?, preserving the internal wile-goast
+    ;; API for existing callers.
     boolean-normalize
     boolean-equivalent?
     ;; Belief selector projection
@@ -22,6 +25,5 @@
     ;; Go AST condition projection
     ast-condition->symbolic)
   (import (wile goast utils)
-          (wile algebra boolean)
           (wile algebra symbolic))
   (include "boolean-simplify.scm"))

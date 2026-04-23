@@ -135,6 +135,9 @@ func TestNarrowPhiDAGReconvergence(t *testing.T) {
 	// Both phi edges wrap the SAME parameter into an interface. SSA
 	// produces a Phi whose edges both resolve to the same Parameter —
 	// a diamond where both paths share the original producer.
+	// The shared producer is a concrete-typed parameter (*int), which
+	// narrows from type. This test primarily guards against misclassification
+	// as "cycle" under DAG reconvergence.
 	fn := buildSSAFromSource(t, dir, `
 package testpkg
 
@@ -150,11 +153,8 @@ func Foo(x *int, cond bool) interface{} {
 `, "Foo")
 
 	r := narrowReturn(t, fn)
-	// Correct behavior: the shared producer is a Parameter, so widen
-	// with reason "parameter" — NOT "cycle". Before the fix this
-	// returned widened/cycle because edge 1 hit visited[x] left from
-	// edge 0.
-	c.Assert(r.Confidence, qt.Equals, "widened")
+	c.Assert(r.Confidence, qt.Equals, "narrow")
+	c.Assert(r.Types, qt.DeepEquals, []string{"*int"})
 	for _, reason := range r.Reasons {
 		c.Assert(reason, qt.Not(qt.Equals), "cycle",
 			qt.Commentf("DAG reconvergence misclassified as cycle: %v", r.Reasons))
@@ -234,9 +234,12 @@ func Foo(x interface{}) interface{} {
 	c.Assert(r.Reasons, qt.DeepEquals, []string{"parameter"})
 }
 
-func TestNarrowInvokeWidens(t *testing.T) {
+func TestNarrowInvokeConcreteReturn(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
+	// An invoke call whose interface-method signature returns a concrete type
+	// narrows via the signature alone — the callee's internals can't refine
+	// a type that's already concrete. Applies uniformly to static and invoke.
 	fn := buildSSAFromSource(t, dir, `
 package testpkg
 
@@ -250,8 +253,96 @@ func Foo(s Stringer) string {
 `, "Foo")
 
 	r := narrowReturn(t, fn)
+	c.Assert(r.Confidence, qt.Equals, "narrow")
+	c.Assert(r.Types, qt.DeepEquals, []string{"string"})
+}
+
+func TestNarrowInvokeWidensNoImplementors(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	// Invoke call with interface-typed return and NO concrete implementors
+	// in the program → widen with interface-method-dispatch. Proves the
+	// invoke-dispatch path widens correctly when enumeration finds nothing.
+	fn := buildSSAFromSource(t, dir, `
+package testpkg
+
+type Producer interface {
+	Produce() interface{}
+}
+
+func Foo(p Producer) interface{} {
+	return p.Produce()
+}
+`, "Foo")
+
+	r := narrowReturn(t, fn)
 	c.Assert(r.Confidence, qt.Equals, "widened")
 	c.Assert(r.Reasons, qt.DeepEquals, []string{"interface-method-dispatch"})
+}
+
+func TestNarrowInvokeDispatchResolvesImplementor(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	// Invoke on an interface with a concrete in-program implementor whose
+	// method returns a concrete type. narrowFromInvokeDispatch enumerates
+	// the implementor, resolves the method, and unions over the impl's
+	// returns → narrow to the concrete type.
+	fn := buildSSAFromSource(t, dir, `
+package testpkg
+
+type Box struct{ v *Cat }
+
+type Animal interface {
+	Get() interface{}
+}
+
+type Cat struct{}
+
+func (c *Cat) Get() interface{} { return c }
+
+func Foo(a Animal) interface{} {
+	return a.Get()
+}
+`, "Foo")
+
+	r := narrowReturn(t, fn)
+	c.Assert(r.Confidence, qt.Equals, "narrow")
+	c.Assert(r.Types, qt.DeepEquals, []string{"*testpkg.Cat"})
+}
+
+func TestNarrowInvokeDispatchUnionsMultipleImplementors(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	// Two concrete implementors of the same interface, each returning a
+	// different concrete type. Dispatch enumeration unions the types.
+	fn := buildSSAFromSource(t, dir, `
+package testpkg
+
+type Animal interface {
+	Get() interface{}
+}
+
+type Cat struct{}
+type Dog struct{}
+
+func (c *Cat) Get() interface{} { return c }
+func (d *Dog) Get() interface{} { return d }
+
+func Foo(a Animal) interface{} {
+	return a.Get()
+}
+`, "Foo")
+
+	r := narrowReturn(t, fn)
+	c.Assert(r.Confidence, qt.Equals, "narrow")
+	// Union of *Cat and *Dog. Order is set-driven; assert set equality.
+	c.Assert(len(r.Types), qt.Equals, 2)
+	seen := map[string]bool{}
+	for _, tt := range r.Types {
+		seen[tt] = true
+	}
+	c.Assert(seen["*testpkg.Cat"], qt.IsTrue)
+	c.Assert(seen["*testpkg.Dog"], qt.IsTrue)
 }
 
 func TestNarrowGlobalInitNarrows(t *testing.T) {
@@ -436,4 +527,98 @@ func TestNarrowMergeResultsDeduplicatesTypes(t *testing.T) {
 	})
 	c.Assert(r.Confidence, qt.Equals, "narrow")
 	c.Assert(r.Types, qt.DeepEquals, []string{"*foo.Bar", "*foo.Baz"})
+}
+
+func TestNarrowFieldStoreSingleSite(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	// A struct field holds interface. One store site in the program assigns
+	// a concrete type to it. Load should narrow to that concrete type.
+	fn := buildSSAFromSource(t, dir, `
+package testpkg
+
+type Pair struct {
+	Car interface{}
+}
+
+type Cat struct{}
+
+func NewPair() *Pair {
+	p := &Pair{}
+	p.Car = &Cat{}
+	return p
+}
+
+func LoadCar(p *Pair) interface{} {
+	return p.Car
+}
+`, "LoadCar")
+
+	r := narrowReturn(t, fn)
+	c.Assert(r.Confidence, qt.Equals, "narrow")
+	c.Assert(r.Types, qt.DeepEquals, []string{"*testpkg.Cat"})
+}
+
+func TestNarrowFieldStoreMultipleSites(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	// Two store sites in different functions write different concrete types
+	// into the same struct field. Load should union both.
+	fn := buildSSAFromSource(t, dir, `
+package testpkg
+
+type Pair struct {
+	Car interface{}
+}
+
+type Cat struct{}
+type Dog struct{}
+
+func NewCatPair() *Pair {
+	p := &Pair{}
+	p.Car = &Cat{}
+	return p
+}
+
+func NewDogPair() *Pair {
+	p := &Pair{}
+	p.Car = &Dog{}
+	return p
+}
+
+func LoadCar(p *Pair) interface{} {
+	return p.Car
+}
+`, "LoadCar")
+
+	r := narrowReturn(t, fn)
+	c.Assert(r.Confidence, qt.Equals, "narrow")
+	c.Assert(len(r.Types), qt.Equals, 2)
+	seen := map[string]bool{}
+	for _, tt := range r.Types {
+		seen[tt] = true
+	}
+	c.Assert(seen["*testpkg.Cat"], qt.IsTrue)
+	c.Assert(seen["*testpkg.Dog"], qt.IsTrue)
+}
+
+func TestNarrowFieldStoreNoStores(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	// Declared-but-never-written field. Load widens with "field-no-stores".
+	fn := buildSSAFromSource(t, dir, `
+package testpkg
+
+type Pair struct {
+	Car interface{}
+}
+
+func LoadCar(p *Pair) interface{} {
+	return p.Car
+}
+`, "LoadCar")
+
+	r := narrowReturn(t, fn)
+	c.Assert(r.Confidence, qt.Equals, "widened")
+	c.Assert(r.Reasons, qt.Contains, "field-no-stores")
 }
