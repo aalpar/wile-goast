@@ -700,14 +700,18 @@
                    (cons (list (cons 'name name)
                                (cons 'type 'per-site)
                                (cons 'status 'error)
-                               (cons 'message (cdr result)))
+                               (cons 'message (cdr result))
+                               (cons 'sites-expr (belief-sites-expr belief))
+                               (cons 'expect-expr (belief-expect-expr belief)))
                          results)))
             ((not result)
              ;; No sites found
              (loop (cdr beliefs)
                    (cons (list (cons 'name name)
                                (cons 'type 'per-site)
-                               (cons 'status 'no-sites))
+                               (cons 'status 'no-sites)
+                               (cons 'sites-expr (belief-sites-expr belief))
+                               (cons 'expect-expr (belief-expect-expr belief)))
                          results)))
             (else
              (let* ((maj-cat (list-ref result 1))
@@ -730,6 +734,8 @@
                                  (cons 'pattern maj-cat)
                                  (cons 'ratio ratio)
                                  (cons 'total total)
+                                 (cons 'min-adherence min-adh)
+                                 (cons 'min-sites min-n)
                                  (cons 'adherence
                                        (map site-display-name adherence))
                                  (cons 'deviations
@@ -737,8 +743,8 @@
                                               (cons (site-display-name (car d))
                                                     (cdr d)))
                                             deviations))
-                                (cons 'sites-expr (belief-sites-expr belief))
-                                (cons 'expect-expr (belief-expect-expr belief)))
+                                 (cons 'sites-expr (belief-sites-expr belief))
+                                 (cons 'expect-expr (belief-expect-expr belief)))
                            results))))))))))
 
 ;; ── Emit mode ─────────────────────────────────────────
@@ -780,6 +786,8 @@
         (pattern (cdr (assoc 'pattern r)))
         (ratio (cdr (assoc 'ratio r)))
         (total (cdr (assoc 'total r)))
+        (min-adherence (cdr (assoc 'min-adherence r)))
+        (min-sites (cdr (assoc 'min-sites r)))
         (deviations (cdr (assoc 'deviations r)))
         (sites-expr (cdr (assoc 'sites-expr r)))
         (expect-expr (cdr (assoc 'expect-expr r))))
@@ -795,13 +803,15 @@
       (display (string-join (map (lambda (d) (car d)) deviations) ", ") port)
       (newline port))
     (display ";;" port) (newline port)
-    ;; Form
+    ;; Form — threshold uses the configured min-adherence/min-sites,
+    ;; not the observed ratio/total, so emitted beliefs preserve the
+    ;; original strictness rather than ratcheting to the current run.
     (display "(define-belief " port) (write name port) (newline port)
     (display "  " port) (write sites-expr port) (newline port)
     (display "  " port) (write expect-expr port) (newline port)
     (display "  (threshold " port)
-    (display (exact->inexact ratio) port)
-    (display " " port) (display total port)
+    (display min-adherence port)
+    (display " " port) (display min-sites port)
     (display "))" port) (newline port)
     (newline port)))
 
@@ -819,10 +829,4 @@
     (display "  " port) (write analyze-expr port) (display ")" port) (newline port)
     (newline port)))
 
-;; Join a list of strings with a separator.
-(define (string-join strs sep)
-  (if (null? strs) ""
-    (let loop ((rest (cdr strs)) (acc (car strs)))
-      (if (null? rest) acc
-        (loop (cdr rest)
-              (string-append acc sep (car rest)))))))
+;; string-join: moved to (wile goast utils)

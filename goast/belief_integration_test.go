@@ -1848,6 +1848,7 @@ func TestEmitBeliefsPerSite(t *testing.T) {
 
 	eval(t, engine, `
 		(import (wile goast belief))
+		(import (wile goast utils))
 		(reset-beliefs!)
 
 		(define-belief "prim-have-body"
@@ -1887,8 +1888,8 @@ func TestEmitBeliefsPerSite(t *testing.T) {
 		c.Assert(result.SchemeString(), qt.Equals, "#t")
 	})
 
-	t.Run("contains threshold", func(t *testing.T) {
-		result := eval(t, engine, `(string-contains emitted "threshold")`)
+	t.Run("threshold uses configured values not observed", func(t *testing.T) {
+		result := eval(t, engine, `(string-contains emitted "(threshold 0.9 3)")`)
 		c.Assert(result.SchemeString(), qt.Equals, "#t")
 	})
 }
@@ -1939,6 +1940,7 @@ func TestEmitBeliefsFiltering(t *testing.T) {
 
 	eval(t, engine, `
 		(import (wile goast belief))
+		(import (wile goast utils))
 		(reset-beliefs!)
 
 		(define-belief "strong-one"
