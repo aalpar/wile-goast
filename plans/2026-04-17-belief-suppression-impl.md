@@ -1,5 +1,7 @@
 # Belief Suppression Implementation Plan
 
+> **Status: Shipped 2026-04-23** — commits `846a5dd` (implementation + 13 integration tests + `(current-beliefs)` accessor + `WithSourceOS()` on the engine) and `6283713` (CHANGELOG, root CLAUDE.md, plans/BELIEF-DSL.md, plans/CLAUDE.md).
+>
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Ship `with-belief-scope`, `load-committed-beliefs`, and `suppress-known` in `(wile goast belief)` so the `discover → review → commit → enforce` lifecycle closes: re-running discovery on a codebase does not resurface beliefs already committed to `.scm` files.
@@ -55,7 +57,7 @@
 - Modify: `cmd/wile-goast/lib/wile/goast/belief.sld`
 - Test: `goast/belief_integration_test.go`
 
-- [ ] **Step 1: Write the first failing test**
+- [x] **Step 1: Write the first failing test**
 
 Append to `/Users/aalpar/projects/wile-workspace/wile-goast/goast/belief_integration_test.go`:
 
@@ -91,12 +93,12 @@ func TestWithBeliefScope_Restores(t *testing.T) {
 
 Note: the test calls `runScheme` which is the existing test helper defined in `goast/prim_goast_test.go:42` (it's just renamed inline in this plan to avoid a naming clash with JavaScript-style interpretations; use whatever name the file already defines — `grep -n "^func.*t \*testing.T, engine \*wile.Engine, code string" goast/prim_goast_test.go` to confirm).
 
-- [ ] **Step 2: Run the test to confirm it fails**
+- [x] **Step 2: Run the test to confirm it fails**
 
 Run: `cd /Users/aalpar/projects/wile-workspace/wile-goast && go test ./goast/ -run TestWithBeliefScope_Restores -v`
 Expected: FAIL — "undefined identifier: with-belief-scope".
 
-- [ ] **Step 3: Write the second failing test (escape restoration)**
+- [x] **Step 3: Write the second failing test (escape restoration)**
 
 Append to `goast/belief_integration_test.go`:
 
@@ -128,12 +130,12 @@ func TestWithBeliefScope_RestoresOnEscape(t *testing.T) {
 }
 ```
 
-- [ ] **Step 4: Run both tests, confirm fail**
+- [x] **Step 4: Run both tests, confirm fail**
 
 Run: `go test ./goast/ -run TestWithBeliefScope -v`
 Expected: both FAIL — undefined identifier.
 
-- [ ] **Step 5: Implement `with-belief-scope` in `belief.scm`**
+- [x] **Step 5: Implement `with-belief-scope` in `belief.scm`**
 
 Open `/Users/aalpar/projects/wile-workspace/wile-goast/cmd/wile-goast/lib/wile/goast/belief.scm`. Find the last line of the file (the `;; string-join: moved to (wile goast utils)` comment at line 864). Append **before** that trailing comment:
 
@@ -166,7 +168,7 @@ See also: `load-committed-beliefs', `reset-beliefs!'."
         (set! *aggregate-beliefs* saved-aggregate)))))
 ```
 
-- [ ] **Step 6: Add export to `belief.sld`**
+- [x] **Step 6: Add export to `belief.sld`**
 
 Open `/Users/aalpar/projects/wile-workspace/wile-goast/cmd/wile-goast/lib/wile/goast/belief.sld`. Find the `;; Core` export block (line 17-18) and append a new `;; Suppression` stanza after `aggregate-beliefs`:
 
@@ -181,14 +183,14 @@ Open `/Users/aalpar/projects/wile-workspace/wile-goast/cmd/wile-goast/lib/wile/g
 
 Adding `load-committed-beliefs` / `suppress-known` now (before they're defined) is safe — Wile only resolves exports at import time. Later tasks fill in the definitions.
 
-- [ ] **Step 7: Run the two tests, expect pass**
+- [x] **Step 7: Run the two tests, expect pass**
 
 Run: `go test ./goast/ -run TestWithBeliefScope -v`
 Expected: both PASS.
 
 If the escape test fails (registry not restored after exception), verify Wile honors `dynamic-wind`'s after-thunk on exception escape — this is standard R7RS but worth a direct probe.
 
-- [ ] **Step 8: Ask the user before committing**
+- [x] **Step 8: Ask the user before committing**
 
 > "Task 1 complete: `with-belief-scope` shipped with restore-on-success + restore-on-escape tests. Want me to commit?"
 
@@ -210,7 +212,7 @@ cd /Users/aalpar/projects/wile-workspace/wile-goast && \
 - Modify: `cmd/wile-goast/lib/wile/goast/belief.scm`
 - Test: `goast/belief_integration_test.go`
 
-- [ ] **Step 1: Add test helpers to the test file**
+- [x] **Step 1: Add test helpers to the test file**
 
 If not already present, add the following two helpers near the top of `goast/belief_integration_test.go` (below the existing `newBeliefEngine` function). Also add `"path/filepath"` and `"strings"` to the file's `import` block if they are not there yet.
 
@@ -232,7 +234,7 @@ func schemeStr(s string) string {
 }
 ```
 
-- [ ] **Step 2: Write the directory-loading test**
+- [x] **Step 2: Write the directory-loading test**
 
 Append:
 
@@ -272,12 +274,12 @@ func TestLoadCommittedBeliefs_Directory(t *testing.T) {
 }
 ```
 
-- [ ] **Step 3: Run the test, confirm failure**
+- [x] **Step 3: Run the test, confirm failure**
 
 Run: `go test ./goast/ -run TestLoadCommittedBeliefs_Directory -v`
 Expected: FAIL — "undefined identifier: load-committed-beliefs".
 
-- [ ] **Step 4: Implement the helpers in `belief.scm`**
+- [x] **Step 4: Implement the helpers in `belief.scm`**
 
 In `belief.scm`, immediately **after** the `with-belief-scope` definition added in Task 1, append:
 
@@ -375,14 +377,14 @@ Implementation notes:
 1. `with-belief-scope` captures `*beliefs*` / `*aggregate-beliefs*` inside its body; the `(cons ...)` reads the *inner* scope's registry before the after-thunk restores the outer state. That's the correct snapshot.
 2. `list-scheme-files-in-dir` raises a file-error if PATH is a regular file; the outer `guard` catches that and falls through to the single-file branch.
 
-- [ ] **Step 5: Run the directory test, expect pass**
+- [x] **Step 5: Run the directory test, expect pass**
 
 Run: `go test ./goast/ -run TestLoadCommittedBeliefs_Directory -v`
 Expected: PASS.
 
 If the result is `(0 0 0)`, the directory-vs-file probe misfires — add `(display files (current-error-port))` inside the body to inspect. If the result is `(2 0 2)`, `with-belief-scope` isn't isolating — check the order of `dynamic-wind` thunks.
 
-- [ ] **Step 6: Write the single-file test**
+- [x] **Step 6: Write the single-file test**
 
 Append:
 
@@ -411,12 +413,12 @@ func TestLoadCommittedBeliefs_File(t *testing.T) {
 }
 ```
 
-- [ ] **Step 7: Run, expect pass**
+- [x] **Step 7: Run, expect pass**
 
 Run: `go test ./goast/ -run TestLoadCommittedBeliefs_File -v`
 Expected: PASS.
 
-- [ ] **Step 8: Write the skip-bad-file test**
+- [x] **Step 8: Write the skip-bad-file test**
 
 Append:
 
@@ -451,12 +453,12 @@ func TestLoadCommittedBeliefs_SkipsBadFiles(t *testing.T) {
 }
 ```
 
-- [ ] **Step 9: Run, expect pass**
+- [x] **Step 9: Run, expect pass**
 
 Run: `go test ./goast/ -run TestLoadCommittedBeliefs_SkipsBadFiles -v`
 Expected: PASS.
 
-- [ ] **Step 10: Write the nonexistent-path test**
+- [x] **Step 10: Write the nonexistent-path test**
 
 Append:
 
@@ -473,12 +475,12 @@ func TestLoadCommittedBeliefs_NonexistentPath(t *testing.T) {
 }
 ```
 
-- [ ] **Step 11: Run, expect pass**
+- [x] **Step 11: Run, expect pass**
 
 Run: `go test ./goast/ -run TestLoadCommittedBeliefs_NonexistentPath -v`
 Expected: PASS — the error bubbles up from `(error ...)` in the Scheme impl.
 
-- [ ] **Step 12: Ask before committing**
+- [x] **Step 12: Ask before committing**
 
 > "Task 2 complete: `load-committed-beliefs` with directory/file/skip-bad/nonexistent tests. Commit?"
 
@@ -499,7 +501,7 @@ cd /Users/aalpar/projects/wile-workspace/wile-goast && \
 - Modify: `cmd/wile-goast/lib/wile/goast/belief.scm`
 - Test: `goast/belief_integration_test.go`
 
-- [ ] **Step 1: Write the per-site match test**
+- [x] **Step 1: Write the per-site match test**
 
 Append to `goast/belief_integration_test.go`:
 
@@ -532,12 +534,12 @@ func TestSuppressKnown_PerSiteMatch(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run, confirm failure**
+- [x] **Step 2: Run, confirm failure**
 
 Run: `go test ./goast/ -run TestSuppressKnown_PerSiteMatch -v`
 Expected: FAIL — "undefined identifier: suppress-known".
 
-- [ ] **Step 3: Implement helpers and `suppress-known` in `belief.scm`**
+- [x] **Step 3: Implement helpers and `suppress-known` in `belief.scm`**
 
 Append, after the `load-committed-beliefs` definition from Task 2:
 
@@ -615,14 +617,14 @@ See also: `load-committed-beliefs', `emit-beliefs'."
         (else (loop (cdr rs) (cons (car rs) acc)))))))
 ```
 
-- [ ] **Step 4: Run the test, expect pass**
+- [x] **Step 4: Run the test, expect pass**
 
 Run: `go test ./goast/ -run TestSuppressKnown_PerSiteMatch -v`
 Expected: PASS.
 
 If length is `1` instead of `0`, inspect: the `type` key dispatch is wrong, or the `sites-expr` keys don't match by `equal?`. The design says both should be symbolic S-expressions.
 
-- [ ] **Step 5: Write the rename-ignored test**
+- [x] **Step 5: Write the rename-ignored test**
 
 Append:
 
@@ -651,7 +653,7 @@ func TestSuppressKnown_RenameIgnored(t *testing.T) {
 }
 ```
 
-- [ ] **Step 6: Write the threshold-ignored test**
+- [x] **Step 6: Write the threshold-ignored test**
 
 Append:
 
@@ -683,7 +685,7 @@ func TestSuppressKnown_ThresholdIgnored(t *testing.T) {
 }
 ```
 
-- [ ] **Step 7: Write the aggregate match test**
+- [x] **Step 7: Write the aggregate match test**
 
 Append:
 
@@ -713,7 +715,7 @@ func TestSuppressKnown_AggregateMatch(t *testing.T) {
 }
 ```
 
-- [ ] **Step 8: Write the no-match pass-through test**
+- [x] **Step 8: Write the no-match pass-through test**
 
 Append:
 
@@ -742,7 +744,7 @@ func TestSuppressKnown_NoMatch(t *testing.T) {
 }
 ```
 
-- [ ] **Step 9: Write the missing-type pass-through test**
+- [x] **Step 9: Write the missing-type pass-through test**
 
 Covers the "Result alist without `type` key → passes through" edge case from the design's §Edge Cases table:
 
@@ -770,12 +772,12 @@ func TestSuppressKnown_MissingTypePassesThrough(t *testing.T) {
 }
 ```
 
-- [ ] **Step 10: Run all suppress-known tests**
+- [x] **Step 10: Run all suppress-known tests**
 
 Run: `go test ./goast/ -run TestSuppressKnown -v`
 Expected: 6 PASS (PerSiteMatch + RenameIgnored + ThresholdIgnored + AggregateMatch + NoMatch + MissingTypePassesThrough).
 
-- [ ] **Step 11: Ask before committing**
+- [x] **Step 11: Ask before committing**
 
 > "Task 3 complete: `suppress-known` with 6 tests covering match, rename, threshold, aggregate, no-match, missing-type. Commit?"
 
@@ -795,7 +797,7 @@ cd /Users/aalpar/projects/wile-workspace/wile-goast && \
 **Files:**
 - Test: `goast/belief_integration_test.go`
 
-- [ ] **Step 1: Write the end-to-end test**
+- [x] **Step 1: Write the end-to-end test**
 
 Exercises the full pipeline: discovery belief → run → load committed → suppress → measure result count. Append:
 
@@ -842,7 +844,7 @@ func TestSuppressKnown_EndToEnd(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run and expect pass**
+- [x] **Step 2: Run and expect pass**
 
 Run: `go test ./goast/ -run TestSuppressKnown_EndToEnd -v`
 Expected: PASS. This test runs `run-beliefs` over a real Go package; budget ~5 s.
@@ -856,7 +858,7 @@ If the result is `"1"` instead of `"0"`, the discovery belief's expression doesn
 
 Confirm both read as `(sites (functions-matching (name-matches "Prim")))`. If the macro expansion adds extra nesting, structural matching needs a pre-comparison normalization step — unlikely given how `define-belief` captures expressions (literal `'(sites selector)` in the macro body), but worth probing if it fails.
 
-- [ ] **Step 3: Ask before committing**
+- [x] **Step 3: Ask before committing**
 
 > "Task 4 complete: end-to-end discover → load → suppress test passes. Commit?"
 
@@ -872,22 +874,22 @@ cd /Users/aalpar/projects/wile-workspace/wile-goast && \
 
 ## Task 5: Run `make lint` + `make test` to confirm no regressions
 
-- [ ] **Step 1: Run lint**
+- [x] **Step 1: Run lint**
 
 Run: `cd /Users/aalpar/projects/wile-workspace/wile-goast && make lint`
 Expected: 0 issues.
 
-- [ ] **Step 2: Run the full test suite**
+- [x] **Step 2: Run the full test suite**
 
 Run: `cd /Users/aalpar/projects/wile-workspace/wile-goast && make test`
 Expected: all packages PASS. The new tests add ~5–10 s to the goast package runtime.
 
-- [ ] **Step 3: Run coverage**
+- [x] **Step 3: Run coverage**
 
 Run: `cd /Users/aalpar/projects/wile-workspace/wile-goast && make ci`
 Expected: all packages above 80%.
 
-- [ ] **Step 4: No commit for this task (pure validation).**
+- [x] **Step 4: No commit for this task (pure validation).**
 
 ---
 
@@ -896,11 +898,11 @@ Expected: all packages above 80%.
 **Files:**
 - Modify: `CHANGELOG.md`
 
-- [ ] **Step 1: Read the current top entry**
+- [x] **Step 1: Read the current top entry**
 
 Run: `head -20 CHANGELOG.md`. Confirm format: `## v<version> — <title>` header followed by dash-list bullets.
 
-- [ ] **Step 2: Prepend new entry**
+- [x] **Step 2: Prepend new entry**
 
 Use `Edit` to prepend **above** the existing first `## v...` header:
 
@@ -929,7 +931,7 @@ Discovery scripts can now compose:
 
 ```
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 Ask first:
 
@@ -951,15 +953,15 @@ cd /Users/aalpar/projects/wile-workspace/wile-goast && \
 - Modify: `plans/BELIEF-DSL.md`
 - Modify: `plans/CLAUDE.md`
 
-- [ ] **Step 1: Rewrite `§Suppression` opener in BELIEF-DSL.md**
+- [x] **Step 1: Rewrite `§Suppression` opener in BELIEF-DSL.md**
 
 `plans/BELIEF-DSL.md` §Suppression (line 143) opens with "Future discovery runs should diff output against committed belief files…". No checkboxes. Replace the opener paragraph with a past-tense "Shipped 2026-04-<DAY>. See `plans/2026-04-17-belief-suppression-impl.md`." note, and keep the subsections (Structural Matching, `suppress-known` API, Loading Committed Beliefs, Edge Cases, Changes Required) as descriptive reference documentation. Reconcile one drift: the existing "Returns: snapshot of `*beliefs*` as a list" claim under §Loading Committed Beliefs is out of date — change to `Returns: (per-site-snapshot . aggregate-snapshot) pair` per the approved design.
 
-- [ ] **Step 2: Mark the `§CLI Integration` subsection as deferred**
+- [x] **Step 2: Mark the `§CLI Integration` subsection as deferred**
 
 The design doc explicitly says "No CLI flags this round". Replace the `### CLI Integration` subsection's body with a one-line "Deferred — users compose `with-belief-scope` / `load-committed-beliefs` / `suppress-known` / `emit-beliefs` in discovery scripts. See impl plan for rationale." Leave the header intact so anchors don't break.
 
-- [ ] **Step 3: Update `plans/CLAUDE.md` Active Plan Files table**
+- [x] **Step 3: Update `plans/CLAUDE.md` Active Plan Files table**
 
 Find the row:
 
@@ -971,7 +973,7 @@ Change the Status column to: `Shipped — see 2026-04-17-belief-suppression-impl
 
 Also add a corresponding row to the "Completed Plans" table (design + impl pair, same date prefix).
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 Ask first:
 
@@ -992,11 +994,11 @@ cd /Users/aalpar/projects/wile-workspace/wile-goast && \
 **Files:**
 - Modify: `CLAUDE.md`
 
-- [ ] **Step 1: Locate the `(wile goast belief)` exports section**
+- [x] **Step 1: Locate the `(wile goast belief)` exports section**
 
 Run: `grep -n 'define-belief\|emit-beliefs' CLAUDE.md` to find the section.
 
-- [ ] **Step 2: Add a new Suppression sub-section**
+- [x] **Step 2: Add a new Suppression sub-section**
 
 Insert after the existing emit-beliefs table:
 
@@ -1027,7 +1029,7 @@ Matching is structural (`equal?` on captured S-expressions). Names,
 thresholds, and ratios are ignored during matching.
 ```
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 Ask first:
 
@@ -1045,12 +1047,12 @@ cd /Users/aalpar/projects/wile-workspace/wile-goast && \
 
 ## Task 9: Final green-gate sweep
 
-- [ ] **Step 1: Run `make ci`**
+- [x] **Step 1: Run `make ci`**
 
 Run: `cd /Users/aalpar/projects/wile-workspace/wile-goast && make ci`
 Expected: lint + build + test + coverage + `go mod verify` all PASS.
 
-- [ ] **Step 2: Confirm design spec's §Testing checklist is fully covered**
+- [x] **Step 2: Confirm design spec's §Testing checklist is fully covered**
 
 Run:
 
@@ -1077,7 +1079,7 @@ TestSuppressKnown_MissingTypePassesThrough
 TestSuppressKnown_EndToEnd
 ```
 
-- [ ] **Step 3: No commit for this task (pure validation).**
+- [x] **Step 3: No commit for this task (pure validation).**
 
 ---
 
