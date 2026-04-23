@@ -17,6 +17,17 @@
 - Propose architectural approaches without checking how similar problems are already solved
 - Start implementation without verifying assumptions against actual code
 
+## Cross-project coordination
+
+Work that spans wile and wile-goast is tracked in a workspace-level roadmap:
+**[`../../wile/plans/WORKSPACE-ROADMAP.md`](../../wile/plans/WORKSPACE-ROADMAP.md)** (in the sibling `wile` repo).
+
+Consult it before proposing or committing to cross-project work so sequencing
+and dependency direction are explicit. When wile-side deliverables ship for
+consumers in wile-goast (algebra extensions, coverage enhancements, etc.),
+the workspace roadmap carries both the wile-side plan link and the
+wile-goast-side consumer/follow-up status.
+
 ## Active Plan Files
 
 | File | Contents | Status |
