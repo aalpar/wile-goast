@@ -179,13 +179,14 @@ Declarative consistency deviation detection. Beliefs are patterns extracted stat
  (pattern . paired-defer) (ratio . 9/10) (total . 10)
  (adherence . ("pkg.Foo" "pkg.Bar" ...))
  (deviations . (("pkg.Baz" . unpaired) ...))
- (sites-expr . (functions-matching (contains-call "Lock")))
- (expect-expr . (paired-with "Lock" "Unlock")))
+ (min-adherence . 0.9) (min-sites . 5)
+ (sites-expr . (sites (functions-matching (contains-call "Lock"))))
+ (expect-expr . (expect (paired-with "Lock" "Unlock"))))
 
 ;; Aggregate belief
 ((name . "pkg-cohesion") (type . aggregate) (status . ok)
- (sites-expr . (all-functions-in))
- (analyze-expr . (single-cluster 'idf-threshold 0.36))
+ (sites-expr . (sites (all-functions-in)))
+ (analyze-expr . (analyze (single-cluster 'idf-threshold 0.36)))
  (verdict . SPLIT) (confidence . HIGH) ...)
 ```
 
