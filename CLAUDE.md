@@ -210,6 +210,30 @@ Status values: `strong`, `weak`, `no-sites`, `error` (per-site); `ok`, `error` (
 |--------|-------------|
 | `emit-beliefs` | Format strong/ok belief results as Scheme source code |
 
+### Suppression
+
+Close the `discover → review → commit → enforce` lifecycle. Committed
+beliefs live in `.scm` files; re-running discovery should not resurface
+a belief already committed. Matching is structural (`equal?` on captured
+S-expressions). Names, thresholds, and ratios are ignored.
+
+```scheme
+(define results
+  (with-belief-scope
+    (lambda ()
+      ;; ...discovery beliefs...
+      (run-beliefs "my/pkg/..."))))
+(define committed (load-committed-beliefs "beliefs/"))
+(display (emit-beliefs (suppress-known results committed)))
+```
+
+| Export | Description |
+|--------|-------------|
+| `with-belief-scope` | Save/restore `*beliefs*` + `*aggregate-beliefs*` around a thunk via `dynamic-wind`. |
+| `load-committed-beliefs` | Load `.scm` beliefs from a directory or single file into an isolated scope; return `(per-site-snapshot . aggregate-snapshot)` pair. Per-file `guard`: skip bad files with stderr warning. |
+| `suppress-known` | Structural filter: drop results whose `sites-expr`/`expect-expr` (per-site) or `sites-expr`/`analyze-expr` (aggregate) match any committed tuple. |
+| `current-beliefs` | Live snapshot of `*beliefs*`, symmetric to `aggregate-beliefs`. Necessary because user-code `*beliefs*` reads return a stale snapshot under Wile's import semantics. |
+
 ### Belief Definition Form
 
 ```scheme

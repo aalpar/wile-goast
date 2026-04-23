@@ -1,5 +1,38 @@
 # Changelog
 
+## Unreleased — Belief Suppression
+
+Close the belief DSL's discover → review → commit → enforce lifecycle.
+
+- `with-belief-scope` — isolate a thunk from the caller's belief registry
+  via `dynamic-wind`. Used by `load-committed-beliefs` and available to
+  scripts that want to define beliefs without leaking them.
+- `load-committed-beliefs` — accept a directory or single `.scm` file,
+  load beliefs into an isolated scope, return a
+  `(per-site-snapshot . aggregate-snapshot)` pair. Files that fail to
+  load are skipped with a stderr warning.
+- `suppress-known` — filter `run-beliefs` output by structural (`equal?`)
+  comparison on `sites-expr` / `expect-expr` (per-site) or
+  `sites-expr` / `analyze-expr` (aggregate). Names and thresholds are
+  ignored during matching.
+- `current-beliefs` — accessor procedure returning the live per-site
+  registry, symmetric to the existing `aggregate-beliefs`. Bypasses
+  Wile's stale-snapshot semantics for identifiers imported from a library.
+
+Engine construction now opts in to `wile.WithSourceOS()` so scripts can
+reference arbitrary filesystem paths (e.g., committed belief directories
+via absolute paths).
+
+Discovery scripts can compose:
+
+    (define results
+      (with-belief-scope
+        (lambda ()
+          <...discovery beliefs...>
+          (run-beliefs "my/pkg/..."))))
+    (define committed (load-committed-beliefs "beliefs/"))
+    (display (emit-beliefs (suppress-known results committed)))
+
 ## v0.5.111 — Lint and Session Cleanup
 
 - Fix compound if-init lint violations across all session-dispatch sites

@@ -32,8 +32,9 @@ wile-goast-side consumer/follow-up status.
 
 | File | Contents | Status |
 |------|----------|--------|
-| `BELIEF-DSL.md` | Belief DSL: suppression | Suppression open (emit done) |
-| `2026-04-17-belief-suppression-design.md` | Belief suppression: `with-belief-scope`, `load-committed-beliefs`, `suppress-known` | Design approved, impl pending |
+| `BELIEF-DSL.md` | Belief DSL: suppression shipped | Suppression shipped (emit done) |
+| `2026-04-17-belief-suppression-design.md` | Belief suppression: `with-belief-scope`, `load-committed-beliefs`, `suppress-known` | Shipped — see `2026-04-17-belief-suppression-impl.md` |
+| `2026-04-17-belief-suppression-impl.md` | Implementation plan: 9 tasks, TDD, 13 integration tests | Shipped 2026-04-23 |
 | `2026-04-17-fca-duplicate-detection-design.md` | FCA-clustered duplicate function detection: reference-FCA + structural diff + algebraic equivalence + LLM residue | Design draft, impl pending |
 | `2026-04-19-llm-concept-filter-design.md` | LLM as precision-oriented semantic filter on FCA concepts (cross-cutting, annotate-only default) | Design draft, impl pending |
 | `2026-04-19-mcp-tool-surface-design.md` | Post-filter MCP tool surface: pipeline-shaped tools returning structured reports instead of `eval`-driven orchestration | Design draft, impl pending (Phase 1 next) |

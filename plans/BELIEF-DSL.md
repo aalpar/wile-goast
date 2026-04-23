@@ -142,9 +142,11 @@ and as a property checker. The emitted expression distinguishes them by position
 
 ## Suppression
 
-Future discovery runs should diff output against committed belief files. A belief
-whose selector and checker expressions structurally match an existing committed belief
-is suppressed — discovery only reports *new* findings.
+**Shipped 2026-04-23.** See `plans/2026-04-17-belief-suppression-impl.md`.
+
+Discovery runs diff output against committed belief files. A belief whose
+selector and checker expressions structurally match an existing committed
+belief is suppressed — discovery only reports *new* findings.
 
 ### Structural Matching
 
@@ -185,8 +187,10 @@ expressions. If so, remove from output.
 ```scheme
 (load-committed-beliefs path)
 ;; path: directory path or single .scm file
-;; Side effects: evaluates Scheme file(s), populating *beliefs* registry
-;; Returns: snapshot of *beliefs* as a list
+;; Returns: pair (per-site-snapshot . aggregate-snapshot), where each
+;;          snapshot is the list of belief tuples registered while the
+;;          file(s) loaded. Per-file load failures are logged to stderr
+;;          and skipped — partial suppression is better than none.
 ```
 
 The loading sequence:
@@ -212,19 +216,23 @@ execution. More composable, and `load-committed-beliefs` becomes a thin wrapper.
 
 ### CLI Integration
 
-```
-wile-goast -f discovery.scm --emit                     # emit all strong findings
-wile-goast -f discovery.scm --emit --suppress beliefs/  # emit only new findings
-```
+**Deferred.** Users compose `with-belief-scope`, `load-committed-beliefs`,
+`suppress-known`, and `emit-beliefs` in discovery scripts. Matches how
+`emit-beliefs` shipped (no dedicated flag). See
+`plans/2026-04-17-belief-suppression-design.md` §Non-Goals for rationale.
 
-In `cmd/wile-goast/main.go`:
-1. Parse `--emit` and `--suppress <path>` flags
-2. If `--suppress`: before running the discovery script, evaluate committed files
-   in a scoped belief context to capture their expression metadata
-3. Run discovery script → capture `run-beliefs` results
-4. If `--suppress`: call `suppress-known` to filter
-5. Call `emit-beliefs` on (filtered) results
-6. Write to stdout
+Typical script shape:
+
+```scheme
+(import (wile goast belief))
+(define results
+  (with-belief-scope
+    (lambda ()
+      ;; ...discovery beliefs...
+      (run-beliefs "my/pkg/..."))))
+(define committed (load-committed-beliefs "beliefs/"))
+(display (emit-beliefs (suppress-known results committed)))
+```
 
 ### Edge Cases
 
