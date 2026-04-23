@@ -14,12 +14,21 @@
 
 (define-library (wile goast dataflow)
   (export
+    ;; Truth-value lattice — local; distinct from (wile algebra lattice)'s
+    ;; parametric (boolean-lattice n). Stays in wile-goast for the
+    ;; `defuse-reachable?` reachability product lattice.
     boolean-lattice
+    ;; SSA-specific helpers
     ssa-all-instrs
     ssa-instruction-names
     make-reachability-transfer
-    defuse-reachable?
     block-instrs
+    ;; SSA adapter for the generic MFP solver in (wile algebra dataflow)
+    ssa-cfg-protocol
+    ;; SSA-specific analysis entry point
+    defuse-reachable?
+    ;; Re-exports of the extracted solver (callers may still import
+    ;; them from (wile goast dataflow) directly).
     run-analysis
     analysis-in
     analysis-out

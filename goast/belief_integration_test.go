@@ -1096,7 +1096,7 @@ func TestDataflowRunAnalysisForwardSingleBlock(t *testing.T) {
 		                 (block-instrs blk))))
 		    (lattice-join lat in-val names)))
 
-		(define result (run-analysis 'forward lat transfer fn))
+		(define result (run-analysis 'forward lat transfer fn (ssa-cfg-protocol)))
 	`)
 
 	t.Run("entry in-state is bottom", func(t *testing.T) {
@@ -1136,7 +1136,7 @@ func TestDataflowRunAnalysisForwardBranching(t *testing.T) {
 		  (let ((names (filter-map (lambda (i) (nf i 'name)) (block-instrs block))))
 		    (lattice-join lat state names)))
 
-		(define result (run-analysis 'forward lat transfer fn))
+		(define result (run-analysis 'forward lat transfer fn (ssa-cfg-protocol)))
 	`)
 
 	t.Run("block 0 out has t0", func(t *testing.T) {
@@ -1186,7 +1186,7 @@ func TestDataflowRunAnalysisForwardJoin(t *testing.T) {
 		  (let ((names (filter-map (lambda (i) (nf i 'name)) (block-instrs block))))
 		    (lattice-join lat state names)))
 
-		(define result (run-analysis 'forward lat transfer fn))
+		(define result (run-analysis 'forward lat transfer fn (ssa-cfg-protocol)))
 	`)
 
 	t.Run("join block in includes names from both predecessors", func(t *testing.T) {
@@ -1227,7 +1227,8 @@ func TestDataflowRunAnalysisInitialState(t *testing.T) {
 		    (lattice-join seeded-lat state names)))
 
 		(define result-seeded (run-analysis 'forward seeded-lat seeded-transfer fn
-		                        (list "SEED")))
+		                        (ssa-cfg-protocol)
+		                        (init-state (list "SEED"))))
 	`)
 
 	t.Run("custom initial state propagates to in", func(t *testing.T) {
@@ -1265,7 +1266,7 @@ func TestDataflowRunAnalysisBackward(t *testing.T) {
 		    (let ((relevant (filter-map (lambda (o) (and (member o universe) o)) ops)))
 		      (lattice-join lat state relevant))))
 
-		(define result (run-analysis 'backward lat transfer fn))
+		(define result (run-analysis 'backward lat transfer fn (ssa-cfg-protocol)))
 	`)
 
 	t.Run("exit blocks in-state is bottom", func(t *testing.T) {
@@ -1316,15 +1317,15 @@ func TestDataflowMonotonicityViolation(t *testing.T) {
 	t.Run("no flag means no check", func(t *testing.T) {
 		eval(t, engine, `
 			(set! call-count 0)
-			(run-analysis 'forward lat bad-transfer fn)`)
+			(run-analysis 'forward lat bad-transfer fn (ssa-cfg-protocol))`)
 		// No error = pass
 	})
 
 	t.Run("check-monotone catches violation", func(t *testing.T) {
 		evalExpectError(t, engine, `
 			(set! call-count 0)
-			(run-analysis 'forward lat bad-transfer fn
-			  (lattice-bottom lat) 'check-monotone)`)
+			(run-analysis 'forward lat bad-transfer fn (ssa-cfg-protocol)
+			  (init-state (lattice-bottom lat)) 'check-monotone)`)
 	})
 }
 
@@ -1847,6 +1848,7 @@ func TestEmitBeliefsPerSite(t *testing.T) {
 
 	eval(t, engine, `
 		(import (wile goast belief))
+		(import (wile goast utils))
 		(reset-beliefs!)
 
 		(define-belief "prim-have-body"
@@ -1886,8 +1888,8 @@ func TestEmitBeliefsPerSite(t *testing.T) {
 		c.Assert(result.SchemeString(), qt.Equals, "#t")
 	})
 
-	t.Run("contains threshold", func(t *testing.T) {
-		result := eval(t, engine, `(string-contains emitted "threshold")`)
+	t.Run("threshold uses configured values not observed", func(t *testing.T) {
+		result := eval(t, engine, `(string-contains emitted "(threshold 0.9 3)")`)
 		c.Assert(result.SchemeString(), qt.Equals, "#t")
 	})
 }
@@ -1938,6 +1940,7 @@ func TestEmitBeliefsFiltering(t *testing.T) {
 
 	eval(t, engine, `
 		(import (wile goast belief))
+		(import (wile goast utils))
 		(reset-beliefs!)
 
 		(define-belief "strong-one"

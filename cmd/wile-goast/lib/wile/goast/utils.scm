@@ -143,6 +143,15 @@
         ;; Atom
         (else node)))))
 
+;; Join a list of strings with a separator.
+(define (string-join strs sep)
+  "Join a list of strings with separator SEP.\n\nParameters:\n  strs : list of strings\n  sep : string\nReturns: string\nCategory: goast-utils\n\nExamples:\n  (string-join '(\"a\" \"b\" \"c\") \", \")  ; => \"a, b, c\"\n  (string-join '() \", \")              ; => \"\"\n\nSee also: `string-contains'."
+  (if (null? strs) ""
+    (let loop ((rest (cdr strs)) (acc (car strs)))
+      (if (null? rest) acc
+        (loop (cdr rest)
+              (string-append acc sep (car rest)))))))
+
 ;; Keyword option lookup — (opt-ref '(k1 v1 k2 v2) 'k1 default) => v1
 (define (opt-ref opts key default)
   "Look up a keyword option in an alternating key/value list.\nReturns the associated value, or DEFAULT if KEY is not present.\n\nParameters:\n  opts : list\n  key : symbol\n  default : any\nReturns: any\nCategory: goast-utils\n\nExamples:\n  (opt-ref '(fuel 10 mode 'fast) 'fuel 5)  ; => 10\n  (opt-ref '() 'fuel 5)                    ; => 5\n\nSee also: `take', `drop'."

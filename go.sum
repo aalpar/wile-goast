@@ -1,5 +1,7 @@
 github.com/aalpar/wile v1.14.14 h1:fSOFmAxRT3+rJsyoZhZfRIGfodbCz2rYiuxLCmHW5Fs=
 github.com/aalpar/wile v1.14.14/go.mod h1:QCv8TLKARCVE1hRAVLqVP2uDnVAAN3b9cVJ41WXfLwg=
+github.com/aalpar/wile v1.14.245-0.20260423132704-afc674fa1ada h1:suhOsKwxtwsPOlShWZA+xTw0glPFS9r7Ax5UAUPgZxU=
+github.com/aalpar/wile v1.14.245-0.20260423132704-afc674fa1ada/go.mod h1:QCv8TLKARCVE1hRAVLqVP2uDnVAAN3b9cVJ41WXfLwg=
 github.com/bahlo/generic-list-go v0.2.0 h1:5sz/EEAK+ls5wF+NeqDpk5+iNdMDXrh3z3nPnH1Wvgk=
 github.com/bahlo/generic-list-go v0.2.0/go.mod h1:2KvAjgMlE5NNynlg/5iLrrCCZ2+5xWbdbCW3pNTGyYg=
 github.com/buger/jsonparser v1.1.1 h1:2PnMjfWD7wBILjqQbt530v576A/cAbQvEW9gGIpYMUs=
