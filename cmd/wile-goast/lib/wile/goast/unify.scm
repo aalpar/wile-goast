@@ -242,22 +242,7 @@
 ;; root substitutions and reclassifying derived ones.
 ;; ══════════════════════════════════════════════════════════
 
-(define (string-replace-all str old new)
-  (let ((old-len (string-length old))
-        (str-len (string-length str)))
-    (if (or (= old-len 0) (< str-len old-len))
-      str
-      (let loop ((start 0) (parts '()))
-        (let search ((i start))
-          (cond
-            ((> (+ i old-len) str-len)
-             (apply string-append
-                    (reverse (cons (substring str start str-len) parts))))
-            ((string=? (substring str i (+ i old-len)) old)
-             (loop (+ i old-len)
-                   (cons new (cons (substring str start i) parts))))
-            (else
-             (search (+ i 1)))))))))
+;; string-replace-all is imported from (wile strings) via unify.sld.
 
 (define (apply-substitutions str roots)
   (let loop ((s str) (rs roots))

@@ -33,6 +33,25 @@ Discovery scripts can compose:
     (define committed (load-committed-beliefs "beliefs/"))
     (display (emit-beliefs (suppress-known results committed)))
 
+### Wile v1.15.0 + standard string libraries
+
+Bump `github.com/aalpar/wile` to v1.15.0 and retire wile-goast's
+hand-rolled string helpers in favor of SRFI-13 and `(wile strings)`.
+
+- `string-contains`, `string-join` — re-exported from `(srfi 13)` via
+  `(wile goast utils)`.  Note: SRFI-13 `string-contains` returns the
+  match index (or `#f`), not `#t`/`#f`.
+- `string-contains?` — new boolean-predicate variant in
+  `(wile goast utils)`, also re-exported from `(wile goast belief)`.
+  Use this when a strict `#t`/`#f` is required (e.g., test assertions);
+  conditional contexts can still use `string-contains` directly.
+- `string-suffix?` — re-exported from `(srfi 13)` via
+  `(wile goast fca-recommend)`.
+- `string-index` (SRFI-13) replaces the local `string-index-of` in
+  `(wile goast fca)`.
+- `string-replace-all` — sourced from `(wile strings)` in
+  `(wile goast unify)` and the two `unify-detect-pkg` scripts.
+
 ## v0.5.111 — Lint and Session Cleanup
 
 - Fix compound if-init lint violations across all session-dispatch sites

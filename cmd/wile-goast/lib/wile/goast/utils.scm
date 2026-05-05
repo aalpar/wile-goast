@@ -91,15 +91,15 @@
           ((char=? (string-ref s i) c) #t)
           (else (loop (+ i 1))))))
 
-;; String contains substring?
-(define (string-contains s sub)
-  "Test whether string S contains substring SUB.\nReturns #t if SUB appears anywhere in S (including as a prefix or suffix).\nAn empty SUB matches any S. O(|S| * |SUB|) naive scan.\n\nParameters:\n  s : string\n  sub : string\nReturns: boolean\nCategory: goast-utils\n\nSee also: `has-char?'."
-  (let ((slen (string-length s))
-        (sublen (string-length sub)))
-    (let loop ((i 0))
-      (cond ((> (+ i sublen) slen) #f)
-            ((string=? (substring s i (+ i sublen)) sub) #t)
-            (else (loop (+ i 1)))))))
+;; string-contains: re-exported from (srfi 13) via utils.sld.
+;; SRFI-13 returns the start index (or #f). For boolean-predicate
+;; semantics use string-contains? below.
+
+;; Boolean predicate variant: #t if SUB occurs in S, #f otherwise.
+;; Wraps SRFI-13 string-contains for callers that want a strict bool.
+(define (string-contains? s sub)
+  "Test whether string S contains substring SUB.\nReturns #t or #f. Wraps SRFI-13 string-contains.\n\nParameters:\n  s : string\n  sub : string\nReturns: boolean\nCategory: goast-utils\n\nSee also: `string-contains', `has-char?'."
+  (if (string-contains s sub) #t #f))
 
 ;; All unordered pairs from a list (each pair once, in order)
 (define (ordered-pairs lst)
@@ -143,14 +143,8 @@
         ;; Atom
         (else node)))))
 
-;; Join a list of strings with a separator.
-(define (string-join strs sep)
-  "Join a list of strings with separator SEP.\n\nParameters:\n  strs : list of strings\n  sep : string\nReturns: string\nCategory: goast-utils\n\nExamples:\n  (string-join '(\"a\" \"b\" \"c\") \", \")  ; => \"a, b, c\"\n  (string-join '() \", \")              ; => \"\"\n\nSee also: `string-contains'."
-  (if (null? strs) ""
-    (let loop ((rest (cdr strs)) (acc (car strs)))
-      (if (null? rest) acc
-        (loop (cdr rest)
-              (string-append acc sep (car rest)))))))
+;; string-join: re-exported from (srfi 13) via utils.sld.
+;; SRFI-13 signature: (string-join strs [delimiter [grammar]]).
 
 ;; Keyword option lookup — (opt-ref '(k1 v1 k2 v2) 'k1 default) => v1
 (define (opt-ref opts key default)

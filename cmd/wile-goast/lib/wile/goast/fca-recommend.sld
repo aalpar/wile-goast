@@ -35,5 +35,6 @@
   (import (wile algebra pareto)
           (wile goast utils)
           (wile goast fca)
-          (wile goast dataflow))
+          (wile goast dataflow)
+          (srfi 13))   ; string-suffix? — re-exported above
   (include "fca-recommend.scm"))

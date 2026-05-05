@@ -19,13 +19,7 @@
 ;;; distinguishes intentional coordination from accidental aggregation.
 ;;; Pareto dominance ranking with separate frontiers per type.
 
-;;; ── Local utilities ─────────────────────────────────────
-
-(define (string-suffix? suffix s)
-  (let ((slen (string-length s))
-        (sufflen (string-length suffix)))
-    (and (>= slen sufflen)
-         (string=? (substring s (- slen sufflen) slen) suffix))))
+;;; string-suffix? is imported from (srfi 13) via fca-recommend.sld.
 
 ;;; ── Lattice analysis utilities ──────────────────────────
 

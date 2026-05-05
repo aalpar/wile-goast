@@ -206,8 +206,9 @@ every non-wile-goast Wile use as well.
 | MCP prompt `goast-scheme-ref` | Wile Scheme reference: available / missing / idioms / gotchas |
 | MCP prompt `goast-analyze` | Which wile-goast layer fits a structural question |
 | MCP prompts `goast-beliefs`, `goast-refactor`, `goast-split` | Task-specific playbooks |
-| `features` procedure (wile v1.9.9) | Runtime capability discovery |
+| `features` procedure (introspection extension since wile v1.9.9; current v1.14.258) | Runtime capability discovery |
 | SRFI registration | Discoverability of SRFI libraries through `apropos` |
+| `(wile algebra ...)` library suite (24 libraries as of v1.14.258) | Direct-import access to lattice / rewrite / FCA / unification / dataflow / abstract-domain primitives — extends what `eval`-mode Scheme can compose without writing helpers |
 
 Each of these has cost-per-use in context tokens, but amortizes across
 all future LLM-written Scheme. They are a standing investment, not
@@ -336,8 +337,9 @@ meaningful redesign.
 - `2026-04-19-llm-concept-filter-design.md` — design for
   `filter_concepts`. This plan depends on that one for Phase 2.
 - `2026-04-17-belief-suppression-design.md` — belief suppression with
-  `with-belief-scope` etc. Affects `check_beliefs` report shape. Resolve
-  suppression design before exposing the MCP tool.
+  `with-belief-scope` etc. Shipped 2026-04-23 (commit `846a5dd`); the
+  `check_beliefs` MCP tool can now consume the suppression-aware
+  `run-beliefs` directly, no longer blocked.
 - `docs/THESIS.md` — the architectural hypothesis this plan is the
   concrete MCP realization of.
 

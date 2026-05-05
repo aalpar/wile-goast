@@ -338,12 +338,31 @@ source text per pair).
 
 - `2026-04-12-ssa-equivalence-v2-design.md` — `ssa-equivalent?` and
   `discover-equivalences` shipped. Phase 4 bucket-B uses these directly.
+  **Migration note:** wile v1.14.x ships `(wile algebra unification)` with
+  `ac-unify` (Stickel/Eker AC unification) as the principled successor to
+  `discover-equivalences`. Migration of `unify.scm:421` is queued in
+  `wile/plans/2026-04-21-wile-goast-ac-match-migration.md` (~100 LOC, three
+  documented risks: term-protocol contract, trace-emitting paths,
+  small-arity benchmark crossover). If migration lands first, Phase 4
+  bucket-B should be wired to `ac-unify` rather than `ssa-equivalent?`'s
+  current backend; if not, `ssa-equivalent?` remains the right call site
+  and the migration is invisible to this design.
 - `2026-04-13-package-splitting-impl.md` — `(wile goast split)` IDF weighting
   shipped. Phase 2 reuses `compute-idf` and `filter-noise`.
 - `2026-04-10-function-boundary-recommendations-impl.md` — `(wile goast
   fca-recommend)` shipped function-level FCA at the struct-field attribute
   granularity. This plan adds a peer module at the external-reference
   attribute granularity.
+- **Wile-side dependency surface (v1.14.258):** all FCA / lattice / closure /
+  symbolic / rewrite / unification / interval / pareto / setoid / order /
+  dataflow / abstract-domain machinery this design composes is now an
+  imported library, not in-tree to wile-goast. Algebra extraction
+  (PR #8 / wile #705) merged 2026-04-22; wile-goast's own
+  `(wile goast dataflow)` / `(wile goast fca)` / etc. now re-export from
+  the wile algebra suite. No design change needed — composition surface is
+  unchanged — but Phase 7's deferred "cluster distance via path-algebra"
+  can additionally compose `(wile algebra combinatorial-graph)`'s
+  Hopcroft-Karp bipartite matching for cross-cluster function pairing.
 
 ## Next Step
 

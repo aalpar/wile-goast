@@ -1874,27 +1874,27 @@ func TestEmitBeliefsPerSite(t *testing.T) {
 	})
 
 	t.Run("contains define-belief", func(t *testing.T) {
-		result := eval(t, engine, `(string-contains emitted "define-belief")`)
+		result := eval(t, engine, `(string-contains? emitted "define-belief")`)
 		c.Assert(result.SchemeString(), qt.Equals, "#t")
 	})
 
 	t.Run("contains belief name", func(t *testing.T) {
-		result := eval(t, engine, `(string-contains emitted "prim-have-body")`)
+		result := eval(t, engine, `(string-contains? emitted "prim-have-body")`)
 		c.Assert(result.SchemeString(), qt.Equals, "#t")
 	})
 
 	t.Run("contains sites expression", func(t *testing.T) {
-		result := eval(t, engine, `(string-contains emitted "functions-matching")`)
+		result := eval(t, engine, `(string-contains? emitted "functions-matching")`)
 		c.Assert(result.SchemeString(), qt.Equals, "#t")
 	})
 
 	t.Run("contains expect expression", func(t *testing.T) {
-		result := eval(t, engine, `(string-contains emitted "custom")`)
+		result := eval(t, engine, `(string-contains? emitted "custom")`)
 		c.Assert(result.SchemeString(), qt.Equals, "#t")
 	})
 
 	t.Run("threshold uses configured values not observed", func(t *testing.T) {
-		result := eval(t, engine, `(string-contains emitted "(threshold 0.9 3)")`)
+		result := eval(t, engine, `(string-contains? emitted "(threshold 0.9 3)")`)
 		c.Assert(result.SchemeString(), qt.Equals, "#t")
 	})
 }
@@ -1920,22 +1920,22 @@ func TestEmitBeliefsAggregate(t *testing.T) {
 	c := qt.New(t)
 
 	t.Run("contains define-aggregate-belief", func(t *testing.T) {
-		result := eval(t, engine, `(string-contains emitted "define-aggregate-belief")`)
+		result := eval(t, engine, `(string-contains? emitted "define-aggregate-belief")`)
 		c.Assert(result.SchemeString(), qt.Equals, "#t")
 	})
 
 	t.Run("contains belief name", func(t *testing.T) {
-		result := eval(t, engine, `(string-contains emitted "test-cohesion")`)
+		result := eval(t, engine, `(string-contains? emitted "test-cohesion")`)
 		c.Assert(result.SchemeString(), qt.Equals, "#t")
 	})
 
 	t.Run("contains sites expression", func(t *testing.T) {
-		result := eval(t, engine, `(string-contains emitted "all-functions-in")`)
+		result := eval(t, engine, `(string-contains? emitted "all-functions-in")`)
 		c.Assert(result.SchemeString(), qt.Equals, "#t")
 	})
 
 	t.Run("contains analyze expression", func(t *testing.T) {
-		result := eval(t, engine, `(string-contains emitted "aggregate-custom")`)
+		result := eval(t, engine, `(string-contains? emitted "aggregate-custom")`)
 		c.Assert(result.SchemeString(), qt.Equals, "#t")
 	})
 }
@@ -1974,17 +1974,17 @@ func TestEmitBeliefsFiltering(t *testing.T) {
 	c := qt.New(t)
 
 	t.Run("strong belief emitted", func(t *testing.T) {
-		result := eval(t, engine, `(string-contains emitted "strong-one")`)
+		result := eval(t, engine, `(string-contains? emitted "strong-one")`)
 		c.Assert(result.SchemeString(), qt.Equals, "#t")
 	})
 
 	t.Run("weak belief not emitted", func(t *testing.T) {
-		result := eval(t, engine, `(string-contains emitted "weak-one")`)
+		result := eval(t, engine, `(string-contains? emitted "weak-one")`)
 		c.Assert(result.SchemeString(), qt.Equals, "#f")
 	})
 
 	t.Run("empty belief not emitted", func(t *testing.T) {
-		result := eval(t, engine, `(string-contains emitted "empty-one")`)
+		result := eval(t, engine, `(string-contains? emitted "empty-one")`)
 		c.Assert(result.SchemeString(), qt.Equals, "#f")
 	})
 }
