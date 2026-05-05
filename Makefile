@@ -72,7 +72,7 @@ install-base: build
 	cp $(DIST_DIR)/$(HOST_OS)/$(HOST_ARCH)/$(MY_BIN) $(PREFIX)/bin/$(MY_BIN)
 	@echo "Installed $(MY_BIN) to $(PREFIX)/bin/$(MY_BIN)"
 	@mkdir -p $(DATADIR)
-	cp -R cmd/wile-goast/lib $(DATADIR)/
+	cp -R lib $(DATADIR)/
 	@echo "Installed libraries to $(DATADIR)/lib/"
 
 .PHONY: install-darwin

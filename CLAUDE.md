@@ -297,9 +297,9 @@ Aggregate beliefs evaluate whole-package properties instead of per-site patterns
 
 | File | Purpose |
 |------|---------|
-| `cmd/wile-goast/lib/wile/goast/belief.sld` | R7RS library definition (embedded in binary) |
-| `cmd/wile-goast/lib/wile/goast/belief.scm` | Complete DSL implementation |
-| `cmd/wile-goast/lib/wile/goast/utils.sld` + `utils.scm` | Shared traversal utilities (`nf`, `walk`, `tag?`, etc.) |
+| `lib/wile/goast/belief.sld` | R7RS library definition (embedded in binary) |
+| `lib/wile/goast/belief.scm` | Complete DSL implementation |
+| `lib/wile/goast/utils.sld` + `utils.scm` | Shared traversal utilities (`nf`, `walk`, `tag?`, etc.) |
 | `plans/BELIEF-DSL.md` | Design: graduation model, bootstrapping, trade-offs |
 | `plans/BELIEF-DSL-IMPL.md` | Implementation plan |
 
@@ -460,19 +460,19 @@ Semiring-parameterized path computation over call graphs. Lazy single-source Bel
 | `goast/register.go` | Extension registration |
 | `goast{ssa,cfg,cg,lint}/mapper.go` | IR-specific s-expression mappers |
 | `goast{ssa,cfg,cg,lint}/register.go` | Sub-extension registration |
-| `cmd/wile-goast/lib/wile/goast/belief.scm` | Belief DSL implementation (embedded in binary) |
-| `cmd/wile-goast/lib/wile/goast/dataflow.scm` | Def-use reachability + worklist dataflow analysis framework (embedded in binary) |
-| `cmd/wile-goast/lib/wile/goast/utils.scm` | Shared traversal utilities (`nf`, `walk`, `tag?`) and tree rewriters (`ast-transform`, `ast-splice`) |
-| `cmd/wile-goast/lib/wile/goast/ssa-normalize.scm` | SSA algebraic normalization rules (embedded in binary) |
-| `cmd/wile-goast/lib/wile/goast/unify.scm` | AST/SSA diff engine with pluggable classifiers (embedded in binary) |
-| `cmd/wile-goast/lib/wile/goast/fca.scm` | Formal Concept Analysis: false boundary detection via concept lattices (embedded in binary) |
-| `cmd/wile-goast/lib/wile/goast/fca-algebra.scm` | FCA algebraic annotation: concept lattice as `(wile algebra lattice)`, relationship classification (embedded in binary) |
-| `cmd/wile-goast/lib/wile/goast/fca-recommend.scm` | Function boundary recommendations: split/merge/extract via FCA + SSA cross-flow (embedded in binary) |
-| `cmd/wile-goast/lib/wile/goast/split.scm` | Package splitting analysis: IDF-weighted FCA on import signatures (embedded in binary) |
+| `lib/wile/goast/belief.scm` | Belief DSL implementation (embedded in binary) |
+| `lib/wile/goast/dataflow.scm` | Def-use reachability + worklist dataflow analysis framework (embedded in binary) |
+| `lib/wile/goast/utils.scm` | Shared traversal utilities (`nf`, `walk`, `tag?`) and tree rewriters (`ast-transform`, `ast-splice`) |
+| `lib/wile/goast/ssa-normalize.scm` | SSA algebraic normalization rules (embedded in binary) |
+| `lib/wile/goast/unify.scm` | AST/SSA diff engine with pluggable classifiers (embedded in binary) |
+| `lib/wile/goast/fca.scm` | Formal Concept Analysis: false boundary detection via concept lattices (embedded in binary) |
+| `lib/wile/goast/fca-algebra.scm` | FCA algebraic annotation: concept lattice as `(wile algebra lattice)`, relationship classification (embedded in binary) |
+| `lib/wile/goast/fca-recommend.scm` | Function boundary recommendations: split/merge/extract via FCA + SSA cross-flow (embedded in binary) |
+| `lib/wile/goast/split.scm` | Package splitting analysis: IDF-weighted FCA on import signatures (embedded in binary) |
 | `goast/prim_funcrefs.go` | Per-function external reference extraction (`go-func-refs`) |
-| `cmd/wile-goast/lib/wile/goast/boolean-simplify.scm` | Boolean normalization for Go AST conditions and belief selectors via `(wile algebra symbolic)` (embedded in binary) |
-| `cmd/wile-goast/lib/wile/goast/path-algebra.scm` | Semiring path algebra: Bellman-Ford over call graphs (embedded in binary) |
-| `cmd/wile-goast/lib/wile/goast/domains.scm` | Pre-built abstract domains: reaching defs, liveness, constant prop, sign, interval (embedded in binary) |
+| `lib/wile/goast/boolean-simplify.scm` | Boolean normalization for Go AST conditions and belief selectors via `(wile algebra symbolic)` (embedded in binary) |
+| `lib/wile/goast/path-algebra.scm` | Semiring path algebra: Bellman-Ford over call graphs (embedded in binary) |
+| `lib/wile/goast/domains.scm` | Pre-built abstract domains: reaching defs, liveness, constant prop, sign, interval (embedded in binary) |
 | `goast/prim_restructure.go` | Block restructuring: goto elimination, loop return rewriting, guard folding (`go-cfg-to-structured`) |
 | `goastssa/prim_canonicalize.go` | SSA function canonicalization (`go-ssa-canonicalize`) |
 

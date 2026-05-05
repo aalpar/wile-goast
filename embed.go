@@ -12,12 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package main
+// Package wilegoast embeds the project's Scheme libraries (lib/) so they
+// are available to both the wile-goast binary and to in-package tests.
+// The libraries are surfaced through Lib, an embed.FS rooted at the
+// repository's lib/ directory.
+package wilegoast
 
 import "embed"
 
-//go:embed scripts
-var embeddedScripts embed.FS
-
-//go:embed prompts
-var embeddedPrompts embed.FS
+//go:embed lib
+var Lib embed.FS

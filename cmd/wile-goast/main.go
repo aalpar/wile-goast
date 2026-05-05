@@ -40,6 +40,7 @@ import (
 	"github.com/aalpar/wile"
 	"github.com/aalpar/wile/werr"
 
+	wilegoast "github.com/aalpar/wile-goast"
 	"github.com/aalpar/wile-goast/goast"
 	"github.com/aalpar/wile-goast/goastcfg"
 	"github.com/aalpar/wile-goast/goastcg"
@@ -159,7 +160,7 @@ func buildEngineOrError(ctx context.Context) (*wile.Engine, error) {
 	return wile.NewEngine(ctx,
 		wile.WithProfile(wile.KitchenSink),
 		wile.WithSourceFS(wile.StdLibFS),
-		wile.WithSourceFS(embeddedLib),
+		wile.WithSourceFS(wilegoast.Lib),
 		// OS filesystem as last-resort resolver so scripts can reference
 		// arbitrary paths (e.g., committed belief directories) via load.
 		wile.WithSourceOS(),

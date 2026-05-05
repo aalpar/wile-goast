@@ -32,14 +32,14 @@ import (
 )
 
 // newBeliefEngine creates a Wile engine with all goast extensions and
-// library support loaded. The library path points to the embedded lib/
-// directory under cmd/wile-goast/ so that (import (wile goast belief)) resolves.
+// library support loaded. The library path points to the project's lib/
+// directory at the repository root so that (import (wile goast belief)) resolves.
 func newBeliefEngine(t *testing.T) *wile.Engine {
 	t.Helper()
 	engine, err := wile.NewEngine(context.Background(),
 		wile.WithProfile(wile.KitchenSink),
 		wile.WithSourceFS(wile.StdLibFS),
-		wile.WithSourceFS(os.DirFS("../cmd/wile-goast")),
+		wile.WithSourceFS(os.DirFS("..")),
 		// OS filesystem as last-resort resolver so load-committed-beliefs
 		// tests can write to t.TempDir() (absolute /tmp paths) and load them.
 		wile.WithSourceOS(),
