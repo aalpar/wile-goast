@@ -73,7 +73,7 @@ func parseOpts(rest values.Value, fset *token.FileSet) (*mapperOpts, parser.Mode
 // PrimGoParseFile implements (go-parse-file filename . options).
 // Parses a Go source file from disk and returns an s-expression AST.
 func PrimGoParseFile(mc machine.CallContext) error {
-	filename, err := helpers.RequireArg[*values.String](mc, 0, werr.ErrNotAString, "go-parse-file")
+	filename, err := helpers.RequireArg[*values.String](mc, 0, werr.ErrNotAString, "a string", "go-parse-file")
 	if err != nil {
 		return err
 	}
@@ -106,7 +106,7 @@ func PrimGoParseFile(mc machine.CallContext) error {
 // PrimGoParseString implements (go-parse-string source . options).
 // Parses a Go source string as a file and returns an s-expression AST.
 func PrimGoParseString(mc machine.CallContext) error {
-	source, err := helpers.RequireArg[*values.String](mc, 0, werr.ErrNotAString, "go-parse-string")
+	source, err := helpers.RequireArg[*values.String](mc, 0, werr.ErrNotAString, "a string", "go-parse-string")
 	if err != nil {
 		return err
 	}
@@ -130,7 +130,7 @@ func PrimGoParseString(mc machine.CallContext) error {
 // PrimGoParseExpr implements (go-parse-expr source).
 // Parses a single Go expression and returns an s-expression AST.
 func PrimGoParseExpr(mc machine.CallContext) error {
-	source, err := helpers.RequireArg[*values.String](mc, 0, werr.ErrNotAString, "go-parse-expr")
+	source, err := helpers.RequireArg[*values.String](mc, 0, werr.ErrNotAString, "a string", "go-parse-expr")
 	if err != nil {
 		return err
 	}
@@ -299,7 +299,7 @@ func PrimInterfaceImplementors(mc machine.CallContext) error {
 		return werr.WrapForeignErrorf(errGoPackageLoad,
 			"go-interface-implementors: CallContext is not *MachineContext")
 	}
-	ifaceName, err := helpers.RequireArg[*values.String](mc, 0, werr.ErrNotAString, "go-interface-implementors")
+	ifaceName, err := helpers.RequireArg[*values.String](mc, 0, werr.ErrNotAString, "a string", "go-interface-implementors")
 	if err != nil {
 		return err
 	}

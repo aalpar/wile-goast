@@ -204,7 +204,7 @@ func findFunction(prog *ssa.Program, ssaPkg *ssa.Package, name string) *ssa.Func
 // PrimGoCFG implements (go-cfg target func-name . options).
 // target is a package pattern string or a GoSession from go-load.
 func PrimGoCFG(mc machine.CallContext) error {
-	funcName, err := helpers.RequireArg[*values.String](mc, 1, werr.ErrNotAString, "go-cfg")
+	funcName, err := helpers.RequireArg[*values.String](mc, 1, werr.ErrNotAString, "a string", "go-cfg")
 	if err != nil {
 		return err
 	}
@@ -318,11 +318,11 @@ func PrimGoCFGDominators(mc machine.CallContext) error {
 // PrimGoCFGDominates implements (go-cfg-dominates? dom-tree a b).
 // Returns #t if block a dominates block b (a is an ancestor of b in dom-tree).
 func PrimGoCFGDominates(mc machine.CallContext) error {
-	aVal, err := helpers.RequireArg[*values.Integer](mc, 1, werr.ErrNotANumber, "go-cfg-dominates?")
+	aVal, err := helpers.RequireArg[*values.Integer](mc, 1, werr.ErrNotANumber, "a number", "go-cfg-dominates?")
 	if err != nil {
 		return err
 	}
-	bVal, err := helpers.RequireArg[*values.Integer](mc, 2, werr.ErrNotANumber, "go-cfg-dominates?")
+	bVal, err := helpers.RequireArg[*values.Integer](mc, 2, werr.ErrNotANumber, "a number", "go-cfg-dominates?")
 	if err != nil {
 		return err
 	}
@@ -384,11 +384,11 @@ const maxCFGPaths = 1024
 // Returns a list of simple paths (lists of block indices) from block `from`
 // to block `to`. Capped at maxCFGPaths to bound cost.
 func PrimGoCFGPaths(mc machine.CallContext) error {
-	fromVal, err := helpers.RequireArg[*values.Integer](mc, 1, werr.ErrNotANumber, "go-cfg-paths")
+	fromVal, err := helpers.RequireArg[*values.Integer](mc, 1, werr.ErrNotANumber, "a number", "go-cfg-paths")
 	if err != nil {
 		return err
 	}
-	toVal, err := helpers.RequireArg[*values.Integer](mc, 2, werr.ErrNotANumber, "go-cfg-paths")
+	toVal, err := helpers.RequireArg[*values.Integer](mc, 2, werr.ErrNotANumber, "a number", "go-cfg-paths")
 	if err != nil {
 		return err
 	}

@@ -113,7 +113,7 @@ func PrimGoSessionP(mc machine.CallContext) error {
 // Lightweight dependency discovery — returns the transitive closure of
 // import paths without type checking or syntax loading.
 func PrimGoListDeps(mc machine.CallContext) error {
-	first, err := helpers.RequireArg[*values.String](mc, 0, werr.ErrNotAString, "go-list-deps")
+	first, err := helpers.RequireArg[*values.String](mc, 0, werr.ErrNotAString, "a string", "go-list-deps")
 	if err != nil {
 		return err
 	}
