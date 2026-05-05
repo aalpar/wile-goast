@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"go/ast"
 	"go/token"
+	"slices"
 
 	"github.com/aalpar/wile/machine"
 	"github.com/aalpar/wile/values"
@@ -359,8 +360,7 @@ func restructureForwardGotos(stmts []ast.Stmt) []ast.Stmt {
 
 		// Find the last forward goto and rewrite it. Processing from the
 		// bottom avoids burying unprocessed gotos inside wrapped blocks.
-		for i := len(result) - 1; i >= 0; i-- {
-			stmt := result[i]
+		for i, stmt := range slices.Backward(result) {
 			ifStmt, ok := stmt.(*ast.IfStmt)
 			if !ok || ifStmt.Else != nil {
 				continue
