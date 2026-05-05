@@ -23,5 +23,6 @@
     ssa-equivalent?)
   (import (wile goast utils)
           (wile algebra symbolic)
-          (wile goast ssa-normalize))
+          (wile goast ssa-normalize)
+          (wile strings))   ; string-replace-all
   (include "unify.scm"))

@@ -16,9 +16,10 @@
   (export
     nf tag? walk
     filter filter-map flat-map
-    member? unique has-char? string-contains string-join
+    member? unique has-char? string-contains string-contains? string-join
     ordered-pairs
     take drop
     opt-ref
     ast-transform ast-splice)
+  (import (srfi 13))   ; string-contains, string-join — re-exported above
   (include "utils.scm"))

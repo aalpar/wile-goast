@@ -21,13 +21,7 @@
 
 ;;; ── SSA bridge ───────────────────────────────────────────
 
-;; Find the index of char c in string s, or #f if not found.
-(define (string-index-of s c)
-  (let ((len (string-length s)))
-    (let loop ((i 0))
-      (cond ((>= i len) #f)
-            ((char=? (string-ref s i) c) i)
-            (else (loop (+ i 1)))))))
+;; string-index-of replaced by SRFI-13 string-index (imported via fca.sld).
 
 ;; Build an attribute string from a field-access node based on mode.
 ;; Returns a string or #f if the access doesn't match the mode filter.
@@ -233,7 +227,7 @@
 
 ;; Extract struct name from "Struct.Field" or "Struct.Field:r" attribute.
 (define (attr-struct-name attr)
-  (let ((dot (string-index-of attr #\.)))
+  (let ((dot (string-index attr #\.)))
     (if dot (substring attr 0 dot) attr)))
 
 ;; Look up a key in a symbol-keyed plist, returning default if absent.

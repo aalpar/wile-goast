@@ -20,7 +20,8 @@
     aggregate-beliefs current-beliefs
     ;; Suppression
     with-belief-scope load-committed-beliefs suppress-known
-    string-contains ;; re-exported from (wile goast utils) for API stability
+    string-contains  ;; SRFI-13: returns index | #f
+    string-contains? ;; predicate variant: returns #t | #f
     ;; Context (needed by custom lambdas)
     make-context ctx-pkgs ctx-ssa ctx-callgraph ctx-find-ssa-func ctx-field-index
     ctx-session

@@ -40,5 +40,6 @@
     boundary-report
     propagate-field-writes)
   (import (wile goast utils)
-          (wile algebra fca))
+          (wile algebra fca)
+          (srfi 13))   ; string-index
   (include "fca.scm"))

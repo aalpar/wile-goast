@@ -21,6 +21,8 @@
 ;;; Usage: cd /path/to/module && wile-goast -f unify-detect-pkg.scm
 ;;;   (must run from a directory where the Go module resolves)
 
+(import (wile strings))   ; string-replace-all
+
 ;; ── Target ────────────────────────────────────────────────
 (define target "./...")
 
@@ -221,23 +223,7 @@
 ;;   4. Reclassifying derived diffs as 'derived-type (weight 0)
 ;; ══════════════════════════════════════════════════════════
 
-;; Replace all non-overlapping occurrences of old with new in str.
-(define (string-replace-all str old new)
-  (let ((old-len (string-length old))
-        (str-len (string-length str)))
-    (if (or (= old-len 0) (< str-len old-len))
-      str
-      (let loop ((start 0) (parts '()))
-        (let search ((i start))
-          (cond
-            ((> (+ i old-len) str-len)
-             (apply string-append
-                    (reverse (cons (substring str start str-len) parts))))
-            ((string=? (substring str i (+ i old-len)) old)
-             (loop (+ i old-len)
-                   (cons new (cons (substring str start i) parts))))
-            (else
-             (search (+ i 1)))))))))
+;; string-replace-all imported from (wile strings) at the top of this script.
 
 ;; Apply a list of substitution pairs sequentially to a string.
 (define (apply-substitutions str roots)

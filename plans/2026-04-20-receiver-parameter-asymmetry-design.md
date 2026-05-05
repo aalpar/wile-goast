@@ -41,7 +41,7 @@ convert-to-function candidates.
 ### Concrete trigger (2026-04-20)
 
 Fixing wile's R7RS §6.13.2 mid-parse-EOF deviation required introducing an
-error-wrapping helper. First draft:
+error-wrapping helper. First draft (rejected during review):
 
 ```go
 func (p *Parser) wrapMidParseEOF(err error, form string) error {
@@ -60,7 +60,8 @@ one at which `err` occurred) invisible at call sites. If a refactor shifts
 when `p.cur` advances relative to error production, every call site breaks
 silently — no signature change forces re-examination.
 
-Rewriting as a free function:
+Rewritten as a free function (now shipped — `wile/internal/parser/parser.go:486`,
+commit `c1000595`):
 
 ```go
 func wrapMidParseEOF(err error, tok tokenizer.Token, form string) error {
@@ -71,9 +72,11 @@ func wrapMidParseEOF(err error, tok tokenizer.Token, form string) error {
 }
 ```
 
-makes every input explicit. Call sites become `wrapMidParseEOF(p.err, p.cur,
-"list")`. The sync contract is now visible in every call. If future changes
+Every input is now explicit. Call sites read `wrapMidParseEOF(p.err, p.cur,
+"list")`. The sync contract is visible in every call; if future changes
 desynchronize `p.err` and `p.cur`, the call sites must be audited.
+
+The detector below targets the *next* such case before review catches it.
 
 ### Why this matters as a detection target
 
@@ -294,7 +297,8 @@ before shipping.
 
 ### Belief output format
 
-Per the Belief DSL `--emit` mode (once suppression ships), each finding
+Per the Belief DSL `emit-beliefs` + suppression DSL (both shipped 2026-04-23
+in wile-goast — see `2026-04-17-belief-suppression-impl.md`), each finding
 emits:
 
 ```scheme
