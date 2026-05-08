@@ -112,6 +112,6 @@ func addPrimitives(r *registry.Registry) error {
 				"See also: `go-ssa-build'.",
 			ParamNames: []string{"ssa-func", "value-name"}, Category: "goast-ssa",
 			ReturnType: values.TypeList},
-	}, registry.PhaseRuntime)
+	}, registry.PhaseSetRuntime)
 	return nil
 }

@@ -193,7 +193,7 @@ func addPrimitives(r *registry.Registry) error {
 				"See also: `go-cfg', `go-format'.",
 			ParamNames: []string{"block", "rest"}, Category: "goast",
 			ReturnType: values.TypeList},
-	}, registry.PhaseRuntime)
+	}, registry.PhaseSetRuntime)
 	return nil
 }
 

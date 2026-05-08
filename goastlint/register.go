@@ -77,6 +77,6 @@ func addPrimitives(r *registry.Registry) error {
 			Category:   "goast-lint",
 			ReturnType: values.TypeList,
 		},
-	}, registry.PhaseRuntime)
+	}, registry.PhaseSetRuntime)
 	return nil
 }

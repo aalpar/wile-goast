@@ -96,6 +96,6 @@ func addPrimitives(r *registry.Registry) error {
 				"See also: `go-cfg', `go-cfg-dominators'.",
 			ParamNames: []string{"cfg", "from", "to"}, Category: "goast-cfg",
 			ReturnType: values.TypeList},
-	}, registry.PhaseRuntime)
+	}, registry.PhaseSetRuntime)
 	return nil
 }

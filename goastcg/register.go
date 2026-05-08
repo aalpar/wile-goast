@@ -99,6 +99,6 @@ func addPrimitives(r *registry.Registry) error {
 				"See also: `go-callgraph'.",
 			ParamNames: []string{"graph", "root-name"}, Category: "goast-callgraph",
 			ReturnType: values.TypeList},
-	}, registry.PhaseRuntime)
+	}, registry.PhaseSetRuntime)
 	return nil
 }
