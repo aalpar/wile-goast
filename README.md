@@ -1,5 +1,7 @@
 # wile-goast
 
+[![CI](https://github.com/aalpar/wile-goast/actions/workflows/ci.yml/badge.svg)](https://github.com/aalpar/wile-goast/actions/workflows/ci.yml)
+
 You have a large Go codebase. Hundreds of functions across dozens of packages.
 You suspect there are duplicates, inconsistent conventions, and struct boundaries
 that don't match how the code actually works. grep can find string matches. gopls
