@@ -33,6 +33,16 @@ Discovery scripts can compose:
     (define committed (load-committed-beliefs "beliefs/"))
     (display (emit-beliefs (suppress-known results committed)))
 
+### Wile v1.16.0 — registry Phase → PhaseSet
+
+Bump `github.com/aalpar/wile` to v1.16.0 to pick up the registry rename
+(`registry.Phase{Runtime,Expand,Compile}` → `registry.PhaseSet*` with the
+new `PhaseSet` bitset type). All five sub-extension registrations
+(`goast`, `goastssa`, `goastcfg`, `goastcg`, `goastlint`) already call
+through to `registry.PhaseSetRuntime`; this bump matches the released
+wile API. Restores green CI on master, which had been failing since
+the rename was committed against the unreleased wile master.
+
 ### Wile v1.15.0 + standard string libraries
 
 Bump `github.com/aalpar/wile` to v1.15.0 and retire wile-goast's
