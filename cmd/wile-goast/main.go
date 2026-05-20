@@ -33,6 +33,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 
 	goflags "github.com/jessevdk/go-flags"
@@ -48,6 +49,10 @@ import (
 	"github.com/aalpar/wile-goast/goastssa"
 )
 
+// wileModulePath is the import path of the wile module, used to locate
+// its resolved version in debug.BuildInfo.Deps.
+const wileModulePath = "github.com/aalpar/wile"
+
 var errCLI = werr.NewStaticError("cli error")
 
 // Options defines the command-line flags, matching wile's style.
@@ -57,6 +62,7 @@ type Options struct {
 	ListScripts bool     `long:"list-scripts" description:"List available embedded scripts"`
 	Run         string   `long:"run" description:"Run an embedded script by name"`
 	MCP         bool     `long:"mcp" description:"Start as MCP server on stdio"`
+	Version     bool     `short:"V" long:"version" description:"Print wile-goast and wile versions and exit"`
 }
 
 var opts Options
@@ -76,6 +82,12 @@ func main() {
 	}
 
 	ctx := context.Background()
+
+	// --version: print versions and exit
+	if opts.Version {
+		doVersion(os.Stdout)
+		return
+	}
 
 	// --mcp: start MCP server
 	if opts.MCP {
@@ -255,6 +267,66 @@ func runScript(ctx context.Context, data []byte) error {
 		fmt.Println(val.SchemeString())
 	}
 	return nil
+}
+
+// resolveWileGoastVersion returns the wile-goast version and short SHA for
+// display. Values injected via -ldflags take priority; debug.ReadBuildInfo
+// supplies fallbacks when the binary was built with `go install` or `go run`.
+func resolveWileGoastVersion() (version, sha string) {
+	version = BuildVersion
+	sha = BuildSHA
+
+	if version != "" && sha != "" {
+		return version, sha
+	}
+
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		return version, sha
+	}
+
+	if version == "" && info.Main.Version != "" && info.Main.Version != "(devel)" {
+		version = info.Main.Version
+	}
+
+	if sha == "" {
+		for _, s := range info.Settings {
+			if s.Key == "vcs.revision" && len(s.Value) >= 7 {
+				sha = s.Value[:7]
+				break
+			}
+		}
+	}
+
+	return version, sha
+}
+
+// resolveWileVersion returns the linked wile module version, or "unknown"
+// when BuildInfo is unavailable (e.g., binary built without module info).
+func resolveWileVersion() string {
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		return "unknown"
+	}
+	for _, dep := range info.Deps {
+		if dep.Path == wileModulePath {
+			return dep.Version
+		}
+	}
+	return "unknown"
+}
+
+func doVersion(w io.Writer) {
+	v, sha := resolveWileGoastVersion()
+	if v == "" {
+		v = "dev"
+	}
+	if sha != "" {
+		_, _ = fmt.Fprintf(w, "wile-goast %s (%s)\n", v, sha)
+	} else {
+		_, _ = fmt.Fprintf(w, "wile-goast %s\n", v)
+	}
+	_, _ = fmt.Fprintf(w, "Wile Scheme %s\n", resolveWileVersion())
 }
 
 func stdinIsPipe() bool {
