@@ -116,9 +116,25 @@ func TestGoSSACanonicalize_ReturnsSSAFunc(t *testing.T) {
 func TestGoSSACanonicalize_RegisterRenaming(t *testing.T) {
 	engine := newEngine(t)
 
+	// go-ssa-build iterates ssa.Package.Members, a Go map — order is
+	// randomized. The invariant under test ("after canonicalize, the first
+	// param is named p0") holds for any function with parameters, so search
+	// for the first such function rather than blindly taking (car funcs).
 	eval(t, engine, `(define funcs (go-ssa-build "github.com/aalpar/wile-goast/goast"))`)
-	eval(t, engine, `(define fn (car funcs))`)
-	eval(t, engine, `(define canon (go-ssa-canonicalize fn))`)
+	eval(t, engine, `
+		(define fn-with-params
+			(let loop ((fs funcs))
+				(if (null? fs) #f
+					(let* ((f (car fs))
+						   (params (cdr (assoc 'params (cdr f)))))
+						(if (pair? params) f (loop (cdr fs)))))))`)
+
+	found := eval(t, engine, `(pair? fn-with-params)`)
+	if found.Internal() != values.TrueValue {
+		t.Skip("no function with parameters found in package")
+	}
+
+	eval(t, engine, `(define canon (go-ssa-canonicalize fn-with-params))`)
 
 	t.Run("params are p0 p1 etc", func(t *testing.T) {
 		result := eval(t, engine, `
