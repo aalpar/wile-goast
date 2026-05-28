@@ -42,3 +42,30 @@
 (define path-query graph-query)
 
 (define path-query-all graph-query-all)
+
+;; --- SCC side-query API (call-graph mutual-recursion detection) ---
+;;
+;; A non-trivial SCC in the call graph is a mutual-recursion cluster:
+;; functions that can reach each other along call edges. Self-loops
+;; (direct recursion) also count as non-trivial. Trivial SCCs are
+;; non-recursive functions.
+
+(define path-analysis-sccs graph-analysis-sccs)
+
+(define path-node-in-cycle? graph-node-in-cycle?)
+
+(define path-cyclic-nodes graph-cyclic-nodes)
+
+;; --- Fast-path introspection ---
+;;
+;; The bigint-counting fast path activates when:
+;;   - semiring is (bigint-counting-semiring), and
+;;   - edge-weight is #f (unit weights), and
+;;   - the (wile algebragraph) extension is present (kitchen-sink profile).
+;; When active, queries route through an in-place big.Int kernel instead
+;; of the per-relaxation allocating Scheme loop. wile-goast builds with
+;; kitchen-sink, so the kernel is available.
+
+(define path-analysis-fast-path? graph-analysis-fast-path?)
+
+(define path-analysis-fast-path-kind graph-analysis-fast-path-kind)

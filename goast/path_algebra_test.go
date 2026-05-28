@@ -307,3 +307,129 @@ func TestPathAlgebra_Unreachable(t *testing.T) {
 	result = eval(t, engine, `(path-query pa "A" "Z")`)
 	c.Assert(result.Internal(), qt.Equals, values.FalseValue)
 }
+
+func TestPathAlgebra_FastPathOnBigintCounting(t *testing.T) {
+	c := qt.New(t)
+	engine := newBeliefEngine(t)
+
+	// bigint-counting-semiring + #f weight-fn attaches the fast path.
+	eval(t, engine, `
+		(import (wile goast path-algebra))
+		(import (wile algebra semiring))
+		(define cg (list
+			(list 'cg-node (cons 'name "A") (cons 'id 0)
+				(cons 'edges-in '())
+				(cons 'edges-out (list (list 'cg-edge (cons 'caller "A") (cons 'callee "B") (cons 'description "static")))))
+			(list 'cg-node (cons 'name "B") (cons 'id 1)
+				(cons 'edges-in '())
+				(cons 'edges-out '()))))
+		(define pa-fast (make-path-analysis (bigint-counting-semiring) cg #f))
+		(define pa-slow (make-path-analysis (boolean-semiring) cg #f))`)
+
+	result := eval(t, engine, `(path-analysis-fast-path? pa-fast)`)
+	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
+
+	result = eval(t, engine, `(path-analysis-fast-path-kind pa-fast)`)
+	c.Assert(result.Internal().(*values.Symbol).Key, qt.Equals, "bigint-counting")
+
+	// Boolean semiring does not get the fast path.
+	result = eval(t, engine, `(path-analysis-fast-path? pa-slow)`)
+	c.Assert(result.Internal(), qt.Equals, values.FalseValue)
+
+	result = eval(t, engine, `(path-analysis-fast-path-kind pa-slow)`)
+	c.Assert(result.Internal(), qt.Equals, values.FalseValue)
+}
+
+func TestPathAlgebra_CyclicNodesOnAcyclic(t *testing.T) {
+	c := qt.New(t)
+	engine := newBeliefEngine(t)
+
+	// A -> B -> C (acyclic): no nodes in cycles.
+	eval(t, engine, `
+		(import (wile goast path-algebra))
+		(import (wile algebra semiring))
+		(define cg (list
+			(list 'cg-node (cons 'name "A") (cons 'id 0)
+				(cons 'edges-in '())
+				(cons 'edges-out (list (list 'cg-edge (cons 'caller "A") (cons 'callee "B") (cons 'description "static")))))
+			(list 'cg-node (cons 'name "B") (cons 'id 1)
+				(cons 'edges-in '())
+				(cons 'edges-out (list (list 'cg-edge (cons 'caller "B") (cons 'callee "C") (cons 'description "static")))))
+			(list 'cg-node (cons 'name "C") (cons 'id 2)
+				(cons 'edges-in '())
+				(cons 'edges-out '()))))
+		(define pa (make-path-analysis (bigint-counting-semiring) cg #f))`)
+
+	result := eval(t, engine, `(null? (path-cyclic-nodes pa))`)
+	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
+
+	result = eval(t, engine, `(path-node-in-cycle? pa "A")`)
+	c.Assert(result.Internal(), qt.Equals, values.FalseValue)
+}
+
+func TestPathAlgebra_CyclicNodesOnMutualRecursion(t *testing.T) {
+	c := qt.New(t)
+	engine := newBeliefEngine(t)
+
+	// A -> B -> A (mutually recursive 2-cycle); C is non-recursive but reachable from B.
+	eval(t, engine, `
+		(import (wile goast path-algebra))
+		(import (wile algebra semiring))
+		(define cg (list
+			(list 'cg-node (cons 'name "A") (cons 'id 0)
+				(cons 'edges-in '())
+				(cons 'edges-out (list (list 'cg-edge (cons 'caller "A") (cons 'callee "B") (cons 'description "static")))))
+			(list 'cg-node (cons 'name "B") (cons 'id 1)
+				(cons 'edges-in '())
+				(cons 'edges-out (list
+					(list 'cg-edge (cons 'caller "B") (cons 'callee "A") (cons 'description "static"))
+					(list 'cg-edge (cons 'caller "B") (cons 'callee "C") (cons 'description "static")))))
+			(list 'cg-node (cons 'name "C") (cons 'id 2)
+				(cons 'edges-in '())
+				(cons 'edges-out '()))))
+		(define pa (make-path-analysis (bigint-counting-semiring) cg #f))`)
+
+	// A and B are mutually recursive.
+	result := eval(t, engine, `(path-node-in-cycle? pa "A")`)
+	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
+
+	result = eval(t, engine, `(path-node-in-cycle? pa "B")`)
+	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
+
+	// C is not in a cycle.
+	result = eval(t, engine, `(path-node-in-cycle? pa "C")`)
+	c.Assert(result.Internal(), qt.Equals, values.FalseValue)
+
+	// path-cyclic-nodes should report both A and B (and only them).
+	result = eval(t, engine, `
+		(let ((cyc (path-cyclic-nodes pa)))
+			(and (= (length cyc) 2)
+			     (and (member "A" cyc) #t)
+			     (and (member "B" cyc) #t)))`)
+	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
+}
+
+func TestPathAlgebra_SccsOnRealCallgraph(t *testing.T) {
+	c := qt.New(t)
+	engine := newBeliefEngine(t)
+
+	// Real call graph from the wile-goast goast package. The unmapper
+	// dispatch table contains mutual recursion, so cyclic-nodes must be
+	// non-empty — corroborates the SCC computation traversed the real
+	// adjacency rather than short-circuiting on an empty graph.
+	eval(t, engine, `
+		(import (wile goast path-algebra))
+		(import (wile algebra graph))
+		(import (wile algebra semiring))
+		(define cg (go-callgraph "github.com/aalpar/wile-goast/goast" 'static))
+		(define pa (make-path-analysis (bigint-counting-semiring) cg #f))`)
+
+	result := eval(t, engine, `(graph-scc? (path-analysis-sccs pa))`)
+	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
+
+	result = eval(t, engine, `(list? (path-cyclic-nodes pa))`)
+	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
+
+	result = eval(t, engine, `(> (length (path-cyclic-nodes pa)) 0)`)
+	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
+}

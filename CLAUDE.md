@@ -437,7 +437,7 @@ Import signature analysis for Go package decomposition. Discovers natural packag
 
 ## Path Algebra — `(wile goast path-algebra)`
 
-Semiring-parameterized path computation over call graphs. Lazy single-source Bellman-Ford with per-source caching.
+Semiring-parameterized path computation over call graphs. Lazy single-source Bellman-Ford with per-source caching. SCC side-query API exposes mutual-recursion clusters; fast-path introspection reports when the bigint-counting kernel is active.
 
 | Export | Description |
 |--------|-------------|
@@ -445,6 +445,11 @@ Semiring-parameterized path computation over call graphs. Lazy single-source Bel
 | `path-analysis?` | Type predicate |
 | `path-query` | Query semiring value between source and target (lazy, cached) |
 | `path-query-all` | Return distance alist for all reachable nodes from source |
+| `path-analysis-sccs` | Force SCC decomposition; returns a `<graph-scc>` record |
+| `path-node-in-cycle?` | True iff function lies in a non-trivial SCC (i.e., is recursive or mutually recursive). Raises if name is not in the call graph. |
+| `path-cyclic-nodes` | List of function names that lie in non-trivial SCCs |
+| `path-analysis-fast-path?` | True iff bigint-counting kernel is attached |
+| `path-analysis-fast-path-kind` | Symbol naming the fast-path strategy (`'bigint-counting`) or `#f` |
 
 ## Key Files
 

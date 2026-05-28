@@ -17,7 +17,14 @@
     make-path-analysis
     path-analysis?
     path-query
-    path-query-all)
+    path-query-all
+    ;; SCC side-query API (call-graph flavored aliases of wile's graph SCC API).
+    path-analysis-sccs
+    path-node-in-cycle?
+    path-cyclic-nodes
+    ;; Fast-path introspection (bigint-counting kernel dispatch).
+    path-analysis-fast-path?
+    path-analysis-fast-path-kind)
   (import (wile algebra semiring)
           (wile algebra graph)
           (wile goast utils))
