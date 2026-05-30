@@ -19,7 +19,7 @@ new tools are additive.
 
 **Architecture:**
 
-- A new Scheme module `cmd/wile-goast/lib/wile/goast/pipelines.scm`
+- A new Scheme module `lib/wile/goast/pipelines.scm`
   (library `(wile goast pipelines)`) encapsulates each pipeline as a
   single top-level procedure. Each returns an alist with keys
   `(tool, version, provenance, result)`. Encapsulation keeps Go
@@ -69,51 +69,91 @@ Go test harness: `quicktest` + `mcp-go`'s `client.NewInProcessClient`.
 
 ---
 
-## Decision points (require user input during implementation)
+## Locked decisions (resolved 2026-05-29)
 
-These carry real trade-offs; surface them before coding the affected
-task rather than picking silently.
+The five impl-plan decision points were resolved in a design pass on
+2026-05-29. Rationales recorded in
+`memory/mcp-tool-surface-decisions.md`. Summary here for plan readers.
 
-1. **Output format** — Scheme s-expression text (simple, mirrors
-   `eval`) vs JSON (LLM-friendlier, adds Scheme→JSON marshaller). This
-   plan defaults to Scheme text because (a) it's what `eval` does
-   today, (b) alists serialize cleanly as s-expressions, (c) LLMs
-   parse both. If JSON is preferred, add Task 0.5 to build a
-   Scheme-value→JSON mapper before writing the handlers.
-2. **`discover_beliefs` parameterization** — does it take a single
-   `beliefs_path` (discovery candidates; committed-beliefs path
-   supplied separately), or does it take both
-   `discovery_beliefs_path` + `committed_beliefs_path`, or does it
-   fall back to no suppression when only the discovery path is given?
-   This plan assumes two separate parameters with the committed one
-   optional; confirm before Task 5.
-3. **Envelope shape** — `(tool, version, provenance, result)` flat
-   alist, or nested `(envelope . ((version . ...) (provenance . ...)
-   (result . ...)))` per §256-261 of the design? This plan assumes
-   the flat layout. Versioning strategy: `'v1` symbol, bumped only
-   on breaking changes to `result` shape per tool.
-4. **Session reuse across tools** — Phase 1 loads packages fresh per
-   tool call; design doc §114-115 mentions session handles as a
-   future option. This plan defers. If you want Phase 1 to accept a
-   `session_id` parameter too, flag before Task 1 so the envelope
-   includes session provenance and the handler signature stabilizes.
-5. **Built-in discovery beliefs** — `discover_beliefs` as scoped here
-   runs *user-supplied* discovery beliefs. A "canned discovery set"
-   (e.g., "every function with Lock calls Unlock") is its own design
-   effort and is not in Phase 1. If the user expects canned rules,
-   scope will grow.
+1. **Output format — JSON via `NewToolResultJSON`.** Marshals into both
+   text content (JSON string) and `structuredContent` field. Matches
+   conventional MCP servers. Forces a Wile→JSON marshaller (Task 1.5).
+   Rationale: Postel — be conservative in what you emit; every peer
+   MCP server emits JSON.
+2. **`discover_beliefs` parameterization — three parameters.**
+   `target` (required Go package pattern), `discovery_path` (required
+   `.scm` file or directory), `committed_path` (optional; omit for no
+   suppression). Suppression defaults to off — raw discovery is the
+   additive baseline. Asymmetry with `check_beliefs` (one belief
+   parameter) is intentional: the pipelines have different belief-set
+   roles.
+3. **Envelope shape — flat `{version, provenance, result}`.** No `tool`
+   field — peer protocols (JSON-RPC, MCP `CallToolResult`, GraphQL,
+   REST) don't echo the call name in responses. Per-tool integer
+   versioning (`"version": 1`), bumped only on breaking changes to
+   that tool's `result` shape. Errors via MCP's `isError` flag, not
+   an envelope field. JSON keys snake_case at the boundary;
+   Scheme alists stay kebab-case internally.
+4. **Session reuse — deferred indefinitely.** No `session_id`
+   parameter on any Phase 1 tool. No `go_load` MCP tool. Every tool
+   takes `target: string`. If package-load performance becomes
+   load-bearing, the conventional response is server-side internal
+   caching keyed on `(target_pattern, fs-state)` — below the MCP
+   surface, no client-visible handles. Convention check: LSP,
+   JSON-RPC, REST, MCP itself all keep state server-side, addressed
+   by stable identifiers.
+5. **Built-in discovery beliefs — deferred.** `discovery_path` is
+   required in Phase 1. No bundled default belief set — curating one
+   is a separate research/stability commitment that wile-goast
+   (v0.5.189) is too early to take on. Forward-compatible path: if a
+   curated set ships later, `discovery_path` becomes optional with
+   the built-in as default (strictly additive). Phase 1 follow-up:
+   ship 2-3 example discovery beliefs in `examples/discovery-beliefs/`
+   as documentation templates (not loaded by default).
+
+### Wile→JSON marshaller mapping (consequence of #1)
+
+Each Wile value type maps to JSON via the following table. Built once
+in Task 1.5, reused across all Phase 1 tools.
+
+| Wile type | JSON output |
+|---|---|
+| Rational `9/10` | string `"9/10"` (exact value preserved) |
+| Symbol `'strong` | string `"strong"` (loses symbol/string distinction — fine for enum fields) |
+| Quoted s-expr (`sites-expr`, `expect-expr`, `analyze-expr`) | string of Scheme code |
+| Alist `((k . v) ...)` (keys are symbols) | object `{"k": v}` with kebab→snake key conversion |
+| Proper list `(a b c)` | array `[a, b, c]` |
+| Dotted pair in non-alist position | `{"car": ..., "cdr": ...}` fallback |
+| Boolean `#t` / `#f` | `true` / `false` |
+| String | string |
+| Integer / float | number |
+| `#!void` | omit field (caller decides via `if val.IsVoid()`) |
+
+No invented tagging schemes — keep emission conventional.
 
 ---
 
 ## File Structure
 
+> **Path note (post-`7ee305d` refactor):** Scheme libraries live at the
+> project root under `lib/wile/goast/`, embedded via top-level
+> `package wilegoast` (`embed.go:24` → `wilegoast.Lib`). The CLI binary
+> picks them up via `wile.WithSourceFS(wilegoast.Lib)` in
+> `cmd/wile-goast/main.go:175`.
+
 **Create:**
 
-- `cmd/wile-goast/lib/wile/goast/pipelines.scm` — five pipeline
-  procedures + shared envelope helper.
-- `cmd/wile-goast/lib/wile/goast/pipelines.sld` — R7RS library
-  definition, exports the five procedures.
-- `cmd/wile-goast/mcp_tools.go` — Go tool handlers + shared helper.
+- `lib/wile/goast/pipelines.scm` — five pipeline procedures + shared
+  envelope helper.
+- `lib/wile/goast/pipelines.sld` — R7RS library definition, exports
+  the five procedures and the envelope constructor.
+- `cmd/wile-goast/marshal.go` — Wile value → Go `any` walker
+  producing JSON-marshallable maps/slices per the locked mapping
+  table. Reused across all tool handlers.
+- `cmd/wile-goast/marshal_test.go` — type-coverage tests for every
+  Wile value kind in the mapping table.
+- `cmd/wile-goast/mcp_tools.go` — Go tool handlers + shared
+  `invokePipeline` helper.
 - `cmd/wile-goast/mcp_tools_integration_test.go` — integration tests
   driving the MCP server via `client.NewInProcessClient`.
 - `cmd/wile-goast/testdata/phase1/` — minimal Go package used by
@@ -122,10 +162,10 @@ task rather than picking silently.
 
 **Modify:**
 
-- `cmd/wile-goast/mcp.go` — register the five new tools in `doMCP`.
-  No other changes.
+- `cmd/wile-goast/mcp.go` — register the five new tools in `doMCP`
+  via a new `registerPhase1Tools(s)` method on `mcpServer`.
 - `cmd/wile-goast/main.go` — no changes (the new pipelines library is
-  picked up via existing `WithSourceFS(embeddedLib)` +
+  picked up via existing `wile.WithSourceFS(wilegoast.Lib)` +
   `WithLibraryPaths("lib")`).
 - `CLAUDE.md` — add MCP tool surface section documenting the five
   tools.
@@ -147,8 +187,8 @@ task rather than picking silently.
 
 **Files:**
 
-- Create: `cmd/wile-goast/lib/wile/goast/pipelines.scm`
-- Create: `cmd/wile-goast/lib/wile/goast/pipelines.sld`
+- Create: `lib/wile/goast/pipelines.scm`
+- Create: `lib/wile/goast/pipelines.sld`
 - Create: `cmd/wile-goast/mcp_tools_integration_test.go`
 
 - [ ] **Step 1: Create `pipelines.sld`**
@@ -156,7 +196,7 @@ task rather than picking silently.
 ```scheme
 (define-library (wile goast pipelines)
   (export
-    ;; Shared envelope constructor
+    ;; Shared envelope constructor (tool-specific version supplied per call)
     pipeline-envelope
     ;; Tool procedures
     pipeline-check-beliefs
@@ -182,18 +222,23 @@ task rather than picking silently.
 ;; ── Shared envelope ─────────────────────────────────────
 ;;
 ;; Every Phase 1 tool returns:
-;;   ((tool       . <symbol>)
-;;    (version    . v1)
+;;   ((version    . <integer>)
 ;;    (provenance . <alist>)
 ;;    (result     . <alist-or-list>))
 ;;
-;; The version tag is a Scheme symbol ('v1), bumped only on
-;; breaking changes to a tool's result shape. Consumers should
-;; read the tool + version pair before interpreting result.
+;; The version is a per-tool integer, supplied by each pipeline. It is
+;; bumped only on breaking changes to that tool's result shape;
+;; additive provenance changes do not bump.
+;;
+;; The Go handler converts this alist to JSON via the marshaller in
+;; cmd/wile-goast/marshal.go. Alist keys are emitted in kebab-case
+;; here; the marshaller normalises to snake_case at the JSON boundary.
+;;
+;; No `tool` field: peer protocols (JSON-RPC, MCP, GraphQL, REST) do
+;; not echo the call name in responses.
 
-(define (pipeline-envelope tool provenance result)
-  (list (cons 'tool tool)
-        (cons 'version 'v1)
+(define (pipeline-envelope version provenance result)
+  (list (cons 'version version)
         (cons 'provenance provenance)
         (cons 'result result)))
 ```
@@ -239,10 +284,12 @@ func inProcessClient(t *testing.T) *client.Client {
 	return c
 }
 
-// callTool is a convenience wrapper returning the text content of a
-// single-text-content result. Fails the test on any non-text content
-// or tool-reported error.
-func callTool(t *testing.T, c *client.Client, name string, args map[string]any) string {
+// callTool calls a tool and returns its structured content as a
+// generic map. Tools return JSON via NewToolResultJSON, which
+// populates both the text content (JSON string) and structuredContent;
+// callers can assert against either, but structuredContent is the
+// canonical form for typed inspection.
+func callTool(t *testing.T, c *client.Client, name string, args map[string]any) map[string]any {
 	t.Helper()
 	ctx := context.Background()
 	req := mcp.CallToolRequest{}
@@ -253,7 +300,6 @@ func callTool(t *testing.T, c *client.Client, name string, args map[string]any) 
 		t.Fatalf("call %s: %v", name, err)
 	}
 	if res.IsError {
-		// Surface the error text so the test failure names the cause.
 		for _, c := range res.Content {
 			if tc, ok := c.(mcp.TextContent); ok {
 				t.Fatalf("tool %s reported error: %s", name, tc.Text)
@@ -261,25 +307,28 @@ func callTool(t *testing.T, c *client.Client, name string, args map[string]any) 
 		}
 		t.Fatalf("tool %s reported error (no text content)", name)
 	}
-	for _, c := range res.Content {
-		if tc, ok := c.(mcp.TextContent); ok {
-			return tc.Text
-		}
+	m, ok := res.StructuredContent.(map[string]any)
+	if !ok {
+		t.Fatalf("tool %s returned non-map structured content: %T", name, res.StructuredContent)
 	}
-	t.Fatalf("tool %s returned no text content", name)
-	return ""
+	return m
 }
 
-// envelopeContains fails the test if the returned envelope does not
-// contain the expected tool symbol + version tag. Leaves result-shape
-// assertions to the per-tool test.
-func envelopeContains(t *testing.T, envelope, tool string) {
+// envelopeOK fails the test if the returned envelope is missing the
+// version or provenance keys, or if version differs from expected.
+// Leaves result-shape assertions to per-tool tests.
+func envelopeOK(t *testing.T, envelope map[string]any, expectedVersion float64) {
 	t.Helper()
 	c := qt.New(t)
-	c.Assert(envelope, qt.Contains, "(tool . "+tool+")")
-	c.Assert(envelope, qt.Contains, "(version . v1)")
+	c.Assert(envelope["version"], qt.Equals, expectedVersion)
+	c.Assert(envelope["provenance"], qt.Not(qt.IsNil))
+	c.Assert(envelope["result"], qt.Not(qt.IsNil))
 }
 ```
+
+Note: `expectedVersion` is `float64` because `encoding/json` decodes
+numbers into `float64` by default when unmarshalling into `any`. The
+JSON output is `"version": 1`; the test parses it back as `1.0`.
 
 `registerPhase1Tools` does not exist yet; Task 2 adds it. Referencing
 it here is deliberate — this step creates a compile error that Task 2
@@ -302,14 +351,212 @@ Expected: FAIL — undefined `registerPhase1Tools`. Proceed to Task 2.
 On approval:
 
 ```bash
-git add cmd/wile-goast/lib/wile/goast/pipelines.scm \
-        cmd/wile-goast/lib/wile/goast/pipelines.sld \
+git add lib/wile/goast/pipelines.scm \
+        lib/wile/goast/pipelines.sld \
         cmd/wile-goast/mcp_tools_integration_test.go && \
   git commit -m "feat(mcp): pipelines library skeleton + test harness"
 ```
 
 Alternative if the broken-state commit feels wrong: hold the commit
 until Task 2 compiles.
+
+---
+
+## Task 1.5: Wile→JSON marshaller
+
+**Files:**
+
+- Create: `cmd/wile-goast/marshal.go`
+- Create: `cmd/wile-goast/marshal_test.go`
+
+The pipelines library produces Scheme alists. The MCP tool handlers
+must emit JSON via `mcp.NewToolResultJSON(data)`, which calls
+`json.Marshal` on a Go `any`. Bridging requires a Wile-value walker
+that produces `map[string]any` / `[]any` / scalars per the locked
+mapping table (see "Locked decisions" §1).
+
+Build this once, here, before any tool handler is written. Every
+tool handler invokes `marshalToJSON(val) (any, error)` on the
+pipeline's returned Scheme value, then passes the result to
+`mcp.NewToolResultJSON`.
+
+- [ ] **Step 1: Declare the marshaller error sentinel and signature**
+
+```go
+package main
+
+import (
+	"fmt"
+	"strings"
+
+	"github.com/aalpar/wile/values"
+	"github.com/aalpar/wile/werr"
+)
+
+var errMarshalUnsupported = werr.NewStaticError("marshal: unsupported wile value kind")
+
+// marshalToJSON converts a Wile value into a Go any suitable for
+// json.Marshal, following the Phase 1 mapping table. Returns
+// errMarshalUnsupported if a value kind is not covered.
+func marshalToJSON(v values.Value) (any, error) {
+	// implementation per Step 2 below
+}
+```
+
+- [ ] **Step 2: Implement the type dispatch**
+
+The implementation switches on `v.Kind()` and handles each kind. Key
+rules from the mapping table:
+
+```go
+func marshalToJSON(v values.Value) (any, error) {
+	switch {
+	case v == nil || v.IsVoid():
+		return nil, nil
+	case v.IsBool():
+		return v.Bool(), nil
+	case v.IsString():
+		return v.String(), nil
+	case v.IsInteger():
+		return v.Integer(), nil
+	case v.IsFloat():
+		return v.Float(), nil
+	case v.IsRational():
+		// Exact preservation — string per locked mapping.
+		return v.SchemeString(), nil  // prints as "9/10"
+	case v.IsSymbol():
+		// Loses symbol/string distinction; acceptable for enum-shaped
+		// fields. The Scheme side must not use symbols where the
+		// string/symbol distinction is semantically load-bearing in
+		// the JSON output.
+		return v.Symbol(), nil
+	case v.IsPair():
+		return marshalPair(v)
+	case v.IsNull():
+		return []any{}, nil
+	case v.IsVector():
+		return marshalVector(v)
+	}
+	return nil, werr.WrapForeignErrorf(errMarshalUnsupported,
+		"kind=%s", v.Kind())
+}
+```
+
+`marshalPair` is the tricky one. Two cases:
+
+1. **Alist of symbol-keyed pairs** — emit as JSON object. Detect by
+   walking the list and checking that every car is a pair whose car
+   is a symbol. Convert each key from kebab-case to snake_case.
+2. **Anything else** — emit as JSON array (proper list) or
+   `{"car":..., "cdr":...}` fallback (dotted pair in non-alist
+   position).
+
+```go
+func marshalPair(v values.Value) (any, error) {
+	if isAlist(v) {
+		obj := map[string]any{}
+		for cur := v; !cur.IsNull(); cur = cur.Cdr() {
+			entry := cur.Car()
+			key := kebabToSnake(entry.Car().Symbol())
+			val, err := marshalToJSON(entry.Cdr())
+			if err != nil {
+				return nil, err
+			}
+			obj[key] = val
+		}
+		return obj, nil
+	}
+	if isProperList(v) {
+		var arr []any
+		for cur := v; !cur.IsNull(); cur = cur.Cdr() {
+			elem, err := marshalToJSON(cur.Car())
+			if err != nil {
+				return nil, err
+			}
+			arr = append(arr, elem)
+		}
+		return arr, nil
+	}
+	// Dotted pair fallback
+	car, err := marshalToJSON(v.Car())
+	if err != nil {
+		return nil, err
+	}
+	cdr, err := marshalToJSON(v.Cdr())
+	if err != nil {
+		return nil, err
+	}
+	return map[string]any{"car": car, "cdr": cdr}, nil
+}
+
+func kebabToSnake(s string) string {
+	return strings.ReplaceAll(s, "-", "_")
+}
+```
+
+Verify the Wile values API (`v.Car()`, `v.Cdr()`, `v.Symbol()`,
+predicates) against `github.com/aalpar/wile/values` before
+committing — function names may differ in v1.16.0.
+
+- [ ] **Step 3: Write the type-coverage test**
+
+`marshal_test.go` must exercise every row of the mapping table. Use
+table-driven tests, one case per Wile value kind. Verify by parsing
+the JSON output back with `encoding/json`:
+
+```go
+func TestMarshalToJSON(t *testing.T) {
+	cases := []struct {
+		name   string
+		scheme string  // Scheme source producing the value
+		expect string  // expected JSON output (after re-marshalling)
+	}{
+		{"integer", "42", `42`},
+		{"float", "3.14", `3.14`},
+		{"rational", "9/10", `"9/10"`},
+		{"symbol", "'strong", `"strong"`},
+		{"string", `"hello"`, `"hello"`},
+		{"true", "#t", `true`},
+		{"false", "#f", `false`},
+		{"null", "'()", `[]`},
+		{"proper list", "'(1 2 3)", `[1,2,3]`},
+		{"alist", `'((a . 1) (b . 2))`, `{"a":1,"b":2}`},
+		{"alist kebab→snake", `'((sites-expr . "x"))`, `{"sites_expr":"x"}`},
+		{"nested alist", `'((outer . ((inner . 1))))`, `{"outer":{"inner":1}}`},
+		{"dotted pair", `'(1 . 2)`, `{"car":1,"cdr":2}`},
+	}
+	// ... run each via the test engine, marshal, assert ...
+}
+```
+
+- [ ] **Step 4: Run the tests**
+
+```bash
+cd /Users/aalpar/projects/wile-workspace/wile-goast
+go test ./cmd/wile-goast/ -run TestMarshalToJSON
+```
+
+Expected: PASS. If any kind fails, fix the marshaller before moving
+on. The marshaller is on the hot path of every Phase 1 tool — every
+miscoded type mapping is a JSON corruption across the surface.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add cmd/wile-goast/marshal.go cmd/wile-goast/marshal_test.go && \
+  git commit -m "feat(mcp): Wile→JSON marshaller for pipeline tool output"
+```
+
+**Decision points exercised in this task:**
+
+- Symbol/string collapse: confirmed lossy for enum fields; if any
+  pipeline ever needs symbol-typed output round-trippable through
+  JSON, the marshaller adds a tagged form (`{"_sym": "x"}`) at that
+  point. Not now.
+- Rational rendering: `"9/10"` is the locked emit; consumers parse if
+  arithmetic is needed.
+- Key conversion: applied at every alist key, not just top-level.
+  Nested objects also get snake_case keys.
 
 ---
 
@@ -321,8 +568,8 @@ result alist.
 
 **Files:**
 
-- Modify: `cmd/wile-goast/lib/wile/goast/pipelines.scm`
-- Modify: `cmd/wile-goast/lib/wile/goast/pipelines.sld` (already
+- Modify: `lib/wile/goast/pipelines.scm`
+- Modify: `lib/wile/goast/pipelines.sld` (already
   exports `pipeline-check-beliefs` from Task 1)
 - Create: `cmd/wile-goast/mcp_tools.go`
 - Create: `cmd/wile-goast/testdata/phase1/` (minimal Go package)
@@ -393,13 +640,16 @@ func TestCheckBeliefs_LockPairing(t *testing.T) {
 	`)
 
 	env := callTool(t, mc, "check_beliefs", map[string]any{
-		"package":      "github.com/aalpar/wile-goast/cmd/wile-goast/testdata/phase1",
+		"target":       "github.com/aalpar/wile-goast/cmd/wile-goast/testdata/phase1",
 		"beliefs_path": dir,
 	})
-	envelopeContains(t, env, "check_beliefs")
+	envelopeOK(t, env, 1.0)
 	// Both Counter methods pair Lock with Unlock — belief should be strong.
-	c.Assert(env, qt.Contains, "lock-unlock")
-	c.Assert(env, qt.Contains, "strong")
+	result := env["result"]
+	c.Assert(result, qt.Not(qt.IsNil))
+	// Assertions on result shape are tool-specific; the marshaller
+	// emits result as []any (list of belief result objects). Drill
+	// into specific keys here.
 }
 ```
 
@@ -418,7 +668,7 @@ Expected: FAIL.
 
 - [ ] **Step 4: Implement `pipeline-check-beliefs` in Scheme**
 
-Append to `cmd/wile-goast/lib/wile/goast/pipelines.scm`:
+Append to `lib/wile/goast/pipelines.scm`:
 
 ```scheme
 ;; ── check_beliefs ────────────────────────────────────────
@@ -437,7 +687,7 @@ Append to `cmd/wile-goast/lib/wile/goast/pipelines.scm`:
              (per-site (car committed))
              (_ (for-each register-belief! per-site))
              (results (run-beliefs target)))
-        (pipeline-envelope 'check_beliefs
+        (pipeline-envelope 1
           (list (cons 'target target)
                 (cons 'beliefs-path beliefs-path)
                 (cons 'belief-count (length per-site)))
@@ -465,7 +715,7 @@ be a public procedure in the belief module. Two options:
                (if (file-exists? beliefs-path)
                  (list-scheme-files-in-dir-or-single beliefs-path)
                  (error "path does not exist" beliefs-path)))
-             (pipeline-envelope 'check_beliefs
+             (pipeline-envelope 1
                (list (cons 'target target)
                      (cons 'beliefs-path beliefs-path)
                      (cons 'belief-count count))
@@ -508,7 +758,7 @@ func (ms *mcpServer) registerPhase1Tools(s *server.MCPServer) {
 				"Returns adherence/deviation report per belief. "+
 				"Use when you have a directory of .scm belief files and want a "+
 				"structural consistency report."),
-			mcp.WithString("package", mcp.Required(),
+			mcp.WithString("target", mcp.Required(),
 				mcp.Description("Go package pattern (e.g., 'my/pkg/...')")),
 			mcp.WithString("beliefs_path", mcp.Required(),
 				mcp.Description("Path to a .scm file or directory of .scm files")),
@@ -519,8 +769,10 @@ func (ms *mcpServer) registerPhase1Tools(s *server.MCPServer) {
 }
 
 // invokePipeline builds the Scheme call from fmt+args, evaluates it on
-// the engine, and returns the result as text. Tool-level errors become
-// mcp.NewToolResultError; engine init failure becomes the same.
+// the engine, marshals the resulting Wile value to JSON-compatible
+// Go any via marshalToJSON, and returns a tool result with both text
+// (JSON string) and structured content populated. Tool-level errors
+// become mcp.NewToolResultError; engine init failure becomes the same.
 func (ms *mcpServer) invokePipeline(ctx context.Context, code string) (*mcp.CallToolResult, error) {
 	engine, err := ms.getEngine(ctx)
 	if err != nil {
@@ -530,10 +782,15 @@ func (ms *mcpServer) invokePipeline(ctx context.Context, code string) (*mcp.Call
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
-	if val == nil || val.IsVoid() {
-		return mcp.NewToolResultText(""), nil
+	data, err := marshalToJSON(val)
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("marshal: %v", err)), nil
 	}
-	return mcp.NewToolResultText(val.SchemeString()), nil
+	res, err := mcp.NewToolResultJSON(data)
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("encode: %v", err)), nil
+	}
+	return res, nil
 }
 
 // schemeStringLiteral quotes s as a Scheme string literal. Used to
@@ -545,16 +802,16 @@ func schemeStringLiteral(s string) string {
 }
 
 func (ms *mcpServer) handleCheckBeliefs(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	pkg := req.GetString("package", "")
+	target := req.GetString("target", "")
 	beliefsPath := req.GetString("beliefs_path", "")
-	if pkg == "" {
-		return mcp.NewToolResultError("package parameter is required"), nil
+	if target == "" {
+		return mcp.NewToolResultError("target parameter is required"), nil
 	}
 	if beliefsPath == "" {
 		return mcp.NewToolResultError("beliefs_path parameter is required"), nil
 	}
 	code := `(import (wile goast pipelines))
-(pipeline-check-beliefs ` + schemeStringLiteral(pkg) + ` ` + schemeStringLiteral(beliefsPath) + `)`
+(pipeline-check-beliefs ` + schemeStringLiteral(target) + ` ` + schemeStringLiteral(beliefsPath) + `)`
 	return ms.invokePipeline(ctx, code)
 }
 ```
@@ -586,7 +843,7 @@ probe the belief-loading branch decision from Step 4.
 On approval:
 
 ```bash
-git add cmd/wile-goast/lib/wile/goast/pipelines.scm \
+git add lib/wile/goast/pipelines.scm \
         cmd/wile-goast/mcp_tools.go \
         cmd/wile-goast/mcp.go \
         cmd/wile-goast/mcp_tools_integration_test.go \
@@ -600,7 +857,7 @@ git add cmd/wile-goast/lib/wile/goast/pipelines.scm \
 
 **Files:**
 
-- Modify: `cmd/wile-goast/lib/wile/goast/pipelines.scm`
+- Modify: `lib/wile/goast/pipelines.scm`
 - Modify: `cmd/wile-goast/mcp_tools.go`
 - Modify: `cmd/wile-goast/mcp_tools_integration_test.go`
 
@@ -625,14 +882,17 @@ func TestDiscoverBeliefs_EmitsFiltered(t *testing.T) {
 	// appear in the emitted source.
 
 	env := callTool(t, mc, "discover_beliefs", map[string]any{
-		"package":              "github.com/aalpar/wile-goast/cmd/wile-goast/testdata/phase1",
-		"discovery_path":       discoveryDir,
-		"committed_path":       committedDir,
+		"target":         "github.com/aalpar/wile-goast/cmd/wile-goast/testdata/phase1",
+		"discovery_path": discoveryDir,
+		"committed_path": committedDir,
 	})
-	envelopeContains(t, env, "discover_beliefs")
-	// emit-beliefs writes define-belief forms into the result.
-	c.Assert(env, qt.Contains, "define-belief")
-	c.Assert(env, qt.Contains, "methods-have-body")
+	envelopeOK(t, env, 1.0)
+	// emit-beliefs writes define-belief forms into the result; the
+	// result is a map with emitted_source as a JSON string of Scheme.
+	result := env["result"].(map[string]any)
+	emitted := result["emitted_source"].(string)
+	c.Assert(emitted, qt.Contains, "define-belief")
+	c.Assert(emitted, qt.Contains, "methods-have-body")
 }
 ```
 
@@ -667,7 +927,7 @@ Append to `pipelines.scm`:
              (load-committed-beliefs committed-path)))
          (filtered (suppress-known results committed))
          (emitted (emit-beliefs filtered)))
-    (pipeline-envelope 'discover_beliefs
+    (pipeline-envelope 1
       (list (cons 'target target)
             (cons 'discovery-path discovery-path)
             (cons 'committed-path (or committed-path ""))
@@ -683,10 +943,9 @@ Append to `pipelines.scm`:
     (list-scheme-files-in-dir path)))
 ```
 
-**Decision point 2 applies** — both paths required, committed
-optional (empty string treated as "no committed"). If the user
-prefers one unified `beliefs_path` with a `suppress_path`, change
-here before proceeding.
+**Locked per DP #2:** `discovery_path` required; `committed_path`
+optional (empty string treated as "no committed beliefs, no
+suppression — raw discovery returned").
 
 - [ ] **Step 4: Register the tool**
 
@@ -698,7 +957,7 @@ s.AddTool(
 		mcp.WithDescription("Run a directory of discovery beliefs against a Go package, "+
 			"suppress any that match a committed belief, return survivors as "+
 			"Scheme source ready to commit."),
-		mcp.WithString("package", mcp.Required(),
+		mcp.WithString("target", mcp.Required(),
 			mcp.Description("Go package pattern")),
 		mcp.WithString("discovery_path", mcp.Required(),
 			mcp.Description("Path to discovery .scm file or directory")),
@@ -713,18 +972,18 @@ Add the handler (mirror of `handleCheckBeliefs`):
 
 ```go
 func (ms *mcpServer) handleDiscoverBeliefs(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	pkg := req.GetString("package", "")
+	target := req.GetString("target", "")
 	discovery := req.GetString("discovery_path", "")
 	committed := req.GetString("committed_path", "")
-	if pkg == "" {
-		return mcp.NewToolResultError("package parameter is required"), nil
+	if target == "" {
+		return mcp.NewToolResultError("target parameter is required"), nil
 	}
 	if discovery == "" {
 		return mcp.NewToolResultError("discovery_path parameter is required"), nil
 	}
 	code := `(import (wile goast pipelines))
 (pipeline-discover-beliefs ` +
-		schemeStringLiteral(pkg) + ` ` +
+		schemeStringLiteral(target) + ` ` +
 		schemeStringLiteral(discovery) + ` ` +
 		schemeStringLiteral(committed) + `)`
 	return ms.invokePipeline(ctx, code)
@@ -740,7 +999,7 @@ go test ./cmd/wile-goast/ -run TestDiscoverBeliefs -v
 On pass, ask and commit:
 
 ```bash
-git add cmd/wile-goast/lib/wile/goast/pipelines.scm \
+git add lib/wile/goast/pipelines.scm \
         cmd/wile-goast/mcp_tools.go \
         cmd/wile-goast/mcp_tools_integration_test.go && \
   git commit -m "feat(mcp): add discover_beliefs tool"
@@ -752,7 +1011,7 @@ git add cmd/wile-goast/lib/wile/goast/pipelines.scm \
 
 **Files:**
 
-- Modify: `cmd/wile-goast/lib/wile/goast/pipelines.scm`
+- Modify: `lib/wile/goast/pipelines.scm`
 - Modify: `cmd/wile-goast/mcp_tools.go`
 - Modify: `cmd/wile-goast/mcp_tools_integration_test.go`
 
@@ -764,12 +1023,12 @@ func TestRecommendSplit_Phase1Fixture(t *testing.T) {
 	mc := inProcessClient(t)
 
 	env := callTool(t, mc, "recommend_split", map[string]any{
-		"package": "github.com/aalpar/wile-goast/cmd/wile-goast/testdata/phase1",
+		"target": "github.com/aalpar/wile-goast/cmd/wile-goast/testdata/phase1",
 	})
-	envelopeContains(t, env, "recommend_split")
+	envelopeOK(t, env, 1.0)
 	// The fixture is too small to split meaningfully — expect NONE.
-	c.Assert(env, qt.Contains, "confidence")
-	c.Assert(env, qt.Contains, "NONE")
+	result := env["result"].(map[string]any)
+	c.Assert(result["confidence"], qt.Equals, "NONE")
 }
 ```
 
@@ -797,7 +1056,7 @@ candidate (e.g., `goast` itself — careful with runtime cost).
              (if (assoc 'refine opts) '(refine) '())
              (maybe-kw opts 'max-attributes)))
          (report (apply recommend-split refs kw-opts)))
-    (pipeline-envelope 'recommend_split
+    (pipeline-envelope 1
       (list (cons 'target target)
             (cons 'options kw-opts)
             (cons 'function-count (length refs)))
@@ -820,7 +1079,7 @@ s.AddTool(
 	mcp.NewTool("recommend_split",
 		mcp.WithDescription("Analyze a Go package's cohesion and recommend a two-way split "+
 			"via IDF-weighted FCA + min-cut. Returns split proposal with confidence."),
-		mcp.WithString("package", mcp.Required(),
+		mcp.WithString("target", mcp.Required(),
 			mcp.Description("Go package pattern")),
 		mcp.WithNumber("idf_threshold",
 			mcp.Description("Minimum IDF to keep a package as a signature attribute (default 0.36)")),
@@ -837,9 +1096,9 @@ Handler:
 
 ```go
 func (ms *mcpServer) handleRecommendSplit(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	pkg := req.GetString("package", "")
-	if pkg == "" {
-		return mcp.NewToolResultError("package parameter is required"), nil
+	target := req.GetString("target", "")
+	if target == "" {
+		return mcp.NewToolResultError("target parameter is required"), nil
 	}
 	var optsParts []string
 	if t, ok := req.GetArguments()["idf_threshold"]; ok {
@@ -854,7 +1113,7 @@ func (ms *mcpServer) handleRecommendSplit(ctx context.Context, req mcp.CallToolR
 		optsParts = append(optsParts, fmt.Sprintf("(max-attributes . %v)", m))
 	}
 	code := `(import (wile goast pipelines))
-(pipeline-recommend-split ` + schemeStringLiteral(pkg) +
+(pipeline-recommend-split ` + schemeStringLiteral(target) +
 		` (list ` + strings.Join(optsParts, " ") + `))`
 	return ms.invokePipeline(ctx, code)
 }
@@ -868,7 +1127,7 @@ func (ms *mcpServer) handleRecommendSplit(ctx context.Context, req mcp.CallToolR
 
 **Files:**
 
-- Modify: `cmd/wile-goast/lib/wile/goast/pipelines.scm`
+- Modify: `lib/wile/goast/pipelines.scm`
 - Modify: `cmd/wile-goast/mcp_tools.go`
 - Modify: `cmd/wile-goast/mcp_tools_integration_test.go`
 
@@ -880,13 +1139,14 @@ func TestRecommendBoundaries_Phase1Fixture(t *testing.T) {
 	mc := inProcessClient(t)
 
 	env := callTool(t, mc, "recommend_boundaries", map[string]any{
-		"package": "github.com/aalpar/wile-goast/cmd/wile-goast/testdata/phase1",
+		"target": "github.com/aalpar/wile-goast/cmd/wile-goast/testdata/phase1",
 	})
-	envelopeContains(t, env, "recommend_boundaries")
+	envelopeOK(t, env, 1.0)
 	// Three frontier keys must appear, even if empty.
-	c.Assert(env, qt.Contains, "splits")
-	c.Assert(env, qt.Contains, "merges")
-	c.Assert(env, qt.Contains, "extracts")
+	result := env["result"].(map[string]any)
+	c.Assert(result["splits"], qt.Not(qt.IsNil))
+	c.Assert(result["merges"], qt.Not(qt.IsNil))
+	c.Assert(result["extracts"], qt.Not(qt.IsNil))
 }
 ```
 
@@ -906,7 +1166,7 @@ func TestRecommendBoundaries_Phase1Fixture(t *testing.T) {
          (lattice (concept-lattice ctx))
          (ssa-funcs (go-ssa-build session))
          (rec (boundary-recommendations lattice ssa-funcs)))
-    (pipeline-envelope 'recommend_boundaries
+    (pipeline-envelope 1
       (list (cons 'target target)
             (cons 'mode (or mode 'write-only))
             (cons 'concept-count (length lattice)))
@@ -926,7 +1186,7 @@ Pattern as Task 4.
 
 **Files:**
 
-- Modify: `cmd/wile-goast/lib/wile/goast/pipelines.scm`
+- Modify: `lib/wile/goast/pipelines.scm`
 - Modify: `cmd/wile-goast/mcp_tools.go`
 - Modify: `cmd/wile-goast/mcp_tools_integration_test.go`
 
@@ -938,11 +1198,11 @@ func TestFindFalseBoundaries_Phase1Fixture(t *testing.T) {
 	mc := inProcessClient(t)
 
 	env := callTool(t, mc, "find_false_boundaries", map[string]any{
-		"package": "github.com/aalpar/wile-goast/cmd/wile-goast/testdata/phase1",
+		"target": "github.com/aalpar/wile-goast/cmd/wile-goast/testdata/phase1",
 	})
-	envelopeContains(t, env, "find_false_boundaries")
+	envelopeOK(t, env, 1.0)
 	// Even an empty result must round-trip a valid envelope.
-	c.Assert(env, qt.Contains, "(result")
+	c.Assert(env["result"], qt.Not(qt.IsNil))
 }
 ```
 
@@ -972,7 +1232,7 @@ envelope.
                   'min-intent min-int
                   'min-types min-typ))
          (annotated (annotated-boundary-report cross lattice)))
-    (pipeline-envelope 'find_false_boundaries
+    (pipeline-envelope 1
       (list (cons 'target target)
             (cons 'mode mode)
             (cons 'lattice-size (length lattice))
@@ -1166,10 +1426,11 @@ git add CHANGELOG.md CLAUDE.md plans/CLAUDE.md && \
       `recommend_boundaries`→T5, `find_false_boundaries`→T6.
 - [ ] Every design-doc cross-cutting choice §98-122 is honored:
       coarse-grained (one tool per pipeline), structured output
-      (alist envelope), provenance included (envelope field),
-      parameter composition (no LLM orchestration), `eval` as peer
-      (untouched), session as handle (deferred with explicit call-out
-      at Decision point 4).
+      (JSON envelope via `NewToolResultJSON`), provenance included
+      (envelope field), parameter composition (no LLM orchestration),
+      `eval` as peer (untouched), session as handle (deferred
+      indefinitely per locked DP #4 — server-side caching is the
+      eventual perf response, not exposed session handles).
 
 ---
 
@@ -1178,11 +1439,11 @@ git add CHANGELOG.md CLAUDE.md plans/CLAUDE.md && \
 | # | Ambiguity | Resolution |
 |---|-----------|------------|
 | 1 | `mustWriteFile` / `schemeStr` location | Duplicate in `cmd/wile-goast/mcp_tools_integration_test.go`. If both tests grow coupled, later move to `testutil/`. |
-| 2 | Envelope version bump policy | `'v1` symbol; bumped only on breaking changes to the `result` shape (renamed key, changed value type, removed key). Adding a new key is non-breaking. |
+| 2 | Envelope version bump policy | Per-tool integer (`1`, `2`, ...); bumped only on breaking changes to that tool's `result` shape (renamed key, changed value type, removed key). Adding a new key is non-breaking. Per-tool — `find_false_boundaries` can reach v3 while `recommend_split` stays v1. |
 | 3 | `committed_path` empty-string semantics | Empty string = no suppression. `#f` would be cleaner in Scheme but MCP params are stringly-typed; empty-string is the pragmatic bridge. |
 | 4 | `recommend_boundaries` `mode` default | `'write-only` — matches the existing default inherited from `field-index->context` and is the mode used in all existing FCA examples. |
-| 5 | Tool parameter naming convention | Snake-case (`beliefs_path`, `committed_path`, `idf_threshold`). MCP tool parameters are commonly snake-case; Scheme-side uses hyphen-case; the boundary converts at the handler. |
-| 6 | Scheme output vs JSON | Scheme s-expression text (Decision point 1 default). Revisit in a Phase 1.5 plan if real LLM consumers report parse cost. |
+| 5 | Tool parameter naming convention | Snake-case at the JSON boundary (`target`, `beliefs_path`, `discovery_path`, `committed_path`, `idf_threshold`). Scheme-side uses kebab-case (`sites-expr`, `idf-threshold`); the marshaller normalises kebab→snake at every alist key. |
+| 6 | Output format | JSON via `NewToolResultJSON` (locked DP #1). Populates both text content (JSON string) and `structuredContent`. See marshaller table in "Locked decisions" §1. |
 
 ---
 
@@ -1216,10 +1477,10 @@ places:
 
 | Workaround | Location | SRFI-13 replacement |
 |------------|----------|---------------------|
-| `string-contains` | `cmd/wile-goast/lib/wile/goast/utils.scm:95` | `string-contains` |
-| `string-join` | `cmd/wile-goast/lib/wile/goast/utils.scm:147` | `string-join` |
-| `string-suffix?` | `cmd/wile-goast/lib/wile/goast/fca-recommend.scm:24` | `string-suffix?` |
-| `list-scheme-files-in-dir` (inline substring check) | `cmd/wile-goast/lib/wile/goast/belief.scm:862` (shipped 2026-04-23, commit `846a5dd`) | `string-suffix?` + `directory-files` + `filter` |
+| `string-contains` | `lib/wile/goast/utils.scm:95` | `string-contains` |
+| `string-join` | `lib/wile/goast/utils.scm:147` | `string-join` |
+| `string-suffix?` | `lib/wile/goast/fca-recommend.scm:24` | `string-suffix?` |
+| `list-scheme-files-in-dir` (inline substring check) | `lib/wile/goast/belief.scm:862` (shipped 2026-04-23, commit `846a5dd`) | `string-suffix?` + `directory-files` + `filter` |
 
 Three independent workarounds for three SRFI-13 procedures, plus a
 fourth inline instance. That is not a coincidence — it is a signal
@@ -1245,3 +1506,86 @@ Steps 1-2 are **out of scope** for this plan — they live in wile (or
 in a follow-up wile-goast cleanup commit). Flagging them here so the
 upstream dependency is visible and the sequencing is explicit. This
 plan's Tasks 2-3 do not block on them.
+
+---
+
+## Phase 1 follow-ups
+
+Work surfaced by the 2026-05-29 design pass that is intentionally
+**not in Phase 1 scope** but should ship soon after Phase 1 lands.
+Each item resolves a deferred decision; none block Phase 1.
+
+### 1. Example discovery beliefs (DP #5 follow-up)
+
+Per the locked DP #5 resolution, `discover_beliefs` requires
+`discovery_path`. To make first-run usable without committing to a
+curated default set, ship 2-3 example discovery belief files as
+documentation templates.
+
+**Location:** `examples/discovery-beliefs/` (project root).
+
+**Suggested templates:**
+
+- `lock-unlock-pairing.scm` — `(paired-with "Lock" "Unlock")` over
+  functions that call `Lock`. The canonical Engler-style belief.
+- `defer-close-after-open.scm` — `(paired-with "Open" "Close")` over
+  functions that call `Open`. Different shape: pairs across the
+  return value's method set.
+- `error-checked-before-use.scm` — `(checked-before-use err)` over
+  functions returning `error` values to subsequent callers.
+
+**Constraints:**
+
+- Each file is a single self-contained `(define-belief ...)` form.
+- No `register-belief!` runtime side effects from loading — loading
+  the file MUST define the belief and nothing else.
+- Documented in `examples/discovery-beliefs/README.md`: what each
+  belief looks for, what false-positive shapes to expect, how to
+  adapt the threshold for your codebase.
+- **Distinct from defaults.** These are not auto-loaded by
+  `discover_beliefs`. They are copy-paste-ready entry points the
+  user passes explicitly via `--discovery_path`.
+
+Effort: ~3 hours (templates + README). Can be a separate commit.
+
+### 2. Internal package-load caching (DP #4 follow-up)
+
+Per the locked DP #4 resolution, Phase 1 tools load packages fresh
+per call. If aggregate performance becomes load-bearing (multiple
+tools hit the same target in sequence within one session), the
+correct response is **server-side caching keyed on
+`(target_pattern, fs-state)`**, not client-visible session handles.
+
+**Where it lives:** `cmd/wile-goast/cache.go` (new). A `sync.Map`
+of `target → loaded GoSession` keyed by the target string. The
+`mcpServer` struct gains a `cache *targetCache` field; tool handlers
+call `ms.cache.GetOrLoad(target)` instead of `(go-load target)`
+directly.
+
+**Eviction strategy:** invalidate cache entry when `fs.WalkDir` over
+the target's source tree shows any mtime newer than the cached
+load timestamp. Cheap enough to check on every request; correct.
+
+**Provenance addition (additive, non-breaking):** envelope provenance
+gains a `cache_hit: bool` field. Consumers tolerate missing fields,
+so existing v1 tools don't bump.
+
+**When to do it:** profile-driven. Don't speculate; measure when a
+real workflow becomes painful. Likely never needed for single-tool
+calls; relevant only for multi-call orchestrations the LLM strings
+together.
+
+### 3. Phase 2 entry point — `filter_concepts`
+
+Phase 2 of the design doc (`2026-04-19-llm-concept-filter-design.md`)
+introduces `filter_concepts` as the canonical post-filter. Its design
+is independent; its impl plan is its own document. Phase 1 does not
+depend on it.
+
+The relevant Phase 1 hook: any tool producing a concept-shaped result
+(`find_false_boundaries`, future `find_duplicates`) should make sure
+its `result` shape is consumable by `filter_concepts`' future input
+contract. Specifically, each concept-result object should carry an
+opaque `id` field that `filter_concepts` can reference back in its
+verdict output. Adding `id` to the locked-v1 result shape now is
+additive (non-breaking) and saves a version bump later.
