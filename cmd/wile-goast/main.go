@@ -23,6 +23,8 @@
 //	wile-goast --run belief-example      run embedded script
 //	wile-goast --list-scripts            list embedded scripts
 //	wile-goast --mcp                    start MCP server on stdio
+//	wile-goast --http                   start MCP server over Streamable HTTP (127.0.0.1:8080)
+//	wile-goast --http=:9000             start MCP server over Streamable HTTP on all interfaces, port 9000
 package main
 
 import (
@@ -62,6 +64,7 @@ type Options struct {
 	ListScripts bool     `long:"list-scripts" description:"List available embedded scripts"`
 	Run         string   `long:"run" description:"Run an embedded script by name"`
 	MCP         bool     `long:"mcp" description:"Start as MCP server on stdio"`
+	HTTP        string   `long:"http" optional:"yes" optional-value:"127.0.0.1:8080" description:"Start as MCP server over Streamable HTTP at ADDR (default 127.0.0.1:8080)"`
 	Version     bool     `short:"V" long:"version" description:"Print wile-goast and wile versions and exit"`
 }
 
@@ -89,13 +92,27 @@ func main() {
 		return
 	}
 
-	// --mcp: start MCP server
+	// --mcp: start MCP server on stdio
 	if opts.MCP {
-		if len(opts.Eval) > 0 || len(opts.File) > 0 || opts.ListScripts || opts.Run != "" {
-			fmt.Fprintln(os.Stderr, "Error: --mcp cannot be combined with -e, -f, --run, or --list-scripts")
+		if len(opts.Eval) > 0 || len(opts.File) > 0 || opts.ListScripts || opts.Run != "" || opts.HTTP != "" {
+			fmt.Fprintln(os.Stderr, "Error: --mcp cannot be combined with --http, -e, -f, --run, or --list-scripts")
 			os.Exit(1)
 		}
 		err = doMCP(ctx)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "MCP server error: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
+
+	// --http: start MCP server over Streamable HTTP
+	if opts.HTTP != "" {
+		if len(opts.Eval) > 0 || len(opts.File) > 0 || opts.ListScripts || opts.Run != "" {
+			fmt.Fprintln(os.Stderr, "Error: --http cannot be combined with --mcp, -e, -f, --run, or --list-scripts")
+			os.Exit(1)
+		}
+		err = doHTTP(ctx, opts.HTTP)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "MCP server error: %v\n", err)
 			os.Exit(1)

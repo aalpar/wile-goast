@@ -338,7 +338,19 @@ make ci          # Full CI: lint + build + test + covercheck + verify-mod
 
 ## MCP Server
 
-`wile-goast --mcp` starts a stdio MCP server (JSON-RPC). One persistent Wile engine serves all tool calls within the session.
+Two transports, same tool + prompts:
+
+- `wile-goast --mcp` — stdio MCP server (JSON-RPC). One session keyed `"stdio"`.
+- `wile-goast --http[=ADDR]` — Streamable HTTP MCP server. `--http` alone binds
+  `127.0.0.1:8080` (loopback); `--http=:9000` binds all interfaces. Endpoint is
+  `/mcp`. Stateful sessions; graceful shutdown on SIGINT/SIGTERM.
+
+**Engine model:** one `*wile.Engine` per MCP session, keyed by `SessionID()`,
+built lazily on first `eval` and closed on session unregister (clean DELETE or
+30-min idle sweep). This isolates each HTTP client's state (`go-load` sessions,
+defined beliefs) and serializes concurrent `eval`s within a session via a
+per-engine mutex. stdio is the degenerate one-session case. See
+`plans/2026-05-30-http-mcp-server-design.md`.
 
 ### Tool
 
@@ -358,8 +370,16 @@ Prompt content lives in `cmd/wile-goast/prompts/*.md` (embedded in binary).
 
 ### Client Config
 
+stdio:
+
 ```json
 {"mcpServers": {"wile-goast": {"command": "wile-goast", "args": ["--mcp"]}}}
+```
+
+Streamable HTTP (server started separately via `wile-goast --http`):
+
+```json
+{"mcpServers": {"wile-goast": {"type": "streamable-http", "url": "http://127.0.0.1:8080/mcp"}}}
 ```
 
 ## False Boundary Detection — `(wile goast fca)`

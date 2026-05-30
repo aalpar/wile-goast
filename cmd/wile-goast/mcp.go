@@ -16,10 +16,16 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io/fs"
+	"net/http"
+	"os"
+	"os/signal"
 	"strings"
 	"sync"
+	"syscall"
+	"time"
 
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
@@ -27,6 +33,11 @@ import (
 	"github.com/aalpar/wile"
 	"github.com/aalpar/wile/werr"
 )
+
+// httpIdleTTL bounds how long an idle Streamable HTTP session is kept before
+// the library sweeper reaps it, firing OnUnregisterSession to free its engine.
+// Not configurable yet — YAGNI until tuning is actually needed.
+const httpIdleTTL = 30 * time.Minute
 
 // BuildVersion is set by -ldflags at build time.
 var BuildVersion string
@@ -36,25 +47,125 @@ var BuildSHA string
 
 var errMCPServer = werr.NewStaticError("mcp server error")
 
-type mcpServer struct {
-	engine     *wile.Engine
-	engineOnce sync.Once
-	engineErr  error
+// engineEntry holds one session's Wile engine. The engine is built lazily on
+// first use so a session that only fetches prompts never pays the KitchenSink
+// build cost. evalMu serializes EvalMultiple calls within a session, since a
+// single client may pipeline concurrent requests onto its one engine.
+type engineEntry struct {
+	once   sync.Once
+	engine *wile.Engine
+	err    error
+	evalMu sync.Mutex
 }
 
-func doMCP(ctx context.Context) error {
-	ms := &mcpServer{}
+// closeEngine settles any in-flight build (or precludes a future one) via the
+// idempotent once, then closes the engine if it was built. Safe to call
+// concurrently with a build: sync.Once serializes the two.
+func (e *engineEntry) closeEngine() {
+	e.once.Do(func() {})
+	if e.engine != nil {
+		_ = e.engine.Close()
+	}
+}
 
+// mcpServer owns one engine per MCP session, keyed by ClientSession.SessionID().
+// This gives cross-client isolation (one client's go-load sessions and defined
+// beliefs stay invisible to others) while preserving per-client state across
+// calls. stdio is the degenerate case: a single session keyed "stdio".
+type mcpServer struct {
+	mu      sync.Mutex
+	engines map[string]*engineEntry
+}
+
+// entryForKey returns the engineEntry for a session key, creating an empty one
+// if absent. The manager lock is held only for the map operation, never during
+// the (expensive) engine build.
+func (ms *mcpServer) entryForKey(key string) *engineEntry {
+	ms.mu.Lock()
+	defer ms.mu.Unlock()
+	if ms.engines == nil {
+		ms.engines = make(map[string]*engineEntry)
+	}
+	e := ms.engines[key]
+	if e == nil {
+		e = &engineEntry{}
+		ms.engines[key] = e
+	}
+	return e
+}
+
+// builtEntry returns the entry for a key with its engine built (once).
+func (ms *mcpServer) builtEntry(ctx context.Context, key string) (*engineEntry, error) {
+	e := ms.entryForKey(key)
+	e.once.Do(func() {
+		e.engine, e.err = buildEngineOrError(ctx)
+	})
+	return e, e.err
+}
+
+// engineForKey returns the built engine for a session key.
+func (ms *mcpServer) engineForKey(ctx context.Context, key string) (*wile.Engine, error) {
+	e, err := ms.builtEntry(ctx, key)
+	return e.engine, err
+}
+
+// evict removes a session's engine and closes it (the OnUnregisterSession path).
+func (ms *mcpServer) evict(key string) {
+	ms.mu.Lock()
+	e := ms.engines[key]
+	delete(ms.engines, key)
+	ms.mu.Unlock()
+	if e != nil {
+		e.closeEngine()
+	}
+}
+
+// closeAll closes every managed engine. Used at HTTP server shutdown and in tests.
+func (ms *mcpServer) closeAll() {
+	ms.mu.Lock()
+	entries := ms.engines
+	ms.engines = nil
+	ms.mu.Unlock()
+	for _, e := range entries {
+		e.closeEngine()
+	}
+}
+
+// onUnregister is the OnUnregisterSession hook: free the engine for a session
+// that has terminated (clean DELETE, or reaped by the idle sweeper).
+func (ms *mcpServer) onUnregister(_ context.Context, s server.ClientSession) {
+	if s != nil {
+		ms.evict(s.SessionID())
+	}
+}
+
+// sessionKey resolves the MCP session id from context. The fallback key is
+// defensive — both stdio and stateful HTTP supply a session.
+func sessionKey(ctx context.Context) string {
+	s := server.ClientSessionFromContext(ctx)
+	if s != nil {
+		return s.SessionID()
+	}
+	return ""
+}
+
+// newServer builds the transport-agnostic protocol server: instructions, the
+// eval tool, prompts, and the session-cleanup hook. Shared by stdio and HTTP.
+func (ms *mcpServer) newServer() (*server.MCPServer, error) {
 	v := BuildVersion
 	if v == "" {
 		v = "dev"
 	}
+
+	hooks := &server.Hooks{}
+	hooks.AddOnUnregisterSession(ms.onUnregister)
 
 	s := server.NewMCPServer(
 		"wile-goast",
 		v,
 		server.WithToolCapabilities(true),
 		server.WithPromptCapabilities(true),
+		server.WithHooks(hooks),
 		server.WithInstructions(
 			"# The wile-goast MCP server\n\n"+
 				"Go static analysis via Scheme. Use this server for structural queries about Go code "+
@@ -97,17 +208,71 @@ func doMCP(ctx context.Context) error {
 
 	err := ms.registerPrompts(s)
 	if err != nil {
-		return werr.WrapForeignErrorf(errMCPServer, "registering prompts: %s", err)
+		return nil, werr.WrapForeignErrorf(errMCPServer, "registering prompts: %s", err)
 	}
 
+	return s, nil
+}
+
+// doMCP runs the MCP server over stdio.
+func doMCP(ctx context.Context) error {
+	ms := &mcpServer{}
+	s, err := ms.newServer()
+	if err != nil {
+		return err
+	}
 	return server.ServeStdio(s)
 }
 
-func (ms *mcpServer) getEngine(ctx context.Context) (*wile.Engine, error) {
-	ms.engineOnce.Do(func() {
-		ms.engine, ms.engineErr = buildEngineOrError(ctx)
-	})
-	return ms.engine, ms.engineErr
+// newStreamableHTTPServer builds the Streamable HTTP transport over the shared
+// protocol server. Stateful so each client's Mcp-Session-Id maps to the same
+// engine across requests; idle sessions are reaped (freeing engines) by the
+// library sweeper. The returned server is an http.Handler, so tests can mount
+// it on httptest.NewServer directly.
+func (ms *mcpServer) newStreamableHTTPServer() (*server.StreamableHTTPServer, error) {
+	s, err := ms.newServer()
+	if err != nil {
+		return nil, err
+	}
+	return server.NewStreamableHTTPServer(s,
+		server.WithStateful(true),
+		server.WithSessionIdleTTL(httpIdleTTL),
+	), nil
+}
+
+// doHTTP runs the MCP server over Streamable HTTP at addr, shutting down
+// gracefully on SIGINT/SIGTERM or context cancellation.
+func doHTTP(ctx context.Context, addr string) error {
+	ms := &mcpServer{}
+	defer ms.closeAll()
+
+	httpSrv, err := ms.newStreamableHTTPServer()
+	if err != nil {
+		return err
+	}
+
+	sigCtx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	serveErr := make(chan error, 1)
+	go func() {
+		fmt.Fprintf(os.Stderr, "wile-goast MCP server listening on http://%s/mcp\n", addr)
+		err := httpSrv.Start(addr)
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
+			serveErr <- werr.WrapForeignErrorf(errMCPServer, "http serve: %s", err)
+			return
+		}
+		serveErr <- nil
+	}()
+
+	select {
+	case <-sigCtx.Done():
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		return httpSrv.Shutdown(shutdownCtx)
+	case err := <-serveErr:
+		return err
+	}
 }
 
 func (ms *mcpServer) handleEval(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -116,12 +281,15 @@ func (ms *mcpServer) handleEval(ctx context.Context, req mcp.CallToolRequest) (*
 		return mcp.NewToolResultError("code parameter is required"), nil
 	}
 
-	engine, err := ms.getEngine(ctx)
+	entry, err := ms.builtEntry(ctx, sessionKey(ctx))
 	if err != nil {
 		return mcp.NewToolResultError(fmt.Sprintf("engine init failed: %v", err)), nil
 	}
 
-	val, err := engine.EvalMultiple(ctx, code)
+	entry.evalMu.Lock()
+	defer entry.evalMu.Unlock()
+
+	val, err := entry.engine.EvalMultiple(ctx, code)
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
