@@ -84,3 +84,32 @@
             (cons 'filtered-count (length filtered)))
       (list (cons 'emitted-source emitted)
             (cons 'filtered-results filtered)))))
+
+;; ── recommend_split ──────────────────────────────────────
+;;
+;; Apply IDF-weighted FCA + min-cut to TARGET's per-function import
+;; signatures. OPTS is an alist of overrides; recognised keys are
+;; idf-threshold and max-attributes (key value) and refine (bare flag).
+;; recommend-split reads opts as a flat plist (opt-ref / memq), so the
+;; alist is flattened to (idf-threshold N max-attributes N refine).
+
+;; maybe-kv: ((key . val)) -> (key val), or () when key is absent.
+(define (maybe-kv opts key)
+  (let ((e (assoc key opts)))
+    (if e (list key (cdr e)) '())))
+
+(define (pipeline-recommend-split target opts)
+  (let* ((session (go-load target))
+         (refs (go-func-refs session))
+         (kw (append
+               (maybe-kv opts 'idf-threshold)
+               (maybe-kv opts 'max-attributes)
+               (if (let ((e (assoc 'refine opts))) (and e (cdr e)))
+                 (list 'refine)
+                 '())))
+         (report (apply recommend-split refs kw)))
+    (pipeline-envelope 1
+      (list (cons 'target target)
+            (cons 'options kw)
+            (cons 'function-count (length refs)))
+      report)))

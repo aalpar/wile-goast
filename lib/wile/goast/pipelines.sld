@@ -28,8 +28,10 @@
     pipeline-envelope
     ;; Tool procedures (added per task alongside their definitions).
     pipeline-check-beliefs
-    pipeline-discover-beliefs)
+    pipeline-discover-beliefs
+    pipeline-recommend-split)
   (import
     (wile goast)
-    (wile goast belief))
+    (wile goast belief)
+    (wile goast split))
   (include "pipelines.scm"))

@@ -202,3 +202,16 @@ func TestDiscoverBeliefs_EmitsFiltered(t *testing.T) {
 	qt.Assert(t, strings.Contains(emitted, "define-belief"), qt.IsTrue)
 	qt.Assert(t, strings.Contains(emitted, "methods-have-body"), qt.IsTrue)
 }
+
+// recommend_split analyzes package cohesion and returns a split proposal
+// with a confidence verdict. The phase1 fixture is too small and cohesive
+// to split (no incomparable concepts), so confidence is NONE.
+func TestRecommendSplit_Phase1Fixture(t *testing.T) {
+	mc := inProcessClient(t)
+
+	env := callTool(t, mc, "recommend_split", map[string]any{"target": phase1Pkg})
+	envelopeOK(t, env, 1.0)
+
+	result := env["result"].(map[string]any)
+	qt.Assert(t, result["confidence"], qt.Equals, "NONE")
+}

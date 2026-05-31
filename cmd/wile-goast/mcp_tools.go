@@ -56,7 +56,23 @@ func (ms *mcpServer) registerPhase1Tools(s *server.MCPServer) {
 		),
 		ms.handleDiscoverBeliefs,
 	)
-	// Tasks 4-6 register the other three tools here.
+	s.AddTool(
+		mcp.NewTool("recommend_split",
+			mcp.WithDescription("Analyze a Go package's cohesion and recommend a "+
+				"two-way split via IDF-weighted FCA + min-cut. Returns the split "+
+				"proposal with a confidence verdict (HIGH/MEDIUM/LOW/NONE)."),
+			mcp.WithString("target", mcp.Required(),
+				mcp.Description("Go package pattern (e.g., 'my/pkg/...')")),
+			mcp.WithNumber("idf_threshold",
+				mcp.Description("Minimum IDF to keep a package as a signature attribute (default 0.36)")),
+			mcp.WithBoolean("refine",
+				mcp.Description("Refine the context by (package, object) granularity")),
+			mcp.WithNumber("max_attributes",
+				mcp.Description("Fail fast if attribute count exceeds this (default 30; lattice is 2^N)")),
+		),
+		ms.handleRecommendSplit,
+	)
+	// Tasks 5-6 register the other two tools here.
 }
 
 // invokePipeline evaluates a pipeline call on the session's engine,
@@ -130,5 +146,31 @@ func (ms *mcpServer) handleDiscoverBeliefs(ctx context.Context, req mcp.CallTool
 		schemeStringLiteral(target) + ` ` +
 		schemeStringLiteral(discoveryPath) + ` ` +
 		schemeStringLiteral(committedPath) + `)`
+	return ms.invokePipeline(ctx, code)
+}
+
+func (ms *mcpServer) handleRecommendSplit(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	target := req.GetString("target", "")
+	if target == "" {
+		return mcp.NewToolResultError("target parameter is required"), nil
+	}
+	// Build an alist of option overrides from the supplied params; the
+	// Scheme pipeline flattens it to recommend-split's plist form.
+	args := req.GetArguments()
+	var optsParts []string
+	if v, ok := args["idf_threshold"]; ok {
+		optsParts = append(optsParts, fmt.Sprintf("(idf-threshold . %v)", v))
+	}
+	if r, ok := args["refine"]; ok {
+		if b, _ := r.(bool); b {
+			optsParts = append(optsParts, "(refine . #t)")
+		}
+	}
+	if m, ok := args["max_attributes"]; ok {
+		optsParts = append(optsParts, fmt.Sprintf("(max-attributes . %v)", m))
+	}
+	code := `(import (wile goast pipelines))
+(pipeline-recommend-split ` + schemeStringLiteral(target) +
+		` (list ` + strings.Join(optsParts, " ") + `))`
 	return ms.invokePipeline(ctx, code)
 }
