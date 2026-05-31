@@ -81,6 +81,15 @@ func TestGoCallgraph_CHA(t *testing.T) {
 	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
 }
 
+func TestGoCallgraph_Precise(t *testing.T) {
+	c := qt.New(t)
+	engine := newEngine(t)
+
+	result := eval(t, engine,
+		`(pair? (go-callgraph "github.com/aalpar/wile-goast/goast" 'precise))`)
+	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
+}
+
 func newSessionEngine(t *testing.T) *wile.Engine {
 	t.Helper()
 	engine, err := wile.NewEngine(context.Background(),
@@ -187,42 +196,6 @@ func TestGoCallgraphCallers_NotFound(t *testing.T) {
 	c.Assert(result.Internal(), qt.Equals, values.FalseValue)
 }
 
-func TestMapCallgraph_Reachable(t *testing.T) {
-	c := qt.New(t)
-	engine := newEngine(t)
-
-	eval(t, engine,
-		`(define cg (go-callgraph "github.com/aalpar/wile-goast/goast" 'static))`)
-
-	// Reachable from a known function should return a non-empty list of strings.
-	result := eval(t, engine,
-		`(pair? (go-callgraph-reachable cg "`+goastTestFunc+`"))`)
-	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
-
-	// The root itself should appear in the reachable set.
-	result = eval(t, engine, `
-		(let ((reachable (go-callgraph-reachable cg "`+goastTestFunc+`")))
-			(let loop ((r reachable))
-				(cond
-					((null? r) #f)
-					((equal? (car r) "`+goastTestFunc+`") #t)
-					(else (loop (cdr r))))))`)
-	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
-}
-
-func TestGoCallgraphReachable_NotFound(t *testing.T) {
-	c := qt.New(t)
-	engine := newEngine(t)
-
-	eval(t, engine,
-		`(define cg (go-callgraph "github.com/aalpar/wile-goast/goast" 'static))`)
-
-	// Nonexistent root returns empty list.
-	result := eval(t, engine,
-		`(null? (go-callgraph-reachable cg "does.not.Exist"))`)
-	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
-}
-
 func TestIntegration_CallgraphQuery(t *testing.T) {
 	c := qt.New(t)
 	engine := newEngine(t)
@@ -257,14 +230,6 @@ func TestIntegration_CallgraphQuery(t *testing.T) {
 				(let ((edge (car edges)))
 					(and (eq? (car edge) 'cg-edge)
 					     (string? (nf edge 'description))))))`)
-	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
-
-	// Verify reachable returns a list of strings.
-	result = eval(t, engine, `
-		(let ((reachable (go-callgraph-reachable cg "`+goastTestFunc+`")))
-			(if (null? reachable)
-				#t
-				(string? (car reachable))))`)
 	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
 }
 

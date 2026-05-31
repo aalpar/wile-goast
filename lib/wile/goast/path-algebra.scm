@@ -43,6 +43,30 @@
 
 (define path-query-all graph-query-all)
 
+;; --- Reachability (boolean semiring) ---
+;;
+;; Replaces the former hand-rolled Go BFS (goastcg computeReachable). The
+;; closure step delegates to wile's single-source boolean-semiring path query
+;; (graph-query-all): reachable nodes are exactly the keys of the result alist.
+
+;; Tail-recursive node-name membership. A non-tail `map` over the whole graph
+;; would overflow the interpreter's call-depth limit on large call graphs
+;; (the goast package alone is ~16k nodes); this short-circuits in O(1) stack.
+(define (cg-node-name? cg name)
+  (let loop ((ns cg))
+    (cond ((null? ns) #f)
+          ((equal? (nf (car ns) 'name) name) #t)
+          (else (loop (cdr ns))))))
+
+(define (go-callgraph-reachable cg root)
+  "Return the sorted list of fully-qualified function names reachable from\nROOT in call graph CG (including ROOT itself), or '() when ROOT is not a\nnode in CG. Reachability is a single-source boolean-semiring path query\n(`path-query-all') — the traversal lives in (wile algebra graph), not here.\n\nParameters:\n  cg : list    ; cg-node list from `go-callgraph'\n  root : string\nReturns: list\nCategory: goast-path\n\nExamples:\n  (go-callgraph-reachable cg \"pkg.main\")  ; => (\"pkg.main\" \"pkg.helper\" ...)\n\nSee also: `path-query-all', `make-path-analysis', `go-callgraph'."
+  (if (cg-node-name? cg root)
+      (sort string<?
+            (map car (path-query-all
+                       (make-path-analysis (boolean-semiring) cg #f)
+                       root)))
+      '()))
+
 ;; --- SCC side-query API (call-graph mutual-recursion detection) ---
 ;;
 ;; A non-trivial SCC in the call graph is a mutual-recursion cluster:

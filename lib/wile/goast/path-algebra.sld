@@ -18,6 +18,8 @@
     path-analysis?
     path-query
     path-query-all
+    ;; Boolean-semiring reachability (replaces the former Go BFS primitive).
+    go-callgraph-reachable
     ;; SCC side-query API (call-graph flavored aliases of wile's graph SCC API).
     path-analysis-sccs
     path-node-in-cycle?

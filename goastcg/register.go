@@ -44,7 +44,13 @@ func addPrimitives(r *registry.Registry) error {
 	r.AddPrimitives([]registry.PrimitiveSpec{
 		{Name: "go-callgraph", ParamCount: 2, Impl: PrimGoCallgraph,
 			Doc: "Builds a call graph for a Go package using the specified algorithm.\n" +
-				"Algorithm is a symbol: 'static, 'cha, 'rta, or 'vta.\n" +
+				"Algorithm is a symbol: 'static, 'cha, 'rta, 'vta, or 'precise.\n" +
+				"  'cha/'vta/'rta soundly OVER-approximate indirect (func-value)\n" +
+				"  calls; 'static omits them (UNDER-approximates). 'precise refines\n" +
+				"  'cha by statically resolving the decidable subset of indirect\n" +
+				"  calls (a constant index into a literal []func(), e.g. t[0]() of\n" +
+				"  []func(){f,g}), keeping 'cha's sound edges where it cannot — so\n" +
+				"  it is never less sound than 'cha, only sharper where SSA permits.\n" +
 				"First arg is a package pattern or GoSession.\n" +
 				"Returns a list of cg-node alists. Each node has: name, id,\n" +
 				"edges-in, edges-out, and pkg. Edges are cg-edge alists with:\n" +
@@ -88,17 +94,10 @@ func addPrimitives(r *registry.Registry) error {
 				"  ; => (\"pkg.init\" \"pkg.run\" ...)\n\n" +
 				"See also: `go-callgraph', `go-callgraph-callers'.",
 			ParamNames: []string{"graph", "func-name"}, Category: "goast-callgraph"},
-		{Name: "go-callgraph-reachable", ParamCount: 2, Impl: PrimGoCallgraphReachable,
-			Doc: "Returns function names transitively reachable from the root in the call graph.\n" +
-				"Returns a sorted list of fully-qualified name strings.\n" +
-				"root-name must be fully qualified (e.g., \"pkg.main\").\n\n" +
-				"Examples:\n" +
-				"  (define names (go-callgraph-reachable cg \"pkg.main\"))\n" +
-				"  names  ; => (\"pkg.helper\" \"pkg.init\" \"pkg.main\" ...)\n" +
-				"  (member \"pkg.helper\" names)  ; => (\"pkg.helper\" ...)\n\n" +
-				"See also: `go-callgraph'.",
-			ParamNames: []string{"graph", "root-name"}, Category: "goast-callgraph",
-			ReturnType: values.TypeList},
+		// go-callgraph-reachable now lives in the (wile goast path-algebra)
+		// Scheme layer, delegating reachability to wile's boolean-semiring
+		// single-source path query (graph-query-all) — see path-algebra.scm.
+		// Build the graph here ('precise/'cha/...), query it there.
 	}, registry.PhaseSetRuntime)
 	return nil
 }

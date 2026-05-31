@@ -183,45 +183,6 @@ func leaf() {}
 		qt.Commentf("expected leaf to be called by helper"))
 }
 
-func TestMapCallgraph_Reachable(t *testing.T) {
-	c := qt.New(t)
-	dir := t.TempDir()
-
-	_, graph := buildTestCallgraph(t, dir, `
-package testpkg
-
-func root() {
-	mid()
-}
-
-func mid() {
-	leaf()
-}
-
-func leaf() {}
-
-func unreachable() {}
-`)
-
-	nodeMap := buildNodeMap(graph)
-
-	_, hasRoot := nodeMap["testpkg.root"]
-	c.Assert(hasRoot, qt.IsTrue, qt.Commentf("expected root in graph"))
-
-	_, hasMid := nodeMap["testpkg.mid"]
-	c.Assert(hasMid, qt.IsTrue, qt.Commentf("expected mid in graph"))
-
-	_, hasLeaf := nodeMap["testpkg.leaf"]
-	c.Assert(hasLeaf, qt.IsTrue, qt.Commentf("expected leaf in graph"))
-
-	// Verify reachable from root.
-	reachable := computeReachable(nodeMap, "testpkg.root")
-	c.Assert(reachable["testpkg.root"], qt.IsTrue)
-	c.Assert(reachable["testpkg.mid"], qt.IsTrue)
-	c.Assert(reachable["testpkg.leaf"], qt.IsTrue)
-	c.Assert(reachable["testpkg.unreachable"], qt.IsFalse)
-}
-
 func TestMapCallgraph_EdgeFields(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()

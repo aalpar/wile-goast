@@ -433,3 +433,51 @@ func TestPathAlgebra_SccsOnRealCallgraph(t *testing.T) {
 	result = eval(t, engine, `(> (length (path-cyclic-nodes pa)) 0)`)
 	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
 }
+
+func TestGoCallgraphReachable_Scheme(t *testing.T) {
+	c := qt.New(t)
+	engine := newBeliefEngine(t)
+
+	// A -> B -> C chain, built as a synthetic cg-node list (no go-callgraph needed).
+	eval(t, engine, `
+		(import (wile goast path-algebra))
+		(define cg (list
+			(list 'cg-node (cons 'name "A") (cons 'id 0) (cons 'edges-in '())
+				(cons 'edges-out (list (list 'cg-edge (cons 'caller "A") (cons 'callee "B")))))
+			(list 'cg-node (cons 'name "B") (cons 'id 1) (cons 'edges-in '())
+				(cons 'edges-out (list (list 'cg-edge (cons 'caller "B") (cons 'callee "C")))))
+			(list 'cg-node (cons 'name "C") (cons 'id 2) (cons 'edges-in '()) (cons 'edges-out '()))))`)
+
+	// Reachable from A is the sorted set {A,B,C}, root included.
+	result := eval(t, engine, `(equal? (go-callgraph-reachable cg "A") (list "A" "B" "C"))`)
+	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
+
+	// A leaf reaches only itself.
+	result = eval(t, engine, `(equal? (go-callgraph-reachable cg "C") (list "C"))`)
+	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
+
+	// A root absent from the graph returns the empty set (not the seeded root).
+	result = eval(t, engine, `(null? (go-callgraph-reachable cg "Z"))`)
+	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
+}
+
+func TestGoCallgraphReachable_RealGraph(t *testing.T) {
+	c := qt.New(t)
+	engine := newBeliefEngine(t)
+
+	// Build a real static call graph, then query reachability through the
+	// boolean-semiring path (delegates to wile's graph-query-all).
+	eval(t, engine, `
+		(import (wile goast path-algebra))
+		(define cg (go-callgraph "github.com/aalpar/wile-goast/goast" 'static))`)
+
+	// Reachable from a known function: non-empty, strings, includes the root.
+	result := eval(t, engine, `
+		(let ((r (go-callgraph-reachable cg "github.com/aalpar/wile-goast/goast.PrimGoParseExpr")))
+			(and (pair? r) (string? (car r)) (member "github.com/aalpar/wile-goast/goast.PrimGoParseExpr" r) #t))`)
+	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
+
+	// A root absent from the graph returns the empty set.
+	result = eval(t, engine, `(null? (go-callgraph-reachable cg "does.not.Exist"))`)
+	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
+}

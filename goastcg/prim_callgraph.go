@@ -16,7 +16,6 @@ package goastcg
 
 import (
 	"go/token"
-	"sort"
 	"strings"
 
 	"golang.org/x/tools/go/callgraph"
@@ -43,10 +42,11 @@ var (
 
 // validAlgorithms lists the accepted algorithm symbols.
 var validAlgorithms = map[string]bool{
-	"static": true,
-	"cha":    true,
-	"rta":    true,
-	"vta":    true,
+	"static":  true,
+	"cha":     true,
+	"rta":     true,
+	"vta":     true,
+	"precise": true,
 }
 
 // PrimGoCallgraph implements (go-callgraph target algorithm).
@@ -59,7 +59,7 @@ func PrimGoCallgraph(mc machine.CallContext) error {
 
 	if !validAlgorithms[algo.Key] {
 		return werr.WrapForeignErrorf(errCGInvalidAlgorithm,
-			"go-callgraph: algorithm must be static, cha, rta, or vta; got %s", algo.Key)
+			"go-callgraph: algorithm must be static, cha, rta, vta, or precise; got %s", algo.Key)
 	}
 
 	return goast.DispatchSessionOrPattern(mc.Arg(0), "go-callgraph",
@@ -137,6 +137,9 @@ func dispatchCallgraph(prog *ssa.Program, algorithm string) (*callgraph.Graph, e
 		initial := cha.CallGraph(prog)
 		allFuncs := ssautil.AllFunctions(prog)
 		return vta.CallGraph(allFuncs, initial), nil
+
+	case "precise":
+		return preciseCallGraph(prog), nil
 
 	default:
 		return nil, werr.WrapForeignErrorf(errCGInvalidAlgorithm,
@@ -259,133 +262,5 @@ func PrimGoCallgraphCallees(mc machine.CallContext) error {
 		return nil
 	}
 	mc.SetValue(edgesOut)
-	return nil
-}
-
-// buildNodeMap parses a list of cg-node s-expressions into a Go map
-// keyed by function name for efficient BFS lookup.
-func buildNodeMap(graph values.Value) map[string]values.Value {
-	nodeMap := make(map[string]values.Value)
-	tuple, ok := graph.(values.Tuple)
-	if !ok {
-		return nodeMap
-	}
-	for !values.IsEmptyList(tuple) {
-		pair, ok := tuple.(*values.Pair)
-		if !ok {
-			break
-		}
-		node := pair.Car()
-		np, ok := node.(*values.Pair)
-		if ok {
-			nameVal, found := goast.GetField(np.Cdr(), "name")
-			if found {
-				s, ok := nameVal.(*values.String)
-				if ok {
-					nodeMap[s.Value] = node
-				}
-			}
-		}
-		tuple, ok = pair.Cdr().(values.Tuple)
-		if !ok {
-			break
-		}
-	}
-	return nodeMap
-}
-
-// calleesOf extracts the callee function names from the edges-out of a cg-node.
-func calleesOf(node values.Value) []string {
-	np, ok := node.(*values.Pair)
-	if !ok {
-		return nil
-	}
-	edgesOut, ok := goast.GetField(np.Cdr(), "edges-out")
-	if !ok {
-		return nil
-	}
-	tuple, ok := edgesOut.(values.Tuple)
-	if !ok {
-		return nil
-	}
-	var names []string
-	for !values.IsEmptyList(tuple) {
-		ep, ok := tuple.(*values.Pair)
-		if !ok {
-			break
-		}
-		edge := ep.Car()
-		edgePair, ok := edge.(*values.Pair)
-		if ok {
-			callee, found := goast.GetField(edgePair.Cdr(), "callee")
-			if found {
-				s, ok := callee.(*values.String)
-				if ok {
-					names = append(names, s.Value)
-				}
-			}
-		}
-		tuple, ok = ep.Cdr().(values.Tuple)
-		if !ok {
-			break
-		}
-	}
-	return names
-}
-
-// computeReachable does BFS from rootName, returning the set of reachable function names.
-// Returns an empty set if rootName is not in nodeMap.
-func computeReachable(nodeMap map[string]values.Value, rootName string) map[string]bool {
-	_, ok := nodeMap[rootName]
-	if !ok {
-		return map[string]bool{}
-	}
-
-	visited := make(map[string]bool)
-	queue := []string{rootName}
-
-	for len(queue) > 0 {
-		current := queue[0]
-		queue = queue[1:]
-		if visited[current] {
-			continue
-		}
-		visited[current] = true
-
-		node, ok := nodeMap[current]
-		if !ok {
-			continue
-		}
-
-		for _, callee := range calleesOf(node) {
-			if !visited[callee] {
-				queue = append(queue, callee)
-			}
-		}
-	}
-	return visited
-}
-
-// PrimGoCallgraphReachable implements (go-callgraph-reachable graph root-name).
-func PrimGoCallgraphReachable(mc machine.CallContext) error {
-	graph := mc.Arg(0)
-	rootName, err := helpers.RequireArg[*values.String](mc, 1, werr.ErrNotAString, "go-callgraph-reachable")
-	if err != nil {
-		return err
-	}
-
-	nodeMap := buildNodeMap(graph)
-	reachable := computeReachable(nodeMap, rootName.Value)
-
-	names := make([]string, 0, len(reachable))
-	for name := range reachable {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	result := make([]values.Value, len(names))
-	for i, name := range names {
-		result[i] = goast.Str(name)
-	}
-	mc.SetValue(goast.ValueList(result))
 	return nil
 }
