@@ -2064,31 +2064,23 @@ func TestLoadBeliefs_ReturnsCount(t *testing.T) {
 // TestLoadBeliefs_ActivatesInScope pins the core design property that
 // separates load-beliefs! from load-committed-beliefs:
 //
-//	load-committed-beliefs → beliefs are ISOLATED; (current-beliefs) is
-//	                         0 after the call (see
+//	load-committed-beliefs → beliefs are ISOLATED; (current-beliefs) sees
+//	                         nothing in the caller's scope (it loads into a
+//	                         nested scope and returns only a snapshot — see
 //	                         TestLoadCommittedBeliefs_Directory).
 //	load-beliefs!          → beliefs are ACTIVE inside the enclosing
 //	                         with-belief-scope ((current-beliefs) sees
-//	                         them), and CONFINED to it (restored to 0
-//	                         after the scope exits).
+//	                         them), and CONFINED to it (restored to 0 after
+//	                         the scope exits).
 //
 // This is the property the whole check_beliefs/discover_beliefs pipeline
-// rests on: a path's beliefs must actually be live when run-beliefs
-// fires, and must not leak into later, unrelated runs.
+// rests on: a path's beliefs must actually be live when run-beliefs fires,
+// and must not leak into later, unrelated runs.
 //
-// LEARNING-MODE TODO (you): replace the t.Skip below and write the 5-10
-// lines that assert this property. A workable shape:
-//  1. eval one Scheme expression that, INSIDE a single with-belief-scope,
-//     calls load-beliefs! then returns (length (current-beliefs))
-//     → expect a non-zero count (ACTIVE).
-//  2. eval (length (current-beliefs)) AFTER that scope has exited
-//     → expect 0 (CONFINED).
-//
-// Contrast deliberately with load-committed-beliefs, which reports 0 for
-// step 1. The harness below hands you engine, c, and dir (a belief file
-// is already written there). Use eval(t, engine, "<scheme>") and
-// schemeStr(dir). Note: read live state with (current-beliefs), not
-// *beliefs* — the latter is a stale snapshot under Wile import semantics.
+// One eval captures three counts so the active / confined / isolated
+// distinction is asserted in a single deterministic comparison. Live state
+// is read with (current-beliefs), not *beliefs* — the latter is a stale
+// snapshot under Wile's import semantics.
 func TestLoadBeliefs_ActivatesInScope(t *testing.T) {
 	engine := newBeliefEngine(t)
 	c := qt.New(t)
@@ -2102,18 +2094,29 @@ func TestLoadBeliefs_ActivatesInScope(t *testing.T) {
 		  (threshold 0.9 3))
 	`)
 
-	// Sanity (yours to keep or fold into the real assertion): the file is
-	// loadable and load-beliefs! reports one file.
-	count := eval(t, engine, `
+	// active-inside    — beliefs visible inside the load-beliefs! scope
+	// active-after     — beliefs visible after that scope exits (confined)
+	// committed-inside — beliefs visible inside a load-committed scope
+	//                    (isolated: load-committed activates nothing here)
+	counts := eval(t, engine, `
 		(import (wile goast belief))
 		(reset-beliefs!)
-		(with-belief-scope (lambda () (load-beliefs! `+schemeStr(dir)+`)))
+		(define active-inside -1)
+		(with-belief-scope
+		  (lambda ()
+		    (load-beliefs! `+schemeStr(dir)+`)
+		    (set! active-inside (length (current-beliefs)))))
+		(define active-after (length (current-beliefs)))
+		(define committed-inside -1)
+		(with-belief-scope
+		  (lambda ()
+		    (load-committed-beliefs `+schemeStr(dir)+`)
+		    (set! committed-inside (length (current-beliefs)))))
+		(list active-inside active-after committed-inside)
 	`)
-	c.Assert(count.SchemeString(), qt.Equals, "1")
-
-	t.Skip("LEARNING-MODE TODO(you): assert beliefs are ACTIVE inside the " +
-		"with-belief-scope ((current-beliefs) > 0) and CONFINED after it " +
-		"(== 0). See the comment above for the exact shape.")
+	// ACTIVE inside (1), CONFINED after (0), and load-committed-beliefs
+	// activates nothing in the caller's scope (0) — the design distinction.
+	c.Assert(counts.SchemeString(), qt.Equals, "(1 0 0)")
 }
 
 // ── Belief suppression tests ────────────────────────────
