@@ -37,7 +37,8 @@ wile-goast-side consumer/follow-up status.
 | `2026-04-17-belief-suppression-impl.md` | Implementation plan: 9 tasks, TDD, 13 integration tests | Shipped 2026-04-23 |
 | `2026-04-17-fca-duplicate-detection-design.md` | FCA-clustered duplicate function detection: reference-FCA + structural diff + algebraic equivalence + LLM residue | Design draft, impl pending |
 | `2026-04-19-llm-concept-filter-design.md` | LLM as precision-oriented semantic filter on FCA concepts (cross-cutting, annotate-only default) | Design draft, impl pending |
-| `2026-04-19-mcp-tool-surface-design.md` | Post-filter MCP tool surface: pipeline-shaped tools returning structured reports instead of `eval`-driven orchestration | Design draft, impl pending (Phase 1 next) |
+| `2026-04-19-mcp-tool-surface-design.md` | Post-filter MCP tool surface: pipeline-shaped tools returning structured reports instead of `eval`-driven orchestration | Phase 1 shipped — see `2026-04-19-mcp-tool-surface-impl.md`. Phases 2-4 pending |
+| `2026-04-19-mcp-tool-surface-impl.md` | Phase 1 impl: five pipeline tools (check_beliefs, discover_beliefs, recommend_split, recommend_boundaries, find_false_boundaries), Wile→JSON marshaller, envelope, `load-beliefs!` | Shipped 2026-05-30 |
 | `2026-04-20-receiver-parameter-asymmetry-design.md` | Detect methods whose receiver contributes a single contextual read while a parameter drives the logic (Connascence of Meaning hidden by receiver syntax). Belief-based L1 rule + semantic joint-use predicate (L2). Surfaced by wile G.1 mid-parse-EOF fix. | Design draft, impl pending |
 
 ## Completed Plans (moved to `memory/`)

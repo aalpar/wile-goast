@@ -1,5 +1,37 @@
 # Changelog
 
+## Unreleased — MCP Pipeline Tools (Phase 1)
+
+Five pipeline-shaped MCP tools expose already-implemented analyses as
+first-class tool calls, complementing the existing `eval` tool. Each
+returns a `{version, provenance, result}` JSON envelope (via
+`NewToolResultJSON`) and is registered on both the stdio and HTTP
+transports.
+
+- `check_beliefs` — run a directory of `.scm` beliefs against a Go
+  package; returns the per-belief adherence/deviation report.
+- `discover_beliefs` — run discovery beliefs, suppress any matching a
+  committed belief, and emit the survivors as Scheme source.
+- `recommend_split` — IDF-weighted FCA + min-cut package split
+  recommendation with a confidence verdict.
+- `recommend_boundaries` — function-level split/merge/extract Pareto
+  frontiers from FCA over SSA struct-field access.
+- `find_false_boundaries` — FCA concepts spanning multiple struct types,
+  annotated with lattice relationships.
+
+Supporting changes:
+
+- `load-beliefs!` (`(wile goast belief)`) — load `.scm` beliefs from a
+  directory or file into the *current* belief scope, activating them for
+  `run-beliefs`. Distinct from `load-committed-beliefs`, which isolates
+  loaded beliefs and returns only a snapshot.
+- A Wile→JSON marshaller (`cmd/wile-goast/marshal.go`) bridges Scheme
+  alists/lists/scalars to JSON-marshallable Go values.
+
+Phases 2–4 of the tool surface (`filter_concepts`, `find_duplicates`,
+`explain_function`, `restructure_block`, `trace_path`) will ship under
+their own plans.
+
 ## Unreleased — Belief Suppression
 
 Close the belief DSL's discover → review → commit → enforce lifecycle.
