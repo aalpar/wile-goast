@@ -206,6 +206,8 @@ func (ms *mcpServer) newServer() (*server.MCPServer, error) {
 		ms.handleEval,
 	)
 
+	ms.registerPhase1Tools(s)
+
 	err := ms.registerPrompts(s)
 	if err != nil {
 		return nil, werr.WrapForeignErrorf(errMCPServer, "registering prompts: %s", err)

@@ -25,7 +25,10 @@
 (define-library (wile goast pipelines)
   (export
     ;; Shared envelope constructor (per-tool version supplied per call).
-    pipeline-envelope)
+    pipeline-envelope
+    ;; Tool procedures (added per task alongside their definitions).
+    pipeline-check-beliefs)
   (import
-    (wile goast))
+    (wile goast)
+    (wile goast belief))
   (include "pipelines.scm"))

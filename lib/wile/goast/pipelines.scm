@@ -34,3 +34,23 @@
   (list (cons 'version version)
         (cons 'provenance provenance)
         (cons 'result result)))
+
+;; ── check_beliefs ────────────────────────────────────────
+;;
+;; Load the .scm beliefs at BELIEFS-PATH (a directory or single file),
+;; run them against TARGET, and return the per-belief result list under
+;; result. with-belief-scope confines the loaded beliefs to this call;
+;; load-beliefs! activates them so run-beliefs sees them (load-committed-
+;; beliefs would isolate them instead). Provenance records the target,
+;; the path probed, and the number of belief files loaded.
+
+(define (pipeline-check-beliefs target beliefs-path)
+  (with-belief-scope
+    (lambda ()
+      (let* ((count (load-beliefs! beliefs-path))
+             (results (run-beliefs target)))
+        (pipeline-envelope 1
+          (list (cons 'target target)
+                (cons 'beliefs-path beliefs-path)
+                (cons 'belief-count count))
+          results)))))

@@ -17,6 +17,8 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/mark3labs/mcp-go/client"
@@ -123,4 +125,47 @@ func TestInProcessClientInitializes(t *testing.T) {
 		names[tool.Name] = true
 	}
 	qt.Assert(t, names["eval"], qt.IsTrue)
+}
+
+// mustWriteFile writes content to path, failing the test on error.
+// Package-local to cmd/wile-goast (the goast package has its own copy).
+func mustWriteFile(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write %s: %v", path, err)
+	}
+}
+
+// phase1Pkg is the import path of the Phase 1 integration test fixture.
+const phase1Pkg = "github.com/aalpar/wile-goast/cmd/wile-goast/testdata/phase1"
+
+// check_beliefs must load a directory of .scm beliefs, run them against
+// the target, and report per-belief results in the envelope. Both Counter
+// methods pair Lock with a deferred Unlock, so the lock-pairing belief is
+// strong.
+func TestCheckBeliefs_LockPairing(t *testing.T) {
+	mc := inProcessClient(t)
+
+	dir := t.TempDir()
+	mustWriteFile(t, filepath.Join(dir, "lock.scm"), `
+		(import (wile goast belief))
+		(define-belief "lock-unlock"
+		  (sites (functions-matching (contains-call "Lock")))
+		  (expect (paired-with "Lock" "Unlock"))
+		  (threshold 0.9 1))
+	`)
+
+	env := callTool(t, mc, "check_beliefs", map[string]any{
+		"target":       phase1Pkg,
+		"beliefs_path": dir,
+	})
+	envelopeOK(t, env, 1.0)
+
+	prov := env["provenance"].(map[string]any)
+	qt.Assert(t, prov["belief_count"], qt.Equals, float64(1))
+
+	results := env["result"].([]any)
+	qt.Assert(t, len(results) > 0, qt.IsTrue)
+	first := results[0].(map[string]any)
+	qt.Assert(t, first["status"], qt.Equals, "strong")
 }
