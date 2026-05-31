@@ -113,3 +113,58 @@
             (cons 'options kw)
             (cons 'function-count (length refs)))
       report)))
+
+;; assoc-default: (cdr (assoc key alist)) or #f when key is absent.
+(define (assoc-default alist key)
+  (let ((e (assoc key alist)))
+    (if e (cdr e) #f)))
+
+;; ── recommend_boundaries ─────────────────────────────────
+;;
+;; Build a (function -> struct-field) FCA context from SSA field-access
+;; data in MODE ('write-only / 'read-write / 'type-only), compute the
+;; concept lattice, and ask fca-recommend for the three Pareto frontiers
+;; (split / merge / extract). MODE may be #f (defaults to 'write-only).
+
+(define (pipeline-recommend-boundaries target mode)
+  (let* ((session (go-load target))
+         (field-idx (go-ssa-field-index session))
+         (m (or mode 'write-only))
+         (ctx (field-index->context field-idx m))
+         (lattice (concept-lattice ctx))
+         (ssa-funcs (go-ssa-build session))
+         (rec (boundary-recommendations lattice ssa-funcs)))
+    (pipeline-envelope 1
+      (list (cons 'target target)
+            (cons 'mode m)
+            (cons 'concept-count (length lattice)))
+      rec)))
+
+;; ── find_false_boundaries ────────────────────────────────
+;;
+;; Build an FCA context from struct-field access in MODE, filter for
+;; concepts that span multiple struct types (cross-boundary candidates),
+;; and annotate each with its lattice relationships. OPTS is an alist;
+;; recognised keys are mode (symbol) and min-extent / min-intent /
+;; min-types (integers, all default 2).
+
+(define (pipeline-find-false-boundaries target opts)
+  (let* ((session (go-load target))
+         (field-idx (go-ssa-field-index session))
+         (mode (or (assoc-default opts 'mode) 'write-only))
+         (min-ext (or (assoc-default opts 'min-extent) 2))
+         (min-int (or (assoc-default opts 'min-intent) 2))
+         (min-typ (or (assoc-default opts 'min-types) 2))
+         (ctx (field-index->context field-idx mode))
+         (lattice (concept-lattice ctx))
+         (cross (cross-boundary-concepts lattice
+                  'min-extent min-ext
+                  'min-intent min-int
+                  'min-types min-typ))
+         (annotated (annotated-boundary-report cross lattice)))
+    (pipeline-envelope 1
+      (list (cons 'target target)
+            (cons 'mode mode)
+            (cons 'lattice-size (length lattice))
+            (cons 'cross-boundary-count (length cross)))
+      annotated)))

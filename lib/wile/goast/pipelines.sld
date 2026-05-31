@@ -29,9 +29,15 @@
     ;; Tool procedures (added per task alongside their definitions).
     pipeline-check-beliefs
     pipeline-discover-beliefs
-    pipeline-recommend-split)
+    pipeline-recommend-split
+    pipeline-recommend-boundaries
+    pipeline-find-false-boundaries)
   (import
     (wile goast)
+    (wile goast ssa)
     (wile goast belief)
-    (wile goast split))
+    (wile goast split)
+    (wile goast fca)
+    (wile goast fca-algebra)
+    (wile goast fca-recommend))
   (include "pipelines.scm"))

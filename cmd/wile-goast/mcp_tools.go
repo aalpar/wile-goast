@@ -72,7 +72,50 @@ func (ms *mcpServer) registerPhase1Tools(s *server.MCPServer) {
 		),
 		ms.handleRecommendSplit,
 	)
-	// Tasks 5-6 register the other two tools here.
+	s.AddTool(
+		mcp.NewTool("recommend_boundaries",
+			mcp.WithDescription("Recommend function boundary changes (split / merge / "+
+				"extract) for a Go package via FCA over SSA struct-field access. "+
+				"Returns three Pareto frontiers of candidates."),
+			mcp.WithString("target", mcp.Required(),
+				mcp.Description("Go package pattern (e.g., 'my/pkg/...')")),
+			mcp.WithString("mode",
+				mcp.Description("Field-access mode: write-only (default), read-write, or type-only")),
+		),
+		ms.handleRecommendBoundaries,
+	)
+	s.AddTool(
+		mcp.NewTool("find_false_boundaries",
+			mcp.WithDescription("Find struct boundaries whose removal would enable "+
+				"unification: FCA concepts spanning multiple struct types, annotated "+
+				"with lattice relationships. Returns the cross-boundary report."),
+			mcp.WithString("target", mcp.Required(),
+				mcp.Description("Go package pattern (e.g., 'my/pkg/...')")),
+			mcp.WithString("mode",
+				mcp.Description("Field-access mode: write-only (default), read-write, or type-only")),
+			mcp.WithNumber("min_extent",
+				mcp.Description("Minimum concept extent (object count) to report (default 2)")),
+			mcp.WithNumber("min_intent",
+				mcp.Description("Minimum concept intent (attribute count) to report (default 2)")),
+			mcp.WithNumber("min_types",
+				mcp.Description("Minimum distinct struct types a concept must span (default 2)")),
+		),
+		ms.handleFindFalseBoundaries,
+	)
+}
+
+// boundaryMode validates a field-access mode parameter and returns the
+// Scheme argument form: a quoted symbol for an allowed mode, "#f" for an
+// empty (unset) mode, or ("", false) for an invalid value.
+func boundaryMode(mode string) (string, bool) {
+	switch mode {
+	case "":
+		return "#f", true
+	case "write-only", "read-write", "type-only":
+		return "'" + mode, true
+	default:
+		return "", false
+	}
 }
 
 // invokePipeline evaluates a pipeline call on the session's engine,
@@ -159,18 +202,62 @@ func (ms *mcpServer) handleRecommendSplit(ctx context.Context, req mcp.CallToolR
 	args := req.GetArguments()
 	var optsParts []string
 	if v, ok := args["idf_threshold"]; ok {
-		optsParts = append(optsParts, fmt.Sprintf("(idf-threshold . %v)", v))
+		optsParts = append(optsParts, fmt.Sprintf("(cons 'idf-threshold %v)", v))
 	}
 	if r, ok := args["refine"]; ok {
 		if b, _ := r.(bool); b {
-			optsParts = append(optsParts, "(refine . #t)")
+			optsParts = append(optsParts, "(cons 'refine #t)")
 		}
 	}
 	if m, ok := args["max_attributes"]; ok {
-		optsParts = append(optsParts, fmt.Sprintf("(max-attributes . %v)", m))
+		optsParts = append(optsParts, fmt.Sprintf("(cons 'max-attributes %v)", m))
 	}
 	code := `(import (wile goast pipelines))
 (pipeline-recommend-split ` + schemeStringLiteral(target) +
+		` (list ` + strings.Join(optsParts, " ") + `))`
+	return ms.invokePipeline(ctx, code)
+}
+
+func (ms *mcpServer) handleRecommendBoundaries(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	target := req.GetString("target", "")
+	if target == "" {
+		return mcp.NewToolResultError("target parameter is required"), nil
+	}
+	modeArg, ok := boundaryMode(req.GetString("mode", ""))
+	if !ok {
+		return mcp.NewToolResultError("mode must be write-only, read-write, or type-only"), nil
+	}
+	code := `(import (wile goast pipelines))
+(pipeline-recommend-boundaries ` + schemeStringLiteral(target) + ` ` + modeArg + `)`
+	return ms.invokePipeline(ctx, code)
+}
+
+func (ms *mcpServer) handleFindFalseBoundaries(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	target := req.GetString("target", "")
+	if target == "" {
+		return mcp.NewToolResultError("target parameter is required"), nil
+	}
+	mode := req.GetString("mode", "")
+	modeArg, ok := boundaryMode(mode)
+	if !ok {
+		return mcp.NewToolResultError("mode must be write-only, read-write, or type-only"), nil
+	}
+	args := req.GetArguments()
+	var optsParts []string
+	if mode != "" {
+		optsParts = append(optsParts, "(cons 'mode "+modeArg+")")
+	}
+	if v, ok := args["min_extent"]; ok {
+		optsParts = append(optsParts, fmt.Sprintf("(cons 'min-extent %v)", v))
+	}
+	if v, ok := args["min_intent"]; ok {
+		optsParts = append(optsParts, fmt.Sprintf("(cons 'min-intent %v)", v))
+	}
+	if v, ok := args["min_types"]; ok {
+		optsParts = append(optsParts, fmt.Sprintf("(cons 'min-types %v)", v))
+	}
+	code := `(import (wile goast pipelines))
+(pipeline-find-false-boundaries ` + schemeStringLiteral(target) +
 		` (list ` + strings.Join(optsParts, " ") + `))`
 	return ms.invokePipeline(ctx, code)
 }

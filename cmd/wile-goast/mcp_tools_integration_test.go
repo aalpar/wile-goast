@@ -209,9 +209,37 @@ func TestDiscoverBeliefs_EmitsFiltered(t *testing.T) {
 func TestRecommendSplit_Phase1Fixture(t *testing.T) {
 	mc := inProcessClient(t)
 
-	env := callTool(t, mc, "recommend_split", map[string]any{"target": phase1Pkg})
+	// Pass idf_threshold to exercise the options path (alist -> plist).
+	env := callTool(t, mc, "recommend_split", map[string]any{
+		"target":        phase1Pkg,
+		"idf_threshold": 0.5,
+	})
 	envelopeOK(t, env, 1.0)
 
 	result := env["result"].(map[string]any)
 	qt.Assert(t, result["confidence"], qt.Equals, "NONE")
+}
+
+// recommend_boundaries returns three Pareto frontiers (split/merge/extract).
+// The phase1 fixture yields no candidates, but the keys must still be present.
+func TestRecommendBoundaries_Phase1Fixture(t *testing.T) {
+	mc := inProcessClient(t)
+
+	env := callTool(t, mc, "recommend_boundaries", map[string]any{"target": phase1Pkg})
+	envelopeOK(t, env, 1.0)
+
+	result := env["result"].(map[string]any)
+	qt.Assert(t, result["splits"], qt.Not(qt.IsNil))
+	qt.Assert(t, result["merges"], qt.Not(qt.IsNil))
+	qt.Assert(t, result["extracts"], qt.Not(qt.IsNil))
+}
+
+// find_false_boundaries returns the cross-boundary report. Counter and
+// Cache share no fields, so no cross-boundary concept is expected — the
+// test just verifies a valid envelope round-trips.
+func TestFindFalseBoundaries_Phase1Fixture(t *testing.T) {
+	mc := inProcessClient(t)
+
+	env := callTool(t, mc, "find_false_boundaries", map[string]any{"target": phase1Pkg})
+	envelopeOK(t, env, 1.0)
 }
