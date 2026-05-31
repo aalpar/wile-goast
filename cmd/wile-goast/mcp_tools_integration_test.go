@@ -76,22 +76,26 @@ func callTool(t *testing.T, c *client.Client, name string, args map[string]any) 
 	}
 	if res.IsError {
 		if len(res.Content) > 0 {
-			if tc, ok := mcp.AsTextContent(res.Content[0]); ok {
+			tc, ok := mcp.AsTextContent(res.Content[0])
+			if ok {
 				t.Fatalf("tool %s reported error: %s", name, tc.Text)
 			}
 		}
 		t.Fatalf("tool %s reported error (no text content)", name)
 	}
-	if m, ok := res.StructuredContent.(map[string]any); ok {
+	m, ok := res.StructuredContent.(map[string]any)
+	if ok {
 		return m
 	}
 	if len(res.Content) > 0 {
-		if tc, ok := mcp.AsTextContent(res.Content[0]); ok {
-			var m map[string]any
-			if err := json.Unmarshal([]byte(tc.Text), &m); err != nil {
+		tc, ok := mcp.AsTextContent(res.Content[0])
+		if ok {
+			var parsed map[string]any
+			err := json.Unmarshal([]byte(tc.Text), &parsed)
+			if err != nil {
 				t.Fatalf("tool %s: parse text JSON %q: %v", name, tc.Text, err)
 			}
-			return m
+			return parsed
 		}
 	}
 	t.Fatalf("tool %s returned neither structured map nor text JSON (%T)",
@@ -132,7 +136,8 @@ func TestInProcessClientInitializes(t *testing.T) {
 // Package-local to cmd/wile-goast (the goast package has its own copy).
 func mustWriteFile(t *testing.T, path, content string) {
 	t.Helper()
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+	err := os.WriteFile(path, []byte(content), 0o644)
+	if err != nil {
 		t.Fatalf("write %s: %v", path, err)
 	}
 }

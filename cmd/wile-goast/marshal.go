@@ -160,7 +160,8 @@ func isAlist(v values.Value) bool {
 		if !ok {
 			return false
 		}
-		if _, ok := entry.Car().(*values.Symbol); !ok {
+		_, ok = entry.Car().(*values.Symbol)
+		if !ok {
 			return false
 		}
 		saw = true
@@ -172,7 +173,7 @@ func isAlist(v values.Value) bool {
 func marshalVector(vec *values.Vector) (any, error) {
 	n := vec.Length()
 	arr := make([]any, 0, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		elem, err := marshalValue(vec.Get(i))
 		if err != nil {
 			return nil, err

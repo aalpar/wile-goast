@@ -201,16 +201,20 @@ func (ms *mcpServer) handleRecommendSplit(ctx context.Context, req mcp.CallToolR
 	// Scheme pipeline flattens it to recommend-split's plist form.
 	args := req.GetArguments()
 	var optsParts []string
-	if v, ok := args["idf_threshold"]; ok {
-		optsParts = append(optsParts, fmt.Sprintf("(cons 'idf-threshold %v)", v))
+	idf, ok := args["idf_threshold"]
+	if ok {
+		optsParts = append(optsParts, fmt.Sprintf("(cons 'idf-threshold %v)", idf))
 	}
-	if r, ok := args["refine"]; ok {
-		if b, _ := r.(bool); b {
+	refine, ok := args["refine"]
+	if ok {
+		b, _ := refine.(bool)
+		if b {
 			optsParts = append(optsParts, "(cons 'refine #t)")
 		}
 	}
-	if m, ok := args["max_attributes"]; ok {
-		optsParts = append(optsParts, fmt.Sprintf("(cons 'max-attributes %v)", m))
+	maxAttrs, ok := args["max_attributes"]
+	if ok {
+		optsParts = append(optsParts, fmt.Sprintf("(cons 'max-attributes %v)", maxAttrs))
 	}
 	code := `(import (wile goast pipelines))
 (pipeline-recommend-split ` + schemeStringLiteral(target) +
@@ -247,13 +251,16 @@ func (ms *mcpServer) handleFindFalseBoundaries(ctx context.Context, req mcp.Call
 	if mode != "" {
 		optsParts = append(optsParts, "(cons 'mode "+modeArg+")")
 	}
-	if v, ok := args["min_extent"]; ok {
+	v, ok := args["min_extent"]
+	if ok {
 		optsParts = append(optsParts, fmt.Sprintf("(cons 'min-extent %v)", v))
 	}
-	if v, ok := args["min_intent"]; ok {
+	v, ok = args["min_intent"]
+	if ok {
 		optsParts = append(optsParts, fmt.Sprintf("(cons 'min-intent %v)", v))
 	}
-	if v, ok := args["min_types"]; ok {
+	v, ok = args["min_types"]
+	if ok {
 		optsParts = append(optsParts, fmt.Sprintf("(cons 'min-types %v)", v))
 	}
 	code := `(import (wile goast pipelines))
