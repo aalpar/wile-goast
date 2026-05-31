@@ -179,6 +179,15 @@ func (ms *mcpServer) newServer() (*server.MCPServer, error) {
 				"- Examining SSA form and data flow → `(wile goast ssa)`\n\n"+
 				"The `eval` tool accepts Scheme expressions with these libraries pre-loaded. "+
 				"Parse Go packages with `go-parse-file` or `go-typecheck-package`, then query the result.\n\n"+
+				"## Pipeline tools\n\n"+
+				"Five pipeline tools return structured JSON reports without LLM orchestration. "+
+				"Each takes a `target` Go package pattern and returns a `{version, provenance, result}` envelope:\n"+
+				"- `check_beliefs` — run a directory of .scm beliefs against a package\n"+
+				"- `discover_beliefs` — run discovery beliefs, suppress committed ones, emit survivors as source\n"+
+				"- `recommend_split` — IDF-weighted FCA + min-cut package split recommendation\n"+
+				"- `recommend_boundaries` — function-level split/merge/extract Pareto frontiers\n"+
+				"- `find_false_boundaries` — cross-struct FCA concepts with lattice annotations\n\n"+
+				"Prefer a pipeline tool for its known structural query; use `eval` for open-ended exploration.\n\n"+
 				"## When NOT to use\n\n"+
 				"- Scheme runtime behavior, primitive signatures, library docs → use wile instead\n"+
 				"- Go symbol navigation, references, diagnostics, renaming → use gopls instead\n"+

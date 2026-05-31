@@ -243,3 +243,24 @@ func TestFindFalseBoundaries_Phase1Fixture(t *testing.T) {
 	env := callTool(t, mc, "find_false_boundaries", map[string]any{"target": phase1Pkg})
 	envelopeOK(t, env, 1.0)
 }
+
+// All five Phase 1 tools must be advertised by the server (alongside the
+// always-present eval tool), over the same registration path stdio and
+// HTTP use.
+func TestPhase1ToolsRegistered(t *testing.T) {
+	mc := inProcessClient(t)
+
+	res, err := mc.ListTools(context.Background(), mcp.ListToolsRequest{})
+	qt.Assert(t, err, qt.IsNil)
+
+	names := map[string]bool{}
+	for _, tool := range res.Tools {
+		names[tool.Name] = true
+	}
+	for _, want := range []string{
+		"check_beliefs", "discover_beliefs",
+		"recommend_split", "recommend_boundaries", "find_false_boundaries",
+	} {
+		qt.Assert(t, names[want], qt.IsTrue, qt.Commentf("missing tool: %s", want))
+	}
+}
