@@ -468,6 +468,15 @@ all verified:
 
 - [ ] **Step 1: Declare the marshaller error sentinel and signature**
 
+REFRESH #5 (2026-05-30, found during impl): `Engine.EvalMultiple`
+returns a `wile.Value` *wrapper* (`wile/value.go:24`), not a
+`values.Value`. The wrapper exposes only `SchemeString()`, `IsVoid()`,
+and `Internal() values.Value`. So the public entry point takes the
+wrapper and unwraps via `.Internal()` once; a private `marshalValue`
+recurses over `values.Value` (Pair.Car()/Cdr() yield `values.Value`).
+This keeps `invokePipeline`'s call site clean — it passes the
+EvalMultiple result directly, no `.Internal()` at the call site.
+
 ```go
 package main
 
@@ -475,17 +484,28 @@ import (
 	"encoding/json"
 	"strings"
 
+	"github.com/aalpar/wile"
 	"github.com/aalpar/wile/values"
 	"github.com/aalpar/wile/werr"
 )
 
 var errMarshalUnsupported = werr.NewStaticError("marshal: unsupported wile value type")
 
-// marshalToJSON converts a Wile value into a Go any suitable for
-// json.Marshal, following the Phase 1 mapping table. Returns
-// errMarshalUnsupported if a value type is not covered.
-func marshalToJSON(v values.Value) (any, error) {
-	// implementation per Step 2 below
+// marshalToJSON unwraps the EvalMultiple wrapper and delegates to
+// marshalValue. Callers pass the EvalMultiple result directly.
+func marshalToJSON(wv wile.Value) (any, error) {
+	if wv == nil {
+		return nil, nil
+	}
+	return marshalValue(wv.Internal())
+}
+
+// marshalValue converts a values.Value to a json.Marshal-able any per
+// the Phase 1 mapping table (implementation in Step 2). Returns
+// errMarshalUnsupported for an uncovered value type.
+func marshalValue(v values.Value) (any, error) {
+	// implementation per Step 2 below (renamed from marshalToJSON;
+	// recursive calls in marshalPair/marshalVector target marshalValue).
 }
 ```
 
