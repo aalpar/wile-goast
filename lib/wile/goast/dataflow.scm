@@ -17,16 +17,9 @@
 ;;; Provides lattice-based bounded reachability on SSA def-use graphs.
 ;;; Foundation for dataflow analysis (C2).
 
-;; ─── Boolean lattice {#f, #t} ───────────────
-
-(define (boolean-lattice)
-  "Construct a boolean lattice: bottom=#f, join=or, equal?=eq?.\nReturns an alist suitable for run-analysis.\n\nReturns: list\nCategory: goast-dataflow\n\nSee also: `run-analysis'."
-  (make-lattice
-    (lambda (a b) (or a b))         ; join
-    (lambda (a b) (and a b))        ; meet
-    #f                               ; bottom
-    #t                               ; top
-    (lambda (a b) (or (not a) b))))  ; leq? (implication)
+;; The truth-value guard lattice now comes from (wile algebra) as
+;; `two-point-lattice' — the {#f,#t} lattice is pure algebra and lives in
+;; wile, not here (see `defuse-reachable?').
 
 ;; ─── SSA instruction extraction ─────────────
 
@@ -127,7 +120,7 @@ See also: `run-analysis'."
   (let* ((instrs (ssa-all-instrs ssa-fn))
          (universe (ssa-instruction-names ssa-fn))
          (names-lat (powerset-lattice universe))
-         (guard-lat (boolean-lattice))
+         (guard-lat (two-point-lattice))
          (state-lat (product-lattice names-lat guard-lat))
          (transfer (make-reachability-transfer instrs found? names-lat))
          (initial (list start-names #f))

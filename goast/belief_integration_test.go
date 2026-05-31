@@ -957,14 +957,15 @@ func TestAllFunctionsIn(t *testing.T) {
 
 // ── Dataflow library tests ──────────────────────────────
 
-func TestDataflowBooleanLattice(t *testing.T) {
+func TestTwoPointLattice(t *testing.T) {
 	engine := newBeliefEngine(t)
 
+	// two-point-lattice now lives in (wile algebra); the goast dataflow guard
+	// lattice consumes it. Verify it is reachable and correct via the engine.
 	t.Run("join is or", func(t *testing.T) {
 		result := eval(t, engine, `
 			(import (wile algebra))
-			(import (wile goast dataflow))
-			(let ((L (boolean-lattice)))
+			(let ((L (two-point-lattice)))
 			  (list (lattice-join L #f #f)
 			        (lattice-join L #f #t)
 			        (lattice-join L #t #f)
@@ -975,8 +976,7 @@ func TestDataflowBooleanLattice(t *testing.T) {
 	t.Run("bottom is false", func(t *testing.T) {
 		result := eval(t, engine, `
 			(import (wile algebra))
-			(import (wile goast dataflow))
-			(lattice-bottom (boolean-lattice))`)
+			(lattice-bottom (two-point-lattice))`)
 		qt.New(t).Assert(result.SchemeString(), qt.Equals, "#f")
 	})
 }

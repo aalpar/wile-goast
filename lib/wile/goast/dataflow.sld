@@ -14,10 +14,8 @@
 
 (define-library (wile goast dataflow)
   (export
-    ;; Truth-value lattice — local; distinct from (wile algebra lattice)'s
-    ;; parametric (boolean-lattice n). Stays in wile-goast for the
-    ;; `defuse-reachable?` reachability product lattice.
-    boolean-lattice
+    ;; (The {#f,#t} guard lattice moved to (wile algebra) as
+    ;;  `two-point-lattice'; this module now consumes it.)
     ;; SSA-specific helpers
     ssa-all-instrs
     ssa-instruction-names
