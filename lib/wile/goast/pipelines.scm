@@ -54,3 +54,33 @@
                 (cons 'beliefs-path beliefs-path)
                 (cons 'belief-count count))
           results)))))
+
+;; ── discover_beliefs ─────────────────────────────────────
+;;
+;; Run the DISCOVERY-PATH beliefs against TARGET, suppress any result
+;; whose expressions match a belief in COMMITTED-PATH, and emit the
+;; survivors as Scheme source ready to commit. COMMITTED-PATH may be ""
+;; (or a path to an empty directory) — in either case no suppression is
+;; applied (raw discovery is returned). Provenance records raw vs
+;; filtered counts so the caller sees how much suppression removed.
+
+(define (pipeline-discover-beliefs target discovery-path committed-path)
+  (let* ((results
+           (with-belief-scope
+             (lambda ()
+               (load-beliefs! discovery-path)
+               (run-beliefs target))))
+         (committed
+           (if (or (not committed-path) (equal? committed-path ""))
+             (cons '() '())
+             (load-committed-beliefs committed-path)))
+         (filtered (suppress-known results committed))
+         (emitted (emit-beliefs filtered)))
+    (pipeline-envelope 1
+      (list (cons 'target target)
+            (cons 'discovery-path discovery-path)
+            (cons 'committed-path (or committed-path ""))
+            (cons 'raw-count (length results))
+            (cons 'filtered-count (length filtered)))
+      (list (cons 'emitted-source emitted)
+            (cons 'filtered-results filtered)))))

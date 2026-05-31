@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/mark3labs/mcp-go/client"
@@ -168,4 +169,36 @@ func TestCheckBeliefs_LockPairing(t *testing.T) {
 	qt.Assert(t, len(results) > 0, qt.IsTrue)
 	first := results[0].(map[string]any)
 	qt.Assert(t, first["status"], qt.Equals, "strong")
+}
+
+// discover_beliefs runs discovery beliefs against a target, suppresses
+// any matching a committed belief, and returns the survivors as Scheme
+// source ready to commit. With no committed beliefs (empty dir), every
+// strong discovery belief should appear in the emitted source.
+func TestDiscoverBeliefs_EmitsFiltered(t *testing.T) {
+	mc := inProcessClient(t)
+
+	discoveryDir := t.TempDir()
+	mustWriteFile(t, filepath.Join(discoveryDir, "discovery.scm"), `
+		(import (wile goast belief))
+		(import (wile goast utils))
+		(define-belief "methods-have-body"
+		  (sites (functions-matching (name-matches "")))
+		  (expect (custom (lambda (site ctx)
+		    (if (nf site 'body) 'has-body 'no-body))))
+		  (threshold 0.9 1))
+	`)
+	committedDir := t.TempDir() // empty: no suppression
+
+	env := callTool(t, mc, "discover_beliefs", map[string]any{
+		"target":         phase1Pkg,
+		"discovery_path": discoveryDir,
+		"committed_path": committedDir,
+	})
+	envelopeOK(t, env, 1.0)
+
+	result := env["result"].(map[string]any)
+	emitted := result["emitted_source"].(string)
+	qt.Assert(t, strings.Contains(emitted, "define-belief"), qt.IsTrue)
+	qt.Assert(t, strings.Contains(emitted, "methods-have-body"), qt.IsTrue)
 }

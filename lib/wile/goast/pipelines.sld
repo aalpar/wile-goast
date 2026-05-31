@@ -27,7 +27,8 @@
     ;; Shared envelope constructor (per-tool version supplied per call).
     pipeline-envelope
     ;; Tool procedures (added per task alongside their definitions).
-    pipeline-check-beliefs)
+    pipeline-check-beliefs
+    pipeline-discover-beliefs)
   (import
     (wile goast)
     (wile goast belief))

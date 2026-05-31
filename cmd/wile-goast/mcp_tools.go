@@ -40,7 +40,23 @@ func (ms *mcpServer) registerPhase1Tools(s *server.MCPServer) {
 		),
 		ms.handleCheckBeliefs,
 	)
-	// Tasks 3-6 register the other four tools here.
+	s.AddTool(
+		mcp.NewTool("discover_beliefs",
+			mcp.WithDescription("Run a directory of discovery beliefs against a Go "+
+				"package, suppress any that match a committed belief, and return the "+
+				"survivors as Scheme source ready to commit. Use to mine a codebase for "+
+				"new consistency patterns without re-surfacing already-committed ones."),
+			mcp.WithString("target", mcp.Required(),
+				mcp.Description("Go package pattern (e.g., 'my/pkg/...')")),
+			mcp.WithString("discovery_path", mcp.Required(),
+				mcp.Description("Path to a discovery .scm file or directory of them")),
+			mcp.WithString("committed_path",
+				mcp.Description("Path to committed beliefs (optional). Omit or pass "+
+					"\"\" to disable suppression and return raw discovery output.")),
+		),
+		ms.handleDiscoverBeliefs,
+	)
+	// Tasks 4-6 register the other three tools here.
 }
 
 // invokePipeline evaluates a pipeline call on the session's engine,
@@ -96,5 +112,23 @@ func (ms *mcpServer) handleCheckBeliefs(ctx context.Context, req mcp.CallToolReq
 	}
 	code := `(import (wile goast pipelines))
 (pipeline-check-beliefs ` + schemeStringLiteral(target) + ` ` + schemeStringLiteral(beliefsPath) + `)`
+	return ms.invokePipeline(ctx, code)
+}
+
+func (ms *mcpServer) handleDiscoverBeliefs(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	target := req.GetString("target", "")
+	discoveryPath := req.GetString("discovery_path", "")
+	committedPath := req.GetString("committed_path", "")
+	if target == "" {
+		return mcp.NewToolResultError("target parameter is required"), nil
+	}
+	if discoveryPath == "" {
+		return mcp.NewToolResultError("discovery_path parameter is required"), nil
+	}
+	code := `(import (wile goast pipelines))
+(pipeline-discover-beliefs ` +
+		schemeStringLiteral(target) + ` ` +
+		schemeStringLiteral(discoveryPath) + ` ` +
+		schemeStringLiteral(committedPath) + `)`
 	return ms.invokePipeline(ctx, code)
 }
