@@ -975,6 +975,46 @@ See also: `suppress-known', `with-belief-scope'."
             (for-each load-belief-file files)
             (cons *beliefs* *aggregate-beliefs*)))))))
 
+(define (load-beliefs! path)
+  "Load belief files from PATH (a directory of .scm files, or a single
+.scm file) into the CURRENT belief registry, activating them so a
+subsequent `run-beliefs' sees them.
+
+Contrast with `load-committed-beliefs', which evaluates each file inside
+a fresh `with-belief-scope' and returns only a snapshot — its beliefs are
+never active for a run. `load-beliefs!' instead registers into whatever
+belief scope is current. Wrap the call in `with-belief-scope' to confine
+the activation to a dynamic extent:
+
+  (with-belief-scope
+    (lambda ()
+      (load-beliefs! path)
+      (run-beliefs target)))
+
+Files that fail to load are skipped with a stderr warning (via
+`load-belief-file'); the count reflects only files that loaded cleanly.
+A single .scm file is loaded directly; a directory loads its top-level
+.scm files. A nonexistent PATH raises an error.
+
+Parameters:
+  path : string — directory or file path
+Returns: integer — count of files successfully loaded
+Category: goast-belief
+
+See also: `load-committed-beliefs', `with-belief-scope', `run-beliefs'."
+  (cond
+    ((not (file-exists? path))
+     (error "load-beliefs!: path does not exist" path))
+    (else
+      (let ((files
+              (guard (exn (#t (list path)))
+                (list-scheme-files-in-dir path))))
+        (let loop ((fs files) (n 0))
+          (if (null? fs)
+            n
+            (loop (cdr fs)
+                  (if (load-belief-file (car fs)) (+ n 1) n))))))))
+
 ;; Structural equality on a pair of belief expression keys.
 ;; Returns #t if both keys match in both RESULT and TUPLE.
 ;; Committed per-site tuple layout:

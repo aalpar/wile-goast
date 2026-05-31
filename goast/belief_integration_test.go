@@ -2029,6 +2029,93 @@ func TestAggregateBeliefExpressionMetadata(t *testing.T) {
 	})
 }
 
+// ── Belief activation (load-beliefs!) tests ─────────────
+
+// TestLoadBeliefs_ReturnsCount confirms load-beliefs! loads every
+// top-level .scm file under a directory and returns the count loaded.
+func TestLoadBeliefs_ReturnsCount(t *testing.T) {
+	engine := newBeliefEngine(t)
+	c := qt.New(t)
+
+	dir := t.TempDir()
+	mustWriteFile(t, filepath.Join(dir, "a.scm"), `
+		(import (wile goast belief))
+		(define-belief "belief-a"
+		  (sites (functions-matching (name-matches "A")))
+		  (expect (contains-call "FooA"))
+		  (threshold 0.9 3))
+	`)
+	mustWriteFile(t, filepath.Join(dir, "b.scm"), `
+		(import (wile goast belief))
+		(define-belief "belief-b"
+		  (sites (functions-matching (name-matches "B")))
+		  (expect (contains-call "FooB"))
+		  (threshold 0.9 3))
+	`)
+
+	result := eval(t, engine, `
+		(import (wile goast belief))
+		(reset-beliefs!)
+		(with-belief-scope (lambda () (load-beliefs! `+schemeStr(dir)+`)))
+	`)
+	c.Assert(result.SchemeString(), qt.Equals, "2")
+}
+
+// TestLoadBeliefs_ActivatesInScope pins the core design property that
+// separates load-beliefs! from load-committed-beliefs:
+//
+//	load-committed-beliefs → beliefs are ISOLATED; (current-beliefs) is
+//	                         0 after the call (see
+//	                         TestLoadCommittedBeliefs_Directory).
+//	load-beliefs!          → beliefs are ACTIVE inside the enclosing
+//	                         with-belief-scope ((current-beliefs) sees
+//	                         them), and CONFINED to it (restored to 0
+//	                         after the scope exits).
+//
+// This is the property the whole check_beliefs/discover_beliefs pipeline
+// rests on: a path's beliefs must actually be live when run-beliefs
+// fires, and must not leak into later, unrelated runs.
+//
+// LEARNING-MODE TODO (you): replace the t.Skip below and write the 5-10
+// lines that assert this property. A workable shape:
+//  1. eval one Scheme expression that, INSIDE a single with-belief-scope,
+//     calls load-beliefs! then returns (length (current-beliefs))
+//     → expect a non-zero count (ACTIVE).
+//  2. eval (length (current-beliefs)) AFTER that scope has exited
+//     → expect 0 (CONFINED).
+//
+// Contrast deliberately with load-committed-beliefs, which reports 0 for
+// step 1. The harness below hands you engine, c, and dir (a belief file
+// is already written there). Use eval(t, engine, "<scheme>") and
+// schemeStr(dir). Note: read live state with (current-beliefs), not
+// *beliefs* — the latter is a stale snapshot under Wile import semantics.
+func TestLoadBeliefs_ActivatesInScope(t *testing.T) {
+	engine := newBeliefEngine(t)
+	c := qt.New(t)
+
+	dir := t.TempDir()
+	mustWriteFile(t, filepath.Join(dir, "active.scm"), `
+		(import (wile goast belief))
+		(define-belief "active-belief"
+		  (sites (functions-matching (name-matches "A")))
+		  (expect (contains-call "FooA"))
+		  (threshold 0.9 3))
+	`)
+
+	// Sanity (yours to keep or fold into the real assertion): the file is
+	// loadable and load-beliefs! reports one file.
+	count := eval(t, engine, `
+		(import (wile goast belief))
+		(reset-beliefs!)
+		(with-belief-scope (lambda () (load-beliefs! `+schemeStr(dir)+`)))
+	`)
+	c.Assert(count.SchemeString(), qt.Equals, "1")
+
+	t.Skip("LEARNING-MODE TODO(you): assert beliefs are ACTIVE inside the " +
+		"with-belief-scope ((current-beliefs) > 0) and CONFINED after it " +
+		"(== 0). See the comment above for the exact shape.")
+}
+
 // ── Belief suppression tests ────────────────────────────
 
 // mustWriteFile writes content to path and fails the test on error.

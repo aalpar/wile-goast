@@ -20,6 +20,8 @@
     aggregate-beliefs current-beliefs
     ;; Suppression
     with-belief-scope load-committed-beliefs suppress-known
+    ;; Activation (load-and-run, distinct from isolate-and-snapshot)
+    load-beliefs!
     string-contains  ;; SRFI-13: returns index | #f
     string-contains? ;; predicate variant: returns #t | #f
     ;; Context (needed by custom lambdas)
