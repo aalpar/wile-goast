@@ -133,6 +133,33 @@ No invented tagging schemes — keep emission conventional.
 
 ---
 
+## Plan refresh (2026-05-30)
+
+The code blocks below were drafted 2026-04-23, before the MCP server's
+HTTP/per-session-engine refactor (commits `48409b1`, `c1c8848`). A
+pre-execution verification pass against the live codebase found four
+stale blocks, now corrected in place. The plan's *architecture* is
+unchanged; only the code was re-pinned to real APIs.
+
+| # | Was (imagined) | Now (verified) |
+|---|----------------|----------------|
+| 1 | `invokePipeline` → `ms.getEngine(ctx)` | No such method. Mirror `handleEval` (`mcp.go:284`): `ms.builtEntry(ctx, sessionKey(ctx))` → `entry.evalMu.Lock()` → `entry.engine.EvalMultiple`. Required for the per-session isolation the refactor added. |
+| 2 | Register tools in `doMCP` | `AddTool` moved to `ms.newServer()` (`mcp.go:196`), shared by stdio+HTTP. Register Phase 1 tools there, after `eval`, before `registerPrompts`. |
+| 3 | Test harness hand-builds `server.NewMCPServer` | Call `ms.newServer()` so the test drives the real registration path + session hooks. |
+| 4 | Marshaller uses `v.IsBool()`/`v.Bool()`/`v.IsString()`/`v.IsPair()`… | None exist. `values.Value` is a thin interface; values are concrete structs. Type-switch per prior art (`goast/helpers.go:76`, `goast/unmapper.go:32`): `*values.Boolean.Value`, `*values.String.Value`, `*values.Symbol.Key`, `*values.Integer.Value`, `*values.BigInteger` (private bigint → `json.Number(x.SchemeString())`), `*values.Float.Value`, `*values.Rational.SchemeString()`, `*values.Vector.Length()/.Get(i)`, `values.IsEmptyList`, `values.Tuple` for list walking. |
+
+Confirmed still valid: `mcp.NewToolResultJSON[T any]` exists
+(mcp-go v0.45.0 `mcp/utils.go:283`), `StructuredContent` field exists,
+`&mcpServer{}` zero value works (lazy `engines` map), `EvalMultiple`
+returns `(values.Value, error)` (`wile/engine.go:398`).
+
+Commit policy for this execution: **green-only on master** (per
+`CLAUDE.local.md` standing consent). The deliberate broken-state commit
+in Task 1 Step 5 is dropped — switching the harness to `ms.newServer()`
+(refresh #3) makes Task 1 compile standalone, so no broken state exists.
+
+---
+
 ## File Structure
 
 > **Path note (post-`7ee305d` refactor):** Scheme libraries live at the
@@ -256,19 +283,31 @@ import (
 
 	"github.com/mark3labs/mcp-go/client"
 	"github.com/mark3labs/mcp-go/mcp"
-	"github.com/mark3labs/mcp-go/server"
 
 	qt "github.com/frankban/quicktest"
 )
 
-// inProcessClient returns a ready-to-use in-process MCP client and the
-// underlying server. The server has all Phase 1 tools registered.
+// REFRESH #3: no `server` import — the harness drives ms.newServer()
+// (which returns *server.MCPServer) rather than constructing one here.
+
+// inProcessClient returns a ready-to-use in-process MCP client backed by
+// the real protocol server (ms.newServer), so the test exercises the
+// actual registration path — eval tool, Phase 1 tools, prompts, and the
+// session-cleanup hook — exactly as stdio/HTTP build it.
+//
+// REFRESH #3 (2026-05-30): use ms.newServer() rather than hand-building
+// server.NewMCPServer + a standalone registerPhase1Tools call. After the
+// HTTP refactor, newServer() is the single shared construction site;
+// driving it here keeps the test honest and lets Task 1 compile green
+// (newServer already exists; Phase 1 tools register inside it in Task 2).
 func inProcessClient(t *testing.T) *client.Client {
 	t.Helper()
 	ms := &mcpServer{}
-	s := server.NewMCPServer("wile-goast-test", "test",
-		server.WithToolCapabilities(true))
-	ms.registerPhase1Tools(s)
+	t.Cleanup(ms.closeAll)
+	s, err := ms.newServer()
+	if err != nil {
+		t.Fatalf("new server: %v", err)
+	}
 	c, err := client.NewInProcessClient(s)
 	if err != nil {
 		t.Fatalf("new in-process client: %v", err)
@@ -330,23 +369,47 @@ Note: `expectedVersion` is `float64` because `encoding/json` decodes
 numbers into `float64` by default when unmarshalling into `any`. The
 JSON output is `"version": 1`; the test parses it back as `1.0`.
 
-`registerPhase1Tools` does not exist yet; Task 2 adds it. Referencing
-it here is deliberate — this step creates a compile error that Task 2
-resolves.
+REFRESH (2026-05-30): the harness now calls `ms.newServer()`, which
+already exists, so this file compiles standalone — no `registerPhase1Tools`
+reference, no deliberate break. The helpers (`inProcessClient`,
+`callTool`, `envelopeOK`) are unused until Task 2's first tool test, so
+add a single trivial smoke test in this step to keep the file exercised
+and the build green (Go errors on unused funcs only if unexported and
+never referenced — test helpers are exempt, but an explicit smoke test
+documents intent):
 
-- [ ] **Step 4: Confirm compile fails at this step**
+```go
+// TestInProcessClientInitializes proves the shared protocol server
+// builds and an in-process client can complete the MCP handshake.
+// Phase 1 tool tests (Tasks 2-6) build on this harness.
+func TestInProcessClientInitializes(t *testing.T) {
+	c := qt.New(t)
+	mc := inProcessClient(t)
+	res, err := mc.ListTools(context.Background(), mcp.ListToolsRequest{})
+	c.Assert(err, qt.IsNil)
+	// eval is always present; Phase 1 tools arrive in Tasks 2-6.
+	names := map[string]bool{}
+	for _, tool := range res.Tools {
+		names[tool.Name] = true
+	}
+	c.Assert(names["eval"], qt.IsTrue)
+}
+```
+
+- [ ] **Step 4: Confirm the build and smoke test pass**
 
 ```
 cd /Users/aalpar/projects/wile-workspace/wile-goast
-go build ./cmd/wile-goast/
+go test ./cmd/wile-goast/ -run TestInProcessClientInitializes -v
 ```
 
-Expected: FAIL — undefined `registerPhase1Tools`. Proceed to Task 2.
+Expected: PASS. (If `newServer` fails to build the engine lazily, the
+handshake still succeeds — the engine builds on first `eval`, not at
+registration.)
 
 - [ ] **Step 5: Commit (ask first)**
 
-> "Task 1: envelope helper + in-process test harness. Commit
-> intentionally-broken state so Task 2 can show the fix?"
+> "Task 1: pipelines skeleton + in-process test harness, green. Commit?"
 
 On approval:
 
@@ -357,8 +420,7 @@ git add lib/wile/goast/pipelines.scm \
   git commit -m "feat(mcp): pipelines library skeleton + test harness"
 ```
 
-Alternative if the broken-state commit feels wrong: hold the commit
-until Task 2 compiles.
+Green-only on master: this commit compiles and its test passes.
 
 ---
 
@@ -380,24 +442,48 @@ tool handler invokes `marshalToJSON(val) (any, error)` on the
 pipeline's returned Scheme value, then passes the result to
 `mcp.NewToolResultJSON`.
 
+REFRESH #4 (2026-05-30): the original Step 1/2 below were written
+against an imagined fat `Value` interface (`v.IsBool()`, `v.Bool()`,
+`v.IsString()`, `v.IsPair()`, `v.Kind() string`). Verified against
+wile v1.16.0, none of those exist. `values.Value` is a thin interface
+(`SchemeString`, `IsVoid`, `Car`, `Cdr`, `IsInteger`, `IsRational`,
+`Kind() NumericKind`); concrete values are structs. The marshaller must
+type-switch on concrete pointer types, mirroring the prior-art idiom in
+`goast/helpers.go:65-96` and `goast/unmapper.go:32`. Field accessors,
+all verified:
+
+| Wile concrete type | Accessor | JSON |
+|---|---|---|
+| `*values.Boolean` | `.Value` (bool) | `true`/`false` |
+| `*values.String` | `.Value` (string) | string |
+| `*values.Symbol` | `.Key` (string) | string |
+| `*values.Integer` | `.Value` (int64) | number |
+| `*values.BigInteger` | `.SchemeString()` (bigint field is private) | `json.Number(...)` — unquoted exact number |
+| `*values.Float` | `.Value` (float64) | number |
+| `*values.Rational` | `.SchemeString()` → `"9/10"` | string |
+| `*values.Vector` | `.Length()`, `.Get(i)` | array |
+| `*values.Pair` | `.Car()`, `.Cdr()` + `values.Tuple` walk | object/array/`{car,cdr}` |
+| empty list | `values.IsEmptyList(v)` | `[]` |
+| void / nil | `v == nil`/`v.IsVoid()` | omit (nil) |
+
 - [ ] **Step 1: Declare the marshaller error sentinel and signature**
 
 ```go
 package main
 
 import (
-	"fmt"
+	"encoding/json"
 	"strings"
 
 	"github.com/aalpar/wile/values"
 	"github.com/aalpar/wile/werr"
 )
 
-var errMarshalUnsupported = werr.NewStaticError("marshal: unsupported wile value kind")
+var errMarshalUnsupported = werr.NewStaticError("marshal: unsupported wile value type")
 
 // marshalToJSON converts a Wile value into a Go any suitable for
 // json.Marshal, following the Phase 1 mapping table. Returns
-// errMarshalUnsupported if a value kind is not covered.
+// errMarshalUnsupported if a value type is not covered.
 func marshalToJSON(v values.Value) (any, error) {
 	// implementation per Step 2 below
 }
@@ -405,88 +491,147 @@ func marshalToJSON(v values.Value) (any, error) {
 
 - [ ] **Step 2: Implement the type dispatch**
 
-The implementation switches on `v.Kind()` and handles each kind. Key
-rules from the mapping table:
+Type-switch on concrete pointer types. Guard nil/void/empty before the
+switch (calling `IsVoid()` on a nil interface panics; empty list must
+become `[]`, not fall through).
 
 ```go
 func marshalToJSON(v values.Value) (any, error) {
-	switch {
-	case v == nil || v.IsVoid():
+	if v == nil || v.IsVoid() {
 		return nil, nil
-	case v.IsBool():
-		return v.Bool(), nil
-	case v.IsString():
-		return v.String(), nil
-	case v.IsInteger():
-		return v.Integer(), nil
-	case v.IsFloat():
-		return v.Float(), nil
-	case v.IsRational():
-		// Exact preservation — string per locked mapping.
-		return v.SchemeString(), nil  // prints as "9/10"
-	case v.IsSymbol():
-		// Loses symbol/string distinction; acceptable for enum-shaped
-		// fields. The Scheme side must not use symbols where the
-		// string/symbol distinction is semantically load-bearing in
-		// the JSON output.
-		return v.Symbol(), nil
-	case v.IsPair():
-		return marshalPair(v)
-	case v.IsNull():
-		return []any{}, nil
-	case v.IsVector():
-		return marshalVector(v)
 	}
-	return nil, werr.WrapForeignErrorf(errMarshalUnsupported,
-		"kind=%s", v.Kind())
+	if values.IsEmptyList(v) {
+		return []any{}, nil
+	}
+	switch x := v.(type) {
+	case *values.Boolean:
+		return x.Value, nil
+	case *values.String:
+		return x.Value, nil
+	case *values.Symbol:
+		// Loses the symbol/string distinction — acceptable for the
+		// enum-shaped fields Phase 1 pipelines emit (status, verdict).
+		return x.Key, nil
+	case *values.Integer:
+		return x.Value, nil
+	case *values.BigInteger:
+		// Private *big.Int; SchemeString gives the exact decimal. Emit
+		// as an unquoted JSON number via json.Number (verbatim).
+		return json.Number(x.SchemeString()), nil
+	case *values.Float:
+		return x.Value, nil
+	case *values.Rational:
+		// Exact value preserved as string per locked mapping ("9/10").
+		return x.SchemeString(), nil
+	case *values.Vector:
+		return marshalVector(x)
+	case *values.Pair:
+		return marshalPair(x)
+	}
+	return nil, werr.WrapForeignErrorf(errMarshalUnsupported, "type=%T", v)
 }
 ```
 
-`marshalPair` is the tricky one. Two cases:
+`marshalPair` is the tricky one. Three cases, in order:
 
-1. **Alist of symbol-keyed pairs** — emit as JSON object. Detect by
-   walking the list and checking that every car is a pair whose car
-   is a symbol. Convert each key from kebab-case to snake_case.
-2. **Anything else** — emit as JSON array (proper list) or
-   `{"car":..., "cdr":...}` fallback (dotted pair in non-alist
-   position).
+1. **Alist of symbol-keyed pairs** — every element is a pair whose car
+   is a symbol → JSON object, kebab→snake keys.
+2. **Proper list** — terminates in the empty list → JSON array.
+3. **Dotted pair** (improper, non-alist) → `{"car":..., "cdr":...}`.
+
+List walking uses `values.IsEmptyList` to detect the terminator and
+type-asserts each spine cell to `*values.Pair` (the prior-art idiom).
 
 ```go
-func marshalPair(v values.Value) (any, error) {
-	if isAlist(v) {
+func marshalPair(p *values.Pair) (any, error) {
+	if isAlist(p) {
 		obj := map[string]any{}
-		for cur := v; !cur.IsNull(); cur = cur.Cdr() {
-			entry := cur.Car()
-			key := kebabToSnake(entry.Car().Symbol())
+		var cur values.Value = p
+		for !values.IsEmptyList(cur) {
+			pair := cur.(*values.Pair) // spine guaranteed by isAlist
+			entry := pair.Car().(*values.Pair)
+			key := kebabToSnake(entry.Car().(*values.Symbol).Key)
 			val, err := marshalToJSON(entry.Cdr())
 			if err != nil {
 				return nil, err
 			}
 			obj[key] = val
+			cur = pair.Cdr()
 		}
 		return obj, nil
 	}
-	if isProperList(v) {
-		var arr []any
-		for cur := v; !cur.IsNull(); cur = cur.Cdr() {
-			elem, err := marshalToJSON(cur.Car())
+	if isProperList(p) {
+		arr := []any{}
+		var cur values.Value = p
+		for !values.IsEmptyList(cur) {
+			pair := cur.(*values.Pair)
+			elem, err := marshalToJSON(pair.Car())
 			if err != nil {
 				return nil, err
 			}
 			arr = append(arr, elem)
+			cur = pair.Cdr()
 		}
 		return arr, nil
 	}
-	// Dotted pair fallback
-	car, err := marshalToJSON(v.Car())
+	// Dotted pair fallback.
+	car, err := marshalToJSON(p.Car())
 	if err != nil {
 		return nil, err
 	}
-	cdr, err := marshalToJSON(v.Cdr())
+	cdr, err := marshalToJSON(p.Cdr())
 	if err != nil {
 		return nil, err
 	}
 	return map[string]any{"car": car, "cdr": cdr}, nil
+}
+
+// isProperList: spine of *values.Pair cells terminating in the empty list.
+func isProperList(v values.Value) bool {
+	for !values.IsEmptyList(v) {
+		pair, ok := v.(*values.Pair)
+		if !ok {
+			return false
+		}
+		v = pair.Cdr()
+	}
+	return true
+}
+
+// isAlist: a non-empty proper list whose every element is a pair with a
+// symbol car. Empty list is handled earlier (emits []), so it returns
+// false here by construction.
+func isAlist(v values.Value) bool {
+	saw := false
+	for !values.IsEmptyList(v) {
+		pair, ok := v.(*values.Pair)
+		if !ok {
+			return false
+		}
+		entry, ok := pair.Car().(*values.Pair)
+		if !ok {
+			return false
+		}
+		if _, ok := entry.Car().(*values.Symbol); !ok {
+			return false
+		}
+		saw = true
+		v = pair.Cdr()
+	}
+	return saw
+}
+
+func marshalVector(vec *values.Vector) (any, error) {
+	n := vec.Length()
+	arr := make([]any, 0, n)
+	for i := 0; i < n; i++ {
+		elem, err := marshalToJSON(vec.Get(i))
+		if err != nil {
+			return nil, err
+		}
+		arr = append(arr, elem)
+	}
+	return arr, nil
 }
 
 func kebabToSnake(s string) string {
@@ -494,9 +639,12 @@ func kebabToSnake(s string) string {
 }
 ```
 
-Verify the Wile values API (`v.Car()`, `v.Cdr()`, `v.Symbol()`,
-predicates) against `github.com/aalpar/wile/values` before
-committing — function names may differ in v1.16.0.
+Disambiguation note: a list of alists (e.g. `run-beliefs` output — a
+proper list whose elements are themselves belief alists) is correctly
+emitted as an **array of objects**, not an object: `isAlist` inspects
+the *outer* list's first element's car, which is itself a pair (not a
+symbol), so the outer list falls through to `isProperList`. Verified
+against the mapping-table test cases in Step 3.
 
 - [ ] **Step 3: Write the type-coverage test**
 
@@ -768,17 +916,28 @@ func (ms *mcpServer) registerPhase1Tools(s *server.MCPServer) {
 	// Tasks 3-6 register the other four tools here.
 }
 
-// invokePipeline builds the Scheme call from fmt+args, evaluates it on
-// the engine, marshals the resulting Wile value to JSON-compatible
-// Go any via marshalToJSON, and returns a tool result with both text
-// (JSON string) and structured content populated. Tool-level errors
-// become mcp.NewToolResultError; engine init failure becomes the same.
+// invokePipeline evaluates a pipeline call on the session's engine,
+// marshals the resulting Wile value to JSON-compatible Go any via
+// marshalToJSON, and returns a tool result with both text (JSON string)
+// and structured content populated. Tool-level errors become
+// mcp.NewToolResultError; engine init failure becomes the same.
+//
+// REFRESH #1 (2026-05-30): mirrors handleEval (mcp.go:284-295) for the
+// per-session-engine model the HTTP refactor introduced. There is no
+// ms.getEngine — engines are keyed by session and serialized by evalMu.
+// Resolve the entry via builtEntry(ctx, sessionKey(ctx)), then hold
+// evalMu across EvalMultiple so concurrent pipelined requests on one
+// client don't race the single engine.
 func (ms *mcpServer) invokePipeline(ctx context.Context, code string) (*mcp.CallToolResult, error) {
-	engine, err := ms.getEngine(ctx)
+	entry, err := ms.builtEntry(ctx, sessionKey(ctx))
 	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("engine init: %v", err)), nil
+		return mcp.NewToolResultError(fmt.Sprintf("engine init failed: %v", err)), nil
 	}
-	val, err := engine.EvalMultiple(ctx, code)
+
+	entry.evalMu.Lock()
+	defer entry.evalMu.Unlock()
+
+	val, err := entry.engine.EvalMultiple(ctx, code)
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
@@ -816,14 +975,24 @@ func (ms *mcpServer) handleCheckBeliefs(ctx context.Context, req mcp.CallToolReq
 }
 ```
 
-- [ ] **Step 6: Wire Phase 1 registration into `doMCP`**
+- [ ] **Step 6: Wire Phase 1 registration into `newServer`**
 
-In `cmd/wile-goast/mcp.go`, after the `s.AddTool("eval", ...)` call
-and before `registerPrompts`, add:
+REFRESH #2 (2026-05-30): registration moved out of `doMCP`. The eval
+`AddTool` now lives in `ms.newServer()` (`mcp.go:196`), the single
+construction site shared by stdio (`doMCP`) and HTTP
+(`newStreamableHTTPServer`). Registering Phase 1 tools anywhere else
+means one transport silently lacks them.
+
+In `cmd/wile-goast/mcp.go`, inside `newServer()`, after the eval
+`s.AddTool(...)` block (ends `mcp.go:207`) and before
+`err := ms.registerPrompts(s)` (`mcp.go:209`), add:
 
 ```go
 ms.registerPhase1Tools(s)
 ```
+
+`registerPhase1Tools` has no error return (tool registration can't
+fail), so no error check is needed here.
 
 - [ ] **Step 7: Run the test, expect pass**
 
