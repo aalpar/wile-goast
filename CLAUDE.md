@@ -503,14 +503,21 @@ Semiring-parameterized path computation over call graphs. Lazy single-source Bel
 Resolve SSA instructions to source positions. The SSA mapper injects
 `(pos . "file:line:col")` per instruction under `go-ssa-build`'s `'positions`
 option; the belief context now builds with it on. These accessors surface that
-position so analyses stop discarding the provenance they already compute. First
-primitive of the auditable-categorization facility
+position so analyses stop discarding the provenance they already compute. It
+also defines the auditable *finding* — a value (category or measure) paired with
+`where`/`why`/`score` — and its human rendering; `why` is structured
+(`(reason-tag . data-alist)`) so downstream Scheme can filter/aggregate on it.
+First primitives of the auditable-categorization facility
 (`plans/2026-06-01-auditable-categorization-design.md`).
 
 | Export | Description |
 |--------|-------------|
 | `ssa-instr-pos` | Source position `"file:line:col"` of an SSA instruction node, or `#f` |
 | `ssa-call-position` | Position of the first call to a named function in a block, or `#f` |
+| `make-finding` | Construct an auditable finding `(value, where, why, score)` |
+| `finding-value` / `finding-where` / `finding-why` / `finding-score` | Finding accessors |
+| `render-why` | Project a structured reason `(reason-tag . data-alist)` to a human string |
+| `render-finding` | One-line audit string `"where — why [score]"` |
 
 ## Key Files
 
