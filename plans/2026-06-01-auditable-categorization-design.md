@@ -294,13 +294,17 @@ additions, keeping every existing consumer working.
 ### Slice sequencing
 
 1. **Slice 1 (shipped):** the position resolver — `(wile goast provenance)`.
-2. **Slice 2 (next):** the *pure* finding/evidence representation in
+2. **Slice 2 (shipped):** the *pure* finding/evidence representation in
    `(wile goast provenance)` — `make-finding` + accessors, structured `why` +
    `render-why`, `render-finding`. No belief-contract change; zero blast radius.
-3. **Slice 3:** wire evidence through the checker contract + `evaluate-belief`
-   *additively* (new `findings` field), with `ordered` as the first checker to
-   emit real evidence (it already holds `pos-a`/`pos-b`).
-4. **Slice 4+:** FCA/unification adopt the finding shape; the editor-walk renderer.
+3. **Slice 3 (shipped):** wire evidence through the checker contract +
+   `evaluate-belief` *additively* (new `findings` field), with `ordered` as the
+   first checker to emit real evidence. Impl:
+   `2026-06-01-auditable-finding-evidence-impl.md`. Note: `ordered` resolves
+   positions via `ssa-call-position` in *both* branches (same-block and
+   cross-block) — the design's "already holds `pos-a`/`pos-b`" was only the
+   same-block case; the established testdata exercises the cross-block branch.
+4. **Slice 4+ (next):** FCA/unification adopt the finding shape; the editor-walk renderer.
 
 ## Relation to other plans
 
