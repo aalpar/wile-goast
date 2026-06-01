@@ -435,6 +435,7 @@ Formal Concept Analysis (Ganter & Wille, 1999) applied to Go struct field access
 | `context-objects` | Extract object set from context |
 | `context-attributes` | Extract attribute set from context |
 | `field-index->context` | Convert `go-ssa-field-index` output to formal context (modes: `'write-only`, `'read-write`, `'type-only`) |
+| `field-index->positions` | Build a name→source hashtable from a field index. The Go↔source join that keeps `(wile algebra fca)` position-agnostic: the algebra's extent is opaque object names; positions live on the Go side (`ssa-field-summary.pos`) and are re-attached here by name. |
 | `intent` | Galois connection: objects → shared attributes |
 | `extent` | Galois connection: attributes → objects having all |
 | `concept-lattice` | Compute all formal concepts via NextClosure (Ganter 1984) |
@@ -442,6 +443,7 @@ Formal Concept Analysis (Ganter & Wille, 1999) applied to Go struct field access
 | `concept-intent` | Extract intent (attribute set) from concept |
 | `cross-boundary-concepts` | Filter concepts spanning multiple struct types (opts: `'min-extent`, `'min-intent`, `'min-types`) |
 | `boundary-report` | Structured alist report for cross-boundary concepts |
+| `boundary-findings` | Finding-shaped sibling of `boundary-report`: each extent member becomes a located `finding` (`value` = qualified func name, `where` = source position via a `field-index->positions` index, `why` = the shared intent as `(cross-boundary (fields . …) (types . …))`, `score` = `#f`). `boundary-report` is left unchanged so the `find_false_boundaries` MCP marshaller is unaffected. |
 
 ## FCA Algebraic Annotation — `(wile goast fca-algebra)`
 
@@ -533,6 +535,7 @@ First primitives of the auditable-categorization facility
 | `finding-value` / `finding-where` / `finding-why` / `finding-score` | Finding accessors |
 | `render-why` | Project a structured reason `(reason-tag . data-alist)` to a human string |
 | `render-finding` | One-line audit string `"where — why [score]"` |
+| `render-category` | Editor-walkable report for a category: a `LABEL (N)` header then one indented `render-finding` line per member. Generic over any finding list (belief adherence/deviations, an FCA concept's extent, …). The literal "show me every X and a one-line why." |
 
 ## Key Files
 

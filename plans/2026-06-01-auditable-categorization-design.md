@@ -304,7 +304,19 @@ additions, keeping every existing consumer working.
    positions via `ssa-call-position` in *both* branches (same-block and
    cross-block) — the design's "already holds `pos-a`/`pos-b`" was only the
    same-block case; the established testdata exercises the cross-block branch.
-4. **Slice 4+ (next):** FCA/unification adopt the finding shape; the editor-walk renderer.
+4. **Slice 4 (shipped, renderer + FCA half):** the editor-walk renderer
+   (`render-category`, generic over any finding list) and FCA's adoption of the
+   finding shape (`boundary-findings`, a finding-shaped sibling of
+   `boundary-report` whose extent members are located findings and whose `why` is
+   the shared intent). The one cross-layer build was locating extent members:
+   `ssa-field-summary` now carries `pos` (Go side), re-attached by name in
+   `field-index->positions` — keeping `(wile algebra fca)` position-agnostic.
+   `boundary-report` and the `find_false_boundaries` MCP marshaller are unchanged.
+   Impl: `2026-06-01-auditable-finding-fca-render-impl.md`.
+5. **Slice 5+ (next):** unification adopts the finding shape — the measure surface
+   over unification candidates (the "First consumer" section above), incl. the
+   four cross-layer builds (`cand-new-edges`, `cand-creates-cycle?`,
+   `cand-locality`, `cand-equiv-tier`).
 
 ## Relation to other plans
 
