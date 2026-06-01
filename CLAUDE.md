@@ -183,6 +183,7 @@ Declarative consistency deviation detection. Beliefs are patterns extracted stat
  (pattern . paired-defer) (ratio . 9/10) (total . 10)
  (adherence . ("pkg.Foo" "pkg.Bar" ...))
  (deviations . (("pkg.Baz" . unpaired) ...))
+ (findings . (#<finding> ...))   ;; one located finding per site (see below)
  (min-adherence . 0.9) (min-sites . 5)
  (sites-expr . (sites (functions-matching (contains-call "Lock"))))
  (expect-expr . (expect (paired-with "Lock" "Unlock"))))
@@ -195,6 +196,14 @@ Declarative consistency deviation detection. Beliefs are patterns extracted stat
 ```
 
 Status values: `strong`, `weak`, `no-sites`, `error` (per-site); `ok`, `error` (aggregate).
+
+The `findings` field is *additive* (it sits beside the unchanged `adherence`/`deviations`):
+a list of `finding` objects from `(wile goast provenance)`, one per site, each carrying
+`value` (the category), `where` (`"file:line:col"` or `#f`), `why` (structured
+`(reason-tag . data-alist)`, projected by `render-why`), and `score` (number or `#f`).
+The category alone still drives voting; evidence rides alongside it. A finding is only as
+located/justified as its checker chose to retain — `ordered` is the first to emit real
+evidence (the two call positions); bare-symbol checkers yield unlocated findings.
 
 ### Emit Mode
 
@@ -275,10 +284,16 @@ S-expressions). Names, thresholds, and ratios are ignored.
 |---------|-------|---------|
 | `(contains-call "func" ...)` | AST | `'present` / `'absent` |
 | `(paired-with "A" "B")` | AST+CFG | `'paired-defer` / `'paired-call` / `'unpaired` |
-| `(ordered "A" "B")` | SSA | `'a-dominates-b` / `'b-dominates-a` / `'same-block` / `'unordered` |
+| `(ordered "A" "B")` | SSA | `'a-dominates-b` / `'b-dominates-a` / `'unordered` (+ evidence tail) |
 | `(co-mutated "field" ...)` | SSA | `'co-mutated` / `'partial` |
 | `(checked-before-use "val")` | SSA+CFG | `'guarded` / `'unguarded` |
 | `(custom (lambda (site ctx) ...))` | any | user-defined symbol |
+
+A checker may return either a bare category symbol or `(symbol . evidence)` where
+`evidence = ((where . W) (why . Y) (score . S))`; a bare symbol stays valid (it yields an
+unlocated finding). The category alone drives voting; the evidence becomes the per-site
+`finding`. `ordered` is the first checker to use the tail — its `a/b-dominates-b` verdicts
+carry the two resolved call positions (`'unordered`/`'missing`/`'malformed-ssa` stay bare).
 
 ### Aggregate Beliefs
 
