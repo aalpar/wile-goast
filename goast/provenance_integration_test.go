@@ -31,3 +31,19 @@ func TestProvenanceInstrPos(t *testing.T) {
 	`)
 	qt.New(t).Assert(result.SchemeString(), qt.Equals, "#t")
 }
+
+func TestProvenanceCallPosition(t *testing.T) {
+	engine := newBeliefEngine(t)
+
+	// ssa-call-position finds the first matching call's position, #f otherwise.
+	// A literal block with one non-call instr and one positioned call.
+	result := eval(t, engine, `
+		(import (wile goast provenance))
+		(let ((block '(ssa-block (index . 0)
+		                (instrs (ssa-binop (name . "t0"))
+		                        (ssa-call (pos . "bar.go:7:5") (func . "Unlock"))))))
+		  (and (equal? (ssa-call-position block "Unlock") "bar.go:7:5")
+		       (eq? (ssa-call-position block "Nope") #f)))
+	`)
+	qt.New(t).Assert(result.SchemeString(), qt.Equals, "#t")
+}

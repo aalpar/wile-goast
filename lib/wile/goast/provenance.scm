@@ -26,3 +26,20 @@
 (define (ssa-instr-pos instr)
   (let ((p (nf instr 'pos)))
     (if (string? p) p #f)))
+
+;; ssa-call-to?: does NODE call FUNC-NAME? Matches static calls (func field)
+;; and method calls (method field) across ssa-call/ssa-go/ssa-defer. Mirrors
+;; the call-matching predicate in find-call-position (belief-checkers.scm).
+(define (ssa-call-to? node func-name)
+  (and (or (tag? node 'ssa-call) (tag? node 'ssa-go) (tag? node 'ssa-defer))
+       (or (equal? (nf node 'func) func-name)
+           (equal? (nf node 'method) func-name))))
+
+;; ssa-call-position: resolved source position of the first call to FUNC-NAME
+;; in BLOCK's instruction list, or #f when the call is absent or positionless.
+(define (ssa-call-position block func-name)
+  (let loop ((is (or (nf block 'instrs) '())))
+    (cond
+      ((null? is) #f)
+      ((ssa-call-to? (car is) func-name) (ssa-instr-pos (car is)))
+      (else (loop (cdr is))))))
