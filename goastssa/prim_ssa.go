@@ -320,11 +320,16 @@ func buildFuncSummary(fn *ssa.Function, pkgPath string) values.Value {
 	}
 
 	funcName := fn.String()
-	return goast.Node("ssa-field-summary",
+	fields := []values.Value{
 		goast.Field("func", goast.Str(funcName)),
 		goast.Field("pkg", goast.Str(pkgPath)),
 		goast.Field("fields", goast.ValueList(accesses)),
-	)
+	}
+	if pos := fn.Pos(); pos.IsValid() && fn.Prog != nil {
+		fields = append(fields,
+			goast.Field("pos", goast.Str(fn.Prog.Fset.Position(pos).String())))
+	}
+	return goast.Node("ssa-field-summary", fields...)
 }
 
 // fieldAccessNode builds a tagged alist for a single field access entry.

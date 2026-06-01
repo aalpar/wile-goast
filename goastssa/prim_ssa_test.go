@@ -16,6 +16,7 @@ package goastssa_test
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/aalpar/wile"
@@ -318,4 +319,30 @@ func TestGoSSABuild_Errors(t *testing.T) {
 			evalExpectError(t, engine, tc.code)
 		})
 	}
+}
+
+func TestGoSSAFieldIndex_FuncPosition(t *testing.T) {
+	c := qt.New(t)
+	engine := newEngine(t)
+	// UpdateBoth in the falseboundary testdata writes Cache+Index fields, so it
+	// appears in the field index. Its summary must now carry a source position.
+	// Match by exact qualified name (this engine has no srfi-13 string-suffix?).
+	result := eval(t, engine, `
+		(define target
+		  "github.com/aalpar/wile-goast/examples/goast-query/testdata/falseboundary.UpdateBoth")
+		(define idx (go-ssa-field-index
+		  "github.com/aalpar/wile-goast/examples/goast-query/testdata/falseboundary"))
+		(let loop ((ss idx))
+		  (if (null? ss) #f
+		    (let* ((s (car ss))
+		           (fn (cdr (assoc 'func (cdr s))))
+		           (p  (assoc 'pos (cdr s))))
+		      (if (and (string? fn) (string=? fn target) p (string? (cdr p)))
+		        (cdr p)
+		        (loop (cdr ss))))))
+	`)
+	pos := result.SchemeString()
+	c.Assert(pos, qt.Not(qt.Equals), "#f")
+	c.Assert(strings.Contains(pos, "falseboundary.go:"), qt.IsTrue,
+		qt.Commentf("pos = %s", pos))
 }

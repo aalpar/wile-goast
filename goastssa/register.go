@@ -65,7 +65,8 @@ func addPrimitives(r *registry.Registry) error {
 			ReturnType: values.TypeList},
 		{Name: "go-ssa-field-index", ParamCount: 1, IsVariadic: true, Impl: PrimGoSSAFieldIndex,
 			Doc: "Returns per-function field access summaries for a Go package.\n" +
-				"Each entry is an ssa-field-summary with: func, pkg, fields.\n" +
+				"Each entry is an ssa-field-summary with: func, pkg, fields, pos\n" +
+				"(pos is \"file:line:col\", present when the function position is valid).\n" +
 				"Each field access is an ssa-field-access with: struct, struct-pkg,\n" +
 				"field, recv, and mode (symbol: read or write).\n" +
 				"Optional arg is a package pattern or GoSession; if absent, uses\n" +
