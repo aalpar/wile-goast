@@ -58,6 +58,27 @@ number, `why` may be empty. A pure **class** is the other limit: `value` is the
 label, `score` is membership confidence, `why` is the discriminating evidence.
 One object, two limits — *categorization, audit, and scores are not three things.*
 
+## Audit is principal; the scalar is a user projection
+
+The finding is not "a value with optional evidence." **The audit is principal**;
+the scalar is what remains after the audit is *removed*. The API contract
+follows from this:
+
+1. **Every primitive returns the audited finding** — the located, justified
+   form is the canonical, default result at the API boundary. No primitive
+   returns a pre-stripped scalar.
+2. **Stripping to a scalar is a user-invoked projection**, e.g.
+   `(finding->scalar f) -> score`. It is a *user decision*, never an automation
+   default. Automation that needs the scalar internally (the majority-vote
+   aggregator, a Pareto comparator) *reads through* the finding — it projects to
+   compare, it does not destroy the audit. The audited form survives every
+   internal step and is always recoverable at the boundary.
+3. **The asymmetry is deliberate.** Audit → scalar is a cheap, lossy projection
+   the user may take at any time. Scalar → audit is impossible — the evidence is
+   gone. So the only safe default is to *retain* audit and let the user discard
+   it knowingly. Removing provenance is a choice the user makes, not one the
+   tool makes for them.
+
 ## The systemic violation
 
 Provenance exists at the leaves and is severed at result boundaries. Concretely,
@@ -207,6 +228,11 @@ well-documented measure that is trivial to integrate — not the answer.
   additive.
 - **Not a layer.** No new module named "audit." A representational property of
   results, threaded through the producers that already exist.
+- **No automated stripping.** No primitive returns a pre-stripped scalar; the
+  audited finding is the default at the API boundary. `finding->scalar` exists,
+  but reducing a finding to a bare score is a *user* projection, invoked
+  deliberately — never an automation default. Audit → scalar is lossy and
+  one-way, so retaining audit is the only safe default.
 
 ## Failure modes — candor
 
