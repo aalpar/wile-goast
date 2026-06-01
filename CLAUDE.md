@@ -498,6 +498,20 @@ Semiring-parameterized path computation over call graphs. Lazy single-source Bel
 | `path-analysis-fast-path?` | True iff bigint-counting kernel is attached |
 | `path-analysis-fast-path-kind` | Symbol naming the fast-path strategy (`'bigint-counting`) or `#f` |
 
+## Provenance — `(wile goast provenance)`
+
+Resolve SSA instructions to source positions. The SSA mapper injects
+`(pos . "file:line:col")` per instruction under `go-ssa-build`'s `'positions`
+option; the belief context now builds with it on. These accessors surface that
+position so analyses stop discarding the provenance they already compute. First
+primitive of the auditable-categorization facility
+(`plans/2026-06-01-auditable-categorization-design.md`).
+
+| Export | Description |
+|--------|-------------|
+| `ssa-instr-pos` | Source position `"file:line:col"` of an SSA instruction node, or `#f` |
+| `ssa-call-position` | Position of the first call to a named function in a block, or `#f` |
+
 ## Key Files
 
 | File | Purpose |
@@ -525,6 +539,7 @@ Semiring-parameterized path computation over call graphs. Lazy single-source Bel
 | `lib/wile/goast/boolean-simplify.scm` | Boolean normalization for Go AST conditions and belief selectors via `(wile algebra symbolic)` (embedded in binary) |
 | `lib/wile/goast/path-algebra.scm` | Semiring path algebra: Bellman-Ford over call graphs (embedded in binary) |
 | `lib/wile/goast/domains.scm` | Pre-built abstract domains: reaching defs, liveness, constant prop, sign, interval (embedded in binary) |
+| `lib/wile/goast/provenance.scm` | Provenance: resolve SSA instructions to source positions (`ssa-instr-pos`, `ssa-call-position`); first primitive of the auditable-finding facility (embedded in binary) |
 | `goast/prim_restructure.go` | Block restructuring: goto elimination, loop return rewriting, guard folding (`go-cfg-to-structured`) |
 | `goastssa/prim_canonicalize.go` | SSA function canonicalization (`go-ssa-canonicalize`) |
 
