@@ -85,3 +85,23 @@ func TestProvenanceMakeFinding(t *testing.T) {
 	`)
 	qt.New(t).Assert(result.SchemeString(), qt.Equals, "#t")
 }
+
+func TestProvenanceRender(t *testing.T) {
+	engine := newBeliefEngine(t)
+	result := eval(t, engine, `
+		(import (wile goast provenance))
+		(and
+		  (equal? (render-why '(ordered-before (a . "Lock") (b . "Unlock")))
+		          "ordered-before (a=Lock, b=Unlock)")
+		  (equal? (render-why 'unpaired) "unpaired")
+		  (equal? (render-why "free text") "free text")
+		  (equal? (render-finding
+		            (make-finding 'unpaired "lock.go:87:3"
+		                          '(missing-call (op . "Unlock")) #f))
+		          "lock.go:87:3 — missing-call (op=Unlock)")
+		  (equal? (render-finding
+		            (make-finding 'weak #f '(low-confidence) 3/4))
+		          "<unlocated> — low-confidence [3/4]"))
+	`)
+	qt.New(t).Assert(result.SchemeString(), qt.Equals, "#t")
+}

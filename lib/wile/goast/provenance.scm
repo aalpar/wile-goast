@@ -63,3 +63,46 @@
 (define (finding-where f) (nf f 'where))
 (define (finding-why   f) (nf f 'why))
 (define (finding-score f) (nf f 'score))
+
+;; val->string: display-form of any value, for rendering.
+(define (val->string v)
+  (let ((port (open-output-string)))
+    (display v port)
+    (get-output-string port)))
+
+;; render-why: project a structured reason to a human string. A structured
+;; reason is (reason-tag . data-alist), rendered "reason-tag (k=v, k=v ...)";
+;; an empty data list renders just the tag. A bare symbol or string passes
+;; through. The structure is what downstream Scheme filters on; this is only
+;; the human projection.
+(define (render-why why)
+  (cond
+    ((string? why) why)
+    ((symbol? why) (symbol->string why))
+    ((pair? why)
+     (let ((tag  (car why))
+           (data (cdr why)))
+       (string-append
+         (val->string tag)
+         (if (pair? data)
+             (string-append
+               " ("
+               (string-join
+                 (map (lambda (kv)
+                        (string-append (val->string (car kv)) "="
+                                       (val->string (cdr kv))))
+                      data)
+                 ", ")
+               ")")
+             ""))))
+    (else (val->string why))))
+
+;; render-finding: a one-line audit string for a finding —
+;; "where — why [score]". Unlocated findings show "<unlocated>"; a #f score
+;; is omitted.
+(define (render-finding f)
+  (let ((where (or (finding-where f) "<unlocated>"))
+        (why   (render-why (finding-why f)))
+        (score (finding-score f)))
+    (string-append where " — " why
+      (if score (string-append " [" (val->string score) "]") ""))))
