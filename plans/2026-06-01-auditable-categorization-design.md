@@ -269,14 +269,38 @@ Neither is a new algorithm. The contribution is representational: refusing to
 amputate provenance, and unifying measure/category/score under one auditable
 object so the frontier analyses are falsifiable by the human who must decide.
 
-## Open questions
+## Open questions — resolved (2026-06-01)
 
-| # | Question | Status |
-|---|----------|--------|
-| 1 | Narrative format — free string vs. structured `(reason . data)` for machine re-consumption? | Open; lean structured so a downstream script can filter on `why`, with a string rendering for humans. |
-| 2 | Does `sites-from` chaining (`belief.scm:398`) carry evidence forward, or re-derive at each hop? | Open; chaining keys on category today, so evidence is additive and need not thread — but a chained belief that wants the upstream `why` would need it forwarded. |
-| 3 | Position resolver placement — in `belief-checkers.scm`, or a shared `(wile goast provenance)` consumed by belief/FCA/unify alike? | Open; shared placement matches "not a belief feature," but adds a module the three producers import. |
-| 4 | Score semantics when a checker has no natural confidence (e.g. `present`/`absent`) — `score = #f`, or `1.0`? | Open; `#f` ("no score exists") is more honest than a fabricated `1.0`. |
+| # | Question | Resolution |
+|---|----------|------------|
+| 1 | Narrative format — free string vs. structured `(reason . data)`? | **Structured** `(reason-tag . data-alist)` with a `render-why` string projection. Bias to *downstream Scheme can filter/aggregate on it* (user decision) — consistent with "the user composes in Scheme." |
+| 2 | Does `sites-from` chaining (`belief.scm:398`) carry evidence forward? | **No, not speculatively.** Chaining keys on category; evidence is additive and need not thread. A chained belief that wants the upstream `why` opts in later — don't build forwarding before a consumer needs it (YAGNI). |
+| 3 | Position resolver placement? | **Resolved during slice 1** → shared `(wile goast provenance)` module (`ssa-instr-pos`, `ssa-call-position`), consumed by belief/FCA/unify alike. |
+| 4 | Score semantics when a checker has no natural confidence? | **`score = #f`** ("no score exists") — honest over a fabricated `1.0`. |
+
+### Resolution: evidence is additive, not a reshape
+
+The blast-radius decision that falls out of the code (`evaluate-belief`
+belief.scm:604-626; runner belief.scm:777-781): voting does
+`(eq? (cdr p) maj-cat)`, and the `deviations`/`adherence` result fields plus
+their consumers (`emit-beliefs`, `suppress-known`, the MCP `check_beliefs`
+marshaller, existing tests) all read the current shape. So **evidence rides
+alongside the category, never replaces it.** The run-beliefs result gains a new
+`findings` field (located findings) *beside* the unchanged `deviations`/`adherence`;
+the checker contract gains an optional evidence tail (`(symbol . evidence)`),
+with a bare symbol remaining valid (evidence `#f`). This contains the change to
+additions, keeping every existing consumer working.
+
+### Slice sequencing
+
+1. **Slice 1 (shipped):** the position resolver — `(wile goast provenance)`.
+2. **Slice 2 (next):** the *pure* finding/evidence representation in
+   `(wile goast provenance)` — `make-finding` + accessors, structured `why` +
+   `render-why`, `render-finding`. No belief-contract change; zero blast radius.
+3. **Slice 3:** wire evidence through the checker contract + `evaluate-belief`
+   *additively* (new `findings` field), with `ordered` as the first checker to
+   emit real evidence (it already holds `pos-a`/`pos-b`).
+4. **Slice 4+:** FCA/unification adopt the finding shape; the editor-walk renderer.
 
 ## Relation to other plans
 
