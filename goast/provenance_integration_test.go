@@ -71,3 +71,17 @@ func TestProvenanceContextPositions(t *testing.T) {
 	`)
 	qt.New(t).Assert(result.SchemeString(), qt.Equals, "#t")
 }
+
+func TestProvenanceMakeFinding(t *testing.T) {
+	engine := newBeliefEngine(t)
+	result := eval(t, engine, `
+		(import (wile goast provenance))
+		(let ((f (make-finding 'unpaired "lock.go:87:3"
+		                       '(missing-call (op . "Unlock")) #f)))
+		  (and (eq? (finding-value f) 'unpaired)
+		       (equal? (finding-where f) "lock.go:87:3")
+		       (equal? (finding-why f) '(missing-call (op . "Unlock")))
+		       (eq? (finding-score f) #f)))
+	`)
+	qt.New(t).Assert(result.SchemeString(), qt.Equals, "#t")
+}

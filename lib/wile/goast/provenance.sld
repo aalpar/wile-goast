@@ -13,6 +13,7 @@
 ;; limitations under the License.
 
 (define-library (wile goast provenance)
-  (export ssa-instr-pos ssa-call-position)
+  (export ssa-instr-pos ssa-call-position
+          make-finding finding-value finding-where finding-why finding-score)
   (import (wile goast utils))
   (include "provenance.scm"))

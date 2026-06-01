@@ -45,3 +45,21 @@
       ((null? is) #f)
       ((ssa-call-to? (car is) func-name) (ssa-instr-pos (car is)))
       (else (loop (cdr is))))))
+
+;; make-finding: construct an auditable finding — a value (category symbol or
+;; measure) paired with its provenance: WHERE ("file:line:col" or #f when
+;; unlocated), WHY (a structured reason (reason-tag . data-alist)), and SCORE
+;; (a number, or #f when no natural confidence exists). A tagged alist, read
+;; via the finding-* accessors. All four fields are always present, so a #f
+;; accessor result means the field's value is #f (e.g. unlocated / no score).
+(define (make-finding value where why score)
+  (list 'finding
+        (cons 'value value)
+        (cons 'where where)
+        (cons 'why   why)
+        (cons 'score score)))
+
+(define (finding-value f) (nf f 'value))
+(define (finding-where f) (nf f 'where))
+(define (finding-why   f) (nf f 'why))
+(define (finding-score f) (nf f 'score))
