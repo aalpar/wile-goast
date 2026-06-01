@@ -36,10 +36,13 @@
     sort-strings
     ;; Defined locally (Go SSA/callgraph bridge)
     field-index->context
+    field-index->positions
     cross-boundary-concepts
     boundary-report
+    boundary-findings
     propagate-field-writes)
   (import (wile goast utils)
+          (wile goast provenance)   ; make-finding (boundary-findings)
           (wile algebra fca)
           (srfi 13))   ; string-index
   (include "fca.scm"))

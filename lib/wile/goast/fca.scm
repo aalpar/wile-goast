@@ -67,6 +67,25 @@
              index)))
     (context-from-alist entries)))
 
+;; Build a name→position hashtable from a field index. Keys are qualified
+;; function names (the ssa-field-summary 'func field, identical to the FCA
+;; context object identifiers); values are "file:line:col" strings. Summaries
+;; without a 'pos (synthetic functions) are skipped — those objects stay
+;; honestly unlocated when looked up (hashtable-ref returns the caller default).
+;; This is the Go↔source join that keeps (wile algebra fca) position-agnostic:
+;; the algebra returns opaque object names; positions live on the Go side and
+;; are re-attached here by name.
+(define (field-index->positions index)
+  (let ((h (make-hashtable)))
+    (for-each
+      (lambda (summary)
+        (let ((fn  (nf summary 'func))
+              (pos (nf summary 'pos)))
+          (if (and (string? fn) (string? pos))
+            (hashtable-set! h fn pos))))
+      (if (pair? index) index '()))
+    h))
+
 ;;; ── Transitive field write propagation ───────────────────
 
 ;; Tail-recursive map via for-each + reverse. Safe for large lists.
@@ -283,5 +302,37 @@
            (list (cons 'types types)
                  (cons 'fields grouped)
                  (cons 'functions ext)
+                 (cons 'extent-size (length ext)))))
+       concepts))
+
+;; Finding-shaped sibling of boundary-report. POS-INDEX is from
+;; field-index->positions. Each entry mirrors boundary-report but replaces the
+;; bare 'functions name list with 'findings: one located, justified finding per
+;; extent member. value = the qualified function name; where = its source
+;; position (or #f when unlocated); why = the shared intent (the cross-boundary
+;; reason, identical across the concept's members) as a structured reason
+;; (cross-boundary (fields . intent) (types . types)) so render-why projects it
+;; and a script can filter on the participating struct types; score = #f (an FCA
+;; concept has no natural per-member confidence — design Q4). boundary-report is
+;; left byte-identical so existing consumers (the MCP marshaller) are unaffected.
+(define (boundary-findings concepts pos-index)
+  (map (lambda (concept)
+         (let* ((ext     (concept-extent concept))
+                (int     (concept-intent concept))
+                (types   (unique (map attr-struct-name int)))
+                (grouped (group-fields-by-struct int))
+                (why     (cons 'cross-boundary
+                               (list (cons 'fields int)
+                                     (cons 'types types))))
+                (findings
+                  (map (lambda (fn)
+                         (make-finding fn
+                                       (hashtable-ref pos-index fn #f)
+                                       why
+                                       #f))
+                       ext)))
+           (list (cons 'types types)
+                 (cons 'fields grouped)
+                 (cons 'findings findings)
                  (cons 'extent-size (length ext)))))
        concepts))
