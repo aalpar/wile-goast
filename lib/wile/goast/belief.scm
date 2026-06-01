@@ -141,7 +141,7 @@
 (define (ctx-ssa ctx)
   "Return the SSA functions from CTX, building if needed.\n\nParameters:\n  ctx : list\nReturns: list\nCategory: goast-belief\n\nSee also: `make-context', `ctx-pkgs', `ctx-find-ssa-func'."
   (or (ctx-ref ctx 'ssa)
-      (let ((ssa (go-ssa-build (ctx-session ctx))))
+      (let ((ssa (go-ssa-build (ctx-session ctx) 'positions)))
         (ctx-set! ctx 'ssa ssa)
         ssa)))
 

@@ -47,3 +47,27 @@ func TestProvenanceCallPosition(t *testing.T) {
 	`)
 	qt.New(t).Assert(result.SchemeString(), qt.Equals, "#t")
 }
+
+func TestProvenanceContextPositions(t *testing.T) {
+	engine := newBeliefEngine(t)
+
+	// After ctx-ssa builds with positions, real instructions carry a
+	// resolvable "file:line:col" that ssa-instr-pos surfaces.
+	result := eval(t, engine, `
+		(import (wile goast utils))
+		(import (wile goast provenance))
+		(import (wile goast belief))
+		(let* ((ctx (make-context "github.com/aalpar/wile-goast/goast"))
+		       (fn  (ctx-find-ssa-func ctx
+		              "github.com/aalpar/wile-goast/goast"
+		              "github.com/aalpar/wile-goast/goast.PrimGoParseFile"))
+		       (blocks (and fn (nf fn 'blocks)))
+		       (positions (flat-map
+		                    (lambda (b)
+		                      (filter-map ssa-instr-pos (or (nf b 'instrs) '())))
+		                    (or blocks '()))))
+		  (and (pair? positions)
+		       (string-contains? (car positions) ".go:")))
+	`)
+	qt.New(t).Assert(result.SchemeString(), qt.Equals, "#t")
+}
