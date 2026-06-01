@@ -28,8 +28,10 @@
     (if (string? p) p #f)))
 
 ;; ssa-call-to?: does NODE call FUNC-NAME? Matches static calls (func field)
-;; and method calls (method field) across ssa-call/ssa-go/ssa-defer. Mirrors
-;; the call-matching predicate in find-call-position (belief-checkers.scm).
+;; and method calls (method field) across ssa-call/ssa-go/ssa-defer.
+;; NOTE: belief-checkers.scm inlines the equivalent predicate in
+;; find-call-position and find-ssa-call-blocks. When adding a new call-like
+;; tag, update all three sites (candidate for unification — see follow-up).
 (define (ssa-call-to? node func-name)
   (and (or (tag? node 'ssa-call) (tag? node 'ssa-go) (tag? node 'ssa-defer))
        (or (equal? (nf node 'func) func-name)
