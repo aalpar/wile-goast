@@ -65,3 +65,60 @@ func TestBeliefFindingsChannel(t *testing.T) {
 		qt.New(t).Assert(got.SchemeString(), qt.Equals, "#t")
 	})
 }
+
+// Task 2: ordered recovers the two call positions it used to discard, and they
+// ride into the findings as real, walkable source locations.
+func TestBeliefOrderedEvidence(t *testing.T) {
+	engine := newBeliefEngine(t)
+	eval(t, engine, `
+		(import (wile goast belief))
+		(import (wile goast provenance))
+		(reset-beliefs!)
+		(define-belief "ordering"
+		  (sites (functions-matching
+		           (all-of (contains-call "Validate") (contains-call "Process"))))
+		  (expect (ordered "Validate" "Process"))
+		  (threshold 0.5 1))
+		(define results
+		  (run-beliefs "github.com/aalpar/wile-goast/examples/goast-query/testdata/ordering"))
+		(define findings (cdr (assoc 'findings (car results))))
+		(define (located? f)
+		  (and (finding-where f)
+		       (string-contains (finding-where f) "ordering.go:")
+		       #t))
+		(define (with-value v)
+		  (filter-map (lambda (f) (and (eq? (finding-value f) v) f)) findings))
+	`)
+
+	t.Run("4 a-dominates-b findings, all located in ordering.go", func(t *testing.T) {
+		got := eval(t, engine, `
+			(let ((fs (with-value 'a-dominates-b)))
+			  (and (= (length fs) 4)
+			       (let loop ((fs fs))
+			         (cond ((null? fs) #t)
+			               ((located? (car fs)) (loop (cdr fs)))
+			               (else #f)))))
+		`)
+		qt.New(t).Assert(got.SchemeString(), qt.Equals, "#t")
+	})
+
+	t.Run("the b-dominates-a deviation is located", func(t *testing.T) {
+		got := eval(t, engine, `
+			(let ((fs (with-value 'b-dominates-a)))
+			  (and (= (length fs) 1) (located? (car fs)) #t))
+		`)
+		qt.New(t).Assert(got.SchemeString(), qt.Equals, "#t")
+	})
+
+	t.Run("why names both ops and the relation", func(t *testing.T) {
+		got := eval(t, engine, `
+			(let* ((f (car (with-value 'a-dominates-b)))
+			       (s (render-why (finding-why f))))
+			  (and (string-contains s "Validate")
+			       (string-contains s "Process")
+			       (string-contains s "a-dominates-b")
+			       #t))
+		`)
+		qt.New(t).Assert(got.SchemeString(), qt.Equals, "#t")
+	})
+}

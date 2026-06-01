@@ -90,9 +90,12 @@
 
 ;; (ordered op-a op-b) — checks whether op-a's SSA block dominates op-b's block.
 ;; Uses SSA representation (blocks have instrs + idom). Does not require go-cfg.
-;; Returns: 'a-dominates-b, 'b-dominates-a, 'same-block, 'unordered, 'missing,
-;; or 'malformed-ssa (idom chain is broken — data error distinct from
-;; 'unordered's "no dominance relationship" verdict).
+;; Returns: 'a-dominates-b, 'b-dominates-a, 'unordered, 'missing, or
+;; 'malformed-ssa (idom chain is broken — data error distinct from 'unordered's
+;; "no dominance relationship" verdict). The a/b-dominates verdicts carry an
+;; evidence tail when the call positions resolve: (verdict . ((where . W)
+;; (why . Y) (score . S))) with the two source positions in `why`. Other
+;; verdicts stay bare symbols (no two-position evidence to carry).
 (define (ordered op-a op-b)
   "Property checker: verify that OP-A's SSA block dominates OP-B's block.\nReturns 'a-dominates-b, 'b-dominates-a, 'same-block, 'unordered, 'missing,\nor 'malformed-ssa (idom chain is broken — distinct from 'unordered's\nlegitimate 'no dominance' verdict).\n\nParameters:\n  op-a : string\n  op-b : string\nReturns: procedure\nCategory: goast-belief\n\nExamples:\n  (ordered \"Validate\" \"Execute\")\n\nSee also: `paired-with', `checked-before-use'."
   (lambda (site ctx)
@@ -103,28 +106,62 @@
         (let* ((blocks (nf ssa-fn 'blocks))
                (a-blocks (find-ssa-call-blocks blocks op-a))
                (b-blocks (find-ssa-call-blocks blocks op-b)))
+          ;; with-evidence: attach the recovered call source positions to a
+          ;; verdict. A-BLOCK / B-BLOCK are the ssa-blocks holding the op-a /
+          ;; op-b calls; (ssa-call-position block op) resolves "file:line:col"
+          ;; (or #f). This is the reason a human opens an editor -- ordered
+          ;; computes it and (pre-slice-3) threw it away.
+          ;;
+          ;; Returns (verdict . evidence) with evidence
+          ;;   ((where . W) (why . Y) (score . S)):
+          ;;   * where -- the *dominating* call's position (op-a for
+          ;;     a-dominates-b, op-b for b-dominates-a): the site a human jumps
+          ;;     to first. A finding has one position; the pair lives in `why`.
+          ;;   * why -- structured (ordered (a . op-a) (b . op-b)
+          ;;     (relation . verdict) (a-pos . W-a) (b-pos . W-b)): render-why
+          ;;     projects it to a string; downstream Scheme filters on the tag.
+          ;;   * score -- #f: ordering has no natural confidence (design Q4).
+          ;; When neither call resolves to a position, return the bare verdict --
+          ;; no fabricated location; the finding is honestly unlocated.
+          (define (with-evidence verdict a-block b-block)
+            (let* ((pos-a (and a-block (ssa-call-position a-block op-a)))
+                   (pos-b (and b-block (ssa-call-position b-block op-b)))
+                   (where (cond ((eq? verdict 'a-dominates-b) pos-a)
+                                ((eq? verdict 'b-dominates-a) pos-b)
+                                (else (or pos-a pos-b)))))
+              (if (and (not pos-a) (not pos-b))
+                  verdict
+                  (cons verdict
+                        (list (cons 'where where)
+                              (cons 'why (list 'ordered
+                                               (cons 'a op-a)
+                                               (cons 'b op-b)
+                                               (cons 'relation verdict)
+                                               (cons 'a-pos pos-a)
+                                               (cons 'b-pos pos-b)))
+                              (cons 'score #f))))))
           (cond
             ((or (null? a-blocks) (null? b-blocks)) 'missing)
             ((= (car a-blocks) (car b-blocks))
-             (let* ((blk-idx (car a-blocks))
-                    (block (let find ((bs (if (pair? blocks) blocks '())))
-                             (cond ((null? bs) #f)
-                                   ((= (nf (car bs) 'index) blk-idx) (car bs))
-                                   (else (find (cdr bs))))))
+             (let* ((block (block-by-index blocks (car a-blocks)))
                     (pos-a (and block (find-call-position block op-a)))
                     (pos-b (and block (find-call-position block op-b))))
                (cond
                  ((or (not pos-a) (not pos-b)) 'unordered)
-                 ((< pos-a pos-b) 'a-dominates-b)
-                 (else 'b-dominates-a))))
+                 ((< pos-a pos-b) (with-evidence 'a-dominates-b block block))
+                 (else (with-evidence 'b-dominates-a block block)))))
             (else
               (let ((ab (ssa-dominates? blocks (car a-blocks) (car b-blocks)))
                     (ba (ssa-dominates? blocks (car b-blocks) (car a-blocks))))
                 (cond
                   ((or (eq? ab 'malformed-idom) (eq? ba 'malformed-idom))
                    'malformed-ssa)
-                  (ab 'a-dominates-b)
-                  (ba 'b-dominates-a)
+                  (ab (with-evidence 'a-dominates-b
+                        (block-by-index blocks (car a-blocks))
+                        (block-by-index blocks (car b-blocks))))
+                  (ba (with-evidence 'b-dominates-a
+                        (block-by-index blocks (car a-blocks))
+                        (block-by-index blocks (car b-blocks))))
                   (else 'unordered))))))))))
 
 ;; Find SSA block indices containing a call to the named function.
@@ -143,6 +180,13 @@
                           (equal? (nf node 'method) func-name))))))
              idx)))
     (if (pair? blocks) blocks '())))
+
+;; block-by-index: the ssa-block in BLOCKS whose 'index is IDX, or #f.
+(define (block-by-index blocks idx)
+  (let loop ((bs (if (pair? blocks) blocks '())))
+    (cond ((null? bs) #f)
+          ((= (nf (car bs) 'index) idx) (car bs))
+          (else (loop (cdr bs))))))
 
 ;; Find the instruction index of the first call to func-name in a block.
 ;; Returns the 0-based position in the block's instrs list, or #f.

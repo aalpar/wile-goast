@@ -349,7 +349,10 @@ func TestBeliefCategory4_Ordering(t *testing.T) {
 		;; Classify each site with the ordered checker
 		(define checker (ordered "Validate" "Process"))
 		(define classified
-		  (map (lambda (site) (cons (nf site 'name) (checker site ctx)))
+		  (map (lambda (site)
+		         ;; ordered now returns (verdict . evidence); take the verdict.
+		         (let ((r (checker site ctx)))
+		           (cons (nf site 'name) (if (pair? r) (car r) r))))
 		       sites))
 	`)
 
@@ -400,7 +403,10 @@ func TestBeliefCategory3_Handling(t *testing.T) {
 		;; Classify each site with the contains-call checker
 		(define checker (contains-call "Errorf"))
 		(define classified
-		  (map (lambda (site) (cons (nf site 'name) (checker site ctx)))
+		  (map (lambda (site)
+		         ;; ordered now returns (verdict . evidence); take the verdict.
+		         (let ((r (checker site ctx)))
+		           (cons (nf site 'name) (if (pair? r) (car r) r))))
 		       sites))
 	`)
 
@@ -450,7 +456,10 @@ func TestBeliefCategory2_Check(t *testing.T) {
 		;; Classify each site with the checked-before-use checker
 		(define checker (checked-before-use "err"))
 		(define classified
-		  (map (lambda (site) (cons (nf site 'name) (checker site ctx)))
+		  (map (lambda (site)
+		         ;; ordered now returns (verdict . evidence); take the verdict.
+		         (let ((r (checker site ctx)))
+		           (cons (nf site 'name) (if (pair? r) (car r) r))))
 		       sites))
 	`)
 
@@ -532,7 +541,10 @@ func TestBeliefCategory4_SameBlockOrdering(t *testing.T) {
 		                 (all-of (contains-call "Foo") (contains-call "Bar")))
 		               ctx))
 		(define classified
-		  (map (lambda (site) (cons (nf site 'name) (checker site ctx)))
+		  (map (lambda (site)
+		         ;; ordered now returns (verdict . evidence); take the verdict.
+		         (let ((r (checker site ctx)))
+		           (cons (nf site 'name) (if (pair? r) (car r) r))))
 		       sites))
 	`)
 
@@ -567,7 +579,10 @@ func TestBeliefCategory2_FieldGuard(t *testing.T) {
 		(define checker (checked-before-use "r"))
 		(define sites ((functions-matching (has-params "Request")) ctx))
 		(define classified
-		  (map (lambda (site) (cons (nf site 'name) (checker site ctx)))
+		  (map (lambda (site)
+		         ;; ordered now returns (verdict . evidence); take the verdict.
+		         (let ((r (checker site ctx)))
+		           (cons (nf site 'name) (if (pair? r) (car r) r))))
 		       sites))
 	`)
 
@@ -608,7 +623,10 @@ func TestBeliefCategory1_Pairing(t *testing.T) {
 		;; Classify each site with the paired-with checker
 		(define checker (paired-with "Lock" "Unlock"))
 		(define classified
-		  (map (lambda (site) (cons (nf site 'name) (checker site ctx)))
+		  (map (lambda (site)
+		         ;; ordered now returns (verdict . evidence); take the verdict.
+		         (let ((r (checker site ctx)))
+		           (cons (nf site 'name) (if (pair? r) (car r) r))))
 		       sites))
 	`)
 
@@ -661,7 +679,10 @@ func TestBeliefCategory5_CoMutation(t *testing.T) {
 		;; Classify each site: do they also write Timeout?
 		(define checker (co-mutated "Host" "Port" "Timeout"))
 		(define classified
-		  (map (lambda (site) (cons (nf site 'name) (checker site ctx)))
+		  (map (lambda (site)
+		         ;; ordered now returns (verdict . evidence); take the verdict.
+		         (let ((r (checker site ctx)))
+		           (cons (nf site 'name) (if (pair? r) (car r) r))))
 		       sites))
 	`)
 
