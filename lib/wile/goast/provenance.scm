@@ -106,3 +106,14 @@
         (score (finding-score f)))
     (string-append where " — " why
       (if score (string-append " [" (val->string score) "]") ""))))
+
+;; render-category: an editor-walkable report for a category — a set of findings
+;; sharing a class. A header line "LABEL (N)" then one indented render-finding
+;; line per member. No grouping: the caller passes an already-partitioned
+;; category (belief adherence/deviations, an FCA concept's extent, etc.). This is
+;; a display of provenance-carrying results, not a computation.
+(define (render-category label findings)
+  (string-append
+    (val->string label) " (" (number->string (length findings)) ")"
+    (apply string-append
+      (map (lambda (f) (string-append "\n  " (render-finding f))) findings))))
