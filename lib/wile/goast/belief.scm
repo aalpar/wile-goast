@@ -592,25 +592,42 @@
         (loop (cdr cs) (car (car cs)) (cdr (car cs)))
         (loop (cdr cs) best-cat best-count)))))
 
+;; ev-ref: read KEY from a checker's evidence alist
+;; ((where . W) (why . Y) (score . S)), or DEFAULT when the key -- or the whole
+;; evidence -- is absent (a bare-symbol checker, evidence = #f).
+(define (ev-ref ev key default)
+  (let ((p (and (pair? ev) (assq key ev))))
+    (if p (cdr p) default)))
+
 ;; Evaluate a single belief against its sites.
-;; Returns: (name majority-cat adherence-ratio total adherence-sites deviation-sites)
-;; or #f if the belief has no sites.
+;; Returns: (name majority-cat adherence-ratio total adherence-sites
+;;           deviation-sites findings) or #f if the belief has no sites.
+;; The checker contract permits an optional evidence tail: a checker may return
+;; (category . evidence-alist) instead of a bare category symbol. The category
+;; alone drives voting (unchanged); the evidence rides into FINDINGS, one
+;; located, justified finding per site (additive -- see the auditable-finding
+;; design, slice 3).
 (define (evaluate-belief belief ctx)
   (let* ((name (belief-name belief))
          (sites-fn (belief-sites-fn belief))
          (expect-fn (belief-expect-fn belief))
          (sites (sites-fn ctx)))
     (if (null? sites) #f
-      (let* ((classified
+      (let* ((rated
                (map (lambda (site)
-                      (let ((cat (expect-fn site ctx)))
-                        ;; Normalize #t/#f to 'present/'absent
-                        ;; (for contains-call dual-use)
-                        (cons site
-                          (cond ((eq? cat #t) 'present)
-                                ((eq? cat #f) 'absent)
-                                (else cat)))))
+                      (let* ((ret (expect-fn site ctx))
+                             ;; (category . evidence) | bare symbol | #t/#f
+                             (cat0 (if (pair? ret) (car ret) ret))
+                             (ev   (if (pair? ret) (cdr ret) #f))
+                             ;; Normalize #t/#f to 'present/'absent
+                             ;; (for contains-call dual-use)
+                             (cat  (cond ((eq? cat0 #t) 'present)
+                                         ((eq? cat0 #f) 'absent)
+                                         (else cat0))))
+                        (list site cat ev)))
                     sites))
+             ;; voting input -- identical shape to the pre-slice-3 classified
+             (classified (map (lambda (r) (cons (car r) (cadr r))) rated))
              (counts (count-categories classified))
              (maj (majority-category counts))
              (maj-cat (car maj))
@@ -622,8 +639,18 @@
                           classified))
              (deviations (filter-map
                            (lambda (p) (and (not (eq? (cdr p) maj-cat)) p))
-                           classified)))
-        (list name maj-cat ratio total adherence deviations)))))
+                           classified))
+             ;; evidence rides alongside -- one located, justified finding per
+             ;; site. value = category; why defaults to the category when the
+             ;; checker retained no narrative.
+             (findings (map (lambda (r)
+                              (let ((cat (cadr r)) (ev (caddr r)))
+                                (make-finding cat
+                                              (ev-ref ev 'where #f)
+                                              (ev-ref ev 'why   cat)
+                                              (ev-ref ev 'score #f))))
+                            rated)))
+        (list name maj-cat ratio total adherence deviations findings)))))
 
 ;; ── Runner ──────────────────────────────────────────────
 
@@ -755,6 +782,7 @@
                     (total (list-ref result 3))
                     (adherence (list-ref result 4))
                     (deviations (list-ref result 5))
+                    (findings (list-ref result 6))
                     (min-adh (belief-min-adherence belief))
                     (min-n (belief-min-sites belief))
                     (is-strong (and (>= ratio min-adh) (>= total min-n)))
@@ -779,6 +807,7 @@
                                               (cons (site-display-name (car d))
                                                     (cdr d)))
                                             deviations))
+                                 (cons 'findings findings)
                                  (cons 'sites-expr (belief-sites-expr belief))
                                  (cons 'expect-expr (belief-expect-expr belief)))
                            results))))))))))
