@@ -15,7 +15,9 @@
 (define-library (wile goast dup-detect)
   (export func-refs->positions
           function-ref-context
-          duplicate-candidate-concepts)
+          duplicate-candidate-concepts
+          dup-candidate-findings
+          find-duplicate-candidates)
   (import (wile goast utils)        ; nf
           (wile goast provenance)   ; make-finding
           (wile goast fca)          ; concept-lattice, concept-extent, concept-intent

@@ -73,3 +73,50 @@ func TestDuplicateCandidateConcepts(t *testing.T) {
 		c.Assert(out, qt.Equals, "#t")
 	})
 }
+
+func TestDupCandidateFindings(t *testing.T) {
+	c := qt.New(t)
+	engine := newBeliefEngine(t)
+	pkg := "github.com/aalpar/wile-goast/examples/goast-query/testdata/dupcluster"
+	eval(t, engine, `
+		(import (wile goast dup-detect))
+		(import (wile goast provenance))
+		(define bf (find-duplicate-candidates "`+pkg+`"))
+		(define entry
+		  (let loop ((es bf))
+		    (if (null? es) #f
+		      (let ((refs (cdr (assoc 'refs (car es)))))
+		        (if (member "encoding/json" refs) (car es) (loop (cdr es)))))))
+		(define entry-findings (cdr (assoc 'findings entry)))
+	`)
+
+	t.Run("json cluster has 3 findings matching extent-size", func(t *testing.T) {
+		out := eval(t, engine, `
+			(and entry
+			     (= (length entry-findings) (cdr (assoc 'extent-size entry)))
+			     (= (length entry-findings) 3))
+		`).SchemeString()
+		c.Assert(out, qt.Equals, "#t")
+	})
+
+	t.Run("every member is located at dupcluster.go", func(t *testing.T) {
+		out := eval(t, engine, `(render-category "duplicate" entry-findings)`).SchemeString()
+		c.Assert(strings.Count(out, "dupcluster.go:"), qt.Equals, 3, qt.Commentf("%s", out))
+		c.Assert(strings.Contains(out, "duplicate (3)"), qt.IsTrue, qt.Commentf("%s", out))
+	})
+
+	t.Run("why carries the shared ref intent", func(t *testing.T) {
+		out := eval(t, engine, `(render-why (finding-why (car entry-findings)))`).SchemeString()
+		c.Assert(strings.Contains(out, "duplicate-candidate"), qt.IsTrue, qt.Commentf("%s", out))
+		c.Assert(strings.Contains(out, "encoding/json"), qt.IsTrue, qt.Commentf("%s", out))
+	})
+
+	t.Run("why is structured: a script can filter on shared packages", func(t *testing.T) {
+		out := eval(t, engine, `
+			(let* ((why (finding-why (car entry-findings)))
+			       (refs (cdr (assoc 'refs (cdr why)))))
+			  (and (member "encoding/json" refs) #t))
+		`).SchemeString()
+		c.Assert(out, qt.Equals, "#t")
+	})
+}

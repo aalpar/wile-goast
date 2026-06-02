@@ -56,3 +56,38 @@
               (and (>= (length (concept-extent c)) min-ext)
                    (>= (length (concept-intent c)) 1)))
             lattice)))
+
+;; dup-candidate-findings: the boundary-findings twin for deduplication. POS-INDEX
+;; is from func-refs->positions. Each entry mirrors a boundary-findings entry:
+;; per candidate concept, each extent member -> a located finding. value = the
+;; function name; where = its source position (or #f when unlocated); why = the
+;; shared ref intent as a structured reason (duplicate-candidate (refs . intent))
+;; so render-why projects it and a script can filter on the shared packages;
+;; score = #f (no structural-confidence measure yet — that is slice 5b).
+(define (dup-candidate-findings concepts pos-index)
+  (map (lambda (concept)
+         (let* ((ext (concept-extent concept))
+                (int (concept-intent concept))
+                (why (cons 'duplicate-candidate (list (cons 'refs int))))
+                (findings
+                  (map (lambda (fn)
+                         (make-finding fn (hashtable-ref pos-index fn #f) why #f))
+                       ext)))
+           (list (cons 'refs int)
+                 (cons 'findings findings)
+                 (cons 'extent-size (length ext)))))
+       concepts))
+
+;; find-duplicate-candidates: top-level. TARGET is a package pattern string or a
+;; GoSession. Runs the full chain — func-refs -> IDF-filtered context -> concept
+;; lattice -> candidate concepts -> located findings. Returns a list of entries
+;; (one per candidate cluster), each ((refs . intent) (findings . (...))
+;; (extent-size . N)). Optional THRESHOLD (default 0.36) tunes IDF noise removal.
+(define (find-duplicate-candidates target . opts)
+  (let* ((threshold (if (pair? opts) (car opts) 0.36))
+         (refs      (go-func-refs target))
+         (ctx       (function-ref-context refs threshold))
+         (lat       (concept-lattice ctx))
+         (cands     (duplicate-candidate-concepts lat))
+         (pos-index (func-refs->positions refs)))
+    (dup-candidate-findings cands pos-index)))
