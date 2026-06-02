@@ -291,8 +291,13 @@ S-expressions). Names, thresholds, and ratios are ignored.
 A checker may return either a bare category symbol or `(symbol . evidence)` where
 `evidence = ((where . W) (why . Y) (score . S))`; a bare symbol stays valid (it yields an
 unlocated finding). The category alone drives voting; the evidence becomes the per-site
-`finding`. `ordered` is the first checker to use the tail — its `a/b-dominates-b` verdicts
-carry the two resolved call positions (`'unordered`/`'missing`/`'malformed-ssa` stay bare).
+`finding`. All five SSA-aware checkers emit the tail: `ordered` (the two call
+positions), `paired-with` (op-a's call site; `unpaired` lands exactly at the
+operation needing a pair), `co-mutated` (the first field-store), `checked-before-use`
+(the comparison feeding the guard — the `ssa-if` itself carries no position), and
+`contains-call` (the matched call on `present`; bare `#f` on absent, preserving its
+dual-use as a `functions-matching` predicate). Verdicts with no resolvable position
+stay bare symbols (`'unordered`/`'missing`/`'malformed-ssa`, unlocated `unguarded`).
 
 ### Aggregate Beliefs
 
@@ -573,6 +578,8 @@ First primitives of the auditable-categorization facility
 |--------|-------------|
 | `ssa-instr-pos` | Source position `"file:line:col"` of an SSA instruction node, or `#f` |
 | `ssa-call-position` | Position of the first call to a named function in a block, or `#f` |
+| `ssa-first-pos` | Position of the first instruction in an SSA function matching a predicate (and carrying a position), or `#f` — lets a checker locate a store/guard it identified |
+| `ssa-func-call-position` | Position of the first call to a named function anywhere in an SSA function — the function-level companion to `ssa-call-position` |
 | `make-finding` | Construct an auditable finding `(value, where, why, score)` |
 | `finding-value` / `finding-where` / `finding-why` / `finding-score` | Finding accessors |
 | `render-why` | Project a structured reason `(reason-tag . data-alist)` to a human string |
