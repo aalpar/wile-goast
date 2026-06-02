@@ -247,3 +247,47 @@
     (cond ((eq? tier 'proven)     'duplicate)
           ((eq? tier 'structural) 'likely-duplicate)
           (else                   'distinct))))
+
+;;; ── Slice 5c: cost-half measures ──────────────────────────
+
+;; callers-set: distinct qualified caller names of NAME in CG ('caller field of
+;; the edges-in returned by go-callgraph-callers; #f -> no callers).
+(define (callers-set cg name)
+  (let ((edges (go-callgraph-callers cg name)))
+    (if (pair? edges)
+      (unique (filter-map (lambda (e) (nf e 'caller)) edges))
+      '())))
+
+;; cand-new-edges: |callers(a) ∪ callers(b)| — the in-degree the merged function
+;; would carry. Merging retargets edges rather than adding them; this measures
+;; the coupling concentrated at the shared abstraction (the cost signal).
+(define (cand-new-edges name-a name-b cg)
+  (length (unique (append (callers-set cg name-a) (callers-set cg name-b)))))
+
+;; callees-of: distinct qualified callee names of NAME in CG.
+(define (callees-of cg name)
+  (let ((edges (go-callgraph-callees cg name)))
+    (if (pair? edges)
+      (filter-map (lambda (e) (nf e 'callee)) edges)
+      '())))
+
+;; reaches?: does FROM transitively call TO? BFS over callees (there is no
+;; go-callgraph-reachable primitive). Candidates are short names; callee names
+;; are qualified, so compare via short-name. `seen' (short names) bounds cycles.
+(define (reaches? cg from to)
+  (let ((target (short-name to)))
+    (let loop ((frontier (list from)) (seen '()))
+      (if (null? frontier) #f
+        (let ((n (car frontier)))
+          (if (member (short-name n) seen)
+            (loop (cdr frontier) seen)
+            (let ((callees (callees-of cg n)))
+              (if (member target (map short-name callees))
+                #t
+                (loop (append (cdr frontier) callees)
+                      (cons (short-name n) seen))))))))))
+
+;; cand-creates-cycle?: merging two functions on a call path collapses it into a
+;; self-cycle. The merge-side analog of verify-acyclic.
+(define (cand-creates-cycle? name-a name-b cg)
+  (or (reaches? cg name-a name-b) (reaches? cg name-b name-a)))

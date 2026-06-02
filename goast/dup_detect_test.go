@@ -243,3 +243,28 @@ func TestParetoOverCandidates(t *testing.T) {
 	`).SchemeString()
 	c.Assert(out, qt.Equals, "#t")
 }
+
+func TestCostEdgesAndCycle(t *testing.T) {
+	c := qt.New(t)
+	engine := newBeliefEngine(t)
+	pkg := "github.com/aalpar/wile-goast/examples/goast-query/testdata/transcall"
+	eval(t, engine, `
+		(import (wile goast dup-detect))
+		(define cg (go-callgraph "`+pkg+`" 'static))
+	`)
+
+	t.Run("Initialize reaches SetupConfig -> merging creates a cycle", func(t *testing.T) {
+		out := eval(t, engine, `(cand-creates-cycle? "Initialize" "SetupConfig" cg)`).SchemeString()
+		c.Assert(out, qt.Equals, "#t")
+	})
+
+	t.Run("two leaves on no shared path -> no cycle", func(t *testing.T) {
+		out := eval(t, engine, `(cand-creates-cycle? "SetupConfig" "SetupLogger" cg)`).SchemeString()
+		c.Assert(out, qt.Equals, "#f")
+	})
+
+	t.Run("new-edges = union of caller sets", func(t *testing.T) {
+		out := eval(t, engine, `(cand-new-edges "SetupConfig" "SetupLogger" cg)`).SchemeString()
+		c.Assert(out, qt.Equals, "1")
+	})
+}

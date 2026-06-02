@@ -27,7 +27,10 @@
           pair-findings
           scored-candidates
           find-scored-candidates
-          candidate->verdict)
+          candidate->verdict
+          ;; slice 5c: cost-half measures
+          cand-new-edges
+          cand-creates-cycle?)
   (import (wile goast utils)        ; nf, tag?, filter-map
           (wile goast provenance)   ; make-finding
           (wile goast fca)          ; concept-lattice, concept-extent, concept-intent
