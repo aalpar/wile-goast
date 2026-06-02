@@ -470,7 +470,6 @@ cost. Queries return callers, callees, and transitive reachability.
 | `(go-callgraph pattern algorithm)` | list of `cg-node` | Build call graph |
 | `(go-callgraph-callers graph func-name)` | list of `cg-edge` or `#f` | Direct callers of a function |
 | `(go-callgraph-callees graph func-name)` | list of `cg-edge` or `#f` | Direct callees of a function |
-| `(go-callgraph-reachable graph root-name)` | list of strings | Transitive closure from a root |
 
 ### Parameters
 
@@ -515,15 +514,15 @@ Each `(cg-edge ...)` contains:
 
 `go-callgraph-callers` and `go-callgraph-callees` return the `edges-in` or
 `edges-out` list directly, or `#f` if the function is not in the graph.
-
-`go-callgraph-reachable` returns a sorted list of function name strings.
+(There is no `go-callgraph-reachable` primitive; compute transitive reachability
+by walking `go-callgraph-callees` yourself.)
 
 ### Security
 
 | Primitive | Resource | Action |
 |-----------|----------|--------|
 | `go-callgraph` | `ResourceProcess` | `ActionLoad` |
-| `go-callgraph-callers`, `go-callgraph-callees`, `go-callgraph-reachable` | none | none |
+| `go-callgraph-callers`, `go-callgraph-callees` | none | none |
 
 The query primitives operate on the in-memory s-expression graph and require no
 authorization.
@@ -538,8 +537,8 @@ authorization.
 ;; Who calls ProcessRequest?
 (define callers (go-callgraph-callers cg "(*Server).ProcessRequest"))
 
-;; What's reachable from main?
-(define reachable (go-callgraph-reachable cg "command-line-arguments.main"))
+;; What does main call directly?
+(define callees (go-callgraph-callees cg "command-line-arguments.main"))
 ```
 
 ---

@@ -336,11 +336,15 @@ additions, keeping every existing consumer working.
    projects the tier (default stays the measure surface, per principle #2); the
    existing `pareto-frontier`/`dominates?` is the one documented ranking
    combinator. Impl: `2026-06-01-auditable-finding-unify-measures-impl.md`.
-7. **Slice 5c (next):** the cost half of the unification ledger —
-   `cand-new-edges` (call graph), `cand-creates-cycle?` (merge-side analog of
-   `verify-acyclic`), `cand-locality` (`go-func-refs` dep-overlap + shared
-   callers). Each is an underspecified cross-layer build needing its own
-   merge-semantics; they plug into the same Pareto combinator as additional axes.
+7. **Slice 5c (shipped):** the cost half of the unification ledger —
+   `cand-new-edges` (`|callers(a) ∪ callers(b)|`, the merged in-degree),
+   `cand-creates-cycle?` (`a reaches b ∨ b reaches a`, via BFS over
+   `go-callgraph-callees` — there is no `go-callgraph-reachable` primitive), and
+   `cand-locality` (`scope` + `dep-overlap`, a ledger fact not a verdict).
+   `find-candidates-with-cost` folds them into the 5b scored candidates; they
+   plug into the same Pareto combinator (negate lower-is-better axes). Impl:
+   `2026-06-01-auditable-finding-unify-cost-impl.md`. The unification benefit/cost
+   ledger is now complete.
 8. **Deferred (not a slice):** the LLM judge (`dup-detect` Phase 5) as the
    requestable escalation for `uncertain` candidates; path-algebra cluster ranking.
 

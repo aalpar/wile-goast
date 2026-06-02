@@ -89,8 +89,8 @@ names ; => ("Add" "helper")
 (define cg (go-callgraph "." 'cha))
 (define callers (go-callgraph-callers cg "(*Server).Handle"))
 
-;; What's reachable from main?
-(define reachable (go-callgraph-reachable cg "command-line-arguments.main"))
+;; What does main call directly?
+(define callees (go-callgraph-callees cg "command-line-arguments.main"))
 ```
 
 ### Check control flow dominance

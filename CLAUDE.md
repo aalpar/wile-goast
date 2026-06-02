@@ -73,7 +73,6 @@ All sub-extensions depend on the base `goast` package for shared mapper/helper i
 | `go-callgraph` | Build call graph (static, CHA, RTA) |
 | `go-callgraph-callers` | Incoming edges of a function |
 | `go-callgraph-callees` | Outgoing edges of a function |
-| `go-callgraph-reachable` | Transitive reachability from root |
 
 ### goastlint — `(wile goast lint)`
 | Primitive | Description |
@@ -523,6 +522,16 @@ data this module joins on.
 | `score-candidate-pair` | (5b) Benefit measures (`benefit`, `type-params`, `value-params`, `similarity`) + `equiv-tier` for a candidate pair, joined to AST/SSA via `short-name`. Tier: `proven` (SSA-canonical `unifiable?`) / `structural` (AST `unifiable?`) / `divergent`. Returns `#f` when names don't resolve |
 | `scored-candidates` / `find-scored-candidates` | (5b) Each within-cluster pair → a scored candidate: two located findings (`score` = effective similarity), `why` = `(unify-candidate (peer . other) (measures . M))`. `find-scored-candidates` is the top-level (clusters → scored pairs) |
 | `candidate->verdict` | (5b) **Opt-in** projection of a candidate's `equiv-tier` to `duplicate`/`likely-duplicate`/`distinct` — the categorical analog of `finding->scalar`; the measure surface is the default, the verdict is requested, never imposed |
+| `cand-new-edges` | (5c) `\|callers(a) ∪ callers(b)\|` — the in-degree the merged function would carry (coupling concentrated; merging retargets edges, doesn't add them) |
+| `cand-creates-cycle?` | (5c) `a reaches b ∨ b reaches a` (BFS over `go-callgraph-callees`) — merging a call-path pair collapses it into a self-cycle. Merge-side analog of `verify-acyclic` |
+| `cand-locality` | (5c) Ledger fact (never a verdict): `scope` (`same-pkg`/`shared-callers`/`disjoint`) + `dep-overlap` (Jaccard of external ref sets) |
+| `build-func-ref-index` | (5c) name → `func-ref` entry, for `cand-locality`'s pkg + ref-set lookup |
+| `find-candidates-with-cost` | (5c) Top-level full ledger: 5b scoring + the cost measures, findings embedding the full set |
+
+Cost axes plug into the same `pareto-frontier`; negate lower-is-better axes
+(e.g. `new-edges`) since dominance treats higher as better. (Note: there is no
+`go-callgraph-reachable` primitive — reachability is computed by BFS over
+`go-callgraph-callees`.)
 
 Rank the measure surface with `pareto-frontier`/`dominates?` from
 `(wile goast fca-recommend)` — the one documented combinator (no dedup-specific
