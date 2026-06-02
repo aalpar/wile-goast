@@ -45,3 +45,25 @@ func TestPairedWithEvidence(t *testing.T) {
 		c.Assert(strings.Contains(out, "Unlock"), qt.IsTrue, qt.Commentf("%s", out))
 	})
 }
+
+func TestCoMutatedEvidence(t *testing.T) {
+	c := qt.New(t)
+	engine := newBeliefEngine(t)
+	pkg := "github.com/aalpar/wile-goast/examples/goast-query/testdata/comutation"
+	out := eval(t, engine, `
+		(import (wile goast belief))
+		(import (wile goast provenance))
+		(reset-beliefs!)
+		(define-belief "config-comutation"
+		  (sites (functions-matching (stores-to-fields "Config" "Host")))
+		  (expect (co-mutated "Host" "Port" "Timeout"))
+		  (threshold 0.5 1))
+		(define res (car (run-beliefs "`+pkg+`")))
+		(render-category "config-comutation" (cdr (assoc 'findings res)))
+	`).SchemeString()
+
+	t.Run("findings located at comutation.go with co-mutated why", func(t *testing.T) {
+		c.Assert(strings.Contains(out, "comutation.go"), qt.IsTrue, qt.Commentf("%s", out))
+		c.Assert(strings.Contains(out, "co-mutated"), qt.IsTrue, qt.Commentf("%s", out))
+	})
+}

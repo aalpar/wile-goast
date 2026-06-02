@@ -251,10 +251,19 @@
            (pkg-path (nf site 'pkg-path))
            (summary (find-field-summary (ctx-field-index ctx) pkg-path fname)))
       (if (not summary) 'missing
-        (let ((writes (writes-for-struct summary #f)))
-          (if (all-present? field-names writes)
-            'co-mutated
-            'partial))))))
+        (let* ((writes (writes-for-struct summary #f))
+               (verdict (if (all-present? field-names writes) 'co-mutated 'partial))
+               (ssa-fn (and pkg-path (ctx-find-ssa-func ctx pkg-path fname)))
+               (pos (and ssa-fn
+                         (ssa-first-pos ssa-fn
+                           (lambda (i) (and (tag? i 'ssa-field-addr)
+                                            (member? (nf i 'field) field-names)))))))
+          (if (not pos) verdict
+            (cons verdict
+                  (list (cons 'where pos)
+                        (cons 'why (list 'co-mutated (cons 'fields field-names)
+                                         (cons 'relation verdict)))
+                        (cons 'score #f)))))))))
 
 ;; (checked-before-use value-pattern) — checks whether a value is
 ;; tested before use via bounded transitive reachability on the SSA
