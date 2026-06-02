@@ -30,7 +30,9 @@
           candidate->verdict
           ;; slice 5c: cost-half measures
           cand-new-edges
-          cand-creates-cycle?)
+          cand-creates-cycle?
+          cand-locality
+          build-func-ref-index)
   (import (wile goast utils)        ; nf, tag?, filter-map
           (wile goast provenance)   ; make-finding
           (wile goast fca)          ; concept-lattice, concept-extent, concept-intent

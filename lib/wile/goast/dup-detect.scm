@@ -291,3 +291,44 @@
 ;; self-cycle. The merge-side analog of verify-acyclic.
 (define (cand-creates-cycle? name-a name-b cg)
   (or (reaches? cg name-a name-b) (reaches? cg name-b name-a)))
+
+;; func-ref-pkgs: the external package paths a func-ref entry references.
+(define (func-ref-pkgs entry)
+  (if entry
+    (unique (map (lambda (r) (nf r 'pkg))
+                 (let ((rs (nf entry 'refs))) (if (pair? rs) rs '()))))
+    '()))
+
+;; jaccard: |A ∩ B| / |A ∪ B|, 0 when both empty.
+(define (jaccard a b)
+  (let ((inter (length (filter (lambda (x) (member x b)) a)))
+        (uni   (length (unique (append a b)))))
+    (if (= uni 0) 0 (/ inter uni))))
+
+;; build-func-ref-index: name -> func-ref entry (for pkg + ref-set lookup).
+(define (build-func-ref-index func-refs)
+  (let ((h (make-hashtable)))
+    (for-each
+      (lambda (fr)
+        (let ((n (nf fr 'name)))
+          (if (string? n) (hashtable-set! h n fr))))
+      (if (pair? func-refs) func-refs '()))
+    h))
+
+;; cand-locality: a ledger fact (never a verdict). scope = same-pkg (both in one
+;; package) / shared-callers (a common caller) / disjoint; dep-overlap = Jaccard
+;; of external ref sets. The human reads this to judge coincidental vs. real
+;; duplication.
+(define (cand-locality name-a name-b fr-index cg)
+  (let* ((ea (hashtable-ref fr-index name-a #f))
+         (eb (hashtable-ref fr-index name-b #f))
+         (pa (and ea (nf ea 'pkg)))
+         (pb (and eb (nf eb 'pkg)))
+         (ca (callers-set cg name-a))
+         (cb (callers-set cg name-b))
+         (shared (filter (lambda (x) (member x cb)) ca))
+         (scope (cond ((and pa pb (equal? pa pb)) 'same-pkg)
+                      ((pair? shared) 'shared-callers)
+                      (else 'disjoint))))
+    (list (cons 'scope scope)
+          (cons 'dep-overlap (jaccard (func-ref-pkgs ea) (func-ref-pkgs eb))))))

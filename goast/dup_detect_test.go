@@ -268,3 +268,28 @@ func TestCostEdgesAndCycle(t *testing.T) {
 		c.Assert(out, qt.Equals, "1")
 	})
 }
+
+func TestCostLocality(t *testing.T) {
+	c := qt.New(t)
+	engine := newBeliefEngine(t)
+	pkg := "github.com/aalpar/wile-goast/examples/goast-query/testdata/transcall"
+	eval(t, engine, `
+		(import (wile goast dup-detect))
+		(define cg (go-callgraph "`+pkg+`" 'static))
+		(define fr-index (build-func-ref-index (go-func-refs "`+pkg+`")))
+		(define loc (cand-locality "SetupConfig" "SetupLogger" fr-index cg))
+	`)
+
+	t.Run("same package -> same-pkg scope", func(t *testing.T) {
+		out := eval(t, engine, `(cdr (assoc 'scope loc))`).SchemeString()
+		c.Assert(out, qt.Equals, "same-pkg")
+	})
+
+	t.Run("dep-overlap is a number in [0,1]", func(t *testing.T) {
+		out := eval(t, engine, `
+			(let ((d (cdr (assoc 'dep-overlap loc))))
+			  (and (number? d) (>= d 0) (<= d 1)))
+		`).SchemeString()
+		c.Assert(out, qt.Equals, "#t")
+	})
+}
