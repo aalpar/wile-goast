@@ -313,10 +313,26 @@ additions, keeping every existing consumer working.
    `field-index->positions` — keeping `(wile algebra fca)` position-agnostic.
    `boundary-report` and the `find_false_boundaries` MCP marshaller are unchanged.
    Impl: `2026-06-01-auditable-finding-fca-render-impl.md`.
-5. **Slice 5+ (next):** unification adopts the finding shape — the measure surface
-   over unification candidates (the "First consumer" section above), incl. the
-   four cross-layer builds (`cand-new-edges`, `cand-creates-cycle?`,
-   `cand-locality`, `cand-equiv-tier`).
+5. **Slice 5a (shipped):** the deduplication FCA audit trace — `(wile goast
+   dup-detect)`, the `boundary-findings` twin on a `function × external-ref`
+   concept lattice. Functions sharing a maximal informative ref-set (FCA concept,
+   extent ≥ 2) are duplicate candidates; each extent member is a located finding
+   whose `why` is the shared ref intent. Reuses the `split.scm` clustering chain;
+   one Go build (`func-ref.pos`). Default output is the audit trace — no verdict,
+   no measures (those are 5b), so **no cross-layer name reconciliation**. Impl:
+   `2026-06-01-auditable-finding-dedup-trace-impl.md`. This realizes Phase 2 of
+   `2026-04-17-fca-duplicate-detection-design.md`; its Phases 3–6
+   (structural scoring / triage / verify) become 5b, with the verdict demoted from
+   default to an opt-in projection (`candidate->verdict`), per this note's
+   principle #2.
+6. **Slice 5b (next):** unification's structural refinement + measure surface over
+   the candidates — `ast-diff`/`ssa-diff` scoring (where the cross-layer name
+   reconciliation is finally paid), the benefit measures (`cand-benefit`,
+   `cand-type-params`, `cand-value-params`), `cand-equiv-tier`, the cost half
+   (`cand-new-edges`, `cand-creates-cycle?`, `cand-locality`), the documented
+   Pareto combinator, and the opt-in `candidate->verdict`.
+7. **Deferred (not a slice):** the LLM judge (`dup-detect` Phase 5) as the
+   requestable escalation for `uncertain` candidates; path-algebra cluster ranking.
 
 ## Relation to other plans
 

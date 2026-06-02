@@ -499,6 +499,28 @@ Import signature analysis for Go package decomposition. Discovers natural packag
 | `verify-acyclic` | Check proposed split for Go import cycles |
 | `recommend-split` | Top-level: IDF + FCA + min-cut + cycle check + confidence |
 
+## Deduplication — `(wile goast dup-detect)`
+
+The FCA audit trace for deduplication — the exact twin of `(wile goast fca)`'s
+`boundary-findings`, on a `function × external-ref` concept lattice instead of
+`function × field`. Functions sharing a maximal informative reference set (an FCA
+concept with extent ≥ 2) are duplicate candidates; each extent member becomes a
+located `finding` whose `why` is the shared ref intent. Composes the `split.scm`
+clustering chain (objects are function names) with `fca` + `provenance`. Default
+output is the audit trace; structural scoring (`ast-diff`/`ssa-diff`), the
+benefit/equivalence measures, and the opt-in `candidate->verdict` are slice 5b;
+the LLM judge is deferred. `go-func-refs` now carries an optional `pos`
+(`"file:line:col"`, present when the function position is valid) — the name→source
+data this module joins on.
+
+| Export | Description |
+|--------|-------------|
+| `function-ref-context` | `function × external-ref` FCA context, IDF-filtered (reuses the `split.scm` chain at function granularity) |
+| `duplicate-candidate-concepts` | Concepts with extent ≥ 2 and a non-empty intent — by FCA closure, duplicate-candidate clusters |
+| `func-refs->positions` | Name→source hashtable from `go-func-refs` output (the `field-index->positions` twin; exact-match keys) |
+| `dup-candidate-findings` | Per candidate concept, each extent member → a located `finding`; `why` = `(duplicate-candidate (refs . intent))`, `score` = `#f`. The `boundary-findings` twin |
+| `find-duplicate-candidates` | Top-level: `go-func-refs` → IDF-filtered context → concept lattice → candidate concepts → located findings |
+
 ## Path Algebra — `(wile goast path-algebra)`
 
 Semiring-parameterized path computation over call graphs. Lazy single-source Bellman-Ford with per-source caching. SCC side-query API exposes mutual-recursion clusters; fast-path introspection reports when the bigint-counting kernel is active.
