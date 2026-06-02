@@ -23,7 +23,10 @@
           all-pairs
           build-func-ast-index
           build-func-ssa-index
-          score-candidate-pair)
+          score-candidate-pair
+          pair-findings
+          scored-candidates
+          find-scored-candidates)
   (import (wile goast utils)        ; nf, tag?, filter-map
           (wile goast provenance)   ; make-finding
           (wile goast fca)          ; concept-lattice, concept-extent, concept-intent

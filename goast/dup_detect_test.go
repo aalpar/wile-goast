@@ -148,3 +148,55 @@ func TestScoreCandidatePair(t *testing.T) {
 		c.Assert(out, qt.Equals, "#f")
 	})
 }
+
+func TestFindScoredCandidates(t *testing.T) {
+	c := qt.New(t)
+	engine := newBeliefEngine(t)
+	pkg := "github.com/aalpar/wile-goast/examples/goast-query/testdata/dupcluster"
+	eval(t, engine, `
+		(import (wile goast dup-detect))
+		(import (wile goast provenance))
+		(define cands (find-scored-candidates "`+pkg+`"))
+		(define clone
+		  (let loop ((cs cands))
+		    (if (null? cs) #f
+		      (let ((p (cdr (assoc 'pair (car cs)))))
+		        (if (and (member "SumSlice" p) (member "TotalSlice" p))
+		          (car cs) (loop (cdr cs)))))))
+	`)
+
+	t.Run("clone pair is discovered and scored", func(t *testing.T) {
+		out := eval(t, engine, `
+			(and clone
+			     (memq (cdr (assoc 'equiv-tier (cdr (assoc 'measures clone))))
+			           '(proven structural))
+			     #t)
+		`).SchemeString()
+		c.Assert(out, qt.Equals, "#t")
+	})
+
+	t.Run("two located findings, score = similarity", func(t *testing.T) {
+		shape := eval(t, engine, `
+			(let ((fs (cdr (assoc 'findings clone))))
+			  (and (= (length fs) 2)
+			       (string? (finding-where (car fs)))
+			       (number? (finding-score (car fs)))))
+		`).SchemeString()
+		c.Assert(shape, qt.Equals, "#t")
+		render := eval(t, engine, `(render-finding (car (cdr (assoc 'findings clone))))`).SchemeString()
+		c.Assert(strings.Contains(render, "clones.go"), qt.IsTrue, qt.Commentf("%s", render))
+	})
+
+	t.Run("why renders the peer and is structured for filtering", func(t *testing.T) {
+		render := eval(t, engine, `
+			(render-why (finding-why (car (cdr (assoc 'findings clone)))))
+		`).SchemeString()
+		c.Assert(strings.Contains(render, "unify-candidate"), qt.IsTrue, qt.Commentf("%s", render))
+		peer := eval(t, engine, `
+			(let* ((f (car (cdr (assoc 'findings clone))))
+			       (why (finding-why f)))
+			  (cdr (assoc 'peer (cdr why))))
+		`).SchemeString()
+		c.Assert(strings.Contains(peer, "Slice"), qt.IsTrue, qt.Commentf("%s", peer))
+	})
+}

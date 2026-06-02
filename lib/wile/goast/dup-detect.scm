@@ -186,3 +186,53 @@
               (cons 'value-params (length vparams))
               (cons 'equiv-tier tier)
               (cons 'similarity eff))))))
+
+;; pair-findings: the two located findings for a scored candidate pair. Each
+;; finding's value is the function name; where from POS-INDEX; why is structured
+;; (unify-candidate (peer . other) (measures . M)) so render-why projects it and
+;; a script can filter on the measures; score = the pair's effective similarity
+;; (a real per-pair confidence, unlike 5a's #f).
+(define (pair-findings name-a name-b measures pos-index)
+  (let ((sim (cdr (assq 'similarity measures))))
+    (list (make-finding name-a (hashtable-ref pos-index name-a #f)
+                        (cons 'unify-candidate
+                              (list (cons 'peer name-b) (cons 'measures measures)))
+                        sim)
+          (make-finding name-b (hashtable-ref pos-index name-b #f)
+                        (cons 'unify-candidate
+                              (list (cons 'peer name-a) (cons 'measures measures)))
+                        sim))))
+
+;; scored-candidates: for each candidate concept, every within-cluster pair that
+;; resolves to AST nodes becomes a scored candidate entry:
+;;   ((pair . (a b)) (measures . M) (findings . (finding-a finding-b))).
+;; Pairs whose AST nodes cannot be resolved (short-name miss) are dropped.
+(define (scored-candidates concepts ast-index ssa-index pos-index threshold)
+  (apply append
+    (map (lambda (concept)
+           (filter-map
+             (lambda (pr)
+               (let* ((a (car pr)) (b (cdr pr))
+                      (m (score-candidate-pair a b ast-index ssa-index threshold)))
+                 (and m
+                      (list (cons 'pair (list a b))
+                            (cons 'measures m)
+                            (cons 'findings (pair-findings a b m pos-index))))))
+             (all-pairs (concept-extent concept))))
+         concepts)))
+
+;; find-scored-candidates: top-level. TARGET is a package pattern or a GoSession.
+;; Runs 5a discovery (FCA-on-refs clusters) then 5b structural scoring over each
+;; cluster's pairs. Optional THRESHOLD (default 0.6) is the similarity/unifiable?
+;; threshold. Returns a flat list of scored candidate entries.
+(define (find-scored-candidates target . opts)
+  (let* ((threshold (if (pair? opts) (car opts) 0.6))
+         (s         (if (go-session? target) target (go-load target)))
+         (refs      (go-func-refs s))
+         (ctx       (function-ref-context refs))
+         (lat       (concept-lattice ctx))
+         (cands     (duplicate-candidate-concepts lat))
+         (pos-index (func-refs->positions refs))
+         (ast-index (build-func-ast-index (go-typecheck-package s)))
+         (ssa-index (build-func-ssa-index (go-ssa-build s))))
+    (scored-candidates cands ast-index ssa-index pos-index threshold)))
