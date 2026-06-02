@@ -216,3 +216,30 @@ func TestCandidateToVerdict(t *testing.T) {
 		c.Assert(out, qt.Equals, "(duplicate likely-duplicate distinct)")
 	})
 }
+
+func TestParetoOverCandidates(t *testing.T) {
+	c := qt.New(t)
+	engine := newBeliefEngine(t)
+	pkg := "github.com/aalpar/wile-goast/examples/goast-query/testdata/dupcluster"
+	// The documented combinator: rank scored candidates on a user-chosen numeric
+	// measure vector via the existing pareto-frontier (no new ranking code). Each
+	// item is (id factors-alist); factors must be numeric (drop the equiv-tier
+	// symbol), else dominance ordering breaks.
+	out := eval(t, engine, `
+		(import (wile goast dup-detect))
+		(import (wile goast fca-recommend))
+		(define cands (find-scored-candidates "`+pkg+`"))
+		(define items
+		  (map (lambda (c)
+		         (let ((m (cdr (assoc 'measures c))))
+		           (list (cdr (assoc 'pair c))
+		                 (list (cons 'benefit (cdr (assoc 'benefit m)))
+		                       (cons 'similarity (cdr (assoc 'similarity m)))))))
+		       cands))
+		(define fr (pareto-frontier items '(benefit similarity)))
+		(and (>= (length cands) 1)
+		     (>= (length (cdr (assoc 'frontier fr))) 1)
+		     #t)
+	`).SchemeString()
+	c.Assert(out, qt.Equals, "#t")
+}
