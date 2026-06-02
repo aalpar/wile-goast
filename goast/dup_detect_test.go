@@ -120,3 +120,31 @@ func TestDupCandidateFindings(t *testing.T) {
 		c.Assert(out, qt.Equals, "#t")
 	})
 }
+
+func TestScoreCandidatePair(t *testing.T) {
+	c := qt.New(t)
+	engine := newBeliefEngine(t)
+	pkg := "github.com/aalpar/wile-goast/examples/goast-query/testdata/dupcluster"
+	eval(t, engine, `
+		(import (wile goast dup-detect))
+		(define s (go-load "`+pkg+`"))
+		(define ast-index (build-func-ast-index (go-typecheck-package s)))
+		(define ssa-index (build-func-ssa-index (go-ssa-build s)))
+		(define m (score-candidate-pair "SumSlice" "TotalSlice" ast-index ssa-index 0.6))
+	`)
+
+	t.Run("the clone pair scores a real tier and similarity", func(t *testing.T) {
+		out := eval(t, engine, `
+			(and m
+			     (memq (cdr (assoc 'equiv-tier m)) '(proven structural))
+			     (> (cdr (assoc 'similarity m)) 0.6)
+			     (>= (cdr (assoc 'benefit m)) 1))
+		`).SchemeString()
+		c.Assert(out, qt.Equals, "#t")
+	})
+
+	t.Run("unresolvable names score #f", func(t *testing.T) {
+		out := eval(t, engine, `(score-candidate-pair "Nope" "Nada" ast-index ssa-index 0.6)`).SchemeString()
+		c.Assert(out, qt.Equals, "#f")
+	})
+}

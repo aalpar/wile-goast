@@ -17,9 +17,16 @@
           function-ref-context
           duplicate-candidate-concepts
           dup-candidate-findings
-          find-duplicate-candidates)
-  (import (wile goast utils)        ; nf
+          find-duplicate-candidates
+          ;; slice 5b: structural measure surface
+          short-name
+          all-pairs
+          build-func-ast-index
+          build-func-ssa-index
+          score-candidate-pair)
+  (import (wile goast utils)        ; nf, tag?, filter-map
           (wile goast provenance)   ; make-finding
           (wile goast fca)          ; concept-lattice, concept-extent, concept-intent
-          (wile goast split))       ; import-signatures, compute-idf, filter-noise, build-package-context
+          (wile goast split)        ; import-signatures, compute-idf, filter-noise, build-package-context
+          (wile goast unify))       ; ast-diff, ssa-diff, score-diffs, diff-result-*, unifiable?
   (include "dup-detect.scm"))

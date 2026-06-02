@@ -91,3 +91,98 @@
          (cands     (duplicate-candidate-concepts lat))
          (pos-index (func-refs->positions refs)))
     (dup-candidate-findings cands pos-index)))
+
+;;; ── Slice 5b: structural measure surface ──────────────────
+
+;; short-name: the trailing component of a qualified name — the cross-layer join
+;; key. Collapses every name form to the func/method short name:
+;;   "pkg.EncodeA" -> "EncodeA", "(*pkg.Cache).Update" -> "Update",
+;;   "Cache.Update" -> "Update", "EncodeA" -> "EncodeA".
+;; The (wile goast belief) ssa-short-name twin (not exported there); duplicated
+;; here to avoid depending on belief internals. LIMITATION: two methods sharing a
+;; short name across receiver types collide (rare); the index keeps the last.
+(define (short-name full-name)
+  (let ((len (string-length full-name)))
+    (let loop ((i (- len 1)))
+      (cond ((<= i 0) full-name)
+            ((char=? (string-ref full-name i) #\.)
+             (substring full-name (+ i 1) len))
+            (else (loop (- i 1)))))))
+
+;; all-pairs: unordered pairs (a . b), a before b, from a list.
+(define (all-pairs lst)
+  (if (or (null? lst) (null? (cdr lst))) '()
+    (append (map (lambda (y) (cons (car lst) y)) (cdr lst))
+            (all-pairs (cdr lst)))))
+
+;; package-func-decls: flatten all func-decl AST nodes from go-typecheck-package
+;; output (a list of packages, each with 'files, each with 'decls).
+(define (package-func-decls pkgs)
+  (let ((acc '()))
+    (for-each
+      (lambda (pkg)
+        (for-each
+          (lambda (file)
+            (for-each
+              (lambda (decl)
+                (if (tag? decl 'func-decl) (set! acc (cons decl acc))))
+              (let ((d (nf file 'decls))) (if (pair? d) d '()))))
+          (let ((fs (nf pkg 'files))) (if (pair? fs) fs '()))))
+      (if (pair? pkgs) pkgs '()))
+    (reverse acc)))
+
+;; build-func-ast-index / build-func-ssa-index: short-name -> node hashtables.
+(define (build-func-ast-index pkgs)
+  (let ((h (make-hashtable)))
+    (for-each
+      (lambda (fd)
+        (let ((nm (nf fd 'name)))
+          (if (string? nm) (hashtable-set! h (short-name nm) fd))))
+      (package-func-decls pkgs))
+    h))
+
+(define (build-func-ssa-index ssa-funcs)
+  (let ((h (make-hashtable)))
+    (for-each
+      (lambda (fn)
+        (let ((nm (nf fn 'name)))
+          (if (string? nm) (hashtable-set! h (short-name nm) fn))))
+      (if (pair? ssa-funcs) ssa-funcs '()))
+    h))
+
+;; score-candidate-pair: benefit measures + equivalence tier for a candidate pair
+;; (joined to AST/SSA via short-name). Returns an alist or #f when the AST nodes
+;; cannot be resolved. Tier (prior-art pattern, NOT binop ssa-equivalent?):
+;;   proven     = unifiable? over canonicalized SSA
+;;   structural = unifiable? over AST (but not SSA-proven)
+;;   divergent  = neither.
+;; benefit = shared AST node count; type-params/value-params from score-diffs;
+;; similarity = effective similarity (the per-pair confidence).
+(define (score-candidate-pair name-a name-b ast-index ssa-index threshold)
+  (let ((ast-a (hashtable-ref ast-index (short-name name-a) #f))
+        (ast-b (hashtable-ref ast-index (short-name name-b) #f)))
+    (if (not (and ast-a ast-b)) #f
+      (let* ((ar      (ast-diff ast-a ast-b))
+             (shared  (diff-result-shared ar))
+             (dcount  (diff-result-diff-count ar))
+             (diffs   (diff-result-diffs ar))
+             (sc      (score-diffs shared dcount diffs))
+             (eff     (list-ref sc 1))
+             (roots   (list-ref sc 4))
+             (vparams (list-ref sc 5))
+             (ast-unif (unifiable? ar threshold))
+             (ssa-a   (hashtable-ref ssa-index (short-name name-a) #f))
+             (ssa-b   (hashtable-ref ssa-index (short-name name-b) #f))
+             (ssa-unif
+               (and ssa-a ssa-b
+                    (unifiable? (ssa-diff (go-ssa-canonicalize ssa-a)
+                                          (go-ssa-canonicalize ssa-b))
+                                threshold)))
+             (tier (cond (ssa-unif 'proven)
+                         (ast-unif 'structural)
+                         (else     'divergent))))
+        (list (cons 'benefit shared)
+              (cons 'type-params (length roots))
+              (cons 'value-params (length vparams))
+              (cons 'equiv-tier tier)
+              (cons 'similarity eff))))))
