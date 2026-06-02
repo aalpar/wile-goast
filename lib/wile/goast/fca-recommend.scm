@@ -287,3 +287,35 @@
     (list (cons 'splits split-frontier)
           (cons 'merges merge-frontier)
           (cons 'extracts extract-frontier))))
+
+;;; ── Located findings for recommendations ────────────────
+
+;; recommendation-functions: the function names a candidate concerns, by type --
+;; split: the one 'function; merge: the 'functions group; extract: the
+;; 'broad-extent (the over-broad operation's functions; 'sub-operation is an
+;; attribute set, not functions).
+(define (recommendation-functions c)
+  (let ((type (cdr (assoc 'type c))))
+    (cond ((eq? type 'split)   (list (cdr (assoc 'function c))))
+          ((eq? type 'merge)   (cdr (assoc 'functions c)))
+          ((eq? type 'extract) (cdr (assoc 'broad-extent c)))
+          (else '()))))
+
+;; locate-recommendations: attach located findings to each candidate. CANDIDATES
+;; are from split-candidates/merge-candidates/extract-candidates (each carries a
+;; function set). FIELD-INDEX is the go-ssa-field-index output that built the
+;; lattice; its 'func names match the lattice objects, so field-index->positions
+;; joins exactly. why = (recommendation (type . T)); score = #f. The candidate is
+;; returned with a prepended 'findings entry (additive).
+(define (locate-recommendations candidates field-index)
+  (let ((pos-index (field-index->positions field-index)))
+    (map (lambda (c)
+           (let* ((type (cdr (assoc 'type c)))
+                  (fns (recommendation-functions c))
+                  (findings (map (lambda (fn)
+                                   (make-finding fn (hashtable-ref pos-index fn #f)
+                                                 (list 'recommendation (cons 'type type))
+                                                 #f))
+                                 fns)))
+             (cons (cons 'findings findings) c)))
+         candidates)))

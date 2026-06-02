@@ -40,3 +40,27 @@ func TestRecommendSplitFindings(t *testing.T) {
 		c.Assert(strings.Contains(out, "split-group"), qt.IsTrue, qt.Commentf("%s", out))
 	})
 }
+
+func TestLocateRecommendations(t *testing.T) {
+	c := qt.New(t)
+	engine := newBeliefEngine(t)
+	pkg := "github.com/aalpar/wile-goast/examples/goast-query/testdata/falseboundary"
+	out := eval(t, engine, `
+		(import (wile goast fca))
+		(import (wile goast fca-recommend))
+		(import (wile goast provenance))
+		(define idx (go-ssa-field-index "`+pkg+`"))
+		(define ctx (field-index->context idx 'write-only))
+		(define lat (concept-lattice ctx))
+		(define merges (merge-candidates lat))
+		(define located (locate-recommendations merges idx))
+		(if (null? located) "NONE"
+		  (render-category "merge" (cdr (assoc 'findings (car located)))))
+	`).SchemeString()
+
+	t.Run("merge candidate functions are located at falseboundary.go", func(t *testing.T) {
+		c.Assert(out, qt.Not(qt.Equals), `"NONE"`)
+		c.Assert(strings.Contains(out, "falseboundary.go"), qt.IsTrue, qt.Commentf("%s", out))
+		c.Assert(strings.Contains(out, "recommendation"), qt.IsTrue, qt.Commentf("%s", out))
+	})
+}

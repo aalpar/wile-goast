@@ -30,11 +30,16 @@
     ;; Top-level
     boundary-recommendations
 
+    ;; Located findings
+    recommendation-functions
+    locate-recommendations
+
     ;; Utilities
     string-suffix?)
   (import (wile algebra pareto)
           (wile goast utils)
           (wile goast fca)
           (wile goast dataflow)
+          (wile goast provenance)   ; make-finding
           (srfi 13))   ; string-suffix? — re-exported above
   (include "fca-recommend.scm"))
