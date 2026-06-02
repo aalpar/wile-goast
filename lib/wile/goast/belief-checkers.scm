@@ -83,10 +83,23 @@
                                  (equal? (nf fn 'name) op-b))
                             (and (tag? fn 'selector-expr)
                                  (equal? (nf fn 'sel) op-b))))))))))
-      (cond
-        (has-defer-b 'paired-defer)
-        (has-call-b 'paired-call)
-        (else 'unpaired)))))
+      (let* ((verdict (cond (has-defer-b 'paired-defer)
+                            (has-call-b  'paired-call)
+                            (else        'unpaired)))
+             (fname (nf site 'name))
+             (pkg-path (nf site 'pkg-path))
+             (ssa-fn (and pkg-path (ctx-find-ssa-func ctx pkg-path fname)))
+             (pos-a (and ssa-fn (ssa-func-call-position ssa-fn op-a)))
+             (pos-b (and ssa-fn (ssa-func-call-position ssa-fn op-b))))
+        ;; where = op-a's call (the operation needing pairing; for 'unpaired,
+        ;; exactly the bug site). The paired op-b position rides in `why`.
+        (if (not pos-a) verdict
+          (cons verdict
+                (list (cons 'where pos-a)
+                      (cons 'why (list 'paired (cons 'a op-a) (cons 'b op-b)
+                                       (cons 'relation verdict)
+                                       (cons 'a-pos pos-a) (cons 'b-pos pos-b)))
+                      (cons 'score #f))))))))
 
 ;; (ordered op-a op-b) — checks whether op-a's SSA block dominates op-b's block.
 ;; Uses SSA representation (blocks have instrs + idom). Does not require go-cfg.
