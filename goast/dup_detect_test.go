@@ -200,3 +200,19 @@ func TestFindScoredCandidates(t *testing.T) {
 		c.Assert(strings.Contains(peer, "Slice"), qt.IsTrue, qt.Commentf("%s", peer))
 	})
 }
+
+func TestCandidateToVerdict(t *testing.T) {
+	c := qt.New(t)
+	engine := newBeliefEngine(t)
+	eval(t, engine, `(import (wile goast dup-detect))`)
+
+	t.Run("tier maps to verdict", func(t *testing.T) {
+		out := eval(t, engine, `
+			(list
+			  (candidate->verdict (list (cons 'measures (list (cons 'equiv-tier 'proven)))))
+			  (candidate->verdict (list (cons 'measures (list (cons 'equiv-tier 'structural)))))
+			  (candidate->verdict (list (cons 'measures (list (cons 'equiv-tier 'divergent))))))
+		`).SchemeString()
+		c.Assert(out, qt.Equals, "(duplicate likely-duplicate distinct)")
+	})
+}

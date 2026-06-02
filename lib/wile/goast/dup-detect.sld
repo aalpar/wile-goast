@@ -26,7 +26,8 @@
           score-candidate-pair
           pair-findings
           scored-candidates
-          find-scored-candidates)
+          find-scored-candidates
+          candidate->verdict)
   (import (wile goast utils)        ; nf, tag?, filter-map
           (wile goast provenance)   ; make-finding
           (wile goast fca)          ; concept-lattice, concept-extent, concept-intent

@@ -236,3 +236,14 @@
          (ast-index (build-func-ast-index (go-typecheck-package s)))
          (ssa-index (build-func-ssa-index (go-ssa-build s))))
     (scored-candidates cands ast-index ssa-index pos-index threshold)))
+
+;; candidate->verdict: an OPT-IN projection of a scored candidate's measures into
+;; a categorical verdict. The default analysis output is the measure surface; the
+;; verdict is requested, never imposed (auditable-categorization principle #2 —
+;; the categorical analog of finding->scalar). Tier-driven:
+;;   proven -> 'duplicate, structural -> 'likely-duplicate, divergent -> 'distinct.
+(define (candidate->verdict cand)
+  (let ((tier (cdr (assq 'equiv-tier (cdr (assq 'measures cand))))))
+    (cond ((eq? tier 'proven)     'duplicate)
+          ((eq? tier 'structural) 'likely-duplicate)
+          (else                   'distinct))))
