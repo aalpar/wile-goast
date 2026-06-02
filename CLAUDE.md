@@ -473,6 +473,8 @@ Analyzes FCA concept lattices to produce ranked split/merge/extract recommendati
 | `merge-candidates` | Functions maintaining shared state separately |
 | `extract-candidates` | Sub-operations shared by more callers than the full op |
 | `boundary-recommendations` | Top-level: three Pareto frontiers (split/merge/extract) |
+| `recommendation-functions` | The function names a candidate concerns, by type (split→`function`, merge→`functions`, extract→`broad-extent`) |
+| `locate-recommendations` | Attach located findings to split/merge/extract candidates via `field-index->positions`; `why` = `(recommendation (type . T))` |
 | `string-suffix?` | Test if a string ends with a given suffix |
 
 ## Boolean Simplification — `(wile goast boolean-simplify)`
@@ -502,6 +504,7 @@ Import signature analysis for Go package decomposition. Discovers natural packag
 | `find-split` | Min-cut two-way partition via concept lattice |
 | `verify-acyclic` | Check proposed split for Go import cycles |
 | `recommend-split` | Top-level: IDF + FCA + min-cut + cycle check + confidence |
+| `recommend-split-findings` | Located findings for a `recommend-split` report: group-a/group-b members as findings (`why` = `(split-group (side . a\|b))`), positioned via `func-ref.pos` |
 
 ## Deduplication — `(wile goast dup-detect)`
 
@@ -573,6 +576,14 @@ also defines the auditable *finding* — a value (category or measure) paired wi
 (`(reason-tag . data-alist)`) so downstream Scheme can filter/aggregate on it.
 First primitives of the auditable-categorization facility
 (`plans/2026-06-01-auditable-categorization-design.md`).
+
+The provenance audit is now closed across the suite: every opinion-producer emits
+located findings — the belief checkers (all six), FCA false-boundary
+(`boundary-findings`), deduplication (`dup-detect`), the unification measure
+surface (`dup-detect`'s scored candidates), and the split/boundary
+*recommendations* (`recommend-split-findings`, `locate-recommendations`). Lint
+(`go-analyze`) carries positions natively. A result you cannot point at and
+justify is an incomplete result.
 
 | Export | Description |
 |--------|-------------|
