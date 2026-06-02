@@ -519,7 +519,18 @@ data this module joins on.
 | `duplicate-candidate-concepts` | Concepts with extent ≥ 2 and a non-empty intent — by FCA closure, duplicate-candidate clusters |
 | `func-refs->positions` | Name→source hashtable from `go-func-refs` output (the `field-index->positions` twin; exact-match keys) |
 | `dup-candidate-findings` | Per candidate concept, each extent member → a located `finding`; `why` = `(duplicate-candidate (refs . intent))`, `score` = `#f`. The `boundary-findings` twin |
-| `find-duplicate-candidates` | Top-level: `go-func-refs` → IDF-filtered context → concept lattice → candidate concepts → located findings |
+| `find-duplicate-candidates` | Top-level (5a): `go-func-refs` → IDF-filtered context → concept lattice → candidate concepts → located findings |
+| `score-candidate-pair` | (5b) Benefit measures (`benefit`, `type-params`, `value-params`, `similarity`) + `equiv-tier` for a candidate pair, joined to AST/SSA via `short-name`. Tier: `proven` (SSA-canonical `unifiable?`) / `structural` (AST `unifiable?`) / `divergent`. Returns `#f` when names don't resolve |
+| `scored-candidates` / `find-scored-candidates` | (5b) Each within-cluster pair → a scored candidate: two located findings (`score` = effective similarity), `why` = `(unify-candidate (peer . other) (measures . M))`. `find-scored-candidates` is the top-level (clusters → scored pairs) |
+| `candidate->verdict` | (5b) **Opt-in** projection of a candidate's `equiv-tier` to `duplicate`/`likely-duplicate`/`distinct` — the categorical analog of `finding->scalar`; the measure surface is the default, the verdict is requested, never imposed |
+
+Rank the measure surface with `pareto-frontier`/`dominates?` from
+`(wile goast fca-recommend)` — the one documented combinator (no dedup-specific
+ranking). Each item is `(id numeric-factors-alist)`; project to numeric measures
+(e.g. `benefit`, `similarity`) since dominance ignores no key. The cost-half
+measures (`cand-new-edges`, `cand-creates-cycle?`, `cand-locality`) are slice 5c.
+`short-name` reconciliation collides only when two methods share a short name
+across receiver types (rare; index keeps the last). The LLM judge is deferred.
 
 ## Path Algebra — `(wile goast path-algebra)`
 

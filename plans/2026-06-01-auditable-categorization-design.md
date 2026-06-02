@@ -325,13 +325,23 @@ additions, keeping every existing consumer working.
    (structural scoring / triage / verify) become 5b, with the verdict demoted from
    default to an opt-in projection (`candidate->verdict`), per this note's
    principle #2.
-6. **Slice 5b (next):** unification's structural refinement + measure surface over
-   the candidates — `ast-diff`/`ssa-diff` scoring (where the cross-layer name
-   reconciliation is finally paid), the benefit measures (`cand-benefit`,
-   `cand-type-params`, `cand-value-params`), `cand-equiv-tier`, the cost half
-   (`cand-new-edges`, `cand-creates-cycle?`, `cand-locality`), the documented
-   Pareto combinator, and the opt-in `candidate->verdict`.
-7. **Deferred (not a slice):** the LLM judge (`dup-detect` Phase 5) as the
+6. **Slice 5b (shipped):** unification's structural measure surface over the 5a
+   candidates — the cross-layer name reconciliation (finally paid, via the
+   `ssa-short-name` collapse joining `go-func-refs`/AST/SSA names), `ast-diff`/
+   `ssa-diff` scoring, the benefit measures (`benefit`, `type-params`,
+   `value-params`, `similarity`), and `cand-equiv-tier` = `proven` (SSA-canonical
+   `unifiable?`) / `structural` (AST `unifiable?`) / `divergent` — the prior-art
+   pattern, NOT the binop-level `ssa-equivalent?`. Each within-cluster pair → two
+   located findings with `score` = similarity; the opt-in `candidate->verdict`
+   projects the tier (default stays the measure surface, per principle #2); the
+   existing `pareto-frontier`/`dominates?` is the one documented ranking
+   combinator. Impl: `2026-06-01-auditable-finding-unify-measures-impl.md`.
+7. **Slice 5c (next):** the cost half of the unification ledger —
+   `cand-new-edges` (call graph), `cand-creates-cycle?` (merge-side analog of
+   `verify-acyclic`), `cand-locality` (`go-func-refs` dep-overlap + shared
+   callers). Each is an underspecified cross-layer build needing its own
+   merge-semantics; they plug into the same Pareto combinator as additional axes.
+8. **Deferred (not a slice):** the LLM judge (`dup-detect` Phase 5) as the
    requestable escalation for `uncertain` candidates; path-algebra cluster ranking.
 
 ## Relation to other plans
