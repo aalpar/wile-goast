@@ -67,3 +67,25 @@ func TestCoMutatedEvidence(t *testing.T) {
 		c.Assert(strings.Contains(out, "co-mutated"), qt.IsTrue, qt.Commentf("%s", out))
 	})
 }
+
+func TestCheckedBeforeUseEvidence(t *testing.T) {
+	c := qt.New(t)
+	engine := newBeliefEngine(t)
+	pkg := "github.com/aalpar/wile-goast/examples/goast-query/testdata/checking"
+	out := eval(t, engine, `
+		(import (wile goast belief))
+		(import (wile goast provenance))
+		(reset-beliefs!)
+		(define-belief "err-checked"
+		  (sites (functions-matching (name-matches "HandleSafe")))
+		  (expect (checked-before-use "err"))
+		  (threshold 0.5 1))
+		(define res (car (run-beliefs "`+pkg+`")))
+		(render-category "err-checked" (cdr (assoc 'findings res)))
+	`).SchemeString()
+
+	t.Run("guarded findings located at checking.go", func(t *testing.T) {
+		c.Assert(strings.Contains(out, "checking.go"), qt.IsTrue, qt.Commentf("%s", out))
+		c.Assert(strings.Contains(out, "checked-before-use"), qt.IsTrue, qt.Commentf("%s", out))
+	})
+}

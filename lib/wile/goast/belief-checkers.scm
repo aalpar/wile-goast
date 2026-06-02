@@ -281,8 +281,30 @@
         ((not ssa-fn) 'missing)
         ((defuse-reachable? ssa-fn (list value-pattern)
                             (lambda (i) (tag? i 'ssa-if)) fuel)
-         'guarded)
-        (else 'unguarded)))))
+         ;; located at the comparison feeding the guard (the ssa-if itself
+         ;; carries no position; the ssa-binop that computes the test does).
+         (let ((pos (or (ssa-first-pos ssa-fn (lambda (i) (tag? i 'ssa-binop)))
+                        (ssa-first-pos ssa-fn
+                          (lambda (i) (equal? (nf i 'name) value-pattern))))))
+           (if (not pos) 'guarded
+             (cons 'guarded
+                   (list (cons 'where pos)
+                         (cons 'why (list 'checked-before-use
+                                          (cons 'value value-pattern)
+                                          (cons 'relation 'guarded)))
+                         (cons 'score #f))))))
+        (else
+          ;; unguarded use: locate the value's def when it resolves (no guard to
+          ;; point at). Stays bare when the def has no position.
+          (let ((pos (ssa-first-pos ssa-fn
+                       (lambda (i) (equal? (nf i 'name) value-pattern)))))
+            (if (not pos) 'unguarded
+              (cons 'unguarded
+                    (list (cons 'where pos)
+                          (cons 'why (list 'checked-before-use
+                                           (cons 'value value-pattern)
+                                           (cons 'relation 'unguarded)))
+                          (cons 'score #f))))))))))
 
 ;; (custom proc) — escape hatch. proc is (lambda (site ctx) -> symbol).
 (define (custom proc)
