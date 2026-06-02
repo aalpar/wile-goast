@@ -332,3 +332,36 @@
                       (else 'disjoint))))
     (list (cons 'scope scope)
           (cons 'dep-overlap (jaccard (func-ref-pkgs ea) (func-ref-pkgs eb))))))
+
+;; find-candidates-with-cost: the full benefit/cost ledger. Like
+;; find-scored-candidates, but each candidate's measures also carry new-edges,
+;; creates-cycle?, and locality, and the findings embed the full set. TARGET is a
+;; package pattern or GoSession; optional THRESHOLD (default 0.6).
+(define (find-candidates-with-cost target . opts)
+  (let* ((threshold (if (pair? opts) (car opts) 0.6))
+         (s         (if (go-session? target) target (go-load target)))
+         (refs      (go-func-refs s))
+         (ctx       (function-ref-context refs))
+         (lat       (concept-lattice ctx))
+         (concepts  (duplicate-candidate-concepts lat))
+         (pos-index (func-refs->positions refs))
+         (ast-index (build-func-ast-index (go-typecheck-package s)))
+         (ssa-index (build-func-ssa-index (go-ssa-build s)))
+         (fr-index  (build-func-ref-index refs))
+         (cg        (go-callgraph s 'static)))
+    (apply append
+      (map (lambda (concept)
+             (filter-map
+               (lambda (pr)
+                 (let* ((a (car pr)) (b (cdr pr))
+                        (bm (score-candidate-pair a b ast-index ssa-index threshold)))
+                   (and bm
+                        (let ((m (append bm
+                                   (list (cons 'new-edges (cand-new-edges a b cg))
+                                         (cons 'creates-cycle? (cand-creates-cycle? a b cg))
+                                         (cons 'locality (cand-locality a b fr-index cg))))))
+                          (list (cons 'pair (list a b))
+                                (cons 'measures m)
+                                (cons 'findings (pair-findings a b m pos-index)))))))
+               (all-pairs (concept-extent concept))))
+           concepts))))

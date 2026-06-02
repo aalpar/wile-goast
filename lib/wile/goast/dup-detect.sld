@@ -32,7 +32,8 @@
           cand-new-edges
           cand-creates-cycle?
           cand-locality
-          build-func-ref-index)
+          build-func-ref-index
+          find-candidates-with-cost)
   (import (wile goast utils)        ; nf, tag?, filter-map
           (wile goast provenance)   ; make-finding
           (wile goast fca)          ; concept-lattice, concept-extent, concept-intent

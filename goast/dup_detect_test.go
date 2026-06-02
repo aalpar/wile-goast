@@ -293,3 +293,45 @@ func TestCostLocality(t *testing.T) {
 		c.Assert(out, qt.Equals, "#t")
 	})
 }
+
+func TestFindCandidatesWithCost(t *testing.T) {
+	c := qt.New(t)
+	engine := newBeliefEngine(t)
+	pkg := "github.com/aalpar/wile-goast/examples/goast-query/testdata/dupcluster"
+	eval(t, engine, `
+		(import (wile goast dup-detect))
+		(import (wile goast fca-recommend))
+		(define cands (find-candidates-with-cost "`+pkg+`"))
+		(define clone
+		  (let loop ((cs cands))
+		    (if (null? cs) #f
+		      (let ((p (cdr (assoc 'pair (car cs)))))
+		        (if (and (member "SumSlice" p) (member "TotalSlice" p))
+		          (car cs) (loop (cdr cs)))))))
+	`)
+
+	t.Run("clone candidate carries the full benefit+cost ledger", func(t *testing.T) {
+		out := eval(t, engine, `
+			(let ((m (cdr (assoc 'measures clone))))
+			  (and (assoc 'benefit m) (assoc 'equiv-tier m)
+			       (assoc 'new-edges m) (assoc 'creates-cycle? m)
+			       (assoc 'locality m)
+			       (number? (cdr (assoc 'new-edges m)))
+			       #t))
+		`).SchemeString()
+		c.Assert(out, qt.Equals, "#t")
+	})
+
+	t.Run("pareto over benefit + neg-edges", func(t *testing.T) {
+		out := eval(t, engine, `
+			(let ((items (map (lambda (c)
+			                    (let ((m (cdr (assoc 'measures c))))
+			                      (list (cdr (assoc 'pair c))
+			                            (list (cons 'benefit (cdr (assoc 'benefit m)))
+			                                  (cons 'neg-edges (- (cdr (assoc 'new-edges m))))))))
+			                  cands)))
+			  (>= (length (cdr (assoc 'frontier (pareto-frontier items '(benefit neg-edges))))) 1))
+		`).SchemeString()
+		c.Assert(out, qt.Equals, "#t")
+	})
+}
