@@ -71,6 +71,7 @@ func funcRefsFromPattern(mc machine.CallContext, pattern *values.String) error {
 type funcRefEntry struct {
 	name    string
 	pkg     string
+	pos     string // "file:line:col", or "" when the position is invalid
 	extRefs map[string]map[string]bool // ext-pkg-path -> set of object names
 }
 
@@ -94,9 +95,14 @@ func buildFuncRefs(pkgs []*packages.Package) values.Value {
 				}
 
 				name := funcDeclName(fn)
+				pos := ""
+				if p := fn.Pos(); p.IsValid() && pkg.Fset != nil {
+					pos = pkg.Fset.Position(p).String()
+				}
 				entry := funcRefEntry{
 					name:    name,
 					pkg:     pkg.PkgPath,
+					pos:     pos,
 					extRefs: make(map[string]map[string]bool),
 				}
 
@@ -171,11 +177,15 @@ func mapFuncRefEntry(e funcRefEntry) values.Value {
 		)
 	}
 
-	return Node("func-ref",
+	fields := []values.Value{
 		Field("name", Str(e.name)),
 		Field("pkg", Str(e.pkg)),
 		Field("refs", ValueList(refs)),
-	)
+	}
+	if e.pos != "" {
+		fields = append(fields, Field("pos", Str(e.pos)))
+	}
+	return Node("func-ref", fields...)
 }
 
 // funcDeclName returns the name of a FuncDecl, formatted as "RecvType.Method"
