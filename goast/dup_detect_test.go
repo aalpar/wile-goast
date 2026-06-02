@@ -42,3 +42,34 @@ func TestFuncRefsToPositions(t *testing.T) {
 		c.Assert(out, qt.Equals, "#f")
 	})
 }
+
+func TestDuplicateCandidateConcepts(t *testing.T) {
+	c := qt.New(t)
+	engine := newBeliefEngine(t)
+	pkg := "github.com/aalpar/wile-goast/examples/goast-query/testdata/dupcluster"
+	eval(t, engine, `
+		(import (wile goast dup-detect))
+		(import (wile goast fca))
+		(define refs (go-func-refs "`+pkg+`"))
+		(define ctx (function-ref-context refs))
+		(define lat (concept-lattice ctx))
+		(define cands (duplicate-candidate-concepts lat))
+	`)
+
+	t.Run("at least the json and log clusters", func(t *testing.T) {
+		out := eval(t, engine, `(>= (length cands) 2)`).SchemeString()
+		c.Assert(out, qt.Equals, "#t")
+	})
+
+	t.Run("a concept shares encoding/json across 3 functions", func(t *testing.T) {
+		out := eval(t, engine, `
+			(let loop ((cs cands))
+			  (if (null? cs) #f
+			    (let ((int (concept-intent (car cs)))
+			          (ext (concept-extent (car cs))))
+			      (if (and (member "encoding/json" int) (= (length ext) 3))
+			        #t (loop (cdr cs))))))
+		`).SchemeString()
+		c.Assert(out, qt.Equals, "#t")
+	})
+}

@@ -34,3 +34,25 @@
             (hashtable-set! h name pos))))
       (if (pair? func-refs) func-refs '()))
     h))
+
+;; function-ref-context: function×external-ref FCA context, IDF-filtered. Reuses
+;; the split.scm chain verbatim — the same machinery split applies at package
+;; granularity, here for dedup clustering. Objects = function names; attributes =
+;; informative external package paths. THRESHOLD defaults to 0.36 (split's).
+(define (function-ref-context func-refs . opts)
+  (let* ((threshold (if (pair? opts) (car opts) 0.36))
+         (sigs      (import-signatures func-refs))
+         (idf       (compute-idf sigs))
+         (filtered  (filter-noise sigs idf threshold)))
+    (build-package-context filtered)))
+
+;; duplicate-candidate-concepts: concepts whose extent has >= MIN-EXTENT (default
+;; 2) functions sharing a non-empty intent. By FCA closure, such a concept is a
+;; duplicate-candidate cluster: every function in the extent uses every ref in
+;; the intent, and the intent is the maximal shared informative ref-set.
+(define (duplicate-candidate-concepts lattice . opts)
+  (let ((min-ext (if (pair? opts) (car opts) 2)))
+    (filter (lambda (c)
+              (and (>= (length (concept-extent c)) min-ext)
+                   (>= (length (concept-intent c)) 1)))
+            lattice)))

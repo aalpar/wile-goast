@@ -13,7 +13,9 @@
 ;; limitations under the License.
 
 (define-library (wile goast dup-detect)
-  (export func-refs->positions)
+  (export func-refs->positions
+          function-ref-context
+          duplicate-candidate-concepts)
   (import (wile goast utils)        ; nf
           (wile goast provenance)   ; make-finding
           (wile goast fca)          ; concept-lattice, concept-extent, concept-intent
