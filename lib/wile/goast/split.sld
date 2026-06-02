@@ -15,7 +15,8 @@
 (define-library (wile goast split)
   (import (wile goast utils)
           (wile goast fca)
-          (wile goast belief))
+          (wile goast belief)
+          (wile goast provenance))
   (export
     import-signatures
     compute-idf
@@ -25,5 +26,6 @@
     find-split
     verify-acyclic
     recommend-split
+    recommend-split-findings
     single-cluster)
   (include "split.scm"))

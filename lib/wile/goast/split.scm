@@ -441,3 +441,26 @@ See also: `import-signatures', `find-split', `verify-acyclic'."
               (cons 'confidence confidence)
               (cons 'functions functions)
               (cons 'report report))))))
+
+;; recommend-split-findings: located findings for a recommend-split REPORT.
+;; group-a/group-b function names become findings located via the func-ref 'pos
+;; (built inline -- split must not depend on dup-detect's func-refs->positions,
+;; which would be circular). why = (split-group (side . a|b)); score = #f.
+(define (recommend-split-findings report func-refs)
+  (let* ((pos-index
+           (let ((h (make-hashtable)))
+             (for-each
+               (lambda (fr)
+                 (let ((n (nf fr 'name)) (p (nf fr 'pos)))
+                   (if (and (string? n) (string? p)) (hashtable-set! h n p))))
+               (if (pair? func-refs) func-refs '()))
+             h))
+         (groups (let ((g (assoc 'groups report))) (if g (cdr g) '())))
+         (ga (let ((x (assoc 'group-a groups))) (if x (cdr x) '())))
+         (gb (let ((x (assoc 'group-b groups))) (if x (cdr x) '())))
+         (mk (lambda (side)
+               (lambda (fn)
+                 (make-finding fn (hashtable-ref pos-index fn #f)
+                               (list 'split-group (cons 'side side)) #f)))))
+    (list (cons 'group-a (map (mk 'a) ga))
+          (cons 'group-b (map (mk 'b) gb)))))
