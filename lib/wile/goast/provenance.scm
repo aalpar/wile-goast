@@ -46,6 +46,24 @@
       ((ssa-call-to? (car is) func-name) (ssa-instr-pos (car is)))
       (else (loop (cdr is))))))
 
+;; ssa-first-pos: source position of the first instruction in SSA-FN (across all
+;; blocks) that satisfies PRED *and* has a resolved position, or #f. Lets
+;; analyses locate the instruction they already identified (a store, a guard).
+(define (ssa-first-pos ssa-fn pred)
+  (let bloop ((blocks (or (nf ssa-fn 'blocks) '())))
+    (if (null? blocks) #f
+      (let iloop ((is (or (nf (car blocks) 'instrs) '())))
+        (cond ((null? is) (bloop (cdr blocks)))
+              ((and (pred (car is)) (ssa-instr-pos (car is)))
+               => (lambda (p) p))
+              (else (iloop (cdr is))))))))
+
+;; ssa-func-call-position: source position of the first call to FUNC-NAME
+;; anywhere in SSA-FN, or #f. The function-level companion to ssa-call-position
+;; (which scopes to one block).
+(define (ssa-func-call-position ssa-fn func-name)
+  (ssa-first-pos ssa-fn (lambda (i) (ssa-call-to? i func-name))))
+
 ;; make-finding: construct an auditable finding — a value (category symbol or
 ;; measure) paired with its provenance: WHERE ("file:line:col" or #f when
 ;; unlocated), WHY (a structured reason (reason-tag . data-alist)), and SCORE

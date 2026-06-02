@@ -14,6 +14,7 @@
 
 (define-library (wile goast provenance)
   (export ssa-instr-pos ssa-call-position
+          ssa-first-pos ssa-func-call-position
           make-finding finding-value finding-where finding-why finding-score
           render-why render-finding render-category)
   (import (wile goast utils))
