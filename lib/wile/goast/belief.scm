@@ -523,7 +523,28 @@
               (member? (nf fn 'sel) func-names))
              (else #f)))))
   (lambda (fn ctx)
-    (pair? (walk (or (nf fn 'body) '()) call-matches?))))
+    ;; Dual-use: predicate (truthy/falsy) AND checker (#t->present/#f->absent).
+    ;; Present -> (#t . evidence) located at the matched call (a pair is truthy,
+    ;; so the predicate path still selects); absent -> bare #f (predicate-falsy,
+    ;; and there is no call to locate). Verified safe: functions-matching/all-of/
+    ;; any-of/none-of test truthiness, not (eq? _ #t).
+    (if (not (pair? (walk (or (nf fn 'body) '()) call-matches?)))
+        #f
+        (let* ((fname (nf fn 'name))
+               (pkg-path (nf fn 'pkg-path))
+               (ssa-fn (and pkg-path (ctx-find-ssa-func ctx pkg-path fname)))
+               (pos (and ssa-fn
+                         (let loop ((ns func-names))
+                           (and (pair? ns)
+                                (or (ssa-func-call-position ssa-fn (car ns))
+                                    (loop (cdr ns))))))))
+          (if (not pos)
+              #t
+              (cons #t (list (cons 'where pos)
+                             (cons 'why (list 'contains-call
+                                              (cons 'funcs func-names)
+                                              (cons 'pos pos)))
+                             (cons 'score #f))))))))
 
 ;; (stores-to-fields struct-name field ...) — SSA: function stores to
 ;; these fields. Uses the pre-built field index from Go.

@@ -89,3 +89,39 @@ func TestCheckedBeforeUseEvidence(t *testing.T) {
 		c.Assert(strings.Contains(out, "checked-before-use"), qt.IsTrue, qt.Commentf("%s", out))
 	})
 }
+
+func TestContainsCallEvidence(t *testing.T) {
+	c := qt.New(t)
+	engine := newBeliefEngine(t)
+	pkg := "github.com/aalpar/wile-goast/examples/goast-query/testdata/pairing"
+
+	out := eval(t, engine, `
+		(import (wile goast belief))
+		(import (wile goast provenance))
+		(reset-beliefs!)
+		(define-belief "uses-lock"
+		  (sites (methods-of "Service"))
+		  (expect (contains-call "Lock"))
+		  (threshold 0.5 1))
+		(define res (car (run-beliefs "`+pkg+`")))
+		(render-category "uses-lock" (cdr (assoc 'findings res)))
+	`).SchemeString()
+
+	t.Run("present findings located with contains-call why", func(t *testing.T) {
+		c.Assert(strings.Contains(out, "pairing.go"), qt.IsTrue, qt.Commentf("%s", out))
+		c.Assert(strings.Contains(out, "contains-call"), qt.IsTrue, qt.Commentf("%s", out))
+	})
+
+	t.Run("predicate use still selects sites (truthiness preserved)", func(t *testing.T) {
+		out := eval(t, engine, `
+			(reset-beliefs!)
+			(define-belief "lp"
+			  (sites (functions-matching (contains-call "Lock")))
+			  (expect (paired-with "Lock" "Unlock"))
+			  (threshold 0.5 1))
+			(let ((r (car (run-beliefs "`+pkg+`"))))
+			  (>= (cdr (assoc 'total r)) 1))
+		`).SchemeString()
+		c.Assert(out, qt.Equals, "#t")
+	})
+}
