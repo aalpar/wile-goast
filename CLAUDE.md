@@ -286,18 +286,21 @@ S-expressions). Names, thresholds, and ratios are ignored.
 | `(ordered "A" "B")` | SSA | `'a-dominates-b` / `'b-dominates-a` / `'unordered` (+ evidence tail) |
 | `(co-mutated "field" ...)` | SSA | `'co-mutated` / `'partial` |
 | `(checked-before-use "val")` | SSA+CFG | `'guarded` / `'unguarded` |
+| `(receiver-parameter-asymmetry)` | SSA | `'candidate` / `'forwarder` / `'mutation` / `'accessor` / `'multi-read` / `'unused-recv` / `'interface-method` |
 | `(custom (lambda (site ctx) ...))` | any | user-defined symbol |
 
 A checker may return either a bare category symbol or `(symbol . evidence)` where
 `evidence = ((where . W) (why . Y) (score . S))`; a bare symbol stays valid (it yields an
 unlocated finding). The category alone drives voting; the evidence becomes the per-site
-`finding`. All five SSA-aware checkers emit the tail: `ordered` (the two call
+`finding`. All six SSA-aware checkers emit the tail: `ordered` (the two call
 positions), `paired-with` (op-a's call site; `unpaired` lands exactly at the
 operation needing a pair), `co-mutated` (the first field-store), `checked-before-use`
-(the comparison feeding the guard — the `ssa-if` itself carries no position), and
+(the comparison feeding the guard — the `ssa-if` itself carries no position),
 `contains-call` (the matched call on `present`; bare `#f` on absent, preserving its
-dual-use as a `functions-matching` predicate). Verdicts with no resolvable position
-stay bare symbols (`'unordered`/`'missing`/`'malformed-ssa`, unlocated `unguarded`).
+dual-use as a `functions-matching` predicate), and `receiver-parameter-asymmetry`
+(the single receiver read on `candidate`; all non-candidate verdicts stay bare).
+Verdicts with no resolvable position stay bare symbols
+(`'unordered`/`'missing`/`'malformed-ssa`, unlocated `unguarded`).
 
 ### Aggregate Beliefs
 
