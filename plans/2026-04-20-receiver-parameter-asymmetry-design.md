@@ -1,6 +1,12 @@
 # Receiver-Parameter Asymmetry Detection — Design
 
-> **Status:** Design draft (2026-04-20). Implementation plan pending.
+> **Status:** Implemented 2026-06-05 (commits `e6494b2` L1, `6156340` ¬IM,
+> `6fcfb62` L2). Belief checker `receiver-parameter-asymmetry` in
+> `(wile goast belief)`; impl plan `2026-04-20-receiver-parameter-asymmetry-impl.md`.
+> Shipped scope: L1 rule + conservative AST interface-member exclusion +
+> L2 candidate/forwarder split (by SSA call-subject position). Deferred (noted
+> in the impl plan self-review): ¬MV method-value exclusion, severity
+> heuristics, 20+/20− calibration corpus.
 > **Spec source:** Conversation 2026-04-20 during the wile G.1 mid-parse-EOF
 > fix (`wile/internal/parser/parser.go` `wrapMidParseEOF`). User critique
 > exposed a recognizable anti-pattern: a method whose logical subject is a
