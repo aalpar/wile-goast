@@ -265,6 +265,86 @@
                                          (cons 'relation verdict)))
                         (cons 'score #f)))))))))
 
+;; (receiver-parameter-asymmetry) — flags methods whose receiver is read
+;; exactly once, written never, with at least one non-receiver parameter:
+;; the "receiver as namespace" anti-pattern (Connascence of Meaning hidden
+;; by method syntax). The single receiver read is a convert-to-function
+;; signal. See plans/2026-04-20-receiver-parameter-asymmetry-design.md.
+;; Receiver field reads are ssa-field-addr/ssa-field whose x is the receiver
+;; param; a receiver ssa-field-addr whose register is some ssa-store's addr
+;; is a write, not a read. Returns one of:
+;;   'candidate    — read set singleton, write set empty, >=1 param (the flag)
+;;   'mutation     — a receiver field is written (receiver is state-bearing)
+;;   'accessor     — zero non-receiver parameters
+;;   'multi-read   — more than one distinct receiver field read
+;;   'unused-recv  — receiver never read (pure namespace / dispatch)
+;;   'no-receiver  — not a method, or SSA receiver not resolvable
+;;   'missing      — SSA lookup failed
+;; The 'candidate verdict carries located evidence (the receiver read);
+;; other verdicts stay bare (located only where it matters, as paired-with).
+(define (receiver-parameter-asymmetry)
+  "Property checker: flag receiver-as-namespace methods.\nReturns 'candidate (read 1 field, write none, has params), 'mutation,\n'accessor, 'multi-read, 'unused-recv, 'no-receiver, or 'missing.\nThe 'candidate verdict carries the located receiver read as evidence.\n\nReturns: procedure\nCategory: goast-belief\n\nExamples:\n  (receiver-parameter-asymmetry)\n\nSee also: `co-mutated', `stores-to-fields'."
+  (lambda (site ctx)
+    (let* ((fname (nf site 'name))
+           (pkg-path (nf site 'pkg-path))
+           (ssa-fn (and pkg-path (ctx-find-ssa-func ctx pkg-path fname))))
+      (if (not ssa-fn) 'missing
+        (let* ((params (nf ssa-fn 'params))
+               (recv (and (pair? params) (car params)))
+               (recv-name (and recv (nf recv 'name)))
+               (nparam (if (pair? params) (- (length params) 1) 0)))
+          (if (not recv-name) 'no-receiver
+            (let* ((instrs (ssa-all-instrs ssa-fn))
+                   (store-addrs
+                     (filter-map (lambda (i) (and (tag? i 'ssa-store) (nf i 'addr)))
+                                 instrs))
+                   ;; receiver field-addr instrs as (field . register)
+                   (recv-faddr
+                     (filter-map
+                       (lambda (i)
+                         (and (tag? i 'ssa-field-addr)
+                              (equal? (nf i 'x) recv-name)
+                              (cons (nf i 'field) (nf i 'name))))
+                       instrs))
+                   ;; value-receiver direct field reads (field names)
+                   (recv-field
+                     (filter-map
+                       (lambda (i)
+                         (and (tag? i 'ssa-field)
+                              (equal? (nf i 'x) recv-name)
+                              (nf i 'field)))
+                       instrs))
+                   (write-fields
+                     (unique (filter-map
+                               (lambda (fa) (and (member? (cdr fa) store-addrs) (car fa)))
+                               recv-faddr)))
+                   (read-fields
+                     (unique (append
+                               (filter-map
+                                 (lambda (fa) (and (not (member? (cdr fa) store-addrs)) (car fa)))
+                                 recv-faddr)
+                               recv-field))))
+              (cond
+                ((positive? (length write-fields)) 'mutation)
+                ((= nparam 0) 'accessor)
+                ((= (length read-fields) 0) 'unused-recv)
+                ((> (length read-fields) 1) 'multi-read)
+                (else
+                  (let* ((field (car read-fields))
+                         (pos (ssa-first-pos ssa-fn
+                                (lambda (i)
+                                  (and (or (tag? i 'ssa-field-addr) (tag? i 'ssa-field))
+                                       (equal? (nf i 'x) recv-name)
+                                       (equal? (nf i 'field) field))))))
+                    (if (not pos) 'candidate
+                      (cons 'candidate
+                            (list (cons 'where pos)
+                                  (cons 'why (list 'receiver-asymmetry
+                                                   (cons 'field field)
+                                                   (cons 'receiver recv-name)
+                                                   (cons 'relation 'candidate)))
+                                  (cons 'score #f))))))))))))))
+
 ;; (checked-before-use value-pattern) — checks whether a value is
 ;; tested before use via bounded transitive reachability on the SSA
 ;; def-use graph. Uses (wile algebra) fixpoint over a product lattice

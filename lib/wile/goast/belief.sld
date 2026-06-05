@@ -36,7 +36,7 @@
     ;; Predicate combinators
     all-of any-of none-of
     ;; Property checkers
-    paired-with ordered co-mutated
+    paired-with ordered co-mutated receiver-parameter-asymmetry
     checked-before-use custom aggregate-custom
     ;; Utils re-export (for custom lambdas)
     nf tag? walk filter-map flat-map member? unique)
