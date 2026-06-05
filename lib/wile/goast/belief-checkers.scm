@@ -289,6 +289,25 @@
       (ctx-pkgs ctx))
     (unique acc)))
 
+;; True iff instruction I is a call into which register RV flows *directly*:
+;; the receiver of an invoke (interface) call, or any argument of a static
+;; call. This is the forwarder/delegation signal — the receiver read is the
+;; thing the call operates on, not data combined with a parameter. The
+;; discriminator works because subject-inversion's canonical form feeds the
+;; receiver read through boxing first: a variadic/interface argument is
+;; make-interface'd before the call, so it is NOT a direct call operand,
+;; whereas a delegated call takes the receiver-read value verbatim
+;; (`(ssa-call (args "t1" "k") ...)`). SSA's valName erases method-vs-function
+;; (a static method's func is the bare "Get"), so position, not callee kind,
+;; is the signal. Limitation: a subject-inversion passing the receiver field
+;; *unboxed* directly to a plain function folds into 'forwarder — conservative
+;; (fewer false candidates), per the design's stated preference.
+(define (forwarder-call? i rv)
+  (and (tag? i 'ssa-call)
+       (or (and (eq? (nf i 'mode) 'invoke) (equal? (nf i 'recv) rv))
+           (let ((args (nf i 'args)))
+             (and (list? args) (member? rv args))))))
+
 ;; (receiver-parameter-asymmetry) — flags methods whose receiver is read
 ;; exactly once, written never, with at least one non-receiver parameter:
 ;; the "receiver as namespace" anti-pattern (Connascence of Meaning hidden
@@ -357,19 +376,51 @@
                  'interface-method)
                 (else
                   (let* ((field (car read-fields))
+                         ;; field-addr register for this field (pointer receiver)
+                         (fa (let loop ((xs recv-faddr))
+                               (cond ((null? xs) #f)
+                                     ((equal? (car (car xs)) field) (cdr (car xs)))
+                                     (else (loop (cdr xs))))))
+                         ;; the receiver-read VALUE register: value-receiver
+                         ;; reads it directly (ssa-field); pointer receivers
+                         ;; load the field address (ssa-unop * on fa).
+                         (rv (or
+                               (let loop ((is instrs))
+                                 (cond ((null? is) #f)
+                                       ((and (tag? (car is) 'ssa-field)
+                                             (equal? (nf (car is) 'x) recv-name)
+                                             (equal? (nf (car is) 'field) field))
+                                        (nf (car is) 'name))
+                                       (else (loop (cdr is)))))
+                               (and fa
+                                    (let loop ((is instrs))
+                                      (cond ((null? is) #f)
+                                            ((and (tag? (car is) 'ssa-unop)
+                                                  (equal? (nf (car is) 'x) fa))
+                                             (nf (car is) 'name))
+                                            (else (loop (cdr is))))))))
+                         (forwarder?
+                           (and rv
+                                (let loop ((is instrs))
+                                  (cond ((null? is) #f)
+                                        ((forwarder-call? (car is) rv) #t)
+                                        (else (loop (cdr is)))))))
                          (pos (ssa-first-pos ssa-fn
                                 (lambda (i)
                                   (and (or (tag? i 'ssa-field-addr) (tag? i 'ssa-field))
                                        (equal? (nf i 'x) recv-name)
                                        (equal? (nf i 'field) field))))))
-                    (if (not pos) 'candidate
-                      (cons 'candidate
-                            (list (cons 'where pos)
-                                  (cons 'why (list 'receiver-asymmetry
-                                                   (cons 'field field)
-                                                   (cons 'receiver recv-name)
-                                                   (cons 'relation 'candidate)))
-                                  (cons 'score #f))))))))))))))
+                    (cond
+                      (forwarder? 'forwarder)
+                      ((not pos) 'candidate)
+                      (else
+                        (cons 'candidate
+                              (list (cons 'where pos)
+                                    (cons 'why (list 'receiver-asymmetry
+                                                     (cons 'field field)
+                                                     (cons 'receiver recv-name)
+                                                     (cons 'relation 'candidate)))
+                                    (cons 'score #f)))))))))))))))
 
 ;; (checked-before-use value-pattern) — checks whether a value is
 ;; tested before use via bounded transitive reachability on the SSA

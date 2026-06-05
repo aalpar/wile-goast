@@ -45,3 +45,18 @@ type Tag struct {
 func (t *Tag) Render(prefix string) string {
 	return fmt.Sprintf("%s<%s>", prefix, t.label)
 }
+
+type inner struct{ data map[string]string }
+
+func (i *inner) Get(k string) string { return i.data[k] }
+
+type Cache struct {
+	store *inner
+}
+
+// forwarder: c.store is read once and is itself the subject of the call;
+// the parameter k is its argument, not used jointly with the receiver read
+// as data. The receiver read is the call subject, not context.
+func (c *Cache) Get(k string) string {
+	return c.store.Get(k)
+}

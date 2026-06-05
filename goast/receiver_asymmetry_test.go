@@ -68,3 +68,23 @@ func TestReceiverAsymmetryInterfaceExcluded(t *testing.T) {
 	c.Assert(strings.Contains(out, "interface-method"), qt.IsTrue, qt.Commentf("%s", out))
 	c.Assert(strings.Contains(out, "candidate"), qt.IsFalse, qt.Commentf("Render must not be a candidate:\n%s", out))
 }
+
+func TestReceiverAsymmetryForwarder(t *testing.T) {
+	c := qt.New(t)
+	engine := newBeliefEngine(t)
+	pkg := "github.com/aalpar/wile-goast/examples/goast-query/testdata/recvasym"
+	out := eval(t, engine, `
+		(import (wile goast belief))
+		(import (wile goast provenance))
+		(reset-beliefs!)
+		(define-belief "recv-asym-fwd"
+		  (sites (methods-of "Cache"))
+		  (expect (receiver-parameter-asymmetry))
+		  (threshold 0 1))
+		(define res (car (run-beliefs "`+pkg+`")))
+		(map finding-value (cdr (assoc 'findings res)))
+	`).SchemeString()
+
+	c.Assert(strings.Contains(out, "forwarder"), qt.IsTrue, qt.Commentf("%s", out))
+	c.Assert(strings.Contains(out, "candidate"), qt.IsFalse, qt.Commentf("Cache.Get must be a forwarder:\n%s", out))
+}
