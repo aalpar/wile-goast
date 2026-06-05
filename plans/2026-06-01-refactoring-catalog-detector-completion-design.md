@@ -1,8 +1,10 @@
 # Refactoring catalog — detector completion
 
 **Date:** 2026-06-01
-**Status:** design draft, pending spec review
-**Output:** ~15 new files in `./refactorings/`, same format as `pull.md`
+**Status:** implemented 2026-06-05 — Pass 1 (`69aea5f`) + Pass 2 (`88feb4a`);
+catalog 37 → 52, no empty matrix rows remain. Every Go pair `go build` + `go vet`
++ `gofmt` verified before landing in a doc.
+**Output:** 15 new files in `./refactorings/` (Pass 1: 7, Pass 2: 8), same format as `pull.md`
 **Sibling:** `2026-05-31-refactoring-catalog-orthogonal-extensions-design.md`
 (the prior pass that grew the catalog from 19 → 37 along four coverage axes)
 
