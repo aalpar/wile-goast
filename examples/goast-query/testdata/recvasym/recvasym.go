@@ -28,3 +28,20 @@ func (s *Server) SetHost(h string) {
 func (s *Server) describe(x int) string {
 	return fmt.Sprintf("%s/%s/%d", s.name, s.host, x)
 }
+
+// Stringer is a single-method interface; its members are excluded from
+// candidacy (the method form is forced by the interface, not a smell).
+type Stringer interface {
+	Render(prefix string) string
+}
+
+type Tag struct {
+	label string
+}
+
+// interface-method: Render satisfies Stringer. Without the exclusion it would
+// read as a candidate (one field read, one param, joint use); the
+// interface-member filter reclassifies it.
+func (t *Tag) Render(prefix string) string {
+	return fmt.Sprintf("%s<%s>", prefix, t.label)
+}

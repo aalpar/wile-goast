@@ -265,6 +265,30 @@
                                          (cons 'relation verdict)))
                         (cons 'score #f)))))))))
 
+;; Collect the set of method names declared by any interface type in the
+;; loaded packages. Conservative ¬IM proxy for receiver-parameter-asymmetry:
+;; an interface-type node's 'methods is a list of field nodes, each field's
+;; 'names a list of method-name strings. Over-excludes (a method named Get is
+;; spared even if its interface is single-impl) — fewer false candidates.
+(define (interface-method-names ctx)
+  (let ((acc '()))
+    (for-each
+      (lambda (pkg)
+        (walk pkg
+          (lambda (node)
+            (and (tag? node 'interface-type)
+                 (let ((methods (nf node 'methods)))
+                   (when (pair? methods)
+                     (for-each
+                       (lambda (fld)
+                         (let ((names (nf fld 'names)))
+                           (when (pair? names)
+                             (for-each (lambda (n) (set! acc (cons n acc))) names))))
+                       methods))
+                   #f)))))
+      (ctx-pkgs ctx))
+    (unique acc)))
+
 ;; (receiver-parameter-asymmetry) — flags methods whose receiver is read
 ;; exactly once, written never, with at least one non-receiver parameter:
 ;; the "receiver as namespace" anti-pattern (Connascence of Meaning hidden
@@ -329,6 +353,8 @@
                 ((= nparam 0) 'accessor)
                 ((= (length read-fields) 0) 'unused-recv)
                 ((> (length read-fields) 1) 'multi-read)
+                ((member? (ssa-short-name fname) (interface-method-names ctx))
+                 'interface-method)
                 (else
                   (let* ((field (car read-fields))
                          (pos (ssa-first-pos ssa-fn
