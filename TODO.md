@@ -53,8 +53,8 @@ differential, fca, galois, graph, group, heyting, interval, lattice, monoid,
 order, pareto, polynomial, rewrite, ring, semiring, setoid, symbolic).
 wile-goast builds static-analysis combinators on top.
 
-Remaining **wile-side** gap: CFL-reachability semiring (C4 third bullet).
-All other Track C items are wile-goast-local adoption work.
+No remaining **wile-side** gap — `(wile algebra cfl)` shipped (2026-06-06, wile
+PR #766). All Track C items are now wile-goast-local adoption work.
 
 ### C1. Migrate existing hand-rolled algebra — DONE
 
@@ -96,10 +96,18 @@ See `plans/2026-03-26-c3-domains-design.md`.
 
 - [x] Boolean semiring — reachability (generalize `go-callgraph-reachable`)
 - [x] Tropical semiring — shortest/longest call chains
-- [ ] CFL-reachability — context-sensitive analysis (**wile-side gap**: needs
-      new `(wile algebra cfl)` or extension of `semiring.scm`. Composition
-      rule is grammar-constrained, not free-semigroup; can't be parameterized
-      from existing semiring API. Reps/Horwitz/Sagiv 1995.)
+- [ ] CFL-reachability — context-sensitive analysis. **wile-side dependency
+      SHIPPED** (2026-06-06, wile PR #766): `(wile algebra cfl)` provides typed
+      CFG production kernels, the Reps–Horwitz–Sagiv worklist solver
+      (`cfl-solve` + `cfl-reachable?`/`-from`/`-pairs`/`cfl-derives?`), and a
+      `dyck-grammar` preset for matched-delimiter (interprocedural call/return,
+      field open/close) reachability. Composition is grammar-constrained, not a
+      free semigroup — which is why it could not be parameterized from the
+      semiring API (Reps/Horwitz/Sagiv 1995). **Remaining (wile-goast-local
+      adoption):** build the context-sensitive analysis on top — e.g.
+      interprocedural reachability via `dyck-grammar` over call/return-labeled
+      call-graph edges. (Left unchecked: `[x]` in this list means wile-goast
+      consumes it, as with the Boolean/tropical bullets above.)
 
 ### C5. Galois connections for abstract interpretation
 
