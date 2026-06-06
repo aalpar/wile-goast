@@ -153,13 +153,27 @@ builders.
 
 ## The canary (core acceptance criterion)
 
-A program where **boolean reachability says the source reaches the sink, but the only call
-path is interprocedurally unrealizable**, so taint correctly reports **no flow** — the
-precision boolean reachability cannot produce. Mirrors the `(wile algebra cfl)` canary.
+**Important framing correction (2026-06-06, post-Task-1 checkpoint).** The contrast is *not*
+against boolean *forward* reachability. Valid-path reachability ⊇ forward reachability (any
+open-only call string is a valid path), so a forward-reachable source→sink pair is always
+valid-path-reachable too — taint can never exclude a *forward*-reachable pair. The precision
+is over **context-insensitive *interprocedural* reachability**: a reachability that traverses
+return edges to *any* caller (ignoring call/return matching). Valid-path taint refuses to let
+a value return into a context that did not call it.
 
-Shape: two callers `A`, `B` of a shared helper `p`; `A` calls a source, `B` reaches a sink;
-the only `source ⇝ sink` call sequence requires entering `p` from `A` and returning into
-`B` (mismatched call/return). Boolean reachability: flow. Realizable taint: no flow.
+Shape: two callers `A`, `B` of a shared helper `p` — `A` calls `p` (site 0), `B` calls `p`
+(site 1). With source `A`, sink `B`, the only `A ⇝ B` path is `A →open₀→ p →close₁→ B` =
+`open₀ close₁` — a **mismatched return** (return to the wrong caller), which the valid-path
+grammar rejects. So `taint-flows` reports **no flow** `A → B`. A context-insensitive
+interprocedural reachability (return to anyone) *would* connect `A ⇝ B` through the shared
+`p` — that false positive is what valid-path taint eliminates.
+
+The canary asserts **both** halves so the precision is unambiguous:
+1. **Negative:** `taint-flows` excludes the mismatched `A → B` flow (`'()`).
+2. **Positive:** a properly-matched **return-then-call** flow *is* reported — e.g. `A` calls a
+   source `s` (open₀), `s` returns to `A` (close₀, matched), `A` calls sink `t` (open₂):
+   `taint-flows` reports `s → t`. This shows taint captures realistic return-then-call flows
+   while excluding wrong-caller returns — the meaningful behavior forward reachability lacks.
 
 ## Files
 

@@ -147,11 +147,22 @@ a1->b2 false. If a1->b2 is true, the grammar admits a wrong-caller return; reche
   (include "taint.scm"))
 ```
 
-- [ ] **Step 2: failing canary test.** In `goast/taint_test.go`, build a call graph as a tagged-alist
+- [ ] **Step 2: failing canary test.** In `goast/taint_test.go`, build call graphs as tagged-alists
 (helpers `(node name . outs)` -> `(cg-node (name . X) (id . 0) (edges-in . ()) (edges-out . outs))`;
-`(edge from to)` -> `(cg-edge (caller . from) (callee . to) (description . "static"))`). The fixture must
-make boolean reachability report source reaches sink while `taint-flows` returns `'()` (the only path is a
-mismatched return — see Step 4). Initially assert `(taint-flows cg src? sink?)` returns `'()`.
+`(edge from to)` -> `(cg-edge (caller . from) (callee . to) (description . "static"))`).
+
+**Framing (corrected post-Task-1 checkpoint — read the design's "The canary" section):** valid-path
+reachability ⊇ forward reachability, so the contrast is NOT against boolean *forward* reachability (that
+can never differ). The canary asserts BOTH halves:
+  - **Negative (precision):** shared-helper graph — `A` calls `p`, `B` calls `p`; `taint-flows cg
+    (is-name "A") (is-name "B")` returns `'()` because the only `A⇝B` path is `open₀ close₁` (return to
+    the wrong caller), which the valid-path grammar rejects. (A context-insensitive interprocedural
+    reachability would wrongly connect them through `p` — that's the false positive eliminated.)
+  - **Positive (meaningful flow):** a matched return-then-call graph — `A` calls source `s` (so `s`
+    returns to `A`) and `A` calls sink `t`; `taint-flows cg (is-name "s") (is-name "t")` returns a flow
+    `("s" . "t")`. This proves taint captures realistic return-then-call flows while excluding wrong-caller
+    returns.
+Initially assert the negative half: `(null? (taint-flows cg (is-name "A") (is-name "B")))` is `#t`.
 
 - [ ] **Step 3: run, verify FAIL.** `go test ./goast/ -run TestTaint_InterproceduralCanary -v` — `taint-flows` unbound.
 
@@ -202,9 +213,11 @@ interprocedural path. Over-approximate (function granularity)."
       srcs)))
 ```
 
-Finalize the canary so the only source->sink connection is a mismatched return: assert
-`(null? (taint-flows cg src? sink?))` is `#t`, and contrast with `(wile goast path-algebra)`'s
-`go-callgraph-reachable` reporting the sink reachable from the source (boolean includes it).
+Finalize BOTH canary halves (per the corrected framing in Step 2 / the design's "The canary"):
+(1) negative — `(null? (taint-flows cg (is-name "A") (is-name "B")))` is `#t` on the shared-helper
+graph (mismatched `open₀ close₁` rejected); (2) positive — `taint-flows` reports `("s" . "t")` on the
+matched return-then-call graph (`A` calls `s`, `A` calls `t`). Do NOT contrast against boolean forward
+reachability — it cannot differ from valid-path reachability (valid-path ⊇ forward).
 
 - [ ] **Step 5: run, verify PASS.** `go test ./goast/ -run TestTaint -v`.
 
@@ -264,7 +277,7 @@ taint-default-sinks taint-default-sanitizers`.
 
 - [ ] **Step 1: full suite.** `make test`, then `make ci` (or `SKIP_LINT=1 make ci`). All green incl. `TestIFDS_*`/`TestTaint_*`.
 - [ ] **Step 2: TODO.** In `TODO.md` Track C4, append to the CFL Follow-up note: `Follow-up SHIPPED (2026-06-06): (wile goast taint) interprocedural taint-flows on (wile goast ifds).`
-- [ ] **Step 3: push + PR.** `git add TODO.md && git commit -m "docs(todo): CFL taint consumer shipped" && git push -u origin feat/cfl-taint && gh pr create --title "feat(goast): interprocedural taint via (wile algebra cfl)" --body "First wile-goast consumer of (wile algebra cfl): valid-path engine (wile goast ifds) + composable taint-flows (wile goast taint). Canary proves taint excludes call/return-infeasible paths boolean reachability includes. plans/2026-06-06-cfl-taint-consumer-*.md."`
+- [ ] **Step 3: push + PR.** `git add TODO.md && git commit -m "docs(todo): CFL taint consumer shipped" && git push -u origin feat/cfl-taint && gh pr create --title "feat(goast): interprocedural taint via (wile algebra cfl)" --body "First wile-goast consumer of (wile algebra cfl): valid-path engine (wile goast ifds) + composable taint-flows (wile goast taint). Canary proves taint is context-sensitive: it excludes wrong-caller-return paths (that context-insensitive interprocedural reachability would include) while reporting matched return-then-call flows. plans/2026-06-06-cfl-taint-consumer-*.md."`
 - [ ] **Step 4: dual review** (Copilot + `/crosscheck:crosscheck all`); address findings; do NOT merge without instruction.
 
 ---
@@ -282,6 +295,7 @@ taint-default-sinks taint-default-sanitizers`.
 - Generic valid-path engine -> Task 1. Realizable grammar (non-Dyck) -> Task 1 normative section. taint-flows + sanitizer cut -> Task 2. Interprocedural canary -> Task 2 Step 4. Predicate builders + default set -> Task 3. Boolean pre-slice -> deferred (explicit). Verification + TODO + PR -> Task 4.
 
 **Open implementer checkpoints (flagged):** (a) Task 2's canary fixture must encode a genuine
-mismatched-return infeasibility (Step 4 instructs: boolean reaches, taint returns `'()`). (b) Confirm
+mismatched-return infeasibility — the negative half (`A⇝B` excluded) plus the positive matched
+return-then-call half (`s→t` reported); NOT a boolean-forward-reachability contrast. (b) Confirm
 `(srfi 1)` provides `append-map`/`filter-map`/`delete-duplicates`; if `filter-map` is absent, define it
 locally as `(filter values (map f xs))`.
