@@ -96,18 +96,17 @@ See `plans/2026-03-26-c3-domains-design.md`.
 
 - [x] Boolean semiring — reachability (generalize `go-callgraph-reachable`)
 - [x] Tropical semiring — shortest/longest call chains
-- [ ] CFL-reachability — context-sensitive analysis. **wile-side dependency
+- [x] CFL-reachability — context-sensitive analysis. **wile-side dependency
       SHIPPED** (2026-06-06, wile PR #766): `(wile algebra cfl)` provides typed
       CFG production kernels, the Reps–Horwitz–Sagiv worklist solver
       (`cfl-solve` + `cfl-reachable?`/`-from`/`-pairs`/`cfl-derives?`), and a
       `dyck-grammar` preset for matched-delimiter (interprocedural call/return,
       field open/close) reachability. Composition is grammar-constrained, not a
       free semigroup — which is why it could not be parameterized from the
-      semiring API (Reps/Horwitz/Sagiv 1995). **Remaining (wile-goast-local
-      adoption):** build the context-sensitive analysis on top — e.g.
-      interprocedural reachability via `dyck-grammar` over call/return-labeled
-      call-graph edges. (Left unchecked: `[x]` in this list means wile-goast
-      consumes it, as with the Boolean/tropical bullets above.)
+      semiring API (Reps/Horwitz/Sagiv 1995). **Follow-up (wile-goast-local,
+      when a consumer surfaces):** build the context-sensitive analysis on top
+      — e.g. interprocedural reachability via `dyck-grammar` over
+      call/return-labeled call-graph edges.
 
 ### C5. Galois connections for abstract interpretation
 
