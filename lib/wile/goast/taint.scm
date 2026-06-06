@@ -62,3 +62,48 @@ See also: `make-ifds-analysis', `ifds-reachable?'."
                  (cons (%name s) (%name t))))
           snks))
       srcs)))
+
+;; --- Predicate builders (composable, LLM-authorable) ---
+
+(define (taint-from-names names)
+  "Return a predicate matching cg-nodes whose name is an element of NAMES.
+NAMES is a list of exact strings.
+Parameters:
+  names : list
+Returns: procedure
+Category: goast-taint
+See also: `taint-from-pattern', `taint-flows'."
+  (lambda (n)
+    (and (member (%name n) names) #t)))
+
+(define (%string-contains? s sub)
+  (let ((ls (string-length s)) (lsub (string-length sub)))
+    (let loop ((i 0))
+      (cond ((> (+ i lsub) ls) #f)
+            ((string=? (substring s i (+ i lsub)) sub) #t)
+            (else (loop (+ i 1)))))))
+
+(define (taint-from-pattern substr)
+  "Return a predicate matching cg-nodes whose name contains SUBSTR.
+Parameters:
+  substr : string
+Returns: procedure
+Category: goast-taint
+See also: `taint-from-names', `taint-flows'."
+  (lambda (n)
+    (let ((nm (%name n)))
+      (and (string? nm) (%string-contains? nm substr)))))
+
+;; --- Default Go security sets (starter; overridable) ---
+
+(define taint-default-sources
+  (taint-from-names '("net/http.Request.FormValue" "net/http.Request.PostFormValue"
+                      "net/url.Values.Get" "os.Getenv" "bufio.Reader.ReadString")))
+
+(define taint-default-sinks
+  (taint-from-names '("os/exec.Command" "os/exec.CommandContext"
+                      "database/sql.DB.Query" "database/sql.DB.Exec"
+                      "os.OpenFile" "os.ReadFile")))
+
+(define taint-default-sanitizers
+  (taint-from-names '("strconv.Atoi" "path/filepath.Clean")))

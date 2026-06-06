@@ -13,6 +13,8 @@
 ;; limitations under the License.
 
 (define-library (wile goast taint)
-  (export taint-flows)
+  (export taint-flows
+          taint-from-names taint-from-pattern
+          taint-default-sources taint-default-sinks taint-default-sanitizers)
   (import (scheme base) (srfi 1) (wile goast ifds))
   (include "taint.scm"))

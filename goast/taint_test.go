@@ -109,3 +109,65 @@ func TestTaint_InterproceduralCanary(t *testing.T) {
 	c.Assert(srcName.Value, qt.Equals, "s")
 	c.Assert(sinkName.Value, qt.Equals, "t")
 }
+
+// TestTaint_BuildersAndDefaults verifies:
+//  1. taint-from-names builds an exact-name predicate that, on a 2-node
+//     FormValue->Command graph, reports one flow.
+//  2. taint-default-sources, taint-default-sinks, taint-default-sanitizers
+//     are bound and are procedures.
+func TestTaint_BuildersAndDefaults(t *testing.T) {
+	c := qt.New(t)
+	engine := newBeliefEngine(t)
+
+	eval(t, engine, `(import (wile goast taint))`)
+
+	// Build a tiny call graph: FormValue calls Command.
+	// cg: [FormValue → Command]
+	eval(t, engine, `
+		(define cg-fv-cmd (list
+			(list 'cg-node (cons 'name "net/http.Request.FormValue") (cons 'id 0)
+				(cons 'edges-in '())
+				(cons 'edges-out (list
+					(list 'cg-edge
+						(cons 'caller "net/http.Request.FormValue")
+						(cons 'callee "os/exec.Command")
+						(cons 'description "static")))))
+			(list 'cg-node (cons 'name "os/exec.Command") (cons 'id 1)
+				(cons 'edges-in '())
+				(cons 'edges-out '()))))`)
+
+	// taint-from-names exact-match: FormValue is source, Command is sink.
+	eval(t, engine, `
+		(define src-pred (taint-from-names '("net/http.Request.FormValue")))
+		(define snk-pred (taint-from-names '("os/exec.Command")))`)
+
+	result := eval(t, engine, `(taint-flows cg-fv-cmd src-pred snk-pred)`)
+	flows, ok := result.Internal().(*values.Pair)
+	if !ok {
+		t.Fatalf("taint-from-names: expected non-empty list, got %T: %v", result.Internal(), result.Internal())
+	}
+	flow, ok := flows.Car().(*values.Pair)
+	if !ok {
+		t.Fatalf("taint-from-names: expected pair (source . sink), got %T", flows.Car())
+	}
+	srcStr, ok := flow.Car().(*values.String)
+	if !ok {
+		t.Fatalf("taint-from-names: source not a string, got %T", flow.Car())
+	}
+	sinkStr, ok := flow.Cdr().(*values.String)
+	if !ok {
+		t.Fatalf("taint-from-names: sink not a string, got %T", flow.Cdr())
+	}
+	c.Assert(srcStr.Value, qt.Equals, "net/http.Request.FormValue")
+	c.Assert(sinkStr.Value, qt.Equals, "os/exec.Command")
+
+	// taint-default-sources / -sinks / -sanitizers must be procedures.
+	isProcSrc := eval(t, engine, `(procedure? taint-default-sources)`)
+	c.Assert(isProcSrc.Internal(), qt.Equals, values.TrueValue)
+
+	isProcSnk := eval(t, engine, `(procedure? taint-default-sinks)`)
+	c.Assert(isProcSnk.Internal(), qt.Equals, values.TrueValue)
+
+	isProcSan := eval(t, engine, `(procedure? taint-default-sanitizers)`)
+	c.Assert(isProcSan.Internal(), qt.Equals, values.TrueValue)
+}
