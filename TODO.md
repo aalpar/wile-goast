@@ -103,10 +103,13 @@ See `plans/2026-03-26-c3-domains-design.md`.
       `dyck-grammar` preset for matched-delimiter (interprocedural call/return,
       field open/close) reachability. Composition is grammar-constrained, not a
       free semigroup — which is why it could not be parameterized from the
-      semiring API (Reps/Horwitz/Sagiv 1995). **Follow-up (wile-goast-local,
-      when a consumer surfaces):** build the context-sensitive analysis on top
-      — e.g. interprocedural reachability via `dyck-grammar` over
-      call/return-labeled call-graph edges.
+      semiring API (Reps/Horwitz/Sagiv 1995). **Follow-up SHIPPED (2026-06-06):**
+      `(wile goast ifds)` (valid-path / realizable-interprocedural-path reachability
+      engine over `(wile algebra cfl)`) + `(wile goast taint)` (composable
+      interprocedural taint: `taint-flows`, predicate builders, default Go security
+      source/sink set). Function-summary fidelity; context-sensitive (excludes
+      wrong-caller-return paths). `plans/2026-06-06-cfl-taint-consumer-*.md`.
+      Remaining: statement/SSA-level precision; boolean pre-slice for scale.
 
 ### C5. Galois connections for abstract interpretation
 
@@ -462,6 +465,18 @@ Capability bets identified in wile's Directions documents. Not scoped as individ
 - [ ] **goastgraph/ — gonum-powered graph analytics** [Directions]: `wile/plans/2026-04-18-gonum-integration-directions.md` §5.1 identifies generic graph-analytics gaps in wile-goast — SCC, Louvain community detection, centrality, all-pairs reachability. Architecture: `x/tools` builds language-aware graphs, gonum analyzes them (they do not compete). Ships ~300–500 LOC; pure Go, no CGo, one `go.mod` entry. Independent track from the companion wile `bench-stats/` work (see wile TODO). Distinct algebraic setting from `(wile algebra matrix)`: gonum is field-valued (ℝ/ℂ), not semiring-parameterized.
 
 - [ ] **AC-matching consumer — replace `discover-equivalences` workaround** [Directions, downstream of wile]: Once wile ships §5.3 AC-matching from `wile/plans/2026-04-17-algebra-foundations-directions.md`, swap the exponential `discover-equivalences` workaround in `symbolic.scm` / `rewrite.scm` for the polynomial AC-match. Gated on wile's algebra roadmap (§5.1 matrix blocks §5.3 AC-matching).
+
+### Analysis use cases (capability bets, not yet scoped)
+
+Use-case targets enabled once the substrate is judged sufficient (cf. THESIS.md
+"Intentional deferral of use cases"). Each composes existing layers; each is an
+*estimate/finding* surfaced for review, not a proof.
+
+- [ ] **Big-O runtime & memory complexity** [Analysis use case]: Estimate asymptotic time and space bounds per function. Composes CFG loop-nesting depth + call-graph recursion (SCC via `(wile goast path-algebra)`) + interval/sign domains for loop-bound inference. **For opaque calls (stdlib, third-party, anything without a body), read the supplied complexity from godoc or doc comments** rather than analyzing the callee — structured-docstring extraction already exists (`memory/2026-04-06-structured-docstrings-impl.md`). Honest framing: a best-effort *bound estimate*, not a guarantee; reports `unknown` when neither analysis nor documentation pins it down.
+
+- [ ] **nil-panic reachability** [Analysis use case]: Flag dereference sites where a nil panic is reachable — pointer/interface deref, field selection, map/slice/channel ops, and method calls on possibly-nil receivers. A maybe-nil/non-nil flat lattice propagated through the worklist framework (`run-analysis` over SSA), with guard-aware narrowing (`checked-before-use` already follows the comparison data flow). Reports the dereference and the unchecked path that reaches it as a located finding.
+
+- [ ] **Unbounded operations** [Analysis use case]: Detect operations whose extent isn't statically bounded — loops with no decreasing variant or external bound, recursion without a base-case guard (non-trivial call-graph SCC), and growth-in-loop (`append`/allocation/`make` sized by untrusted input). Composes CFG + path-algebra SCC detection + interval analysis. Distinguishes "provably bounded," "bounded by documented contract," and "unbounded" — the last is the finding.
 
 ## Staff-Engineer Findings 2026-04-19 — Next to Address
 

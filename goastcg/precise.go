@@ -86,7 +86,8 @@ func resolvePreciseCallee(site ssa.CallInstruction) *ssa.Function {
 
 	// Resolve the backing array allocation (possibly via a slice view).
 	base := ia.X
-	if sl, ok := base.(*ssa.Slice); ok {
+	sl, ok := base.(*ssa.Slice)
+	if ok {
 		base = sl.X
 	}
 	alloc, ok := base.(*ssa.Alloc)
@@ -173,7 +174,8 @@ func escapesVia(sl *ssa.Slice) bool {
 	for _, r := range *refs {
 		switch v := r.(type) {
 		case *ssa.IndexAddr:
-			if _, ok := constInt(v.Index); !ok {
+			_, ok := constInt(v.Index)
+			if !ok {
 				return true // dynamic index through the slice
 			}
 		default:
