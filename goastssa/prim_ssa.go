@@ -325,7 +325,8 @@ func buildFuncSummary(fn *ssa.Function, pkgPath string) values.Value {
 		goast.Field("pkg", goast.Str(pkgPath)),
 		goast.Field("fields", goast.ValueList(accesses)),
 	}
-	if pos := fn.Pos(); pos.IsValid() && fn.Prog != nil {
+	pos := fn.Pos()
+	if pos.IsValid() && fn.Prog != nil {
 		fields = append(fields,
 			goast.Field("pos", goast.Str(fn.Prog.Fset.Position(pos).String())))
 	}

@@ -71,7 +71,7 @@ func funcRefsFromPattern(mc machine.CallContext, pattern *values.String) error {
 type funcRefEntry struct {
 	name    string
 	pkg     string
-	pos     string // "file:line:col", or "" when the position is invalid
+	pos     string                     // "file:line:col", or "" when the position is invalid
 	extRefs map[string]map[string]bool // ext-pkg-path -> set of object names
 }
 
@@ -96,7 +96,8 @@ func buildFuncRefs(pkgs []*packages.Package) values.Value {
 
 				name := funcDeclName(fn)
 				pos := ""
-				if p := fn.Pos(); p.IsValid() && pkg.Fset != nil {
+				p := fn.Pos()
+				if p.IsValid() && pkg.Fset != nil {
 					pos = pkg.Fset.Position(p).String()
 				}
 				entry := funcRefEntry{

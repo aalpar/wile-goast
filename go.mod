@@ -3,7 +3,7 @@ module github.com/aalpar/wile-goast
 go 1.24.0
 
 require (
-	github.com/aalpar/wile v1.16.1-0.20260528020601-93e5ed5eb447
+	github.com/aalpar/wile v1.16.1-0.20260607013308-09b21625a6bb
 	github.com/frankban/quicktest v1.14.6
 	github.com/jessevdk/go-flags v1.6.1
 	github.com/mark3labs/mcp-go v0.45.0
@@ -13,7 +13,7 @@ require (
 
 require (
 	github.com/bahlo/generic-list-go v0.2.0 // indirect
-	github.com/buger/jsonparser v1.1.1 // indirect
+	github.com/buger/jsonparser v1.1.2 // indirect
 	github.com/google/go-cmp v0.6.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/invopop/jsonschema v0.13.0 // indirect
