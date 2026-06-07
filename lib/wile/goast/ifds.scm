@@ -31,6 +31,7 @@
   "Build the valid-path <cfl-grammar> (start symbol VP) over CALL-SITE-IDS, a
 list of distinct call-site identifiers. Accepts exactly the valid
 interprocedural paths: every return matches its own call.
+
 Parameters:
   call-site-ids : list
 Returns: cfl-grammar
@@ -53,6 +54,7 @@ See also: `make-ifds-analysis', `ifds-reachable?'."
 (from-node id to-node). Each call site adds a forward open edge from->to and a
 return close edge to->from, then solves with cfl-solve. Returns a solved
 analysis queryable by `ifds-reachable?'.
+
 Parameters:
   nodes : list
   call-sites : list
@@ -71,6 +73,7 @@ See also: `ifds-reachable?', `make-valid-path-grammar'."
 (define (ifds-reachable? analysis from to)
   "True iff TO is reachable from FROM along a valid interprocedural path in
 ANALYSIS (the result of make-ifds-analysis).
+
 Parameters:
   analysis : cfl-solution
   from : node

@@ -20,15 +20,12 @@
 ;;; LIMITATION: function granularity over-approximates (no intraprocedural
 ;;; def-use) — sound-ish with false positives.
 
-(define (%name n)      (let ((e (assq 'name (cdr n))))      (and e (cdr e))))
-(define (%edges-out n) (let ((e (assq 'edges-out (cdr n)))) (if e (cdr e) '())))
-(define (%callee e)    (let ((c (assq 'callee (cdr e))))    (and c (cdr c))))
-
 (define (taint-flows cg sources sinks . opt)
   "Report taint flows over call graph CG. SOURCES and SINKS are predicates
 (cg-node -> bool). Optional SANITIZER predicate cuts flow through matching
 nodes. Returns a list of (source-name . sink-name) pairs joined by a valid
 interprocedural path. Over-approximate (function granularity).
+
 Parameters:
   cg : list
   sources : procedure
@@ -38,18 +35,23 @@ Returns: list
 Category: goast-taint
 See also: `make-ifds-analysis', `ifds-reachable?'."
   (let* ((san? (if (pair? opt) (car opt) (lambda (n) #f)))
-         (live (filter (lambda (n) (not (san? n))) cg))
-         (live-names (filter values (map %name live)))
+         ;; live = non-sanitizer nodes that HAVE a name. Name-less nodes
+         ;; (anonymous / synthetic funcs that real call graphs can emit) cannot
+         ;; be graph node ids; excluding them upholds the invariant that every
+         ;; id reaching the engine is in LIVE-NAMES, so a #f never poisons
+         ;; cfl-solve / ifds-reachable? (both fail-fast on an undeclared node).
+         (live (filter (lambda (n) (and (not (san? n)) (nf n 'name))) cg))
+         (live-names (map (lambda (n) (nf n 'name)) live))
          (live? (lambda (nm) (and (member nm live-names) #t)))
          (call-sites
            (let loop ((ns live) (i 0) (acc '()))
              (if (null? ns) (reverse acc)
-                 (let ((f (%name (car ns))))
-                   (let inner ((es (%edges-out (car ns))) (i i) (acc acc))
+                 (let ((f (nf (car ns) 'name)))
+                   (let inner ((es (or (nf (car ns) 'edges-out) '())) (i i) (acc acc))
                      (cond ((null? es) (loop (cdr ns) i acc))
-                           ((live? (%callee (car es)))
+                           ((live? (nf (car es) 'callee))
                             (inner (cdr es) (+ i 1)
-                                   (cons (list f i (%callee (car es))) acc)))
+                                   (cons (list f i (nf (car es) 'callee)) acc)))
                            (else (inner (cdr es) i acc))))))))
          (analysis (make-ifds-analysis live-names call-sites))
          (srcs (filter sources live))
@@ -58,8 +60,8 @@ See also: `make-ifds-analysis', `ifds-reachable?'."
       (lambda (s)
         (filter-map
           (lambda (t)
-            (and (ifds-reachable? analysis (%name s) (%name t))
-                 (cons (%name s) (%name t))))
+            (and (ifds-reachable? analysis (nf s 'name) (nf t 'name))
+                 (cons (nf s 'name) (nf t 'name))))
           snks))
       srcs)))
 
@@ -68,31 +70,26 @@ See also: `make-ifds-analysis', `ifds-reachable?'."
 (define (taint-from-names names)
   "Return a predicate matching cg-nodes whose name is an element of NAMES.
 NAMES is a list of exact strings.
+
 Parameters:
   names : list
 Returns: procedure
 Category: goast-taint
 See also: `taint-from-pattern', `taint-flows'."
   (lambda (n)
-    (and (member (%name n) names) #t)))
-
-(define (%string-contains? s sub)
-  (let ((ls (string-length s)) (lsub (string-length sub)))
-    (let loop ((i 0))
-      (cond ((> (+ i lsub) ls) #f)
-            ((string=? (substring s i (+ i lsub)) sub) #t)
-            (else (loop (+ i 1)))))))
+    (and (member (nf n 'name) names) #t)))
 
 (define (taint-from-pattern substr)
   "Return a predicate matching cg-nodes whose name contains SUBSTR.
+
 Parameters:
   substr : string
 Returns: procedure
 Category: goast-taint
 See also: `taint-from-names', `taint-flows'."
   (lambda (n)
-    (let ((nm (%name n)))
-      (and (string? nm) (%string-contains? nm substr)))))
+    (let ((nm (nf n 'name)))
+      (and (string? nm) (string-contains? nm substr)))))
 
 ;; --- Default Go security sets (starter; overridable) ---
 

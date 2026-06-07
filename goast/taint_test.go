@@ -171,3 +171,28 @@ func TestTaint_BuildersAndDefaults(t *testing.T) {
 	isProcSan := eval(t, engine, `(procedure? taint-default-sanitizers)`)
 	c.Assert(isProcSan.Internal(), qt.Equals, values.TrueValue)
 }
+
+// TestTaint_NamelessNodeNoCrash is a regression test for the crosscheck HIGH
+// finding: a cg-node missing its 'name field (an anonymous/synthetic func, which
+// real call graphs emit) with an out-edge used to poison cfl-solve with a #f node
+// id and raise "undeclared node". taint-flows must now exclude name-less nodes and
+// complete cleanly.
+func TestTaint_NamelessNodeNoCrash(t *testing.T) {
+	c := qt.New(t)
+	engine := newBeliefEngine(t)
+	eval(t, engine, `(import (wile goast taint))`)
+	eval(t, engine, `
+		(define (edge from to) (list 'cg-edge (cons 'caller from) (cons 'callee to) (cons 'description "static")))
+		;; named src -> snk, plus an ANONYMOUS node (no 'name field) with an out-edge.
+		(define cg
+		  (list (list 'cg-node (cons 'name "src") (cons 'id 0) (cons 'edges-in '())
+		              (cons 'edges-out (list (edge "src" "snk"))))
+		        (list 'cg-node (cons 'name "snk") (cons 'id 1) (cons 'edges-in '()) (cons 'edges-out '()))
+		        (list 'cg-node (cons 'id 2) (cons 'edges-in '())
+		              (cons 'edges-out (list (edge "anon" "snk"))))))
+		(define (is-name nm) (lambda (n) (let ((e (assq 'name (cdr n)))) (and e (equal? (cdr e) nm)))))
+		(define result (taint-flows cg (is-name "src") (is-name "snk")))`)
+	// No crash; src calls snk (single open edge = valid path) so one flow is reported.
+	got := eval(t, engine, `(not (null? result))`)
+	c.Assert(got.Internal(), qt.Equals, values.TrueValue)
+}
