@@ -23,6 +23,7 @@
           all-pairs
           build-func-ast-index
           build-func-ssa-index
+          build-func-canon-index
           score-candidate-pair
           pair-findings
           scored-candidates

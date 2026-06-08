@@ -129,8 +129,8 @@ func TestScoreCandidatePair(t *testing.T) {
 		(import (wile goast dup-detect))
 		(define s (go-load "`+pkg+`"))
 		(define ast-index (build-func-ast-index (go-typecheck-package s)))
-		(define ssa-index (build-func-ssa-index (go-ssa-build s)))
-		(define m (score-candidate-pair "SumSlice" "TotalSlice" ast-index ssa-index 0.6))
+		(define canon-index (build-func-canon-index (go-ssa-build s)))
+		(define m (score-candidate-pair "SumSlice" "TotalSlice" ast-index canon-index 0.6))
 	`)
 
 	t.Run("the clone pair scores a real tier and similarity", func(t *testing.T) {
@@ -144,7 +144,7 @@ func TestScoreCandidatePair(t *testing.T) {
 	})
 
 	t.Run("unresolvable names score #f", func(t *testing.T) {
-		out := eval(t, engine, `(score-candidate-pair "Nope" "Nada" ast-index ssa-index 0.6)`).SchemeString()
+		out := eval(t, engine, `(score-candidate-pair "Nope" "Nada" ast-index canon-index 0.6)`).SchemeString()
 		c.Assert(out, qt.Equals, "#f")
 	})
 }
@@ -331,6 +331,45 @@ func TestFindCandidatesWithCost(t *testing.T) {
 			                                  (cons 'neg-edges (- (cdr (assoc 'new-edges m))))))))
 			                  cands)))
 			  (>= (length (cdr (assoc 'frontier (pareto-frontier items '(benefit neg-edges))))) 1))
+		`).SchemeString()
+		c.Assert(out, qt.Equals, "#t")
+	})
+}
+
+// TestBuildFuncCanonIndex locks the two reasons canonicalization is hoisted out
+// of score-candidate-pair into a single guarded pass (findings #1 + #2):
+//   - it is keyed by short-name like build-func-ssa-index (its raw counterpart);
+//   - a function whose SSA fails go-ssa-canonicalize is omitted, not raised, so
+//     a single bad function cannot abort an O(n^2) scoring sweep.
+func TestBuildFuncCanonIndex(t *testing.T) {
+	c := qt.New(t)
+	engine := newBeliefEngine(t)
+	pkg := "github.com/aalpar/wile-goast/examples/goast-query/testdata/dupcluster"
+	eval(t, engine, `
+		(import (wile goast dup-detect))
+		(define s (go-load "`+pkg+`"))
+		(define raw   (build-func-ssa-index   (go-ssa-build s)))
+		(define canon (build-func-canon-index (go-ssa-build s)))
+	`)
+
+	t.Run("raw and canon indexes are both keyed by short-name", func(t *testing.T) {
+		out := eval(t, engine, `
+			(and (hashtable? raw) (hashtable? canon)
+			     (pair? (hashtable-ref raw "SumSlice" #f))
+			     (pair? (hashtable-ref canon "SumSlice" #f)))
+		`).SchemeString()
+		c.Assert(out, qt.Equals, "#t")
+	})
+
+	t.Run("canonicalization failure is guarded, not raised", func(t *testing.T) {
+		// A malformed ssa-func node that go-ssa-canonicalize rejects (empty blocks).
+		// build-func-canon-index must skip it and still return an index, rather
+		// than letting the error propagate and abort the whole pass.
+		out := eval(t, engine, `
+			(let ((idx (build-func-canon-index
+			             (list '(ssa-func (name . "Bad") (blocks . ()))))))
+			  (and (hashtable? idx)
+			       (not (hashtable-ref idx "Bad" #f))))
 		`).SchemeString()
 		c.Assert(out, qt.Equals, "#t")
 	})

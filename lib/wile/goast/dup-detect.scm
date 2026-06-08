@@ -150,6 +150,35 @@
       (if (pair? ssa-funcs) ssa-funcs '()))
     h))
 
+;; build-func-canon-index: short-name -> *canonicalized* SSA func, computed once
+;; per function instead of once per candidate pair. Two reasons this is hoisted
+;; out of score-candidate-pair:
+;;   1. Redundancy. A function in a candidate concept of extent k participates in
+;;      k-1 pairs; canonicalizing it per pair recomputes the dominator tree and
+;;      register alpha-renaming k-1 times. Once per function collapses ~2*|pairs|
+;;      calls to |unique funcs| (e.g. 6872 -> 108 on wile/machine).
+;;   2. Robustness. go-ssa-canonicalize raises when a function's dominator tree
+;;      does not cover all blocks (unreachable blocks). Inlined per pair, one such
+;;      function aborts the entire sweep. Guarded here, it is simply omitted from
+;;      the index, so its pairs fall back from the SSA tier to the AST tier.
+;; The resulting index holds immutable canonical SSA, so downstream scoring is
+;; pure reads (no Go re-entry, no session mutex). NB: the O(n^2) pair sweep is the
+;; dominant cost (~96% of find-scored-candidates wall-clock on a large target) and
+;; looks embarrassingly parallel — but spreading the pairs across Wile threads was
+;; measured 2-3x SLOWER, because the runtime serializes Scheme execution under a
+;; global lock. Threads are real goroutines but only one runs Scheme at a time, so
+;; the sweep stays deliberately serial.
+(define (build-func-canon-index ssa-funcs)
+  (let ((h (make-hashtable)))
+    (for-each
+      (lambda (fn)
+        (let ((nm (nf fn 'name)))
+          (if (string? nm)
+              (let ((c (guard (e (#t #f)) (go-ssa-canonicalize fn))))
+                (if c (hashtable-set! h (short-name nm) c))))))
+      (if (pair? ssa-funcs) ssa-funcs '()))
+    h))
+
 ;; score-candidate-pair: benefit measures + equivalence tier for a candidate pair
 ;; (joined to AST/SSA via short-name). Returns an alist or #f when the AST nodes
 ;; cannot be resolved. Tier (prior-art pattern, NOT binop ssa-equivalent?):
@@ -158,7 +187,7 @@
 ;;   divergent  = neither.
 ;; benefit = shared AST node count; type-params/value-params from score-diffs;
 ;; similarity = effective similarity (the per-pair confidence).
-(define (score-candidate-pair name-a name-b ast-index ssa-index threshold)
+(define (score-candidate-pair name-a name-b ast-index canon-index threshold)
   (let ((ast-a (hashtable-ref ast-index (short-name name-a) #f))
         (ast-b (hashtable-ref ast-index (short-name name-b) #f)))
     (if (not (and ast-a ast-b)) #f
@@ -171,13 +200,15 @@
              (roots   (list-ref sc 4))
              (vparams (list-ref sc 5))
              (ast-unif (unifiable? ar threshold))
-             (ssa-a   (hashtable-ref ssa-index (short-name name-a) #f))
-             (ssa-b   (hashtable-ref ssa-index (short-name name-b) #f))
+             ;; CANON-INDEX holds pre-canonicalized SSA (build-func-canon-index),
+             ;; so canonicalization is not repeated per pair. A miss (#f) means the
+             ;; function was unresolvable or failed to canonicalize; the SSA tier
+             ;; falls back to AST rather than erroring.
+             (ssa-a   (hashtable-ref canon-index (short-name name-a) #f))
+             (ssa-b   (hashtable-ref canon-index (short-name name-b) #f))
              (ssa-unif
                (and ssa-a ssa-b
-                    (unifiable? (ssa-diff (go-ssa-canonicalize ssa-a)
-                                          (go-ssa-canonicalize ssa-b))
-                                threshold)))
+                    (unifiable? (ssa-diff ssa-a ssa-b) threshold)))
              (tier (cond (ssa-unif 'proven)
                          (ast-unif 'structural)
                          (else     'divergent))))
@@ -207,19 +238,29 @@
 ;; resolves to AST nodes becomes a scored candidate entry:
 ;;   ((pair . (a b)) (measures . M) (findings . (finding-a finding-b))).
 ;; Pairs whose AST nodes cannot be resolved (short-name miss) are dropped.
-(define (scored-candidates concepts ast-index ssa-index pos-index threshold)
-  (apply append
-    (map (lambda (concept)
-           (filter-map
-             (lambda (pr)
-               (let* ((a (car pr)) (b (cdr pr))
-                      (m (score-candidate-pair a b ast-index ssa-index threshold)))
-                 (and m
-                      (list (cons 'pair (list a b))
-                            (cons 'measures m)
-                            (cons 'findings (pair-findings a b m pos-index))))))
-             (all-pairs (concept-extent concept))))
-         concepts)))
+;; score-pair-entry: one candidate pair -> a scored entry alist, or #f when the
+;; pair does not resolve to AST nodes. Pure over the (immutable, pre-built)
+;; indexes — no shared mutable state, no Go re-entry (canonicalization already
+;; hoisted into canon-index). Kept as a standalone per-pair unit for clarity;
+;; the sweep is serial (see build-func-canon-index on why threading does not pay).
+(define (score-pair-entry pr ast-index canon-index pos-index threshold)
+  (let* ((a (car pr)) (b (cdr pr))
+         (m (score-candidate-pair a b ast-index canon-index threshold)))
+    (and m
+         (list (cons 'pair (list a b))
+               (cons 'measures m)
+               (cons 'findings (pair-findings a b m pos-index))))))
+
+;; candidate-pairs: all within-concept pairs across CONCEPTS, flattened. The
+;; concept grouping does not survive into the (flat) output, so flattening up
+;; front yields a single work list to map over.
+(define (candidate-pairs concepts)
+  (apply append (map (lambda (c) (all-pairs (concept-extent c))) concepts)))
+
+(define (scored-candidates concepts ast-index canon-index pos-index threshold)
+  (filter-map (lambda (pr)
+                (score-pair-entry pr ast-index canon-index pos-index threshold))
+              (candidate-pairs concepts)))
 
 ;; find-scored-candidates: top-level. TARGET is a package pattern or a GoSession.
 ;; Runs 5a discovery (FCA-on-refs clusters) then 5b structural scoring over each
@@ -234,8 +275,8 @@
          (cands     (duplicate-candidate-concepts lat))
          (pos-index (func-refs->positions refs))
          (ast-index (build-func-ast-index (go-typecheck-package s)))
-         (ssa-index (build-func-ssa-index (go-ssa-build s))))
-    (scored-candidates cands ast-index ssa-index pos-index threshold)))
+         (canon-index (build-func-canon-index (go-ssa-build s))))
+    (scored-candidates cands ast-index canon-index pos-index threshold)))
 
 ;; candidate->verdict: an OPT-IN projection of a scored candidate's measures into
 ;; a categorical verdict. The default analysis output is the measure surface; the
@@ -346,7 +387,7 @@
          (concepts  (duplicate-candidate-concepts lat))
          (pos-index (func-refs->positions refs))
          (ast-index (build-func-ast-index (go-typecheck-package s)))
-         (ssa-index (build-func-ssa-index (go-ssa-build s)))
+         (canon-index (build-func-canon-index (go-ssa-build s)))
          (fr-index  (build-func-ref-index refs))
          (cg        (go-callgraph s 'static)))
     (apply append
@@ -354,7 +395,7 @@
              (filter-map
                (lambda (pr)
                  (let* ((a (car pr)) (b (cdr pr))
-                        (bm (score-candidate-pair a b ast-index ssa-index threshold)))
+                        (bm (score-candidate-pair a b ast-index canon-index threshold)))
                    (and bm
                         (let ((m (append bm
                                    (list (cons 'new-edges (cand-new-edges a b cg))
