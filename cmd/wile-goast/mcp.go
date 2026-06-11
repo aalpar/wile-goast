@@ -34,11 +34,6 @@ import (
 	"github.com/aalpar/wile/werr"
 )
 
-// httpIdleTTL bounds how long an idle Streamable HTTP session is kept before
-// the library sweeper reaps it, firing OnUnregisterSession to free its engine.
-// Not configurable yet — YAGNI until tuning is actually needed.
-const httpIdleTTL = 30 * time.Minute
-
 // BuildVersion is set by -ldflags at build time.
 var BuildVersion string
 
@@ -75,6 +70,13 @@ func (e *engineEntry) closeEngine() {
 type mcpServer struct {
 	mu      sync.Mutex
 	engines map[string]*engineEntry
+
+	// idleTTL bounds how long an idle Streamable HTTP session is kept before the
+	// library sweeper reaps it, firing OnUnregisterSession to free its engine.
+	// Passed straight to WithSessionIdleTTL: zero or negative disables the
+	// sweeper. The CLI default lives on the --http-idle-ttl flag; a zero-value
+	// mcpServer (stdio, tests) leaves the sweeper off, which is harmless there.
+	idleTTL time.Duration
 }
 
 // entryForKey returns the engineEntry for a session key, creating an empty one
@@ -247,14 +249,16 @@ func (ms *mcpServer) newStreamableHTTPServer() (*server.StreamableHTTPServer, er
 	}
 	return server.NewStreamableHTTPServer(s,
 		server.WithStateful(true),
-		server.WithSessionIdleTTL(httpIdleTTL),
+		server.WithSessionIdleTTL(ms.idleTTL),
 	), nil
 }
 
 // doHTTP runs the MCP server over Streamable HTTP at addr, shutting down
-// gracefully on SIGINT/SIGTERM or context cancellation.
-func doHTTP(ctx context.Context, addr string) error {
-	ms := &mcpServer{}
+// gracefully on SIGINT/SIGTERM or context cancellation. idleTTL bounds how long
+// abandoned sessions are retained before their engines are freed; zero or
+// negative disables reaping.
+func doHTTP(ctx context.Context, addr string, idleTTL time.Duration) error {
+	ms := &mcpServer{idleTTL: idleTTL}
 	defer ms.closeAll()
 
 	httpSrv, err := ms.newStreamableHTTPServer()

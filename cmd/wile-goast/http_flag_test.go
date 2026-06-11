@@ -16,6 +16,7 @@ package main
 
 import (
 	"testing"
+	"time"
 
 	goflags "github.com/jessevdk/go-flags"
 
@@ -43,6 +44,32 @@ func TestHTTPFlagOptionalValue(t *testing.T) {
 			_, err := p.ParseArgs(tc.args)
 			qt.Assert(t, err, qt.IsNil)
 			qt.Assert(t, o.HTTP, qt.Equals, tc.want)
+		})
+	}
+}
+
+// --http-idle-ttl configures the per-session idle reap interval. Absent ⇒ the
+// 30m default; an explicit value parses as a duration; 0 passes through to
+// disable the sweeper (mcp-go treats zero/negative as "never reap"), so the
+// default must be distinguishable from an explicit zero.
+func TestHTTPIdleTTLFlag(t *testing.T) {
+	cases := []struct {
+		name string
+		args []string
+		want time.Duration
+	}{
+		{"absent defaults to 30m", []string{}, 30 * time.Minute},
+		{"explicit duration", []string{"--http-idle-ttl=45m"}, 45 * time.Minute},
+		{"explicit zero disables", []string{"--http-idle-ttl=0"}, 0},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var o Options
+			p := goflags.NewParser(&o, goflags.Default)
+			_, err := p.ParseArgs(tc.args)
+			qt.Assert(t, err, qt.IsNil)
+			qt.Assert(t, o.HTTPIdleTTL, qt.Equals, tc.want)
 		})
 	}
 }

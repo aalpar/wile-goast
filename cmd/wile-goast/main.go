@@ -25,6 +25,7 @@
 //	wile-goast --mcp                    start MCP server on stdio
 //	wile-goast --http                   start MCP server over Streamable HTTP (127.0.0.1:8080)
 //	wile-goast --http=:9000             start MCP server over Streamable HTTP on all interfaces, port 9000
+//	wile-goast --http --http-idle-ttl=1h  HTTP server, reaping idle sessions after 1h (0 disables)
 package main
 
 import (
@@ -37,6 +38,7 @@ import (
 	"path/filepath"
 	"runtime/debug"
 	"strings"
+	"time"
 
 	goflags "github.com/jessevdk/go-flags"
 
@@ -59,13 +61,14 @@ var errCLI = werr.NewStaticError("cli error")
 
 // Options defines the command-line flags, matching wile's style.
 type Options struct {
-	Eval        []string `short:"e" long:"eval" description:"Evaluate Scheme expression (repeatable)"`
-	File        []string `short:"f" long:"file" description:"Scheme file to load (repeatable)"`
-	ListScripts bool     `long:"list-scripts" description:"List available embedded scripts"`
-	Run         string   `long:"run" description:"Run an embedded script by name"`
-	MCP         bool     `long:"mcp" description:"Start as MCP server on stdio"`
-	HTTP        string   `long:"http" optional:"yes" optional-value:"127.0.0.1:8080" description:"Start as MCP server over Streamable HTTP at ADDR (default 127.0.0.1:8080)"`
-	Version     bool     `short:"V" long:"version" description:"Print wile-goast and wile versions and exit"`
+	Eval        []string      `short:"e" long:"eval" description:"Evaluate Scheme expression (repeatable)"`
+	File        []string      `short:"f" long:"file" description:"Scheme file to load (repeatable)"`
+	ListScripts bool          `long:"list-scripts" description:"List available embedded scripts"`
+	Run         string        `long:"run" description:"Run an embedded script by name"`
+	MCP         bool          `long:"mcp" description:"Start as MCP server on stdio"`
+	HTTP        string        `long:"http" optional:"yes" optional-value:"127.0.0.1:8080" description:"Start as MCP server over Streamable HTTP at ADDR (default 127.0.0.1:8080)"`
+	HTTPIdleTTL time.Duration `long:"http-idle-ttl" default:"30m" description:"Idle timeout before an abandoned HTTP session's engine is freed; 0 disables reaping (only with --http)"`
+	Version     bool          `short:"V" long:"version" description:"Print wile-goast and wile versions and exit"`
 }
 
 var opts Options
@@ -112,7 +115,7 @@ func main() {
 			fmt.Fprintln(os.Stderr, "Error: --http cannot be combined with --mcp, -e, -f, --run, or --list-scripts")
 			os.Exit(1)
 		}
-		err = doHTTP(ctx, opts.HTTP)
+		err = doHTTP(ctx, opts.HTTP, opts.HTTPIdleTTL)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "MCP server error: %v\n", err)
 			os.Exit(1)
