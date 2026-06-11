@@ -811,7 +811,21 @@ Used as arguments to `functions-matching`:
 | `(ordered "A" "B")` | `'a-dominates-b` / `'b-dominates-a` / `'unordered` / `'missing` | SSA block dominance; same-block resolved by instruction position |
 | `(co-mutated "field" ...)` | `'co-mutated` / `'partial` / `'missing` | Fields stored together? |
 | `(checked-before-use "val")` | `'guarded` / `'unguarded` / `'missing` | Value checked before use? Product lattice fixpoint via `(wile algebra)` with early exit. 4-hop def-use reachability |
+| `(receiver-parameter-asymmetry)` | `'candidate` / `'forwarder` / `'mutation` / `'accessor` / `'multi-read` / `'unused-recv` / `'interface-method` | SSA: receiver-vs-parameter usage asymmetry |
 | `(custom (lambda (site ctx) ...))` | user-defined symbol | Escape hatch |
+
+A checker may return either a bare category symbol or `(symbol . evidence)` where
+`evidence = ((where . W) (why . Y) (score . S))`; a bare symbol stays valid (it yields an
+unlocated finding). The category alone drives voting; the evidence becomes the per-site
+`finding`. All six SSA-aware checkers emit the tail: `ordered` (the two call
+positions), `paired-with` (op-a's call site; `unpaired` lands exactly at the
+operation needing a pair), `co-mutated` (the first field-store), `checked-before-use`
+(the comparison feeding the guard — the `ssa-if` itself carries no position),
+`contains-call` (the matched call on `present`; bare `#f` on absent, preserving its
+dual-use as a `functions-matching` predicate), and `receiver-parameter-asymmetry`
+(the single receiver read on `candidate`; all non-candidate verdicts stay bare).
+Verdicts with no resolvable position stay bare symbols
+(`'unordered`/`'missing`/`'malformed-ssa`, unlocated `unguarded`).
 
 ### Context Accessors
 
@@ -852,6 +866,89 @@ Re-exported from `(wile goast utils)` for use in `custom` lambdas:
 ;; Run all beliefs against target package(s)
 (run-beliefs "./...")
 ```
+
+### Return Shape
+
+`run-beliefs` returns a flat list of self-describing alists:
+
+```scheme
+;; Per-site belief
+((name . "lock-unlock") (type . per-site) (status . strong)
+ (pattern . paired-defer) (ratio . 9/10) (total . 10)
+ (adherence . ("pkg.Foo" "pkg.Bar" ...))
+ (deviations . (("pkg.Baz" . unpaired) ...))
+ (findings . (#<finding> ...))   ;; one located finding per site
+ (min-adherence . 0.9) (min-sites . 5)
+ (sites-expr . (sites (functions-matching (contains-call "Lock"))))
+ (expect-expr . (expect (paired-with "Lock" "Unlock"))))
+
+;; Aggregate belief
+((name . "pkg-cohesion") (type . aggregate) (status . ok)
+ (sites-expr . (sites (all-functions-in)))
+ (analyze-expr . (analyze (single-cluster 'idf-threshold 0.36)))
+ (verdict . SPLIT) (confidence . HIGH) ...)
+```
+
+Status values: `strong`, `weak`, `no-sites`, `error` (per-site); `ok`, `error` (aggregate).
+
+The `findings` field is *additive* (it sits beside the unchanged `adherence`/`deviations`):
+a list of `finding` objects from `(wile goast provenance)`, one per site, each carrying
+`value` (the category), `where` (`"file:line:col"` or `#f`), `why` (structured
+`(reason-tag . data-alist)`, projected by `render-why`), and `score` (number or `#f`).
+The category alone still drives voting; evidence rides alongside it.
+
+### Emit Mode
+
+`emit-beliefs` takes `run-beliefs` output and produces Scheme source code —
+`define-belief` forms for strong per-site beliefs, `define-aggregate-belief` forms for
+ok aggregates. Closes the discover → review → commit → enforce lifecycle.
+
+```scheme
+(define emitted (emit-beliefs (run-beliefs "my/package/...")))
+(display emitted)  ;; => (define-belief "lock-unlock" ...)
+```
+
+| Export | Description |
+|--------|-------------|
+| `emit-beliefs` | Format strong/ok belief results as Scheme source code |
+
+### Suppression
+
+Committed beliefs live in `.scm` files; re-running discovery should not resurface a
+belief already committed. Matching is structural (`equal?` on captured S-expressions);
+names, thresholds, and ratios are ignored.
+
+```scheme
+(define results
+  (with-belief-scope
+    (lambda ()
+      ;; ...discovery beliefs...
+      (run-beliefs "my/pkg/..."))))
+(define committed (load-committed-beliefs "beliefs/"))
+(display (emit-beliefs (suppress-known results committed)))
+```
+
+| Export | Description |
+|--------|-------------|
+| `with-belief-scope` | Save/restore `*beliefs*` + `*aggregate-beliefs*` around a thunk via `dynamic-wind`. |
+| `load-committed-beliefs` | Load `.scm` beliefs from a directory or single file into an isolated scope; return `(per-site-snapshot . aggregate-snapshot)` pair. Per-file `guard`: skip bad files with stderr warning. |
+| `load-beliefs!` | Load `.scm` beliefs from a directory or single file into the **current** scope (activating them for `run-beliefs`), returning the count loaded. Wrap in `with-belief-scope` to confine. |
+| `suppress-known` | Structural filter: drop results whose `sites-expr`/`expect-expr` (per-site) or `sites-expr`/`analyze-expr` (aggregate) match any committed tuple. |
+| `current-beliefs` | Live snapshot of `*beliefs*`, symmetric to `aggregate-beliefs`. Necessary because user-code `*beliefs*` reads return a stale snapshot under Wile's import semantics. |
+
+### Aggregate Beliefs
+
+Aggregate beliefs evaluate whole-package properties instead of per-site patterns.
+
+```scheme
+(define-aggregate-belief "package-cohesion"
+  (sites (all-functions-in))
+  (analyze (single-cluster 'idf-threshold 0.36)))
+```
+
+| Analyzer | Description |
+|----------|-------------|
+| `(single-cluster . opts)` | Package cohesion via `recommend-split` |
 
 ---
 
@@ -906,7 +1003,12 @@ Algebraic normalization rules for SSA binop nodes. Integer-type scoped to avoid 
 | `(ssa-rule-commutative)` | Sort operands lexicographically for commutative ops |
 | `(ssa-rule-identity)` | `x + 0 -> x`, `x * 1 -> x`, etc. (integer types only) |
 | `(ssa-rule-annihilation)` | `x * 0 -> 0`, `x & 0 -> 0` (integer types only) |
+| `(ssa-rule-idempotence)` | `x & x -> x`, `x \| x -> x` (integer types only) |
+| `(ssa-rule-absorption)` | `x & (x \| y) -> x`, `x \| (x & y) -> x` (integer types only) |
+| `(ssa-rule-associativity)` | Right-associate chained operations for canonical form |
 | `(ssa-rule-set rule ...)` | Compose rules: first non-`#f` wins |
+| `ssa-theory` | Named theory for `discover-equivalences` (all SSA axioms) |
+| `ssa-binop-protocol` | Term protocol for SSA binop nodes |
 
 ### Usage
 
@@ -940,6 +1042,7 @@ Shared diff/scoring library for AST and SSA structural comparison. Pluggable cla
 | `(diff-result-diffs r)` | List of `(category path val-a val-b)` entries |
 | `(score-diffs shared diff-count diffs)` | Compute effective similarity with substitution collapsing |
 | `(unifiable? result threshold)` | Verdict: `#t` when effective similarity >= threshold and all remaining diffs are type/register |
+| `(ssa-equivalent? node-a node-b)` | Algebraic equivalence via `discover-equivalences`: checks if two SSA nodes share a normal form under any sub-theory |
 
 ### Usage
 
@@ -959,6 +1062,10 @@ Shared diff/scoring library for AST and SSA structural comparison. Pluggable cla
 
 ## Cross-References
 
+- [LIBRARIES.md](LIBRARIES.md) -- Higher-level analysis libraries (dataflow,
+  abstract domains, FCA family, package splitting, deduplication, path algebra,
+  provenance) and the source map.
+- [MCP.md](MCP.md) -- MCP server: transports, engine model, pipeline tools, prompts.
 - [GO-STATIC-ANALYSIS.md](GO-STATIC-ANALYSIS.md) -- Usage guide with
   architecture overview and cross-layer examples.
 - [AST-NODES.md](AST-NODES.md) -- Field reference for all 50+ AST node tags.
