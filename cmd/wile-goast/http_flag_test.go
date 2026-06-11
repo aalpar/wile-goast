@@ -73,3 +73,40 @@ func TestHTTPIdleTTLFlag(t *testing.T) {
 		})
 	}
 }
+
+// --http-idle-ttl only has meaning for the HTTP server, so an explicit value
+// without --http is rejected. The guard keys on whether the user *typed* the
+// flag, not its value: the 30m default is applied unconditionally, so it must
+// not trip the guard, while an explicit 30m (equal to the default) must.
+func TestHTTPIdleTTLRequiresHTTP(t *testing.T) {
+	cases := []struct {
+		name    string
+		args    []string
+		wantErr bool
+	}{
+		{"idle-ttl without http is rejected", []string{"--http-idle-ttl=45m"}, true},
+		{"idle-ttl with http is allowed", []string{"--http", "--http-idle-ttl=45m"}, false},
+		{"http alone is allowed", []string{"--http"}, false},
+		{"neither flag is allowed", []string{"-e", "(+ 1 2)"}, false},
+		// The proving case: an explicit value equal to the default. It must be
+		// rejected even though its value matches the default the "neither flag"
+		// row accepts — guarding on intent (was the flag supplied?), not value.
+		{"explicit default value without http is rejected", []string{"--http-idle-ttl=30m"}, true},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var o Options
+			p := goflags.NewParser(&o, goflags.Default)
+			_, err := p.ParseArgs(tc.args)
+			qt.Assert(t, err, qt.IsNil)
+
+			err = validateFlagCombinations(p, &o)
+			if tc.wantErr {
+				qt.Assert(t, err, qt.IsNotNil)
+			} else {
+				qt.Assert(t, err, qt.IsNil)
+			}
+		})
+	}
+}

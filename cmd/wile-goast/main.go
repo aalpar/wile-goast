@@ -95,6 +95,12 @@ func main() {
 		return
 	}
 
+	// Reject flag combinations the mode dispatch below cannot honor.
+	if err := validateFlagCombinations(parser, &opts); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+
 	// --mcp: start MCP server on stdio
 	if opts.MCP {
 		if len(opts.Eval) > 0 || len(opts.File) > 0 || opts.ListScripts || opts.Run != "" || opts.HTTP != "" {
@@ -151,6 +157,28 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+// validateFlagCombinations rejects flag combinations that the mode dispatch in
+// main() cannot honor. It runs after parsing because telling an explicit value
+// apart from a struct-tag default requires the parser's per-option set state,
+// not just the value in opts.
+func validateFlagCombinations(parser *goflags.Parser, opts *Options) error {
+	// --http-idle-ttl tunes the HTTP server's session sweeper; every other mode
+	// (stdio --mcp, -e, -f, --run, --list-scripts) ignores it. An explicit value
+	// without --http is therefore a user mistake, not a silent no-op.
+	if opts.HTTP == "" && explicitlySet(parser, "http-idle-ttl") {
+		return werr.WrapForeignErrorf(errCLI, "--http-idle-ttl requires --http")
+	}
+	return nil
+}
+
+// explicitlySet reports whether the named long option was supplied on the
+// command line, as opposed to filled in from its struct-tag default. go-flags
+// marks both cases IsSet; only a default also sets IsSetDefault.
+func explicitlySet(parser *goflags.Parser, longName string) bool {
+	opt := parser.FindOptionByLongName(longName)
+	return opt != nil && opt.IsSet() && !opt.IsSetDefault()
 }
 
 func runWithEngine(ctx context.Context) error {
