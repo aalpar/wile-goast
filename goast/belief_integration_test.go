@@ -21,12 +21,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/aalpar/wile"
 	"github.com/aalpar/wile-goast/goast"
 	"github.com/aalpar/wile-goast/goastcfg"
 	"github.com/aalpar/wile-goast/goastcg"
 	"github.com/aalpar/wile-goast/goastlint"
 	"github.com/aalpar/wile-goast/goastssa"
+	"github.com/aalpar/wile/pkg/wile"
 
 	qt "github.com/frankban/quicktest"
 )

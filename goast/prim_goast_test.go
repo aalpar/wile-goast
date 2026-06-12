@@ -20,8 +20,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/aalpar/wile"
 	extgoast "github.com/aalpar/wile-goast/goast"
+	"github.com/aalpar/wile/pkg/wile"
 	"github.com/aalpar/wile/values"
 	"github.com/aalpar/wile/values/valuestest"
 

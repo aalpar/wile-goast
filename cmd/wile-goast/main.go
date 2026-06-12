@@ -42,7 +42,7 @@ import (
 
 	goflags "github.com/jessevdk/go-flags"
 
-	"github.com/aalpar/wile"
+	"github.com/aalpar/wile/pkg/wile"
 	"github.com/aalpar/wile/werr"
 
 	wilegoast "github.com/aalpar/wile-goast"
@@ -55,7 +55,7 @@ import (
 
 // wileModulePath is the import path of the wile module, used to locate
 // its resolved version in debug.BuildInfo.Deps.
-const wileModulePath = "github.com/aalpar/wile"
+const wileModulePath = "github.com/aalpar/wile/pkg/wile"
 
 var errCLI = werr.NewStaticError("cli error")
 

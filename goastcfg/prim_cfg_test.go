@@ -18,10 +18,10 @@ import (
 	"context"
 	"testing"
 
-	"github.com/aalpar/wile"
 	extgoast "github.com/aalpar/wile-goast/goast"
 	extgoastcfg "github.com/aalpar/wile-goast/goastcfg"
 	"github.com/aalpar/wile-goast/testutil"
+	"github.com/aalpar/wile/pkg/wile"
 	"github.com/aalpar/wile/values"
 
 	qt "github.com/frankban/quicktest"
