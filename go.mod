@@ -1,6 +1,6 @@
 module github.com/aalpar/wile-goast
 
-go 1.24.0
+go 1.25.0
 
 require (
 	github.com/aalpar/wile v1.16.1-0.20260612013714-458e3eff1d58
@@ -8,7 +8,7 @@ require (
 	github.com/jessevdk/go-flags v1.6.1
 	github.com/mark3labs/mcp-go v0.45.0
 	github.com/quasilyte/go-ruleguard/dsl v0.3.23
-	golang.org/x/tools v0.42.0
+	golang.org/x/tools v0.46.0
 )
 
 require (
@@ -24,9 +24,9 @@ require (
 	github.com/spf13/cast v1.7.1 // indirect
 	github.com/wk8/go-ordered-map/v2 v2.1.8 // indirect
 	github.com/yosida95/uritemplate/v3 v3.0.2 // indirect
-	golang.org/x/mod v0.33.0 // indirect
-	golang.org/x/sync v0.19.0 // indirect
-	golang.org/x/sys v0.41.0 // indirect
+	golang.org/x/mod v0.37.0 // indirect
+	golang.org/x/sync v0.21.0 // indirect
+	golang.org/x/sys v0.46.0 // indirect
 	golang.org/x/text v0.9.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
