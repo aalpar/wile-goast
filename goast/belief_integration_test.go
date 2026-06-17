@@ -1334,22 +1334,22 @@ func TestDataflowMonotonicityViolation(t *testing.T) {
 		(define universe (ssa-instruction-names fn))
 		(define lat (powerset-lattice universe))
 
-		(define call-count 0)
+		(define call-count (vector 0))
 		(define (bad-transfer block state)
-		  (set! call-count (+ call-count 1))
-		  (if (> call-count 1) '() state))
+		  (vector-set! call-count 0 (+ (vector-ref call-count 0) 1))
+		  (if (> (vector-ref call-count 0) 1) '() state))
 	`)
 
 	t.Run("no flag means no check", func(t *testing.T) {
 		eval(t, engine, `
-			(set! call-count 0)
+			(vector-set! call-count 0 0)
 			(run-analysis 'forward lat bad-transfer fn (ssa-cfg-protocol))`)
 		// No error = pass
 	})
 
 	t.Run("check-monotone catches violation", func(t *testing.T) {
 		evalExpectError(t, engine, `
-			(set! call-count 0)
+			(vector-set! call-count 0 0)
 			(run-analysis 'forward lat bad-transfer fn (ssa-cfg-protocol)
 			  (init-state (lattice-bottom lat)) 'check-monotone)`)
 	})
@@ -2122,18 +2122,18 @@ func TestLoadBeliefs_ActivatesInScope(t *testing.T) {
 	counts := eval(t, engine, `
 		(import (wile goast belief))
 		(reset-beliefs!)
-		(define active-inside -1)
+		(define active-inside (vector -1))
 		(with-belief-scope
 		  (lambda ()
 		    (load-beliefs! `+schemeStr(dir)+`)
-		    (set! active-inside (length (current-beliefs)))))
+		    (vector-set! active-inside 0 (length (current-beliefs)))))
 		(define active-after (length (current-beliefs)))
-		(define committed-inside -1)
+		(define committed-inside (vector -1))
 		(with-belief-scope
 		  (lambda ()
 		    (load-committed-beliefs `+schemeStr(dir)+`)
-		    (set! committed-inside (length (current-beliefs)))))
-		(list active-inside active-after committed-inside)
+		    (vector-set! committed-inside 0 (length (current-beliefs)))))
+		(list (vector-ref active-inside 0) active-after (vector-ref committed-inside 0))
 	`)
 	// ACTIVE inside (1), CONFINED after (0), and load-committed-beliefs
 	// activates nothing in the caller's scope (0) — the design distinction.
@@ -2170,15 +2170,15 @@ func TestWithBeliefScope_Restores(t *testing.T) {
 		  (sites (functions-matching (name-matches "X")))
 		  (expect (contains-call "Foo"))
 		  (threshold 0.9 3))
-		(define inside-count 0)
+		(define inside-count (vector 0))
 		(with-belief-scope
 		  (lambda ()
 		    (define-belief "inner"
 		      (sites (functions-matching (name-matches "Y")))
 		      (expect (contains-call "Bar"))
 		      (threshold 0.9 3))
-		    (set! inside-count (length (current-beliefs)))))
-		(list inside-count (length (current-beliefs)) (car (car (current-beliefs))))
+		    (vector-set! inside-count 0 (length (current-beliefs)))))
+		(list (vector-ref inside-count 0) (length (current-beliefs)) (car (car (current-beliefs))))
 	`)
 	c.Assert(result.SchemeString(), qt.Equals, `(1 1 "outer")`)
 }
