@@ -241,6 +241,54 @@
                      (if (= current 0) #f 'malformed-idom))
                     (else (loop idom))))))))))))
 
+;; (dominates-call op-a op-b) — checks whether calls to OP-A dominate EVERY call
+;; to OP-B in the site function. This is the multi-site generalization of
+;; `ordered`: `ordered` compares only the FIRST call block of each op, so when
+;; OP-B appears in more than one branch (e.g. a callback applied in both arms of
+;; a mode dispatch) it verifies dominance for just one of them. `dominates-call`
+;; requires that EVERY block containing an OP-B call be dominated by SOME block
+;; containing an OP-A call — the correct primitive for "the capture dominates
+;; every arm." Built on the same SSA idom machinery as `ordered`
+;; (`find-ssa-call-blocks` + `ssa-dominates?`); SSA idom is the CFG dominator
+;; tree, so no separate go-cfg pass is needed. Block-granular: an OP-A call in
+;; the SAME block as an OP-B call counts as dominating it (use `ordered` for
+;; intra-block textual order). Returns:
+;;   'dominates-all — every OP-B block is dominated by some OP-A block
+;;   'partial       — some but not all OP-B blocks are dominated
+;;   'none          — no OP-B block is dominated by any OP-A block
+;;   'missing       — OP-A or OP-B has no call site in the function
+;;   'malformed-ssa — an idom chain is broken (data error, not a real verdict)
+(define (dominates-call op-a op-b)
+  "Property checker: verify that calls to OP-A dominate EVERY call to OP-B.\nThe multi-site generalization of `ordered' (which checks only the first call\nblock of each op): when OP-B appears in multiple branches, every OP-B block\nmust be dominated by some OP-A block. Returns 'dominates-all, 'partial, 'none,\n'missing (OP-A or OP-B absent), or 'malformed-ssa (broken idom chain).\nBlock-granular — same-block counts as dominating; use `ordered' for intra-block\norder.\n\nParameters:\n  op-a : string\n  op-b : string\nReturns: procedure\nCategory: goast-belief\n\nExamples:\n  (dominates-call \"SliceContinuationAt\" \"ApplyCallable\")\n\nSee also: `ordered', `reaches-call', `checked-before-use'."
+  (lambda (site ctx)
+    (let* ((fname (nf site 'name))
+           (pkg-path (nf site 'pkg-path))
+           (ssa-fn (and pkg-path (ctx-find-ssa-func ctx pkg-path fname))))
+      (if (not ssa-fn) 'missing
+        (let* ((blocks (nf ssa-fn 'blocks))
+               (a-blocks (find-ssa-call-blocks blocks op-a))
+               (b-blocks (find-ssa-call-blocks blocks op-b)))
+          (if (or (null? a-blocks) (null? b-blocks)) 'missing
+            ;; Fold over b-blocks: count how many are dominated by some a-block.
+            ;; A broken idom chain becomes 'malformed-ssa (a data error distinct
+            ;; from a legitimate non-dominance verdict), matching `ordered'. The
+            ;; malformed flag only matters when no clean dominator is found — a
+            ;; #t dominance short-circuits the scan.
+            (let loop ((bs b-blocks) (dom-count 0) (malformed #f))
+              (if (null? bs)
+                (cond (malformed 'malformed-ssa)
+                      ((= dom-count (length b-blocks)) 'dominates-all)
+                      ((> dom-count 0) 'partial)
+                      (else 'none))
+                (let scan ((as a-blocks) (mal malformed))
+                  (if (null? as)
+                    (loop (cdr bs) dom-count mal)
+                    (let ((r (ssa-dominates? blocks (car as) (car bs))))
+                      (cond
+                        ((eq? r #t) (loop (cdr bs) (+ dom-count 1) mal))
+                        ((eq? r 'malformed-idom) (scan (cdr as) #t))
+                        (else (scan (cdr as) mal))))))))))))))
+
 ;; ── Transitive-reachability checker ─────────────────────
 ;;
 ;; Map a site's AST func-decl to its call-graph node name. Call-graph node
