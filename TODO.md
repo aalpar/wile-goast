@@ -703,9 +703,40 @@ recheck (stale-binary suspected — see the last item).
       (6/6 green, incl. the `partial` case `ordered` misses). Verified on the real
       target: `(dominates-call "SliceContinuationAt" "ApplyCallable")` on
       `wile/.../PrimCallCC` → `dominates-all`. Unblocks wile #9 belief B1. **Follow-up
-      still open:** assess whether B2 (same-SSA-value reaches two call sites) and B3
-      (exactly-one-call-site + no-branch-on-predicate) need further checkers
-      (`same-value-flows-to`, `call-count`) once B1 ships. **[M, done]**
+      resolved for B2:** B2 (same-SSA-value reaches multiple call sites) DID need a new
+      checker — `flows-to-all`, below — because the generic def-use walk misses flow
+      through variadic-slice packing. B3 (exactly-one-call-site + no-branch-on-predicate)
+      is expected expressible with existing `contains-call` + an AST branch check (no new
+      checker); assess when the Tier-2 restructure lands. **[M, done]**
+
+- [x] **[Feature] `flows-to-all` value-flow belief checker — DONE (branch
+      `feat/flows-to-all-belief-checker`).** The value-flow analog of `dominates-call`:
+      where `dominates-call` asks "does the capture DOMINATE every callback arm?"
+      (control), `flows-to-all op-a op-b` asks "does the SAME OP-A value reach every
+      OP-B call?" (data). Backs wile #9 belief B2 (the continuation handed to the
+      callback must be the same value in both `PrimCallCC` mode arms — no arm may
+      re-capture or substitute it). **Why a new checker was required:** the generic
+      `defuse-reachable?` under-approximates flow THROUGH an aggregate — a value stored
+      into `arr[i]` (store address = `index-addr(arr,i)`) and read via `slice(arr)` is
+      invisible, because the store taints the element ADDRESS while the slice reads the
+      backing ARRAY and no def-use edge connects them. This is exactly the variadic-call
+      idiom (`f(x)` with `f(...T)` packs `x` into a `[]T` and passes a slice), and
+      `mc.ApplyCallable(mcls, capt)` in both `PrimCallCC` arms hits it — a plain
+      `defuse-reachable?` from `capt` to `ApplyCallable` returns a **false negative**
+      (verified). **Fix:** `value-flow-reached` (new, `dataflow.scm`) adds the
+      aggregate-alias edge (a tainted store through an element/field address taints the
+      aggregate); `build-addr-aggregate-map` records addr→aggregate. Edges are monotone,
+      so no existing reachability verdict weakens; `make-reachability-transfer` (used by
+      `checked-before-use`) is untouched. Verdict is per-source, mirroring
+      `dominates-call`: `flows-all` iff a single OP-A def reaches every OP-B call;
+      `partial` (an arm re-captures / some site unreached); `none`; `missing`. Exported
+      from `belief.sld` (+ `value-flow-reached`/`build-addr-aggregate-map` from
+      `dataflow.sld`); fixture `examples/goast-query/testdata/aggflow/`; test
+      `goast/flows_to_all_test.go` (6/6 green, incl. the variadic-packing `flows-all` the
+      generic walk misses and the `partial` re-capture case). Verified on the real
+      target: `(flows-to-all "SliceContinuationAt" "ApplyCallable")` on `PrimCallCC` and
+      `PrimCallWithComposableContinuation` → `flows-all` (same 2-member family + anchor as
+      B1). Unblocks wile #9 belief B2. **[M, done]**
 
 - [ ] **[DX bug] `check_beliefs` silently loads 0 beliefs for a single-file path.**
       The tool doc says `beliefs_path` accepts "a .scm file or directory of .scm

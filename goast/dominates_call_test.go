@@ -25,7 +25,7 @@ import (
 // of the apply() call sites:
 //   - DominatesAll     capture precedes the branch -> 'dominates-all
 //   - PartialDominance capture in one arm only      -> 'partial   (the case
-//                      `ordered` can miss: it checks only the first apply block)
+//     `ordered` can miss: it checks only the first apply block)
 //   - NoDominance      capture after apply          -> 'none
 //   - MissingCapture   no capture at all            -> 'missing
 //

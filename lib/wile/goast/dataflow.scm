@@ -127,3 +127,74 @@ See also: `run-analysis'."
          (result (fixpoint state-lat transfer initial fuel)))
     (and result (cadr result))))
 
+;; ─── Aggregate-aware value-flow reachability ─────────
+;;
+;; `defuse-reachable?` under-approximates flow THROUGH an aggregate. A value
+;; stored into arr[i] — a store whose address is `index-addr(arr, i)` — and
+;; later read via `slice(arr)` (or `arr[j]`) is invisible to a plain def-use
+;; walk: the store taints the element ADDRESS (`&arr[i]`), while the slice/load
+;; reads the backing ARRAY (`arr`), and there is no def-use edge between them.
+;;
+;; This bites the variadic-call idiom: `f(x)` where `f(...T)` packs `x` into a
+;; `[]T` backing array and passes a slice, which is exactly how a captured
+;; continuation reaches a callback in PrimCallCC's two mode arms
+;; (`mc.ApplyCallable(mcls, capt)` — a variadic `...Value`; wile finding #9,
+;; belief B2). A plain `defuse-reachable?` from `capt` to `ApplyCallable` returns
+;; #f there, a real false negative.
+;;
+;; `build-addr-aggregate-map` records, for each element/field address
+;; instruction (`index-addr` / `field-addr`), the backing aggregate it addresses:
+;; addr-reg -> aggregate-reg. `value-flow-reached` adds the aggregate-alias edge
+;; — a store of a tainted value through such an address taints the aggregate — so
+;; a subsequent `slice(arr)` carries the value forward under the ordinary operand
+;; rule. Adding edges is monotone: it can only make more values reach, never
+;; fewer, so it cannot weaken any existing reachability verdict.
+
+(define (build-addr-aggregate-map instrs)
+  "Map each element/field address register to the aggregate it addresses.\nScans INSTRS for index-addr / field-addr instructions and returns an alist\n(addr-register . aggregate-register). Used by value-flow-reached to add the\naggregate-alias edge (a store through an element address taints the backing\naggregate).\n\nParameters:\n  instrs : list\nReturns: list\nCategory: goast-dataflow\n\nSee also: `value-flow-reached'."
+  (filter-map
+    (lambda (i)
+      (and (or (tag? i 'ssa-index-addr) (tag? i 'ssa-field-addr))
+           (let ((nm (nf i 'name)) (agg (nf i 'x)))
+             (and nm agg (cons nm agg)))))
+    instrs))
+
+(define (value-flow-reached ssa-fn seed-names)
+  "Return the set of SSA value names reachable from SEED-NAMES via def-use,\nincluding flow through aggregates: a tainted value stored through an\nelement/field address taints the backing aggregate, so a later slice/load of\nthat aggregate carries the value forward. This sees value-through-variadic-slice\nflow that `defuse-reachable?` misses. The powerset lattice is monotone and\nbounded by the value universe, so the fixpoint always converges (fuel =\n|universe| + 2).\n\nParameters:\n  ssa-fn : list\n  seed-names : list\nReturns: list\nCategory: goast-dataflow\n\nExamples:\n  (value-flow-reached fn '(\"t0\"))\n\nSee also: `defuse-reachable?', `build-addr-aggregate-map'."
+  (let* ((instrs (ssa-all-instrs ssa-fn))
+         (universe (ssa-instruction-names ssa-fn))
+         (addr-map (build-addr-aggregate-map instrs))
+         (L (powerset-lattice universe))
+         (fuel (+ (length universe) 2))
+         (transfer
+           (lambda (names)
+             (let* ((reached
+                      (filter
+                        (lambda (i)
+                          (let ((ops (or (nf i 'operands) '())))
+                            (let check ((ns names))
+                              (cond ((null? ns) #f)
+                                    ((member? (car ns) ops) #t)
+                                    (else (check (cdr ns)))))))
+                        instrs))
+                    (new
+                      (flat-map
+                        (lambda (i)
+                          (let ((nm (nf i 'name)))
+                            (append
+                              (if (and nm (not (member? nm names))) (list nm) '())
+                              ;; aggregate-alias edge: a store whose VALUE is
+                              ;; tainted taints the aggregate its address backs.
+                              (if (and (tag? i 'ssa-store)
+                                       (let ((v (nf i 'val)))
+                                         (and v (member? v names))))
+                                (let* ((p (assoc (nf i 'addr) addr-map))
+                                       (agg (and p (cdr p))))
+                                  (if (and agg (not (member? agg names)))
+                                    (list agg) '()))
+                                '()))))
+                        reached)))
+               (lattice-join L names new))))
+         (result (fixpoint L transfer seed-names fuel)))
+    (or result '())))
+

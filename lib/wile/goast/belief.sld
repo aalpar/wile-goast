@@ -41,7 +41,8 @@
     ;; Predicate combinators
     all-of any-of none-of
     ;; Property checkers
-    paired-with ordered dominates-call co-mutated receiver-parameter-asymmetry
+    paired-with ordered dominates-call flows-to-all co-mutated
+    receiver-parameter-asymmetry
     reaches-call
     checked-before-use custom aggregate-custom
     ;; Utils re-export (for custom lambdas)

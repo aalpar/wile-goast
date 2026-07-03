@@ -25,6 +25,9 @@
     ssa-cfg-protocol
     ;; SSA-specific analysis entry point
     defuse-reachable?
+    ;; Aggregate-aware value-flow reachability (sees value-through-variadic-slice
+    ;; flow that defuse-reachable? misses; backs the flows-to-all checker)
+    value-flow-reached build-addr-aggregate-map
     ;; Re-exports of the extracted solver (callers may still import
     ;; them from (wile goast dataflow) directly).
     run-analysis

@@ -289,6 +289,72 @@
                         ((eq? r 'malformed-idom) (scan (cdr as) #t))
                         (else (scan (cdr as) mal))))))))))))))
 
+;; ── Value-flow checker ──────────────────────────────────
+;;
+;; (flows-to-all op-a op-b) — the value-flow analog of `dominates-call`. Where
+;; `dominates-call` asks "does the capture DOMINATE every callback arm?"
+;; (control), `flows-to-all` asks "does the SAME captured VALUE reach every
+;; callback arm?" (data). It is the checker behind wile finding #9's belief B2:
+;; the captured continuation handed to the callback must be the same value in
+;; both `PrimCallCC` mode arms — neither arm may re-capture or substitute it.
+;;
+;; Built on `value-flow-reached`, which follows def-use edges INCLUDING flow
+;; through aggregates (a store through an element/field address taints the
+;; backing aggregate). That aggregate-alias edge is essential: a continuation
+;; passed variadically (`mc.ApplyCallable(mcls, capt)`) is packed into a backing
+;; array and handed over as a slice, a path a plain `defuse-reachable?` cannot
+;; see (it returns a false negative there — the motivating gap for this checker).
+;;
+;; Verdict is per-source, mirroring `dominates-call`'s "every OP-B dominated by
+;; SOME OP-A": the shared-value law holds iff a SINGLE OP-A def's value reaches
+;; EVERY OP-B call. Two separate captures each feeding one arm is the violation.
+;;   'flows-all — some single OP-A def's value reaches every OP-B call site
+;;   'partial   — OP-B calls receive an OP-A value, but no single OP-A def
+;;                reaches all of them (an arm re-captures / substitutes), or some
+;;                OP-B site is unreached
+;;   'none      — no OP-B call receives any OP-A value
+;;   'missing   — OP-A or OP-B has no call site in the function
+;;
+;; An OP-B call "receives" a source iff one of its operands is in that source's
+;; value-flow-reached set. Block-agnostic: this is data flow, not dominance —
+;; pair with `dominates-call` for the control half.
+(define (ssa-call-to? i op)
+  (and (or (tag? i 'ssa-call) (tag? i 'ssa-go) (tag? i 'ssa-defer))
+       (or (equal? (nf i 'func) op) (equal? (nf i 'method) op))))
+
+(define (flows-to-all op-a op-b)
+  "Property checker: verify the same OP-A value reaches EVERY OP-B call.\nThe value-flow analog of `dominates-call': a single OP-A def's value must reach\nevery OP-B call site (via def-use, including flow through aggregates such as\nvariadic argument packing). Returns 'flows-all, 'partial (OP-B receives an OP-A\nvalue but no single OP-A def reaches all — an arm re-captures/substitutes),\n'none, or 'missing (OP-A or OP-B absent).\n\nParameters:\n  op-a : string\n  op-b : string\nReturns: procedure\nCategory: goast-belief\n\nExamples:\n  (flows-to-all \"NewCapturedContinuation\" \"ApplyCallable\")\n\nSee also: `dominates-call', `checked-before-use', `reaches-call'."
+  (lambda (site ctx)
+    (let* ((fname (nf site 'name))
+           (pkg-path (nf site 'pkg-path))
+           (ssa-fn (and pkg-path (ctx-find-ssa-func ctx pkg-path fname))))
+      (if (not ssa-fn) 'missing
+        (let* ((instrs (ssa-all-instrs ssa-fn))
+               (a-defs (filter-map
+                         (lambda (i) (and (ssa-call-to? i op-a) (nf i 'name)))
+                         instrs))
+               (b-sites (filter (lambda (i) (ssa-call-to? i op-b)) instrs)))
+          (if (or (null? a-defs) (null? b-sites)) 'missing
+            (let* ((n-b (length b-sites))
+                   (receives?
+                     (lambda (b-site reached)
+                       (let loop ((os (or (nf b-site 'operands) '())))
+                         (cond ((null? os) #f)
+                               ((member? (car os) reached) #t)
+                               (else (loop (cdr os)))))))
+                   (count-recv
+                     (lambda (reached)
+                       (length (filter (lambda (s) (receives? s reached)) b-sites))))
+                   (some-reaches-all
+                     (let loop ((ds a-defs))
+                       (cond ((null? ds) #f)
+                             ((= n-b (count-recv (value-flow-reached ssa-fn (list (car ds))))) #t)
+                             (else (loop (cdr ds))))))
+                   (union-recv (count-recv (value-flow-reached ssa-fn a-defs))))
+              (cond (some-reaches-all 'flows-all)
+                    ((> union-recv 0) 'partial)
+                    (else 'none)))))))))
+
 ;; ── Transitive-reachability checker ─────────────────────
 ;;
 ;; Map a site's AST func-decl to its call-graph node name. Call-graph node
