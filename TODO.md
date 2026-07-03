@@ -644,3 +644,28 @@ Effort tags: S (hours), M (day), L (multi-day).
       test-name greppability and coupled state. Audit overcounted problem
       severity. **[L, deferred — low value]**
 
+- [ ] **Callgraph query API: `go-callgraph` algorithm arg is a symbol, breaking the
+      string convention of the rest of the query surface — bias to strings** —
+      `go-callgraph` requires its algorithm selector as a *symbol*
+      (`(go-callgraph prog 'cha)`; `goastcg/prim_callgraph.go:56`
+      `RequireArg[*values.Symbol]`), while every other analysis-query primitive takes
+      its identifier as a *string*: `go-callgraph-callers`/`-callees`
+      (`goastcg/prim_callgraph.go:216,244`) and `go-cfg` (`goastcfg/prim_cfg.go:208`)
+      all use `RequireArg[*values.String]` for the function name. The mismatch trips
+      callers: the patterns/names are necessarily strings (they contain `.` `/` `*`
+      `(` `)`), so a caller naturally reaches for a string algorithm too and gets
+      `go-callgraph: argument 2: expected a symbol but got *values.String`. Hit live
+      during the wile `guard`+escape blast-radius sweep (2026-06-25).
+
+      **Fix — bias toward strings** (the more flexible source representation; the query
+      surface already speaks strings for every identifier). Accept a *string*
+      algorithm in `go-callgraph` — the value is used internally as `algo.Key` and
+      validated against the `map[string]bool` `validAlgorithms`, so no symbol
+      semantics are needed. Prefer accepting BOTH symbol and string for back-compat,
+      but document strings as canonical and add a regression test for
+      `(go-callgraph prog "cha")`. Then audit the query surface for any other
+      enum-as-symbol selectors and converge them on strings. Explicitly out of scope:
+      the AST/SSA node-map *tag* symbols (`prim_goast.go`, `prim_ssa.go`,
+      `prim_canonicalize.go`, …) — those are the node-representation discriminator, a
+      separate and intentional symbol design, not a query-arg type. **[S]**
+
