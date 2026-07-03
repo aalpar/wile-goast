@@ -96,7 +96,8 @@ func main() {
 	}
 
 	// Reject flag combinations the mode dispatch below cannot honor.
-	if err := validateFlagCombinations(parser, &opts); err != nil {
+	err = validateFlagCombinations(parser, &opts)
+	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
