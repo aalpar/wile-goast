@@ -211,9 +211,14 @@ inlining (Track 2) earns its cost.
   - Integration into the belief DSL
   - --emit mode for the unification detector
 
-- [ ] Previous session friction: `(wile algebra rewrite)` not importable standalone
-      (only transitively via `ssa-normalize`), `delete-duplicates` missing from
-      Scheme stdlib, SSA requires real packages on disk. See git history for details.
+- [x] Previous-session friction — wile-stdlib gaps RESOLVED (verified 2026-07-03
+      against the pinned `./wile`): `(wile algebra rewrite)` now ships as a
+      standalone, directly importable library
+      (`wile/pkg/stdlib/lib/wile/algebra/rewrite.sld`); `delete-duplicates` ships
+      in `(srfi 1)` (`wile/pkg/stdlib/lib/srfi/1.sld`, full SRFI-1). The third
+      note — "SSA requires real packages on disk" — is inherent to `go/ssa` (it
+      builds from `go/packages` load results, not source fragments), not a wile
+      gap; nothing to do there.
 
 - [ ] Fix `nf` return #f
 
@@ -668,4 +673,63 @@ Effort tags: S (hours), M (day), L (multi-day).
       the AST/SSA node-map *tag* symbols (`prim_goast.go`, `prim_ssa.go`,
       `prim_canonicalize.go`, …) — those are the node-representation discriminator, a
       separate and intentional symbol design, not a query-arg type. **[S]**
+
+## Belief DSL — CFG/dominance + DX gaps (from wile #9 `PrimCallCC` belief work, 2026-07-03)
+
+Surfaced while developing a structural belief for wile finding #9 (`PrimCallCC`
+dual-mode; `wile/plans/2026-07-03-continuation-callcc-dualmode-oracle.md`). The
+belief the wile plan needs is an *intra-function CFG-dominance* claim ("the
+continuation capture dominates both mode-dispatch arms"), which the current belief
+DSL cannot express. Per the platform thesis (wile = an LLM platform for building
+static-analysis tools), this friction is the feature signal, not a workaround
+target. Findings split by confidence: the first is source-verified; the rest are
+runtime-observed against the MCP eval/check_beliefs server and need a fresh-build
+recheck (stale-binary suspected — see the last item).
+
+- [ ] **[Feature, source-verified] Belief DSL has no CFG-dominance / intra-function
+      path predicate — wire `go-cfg-dominators` into the belief layer as a
+      `dominates-call` checker.** `go-cfg-dominators` exists and is a procedure in
+      `(wile goast cfg)` (verified: `(procedure? go-cfg-dominators)` → `#t`), but the
+      belief layer cannot reach it: `belief.sld` imports only `(wile goast utils)`
+      (`lib/wile/goast/belief.sld:49`), and the belief `ctx` lazily builds
+      session/ssa/callgraph/field-index but **no CFG** (`belief.scm` `ctx-ssa`/
+      `ctx-callgraph`, no `ctx-cfg`). Every belief predicate operates at callgraph/
+      function granularity (`contains-call`, `reaches-call`, `stores-to-fields`);
+      none expresses "within function F, does the call to A dominate the call to B"
+      (every path from entry to B passes through A). **Fix — mirror the `reaches-call`
+      addition (#1 Tier-2):** import `(wile goast cfg)` in `belief.sld`; add a
+      `ctx-cfg` lazy accessor; add a `dominates-call "A" "B"` checker in
+      `belief-checkers.scm` built on `go-cfg-dominators`; add a fixture test
+      (`goast/dominates_call_test.go`, analog of `reaches_call_test.go`). This
+      unblocks wile #9 belief B1. Assess as a follow-up whether B2 (same-SSA-value
+      reaches two call sites) and B3 (exactly-one-call-site + no-branch-on-predicate)
+      need further checkers (`same-value-flows-to`, `call-count`). **[M]**
+
+- [ ] **[DX bug] `check_beliefs` silently loads 0 beliefs for a single-file path.**
+      The tool doc says `beliefs_path` accepts "a .scm file or directory of .scm
+      files," but passing a single `.scm` file returns `{belief_count:0, result:[]}`
+      with **no error**; passing its parent directory loads the beliefs. A silent
+      no-op on a documented-supported input. **Fix:** support single-file paths, or
+      return a diagnostic when a path registers 0 beliefs. **[S]**
+
+- [ ] **[bug, verify-fresh-build] Belief directory silently drops a file that
+      registers 0 beliefs.** A 6-file `.goast-beliefs/` directory
+      (`wile/.goast-beliefs/`) reported `belief_count:5` with no diagnostic; the
+      dropped file (`continuation-capture-marks-shared.scm`, which uses
+      `reaches-call`) vanished from the results silently. Suspected coupled to the
+      stale-binary item below (its `reaches-call` reference failing to resolve at
+      load). **Fix:** report per-file load/registration failures instead of dropping
+      them from the count. Recheck against a fresh build first. **[S]**
+
+- [ ] **[DX, verify-fresh-build] MCP eval/check_beliefs server appears stale + no
+      runtime binding introspection.** `reaches-call` is exported (`belief.sld:45`)
+      yet `(import (wile goast belief))` then `(procedure? reaches-call)` reports
+      "no such binding" in the MCP eval session — the served binary lags source (cf.
+      wile's stale-MCP-binary note). Compounding it: the goast eval env has no
+      `defined?`/`apropos`, and unbound identifiers fail at **compile** (uncatchable
+      by `guard`, which only sees runtime conditions), so an LLM cannot runtime-probe
+      the primitive surface and must fall back to grepping Go source — the exact
+      anti-pattern this platform exists to remove. **Fix:** (a) pin/rebuild the MCP
+      server against source on start; (b) add a binding-existence / `apropos`
+      primitive to the goast eval env so the query surface is self-describing. **[M]**
 
