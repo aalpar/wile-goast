@@ -14,9 +14,14 @@
 
 (define-library (wile goast belief)
   (export
-    ;; Core
-    define-belief run-beliefs reset-beliefs! *beliefs* emit-beliefs
-    define-aggregate-belief register-aggregate-belief! *aggregate-beliefs*
+    ;; Core. The *beliefs* / *aggregate-beliefs* registries are intentionally
+    ;; NOT exported: importing a mutable variable copies its value at import
+    ;; time, so once define-belief mutates the library's binding a second
+    ;; (import (wile goast belief)) diverges from the caller's frozen copy and
+    ;; trips R7RS §5.6 import-conflict detection (ErrDuplicateBinding). Read the
+    ;; live registries via current-beliefs / aggregate-beliefs instead.
+    define-belief run-beliefs reset-beliefs! emit-beliefs
+    define-aggregate-belief register-aggregate-belief!
     aggregate-beliefs current-beliefs
     ;; Suppression
     with-belief-scope load-committed-beliefs suppress-known
