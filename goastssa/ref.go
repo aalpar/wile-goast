@@ -22,7 +22,7 @@ package goastssa
 import (
 	"golang.org/x/tools/go/ssa"
 
-	"github.com/aalpar/wile/values"
+	"github.com/aalpar/wile/pkg/values"
 )
 
 const ssaFunctionRefTag = "ssa-function-ref"

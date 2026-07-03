@@ -17,10 +17,11 @@ package goast_test
 import (
 	"testing"
 
+	"github.com/aalpar/wile/pkg/values"
+	"github.com/aalpar/wile/pkg/values/valuestest"
+
 	extgoast "github.com/aalpar/wile-goast/goast"
 	"github.com/aalpar/wile-goast/testutil"
-	"github.com/aalpar/wile/values"
-	"github.com/aalpar/wile/values/valuestest"
 
 	qt "github.com/frankban/quicktest"
 )

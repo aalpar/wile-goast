@@ -19,7 +19,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/aalpar/wile/values"
+	"github.com/aalpar/wile/pkg/values"
 )
 
 // TestIFDS_ValidPathCanary builds a 3-call-site analysis:

@@ -42,8 +42,8 @@ import (
 
 	goflags "github.com/jessevdk/go-flags"
 
+	"github.com/aalpar/wile/pkg/werr"
 	"github.com/aalpar/wile/pkg/wile"
-	"github.com/aalpar/wile/werr"
 
 	wilegoast "github.com/aalpar/wile-goast"
 	"github.com/aalpar/wile-goast/goast"

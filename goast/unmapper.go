@@ -18,8 +18,8 @@ import (
 	"go/ast"
 	"go/token"
 
-	"github.com/aalpar/wile/values"
-	"github.com/aalpar/wile/werr"
+	"github.com/aalpar/wile/pkg/values"
+	"github.com/aalpar/wile/pkg/werr"
 )
 
 // unmapNode converts a Scheme s-expression (tagged alist) back to an ast.Node.

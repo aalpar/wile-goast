@@ -17,7 +17,7 @@ package goast
 import (
 	"go/ast"
 
-	"github.com/aalpar/wile/values"
+	"github.com/aalpar/wile/pkg/values"
 )
 
 // collectAttached returns the set of comment groups that are referenced

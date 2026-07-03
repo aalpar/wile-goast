@@ -19,7 +19,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/aalpar/wile/values"
+	"github.com/aalpar/wile/pkg/values"
 )
 
 // TestTaint_InterproceduralCanary asserts both halves of the taint-flows

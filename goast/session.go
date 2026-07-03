@@ -22,8 +22,8 @@ import (
 	"golang.org/x/tools/go/ssa"
 	"golang.org/x/tools/go/ssa/ssautil"
 
-	"github.com/aalpar/wile/values"
-	"github.com/aalpar/wile/werr"
+	"github.com/aalpar/wile/pkg/values"
+	"github.com/aalpar/wile/pkg/werr"
 )
 
 // GoSession holds loaded Go packages and lazily-built analysis state.

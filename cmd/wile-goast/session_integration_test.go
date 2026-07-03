@@ -18,8 +18,9 @@ import (
 	"context"
 	"testing"
 
+	"github.com/aalpar/wile/pkg/values"
+
 	"github.com/aalpar/wile-goast/testutil"
-	"github.com/aalpar/wile/values"
 
 	qt "github.com/frankban/quicktest"
 )

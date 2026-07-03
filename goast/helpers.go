@@ -15,8 +15,8 @@
 package goast
 
 import (
-	"github.com/aalpar/wile/values"
-	"github.com/aalpar/wile/werr"
+	"github.com/aalpar/wile/pkg/values"
+	"github.com/aalpar/wile/pkg/werr"
 )
 
 // Extension-local error sentinels.

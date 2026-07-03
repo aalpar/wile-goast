@@ -30,8 +30,8 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 
+	"github.com/aalpar/wile/pkg/werr"
 	"github.com/aalpar/wile/pkg/wile"
-	"github.com/aalpar/wile/werr"
 )
 
 // BuildVersion is set by -ldflags at build time.

@@ -20,8 +20,9 @@ import (
 
 	"golang.org/x/tools/go/callgraph"
 
+	"github.com/aalpar/wile/pkg/values"
+
 	"github.com/aalpar/wile-goast/goast"
-	"github.com/aalpar/wile/values"
 )
 
 type cgMapper struct {

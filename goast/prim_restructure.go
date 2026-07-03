@@ -20,9 +20,9 @@ import (
 	"go/token"
 	"slices"
 
-	"github.com/aalpar/wile/machine"
-	"github.com/aalpar/wile/values"
-	"github.com/aalpar/wile/werr"
+	"github.com/aalpar/wile/pkg/machine"
+	"github.com/aalpar/wile/pkg/values"
+	"github.com/aalpar/wile/pkg/werr"
 )
 
 // PrimGoCFGToStructured implements (go-cfg-to-structured block [func-type]).

@@ -26,7 +26,7 @@ import (
 	qt "github.com/frankban/quicktest"
 	"golang.org/x/tools/go/ssa"
 
-	"github.com/aalpar/wile/values"
+	"github.com/aalpar/wile/pkg/values"
 )
 
 // TestMapMultiConvertGeneric exercises mapMultiConvert. Go's SSA

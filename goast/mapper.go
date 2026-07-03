@@ -20,8 +20,8 @@ import (
 	"go/token"
 	"go/types"
 
-	"github.com/aalpar/wile/values"
-	"github.com/aalpar/wile/werr"
+	"github.com/aalpar/wile/pkg/values"
+	"github.com/aalpar/wile/pkg/werr"
 )
 
 // mapperOpts controls what optional information the mapper emits.

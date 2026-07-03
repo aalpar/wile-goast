@@ -17,7 +17,7 @@ package goast_test
 import (
 	"testing"
 
-	"github.com/aalpar/wile/values"
+	"github.com/aalpar/wile/pkg/values"
 
 	qt "github.com/frankban/quicktest"
 )

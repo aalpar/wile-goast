@@ -24,8 +24,9 @@ import (
 	"golang.org/x/tools/go/ssa"
 	"golang.org/x/tools/go/ssa/ssautil"
 
+	"github.com/aalpar/wile/pkg/values"
+
 	"github.com/aalpar/wile-goast/goast"
-	"github.com/aalpar/wile/values"
 
 	qt "github.com/frankban/quicktest"
 )

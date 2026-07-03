@@ -20,9 +20,9 @@ import (
 
 	"golang.org/x/tools/go/packages"
 
-	"github.com/aalpar/wile/machine"
-	"github.com/aalpar/wile/security"
-	"github.com/aalpar/wile/werr"
+	"github.com/aalpar/wile/pkg/machine"
+	"github.com/aalpar/wile/pkg/security"
+	"github.com/aalpar/wile/pkg/werr"
 )
 
 // LoadPackagesChecked performs a security-checked packages.Load with

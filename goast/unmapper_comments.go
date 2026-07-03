@@ -18,8 +18,8 @@ import (
 	"go/ast"
 	"go/token"
 
-	"github.com/aalpar/wile/values"
-	"github.com/aalpar/wile/werr"
+	"github.com/aalpar/wile/pkg/values"
+	"github.com/aalpar/wile/pkg/werr"
 )
 
 // synthLineSize is the number of bytes per synthetic line. go/printer uses

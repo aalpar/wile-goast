@@ -17,7 +17,7 @@ package goast
 import (
 	"testing"
 
-	"github.com/aalpar/wile/values"
+	"github.com/aalpar/wile/pkg/values"
 )
 
 func TestCurrentGoTargetDefault(t *testing.T) {

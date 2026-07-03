@@ -21,8 +21,9 @@ import (
 
 	"golang.org/x/tools/go/ssa"
 
+	"github.com/aalpar/wile/pkg/values"
+
 	"github.com/aalpar/wile-goast/goast"
-	"github.com/aalpar/wile/values"
 )
 
 type ssaMapper struct {

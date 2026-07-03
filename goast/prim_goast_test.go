@@ -20,10 +20,11 @@ import (
 	"path/filepath"
 	"testing"
 
-	extgoast "github.com/aalpar/wile-goast/goast"
+	"github.com/aalpar/wile/pkg/values"
+	"github.com/aalpar/wile/pkg/values/valuestest"
 	"github.com/aalpar/wile/pkg/wile"
-	"github.com/aalpar/wile/values"
-	"github.com/aalpar/wile/values/valuestest"
+
+	extgoast "github.com/aalpar/wile-goast/goast"
 
 	qt "github.com/frankban/quicktest"
 )

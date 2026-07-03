@@ -20,10 +20,10 @@ import (
 
 	"golang.org/x/tools/go/packages"
 
-	"github.com/aalpar/wile/machine"
-	"github.com/aalpar/wile/registry/helpers"
-	"github.com/aalpar/wile/values"
-	"github.com/aalpar/wile/werr"
+	"github.com/aalpar/wile/pkg/machine"
+	"github.com/aalpar/wile/pkg/registry/helpers"
+	"github.com/aalpar/wile/pkg/values"
+	"github.com/aalpar/wile/pkg/werr"
 )
 
 // PrimGoLoad implements (go-load pattern ... . options).

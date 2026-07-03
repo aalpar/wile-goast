@@ -17,8 +17,8 @@ package goast
 import (
 	"go/ast"
 
-	"github.com/aalpar/wile/values"
-	"github.com/aalpar/wile/werr"
+	"github.com/aalpar/wile/pkg/values"
+	"github.com/aalpar/wile/pkg/werr"
 )
 
 // requireBlockBody unmaps a body field and asserts it is a *ast.BlockStmt.

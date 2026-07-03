@@ -19,11 +19,12 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aalpar/wile/pkg/values"
+	"github.com/aalpar/wile/pkg/wile"
+
 	extgoast "github.com/aalpar/wile-goast/goast"
 	extgoastssa "github.com/aalpar/wile-goast/goastssa"
 	"github.com/aalpar/wile-goast/testutil"
-	"github.com/aalpar/wile/pkg/wile"
-	"github.com/aalpar/wile/values"
 
 	qt "github.com/frankban/quicktest"
 )

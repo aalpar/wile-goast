@@ -17,10 +17,11 @@ package goastssa
 import (
 	"strconv"
 
+	"github.com/aalpar/wile/pkg/machine"
+	"github.com/aalpar/wile/pkg/values"
+	"github.com/aalpar/wile/pkg/werr"
+
 	"github.com/aalpar/wile-goast/goast"
-	"github.com/aalpar/wile/machine"
-	"github.com/aalpar/wile/values"
-	"github.com/aalpar/wile/werr"
 )
 
 // ssaFuncData is the intermediate representation of an SSA function s-expression.

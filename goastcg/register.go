@@ -15,8 +15,8 @@
 package goastcg
 
 import (
-	"github.com/aalpar/wile/registry"
-	"github.com/aalpar/wile/values"
+	"github.com/aalpar/wile/pkg/registry"
+	"github.com/aalpar/wile/pkg/values"
 )
 
 // cgExtension wraps Extension to implement LibraryNamer.
