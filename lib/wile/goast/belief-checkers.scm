@@ -241,6 +241,78 @@
                      (if (= current 0) #f 'malformed-idom))
                     (else (loop idom))))))))))))
 
+;; ── Transitive-reachability checker ─────────────────────
+;;
+;; Map a site's AST func-decl to its call-graph node name. Call-graph node
+;; names are Form-3 qualified ("pkg.Func" or "(*pkg.T).Method"). A method
+;; func-decl's 'name is already qualified in that form, so try an exact match
+;; first. A top-level function's 'name is bare ("Func"), so fall back to a
+;; suffix match ("." + name lands after both the package dot and a "(*T)."
+;; receiver), constrained by pkg-path to disambiguate same-named functions
+;; across packages. Returns the matching node name, or #f.
+(define (string-ends-with? suffix s)
+  (let ((sl (string-length suffix)) (n (string-length s)))
+    (and (<= sl n) (string=? suffix (substring s (- n sl) n)))))
+
+(define (cg-node-name-for cg site)
+  (let* ((nm (nf site 'name))
+         (pkg-path (nf site 'pkg-path))
+         (suffix (string-append "." nm)))
+    (let loop ((ns (if (pair? cg) cg '())) (suffix-hit #f))
+      (cond ((null? ns) suffix-hit)
+            (else
+             (let ((qn (nf (car ns) 'name)))
+               (cond
+                 ((not qn) (loop (cdr ns) suffix-hit))
+                 ;; exact match wins immediately (qualified method name)
+                 ((equal? qn nm) qn)
+                 ;; else remember the first pkg-scoped suffix match (bare func)
+                 ((and (not suffix-hit)
+                       (string-ends-with? suffix qn)
+                       (or (not pkg-path) (string-contains qn pkg-path)))
+                  (loop (cdr ns) qn))
+                 (else (loop (cdr ns) suffix-hit)))))))))
+
+;; Callee names (edges-out) of the call-graph node named NM, or '() if absent.
+(define (cg-callees cg nm)
+  (let loop ((ns (if (pair? cg) cg '())))
+    (cond ((null? ns) '())
+          ((equal? (nf (car ns) 'name) nm)
+           (map (lambda (e) (nf e 'callee)) (nf (car ns) 'edges-out)))
+          (else (loop (cdr ns))))))
+
+;; BFS the call graph from START (a qualified node name): does any reachable
+;; callee's SHORT name equal TARGET-SHORT? Short-name match lets callers pass
+;; "MarkChainShared" without the "(*pkg.T)." prefix.
+(define (cg-reaches-short? cg start target-short)
+  (let loop ((frontier (list start)) (seen '()))
+    (cond ((null? frontier) #f)
+          ((member (car frontier) seen) (loop (cdr frontier) seen))
+          (else
+           (let* ((cur (car frontier))
+                  (callees (cg-callees cg cur)))
+             (if (let scan ((cs callees))
+                   (cond ((null? cs) #f)
+                         ((equal? (ssa-short-name (car cs)) target-short) #t)
+                         (else (scan (cdr cs)))))
+                 #t
+                 (loop (append callees (cdr frontier)) (cons cur seen))))))))
+
+;; (reaches-call target) — checks whether the site function transitively calls
+;; TARGET (matched by short name) anywhere in its call graph. Unlike
+;; contains-call (direct calls in the body only), this follows edges through
+;; the whole reachable sub-graph, so a site that delegates the call to a helper
+;; still counts. Returns 'reaches or 'unreached ('unresolved if the site has no
+;; call-graph node — e.g. fully-inlined or generated code).
+(define (reaches-call target)
+  "Property checker: verify that the site function transitively reaches a call\nto TARGET (short name) through its call graph. Follows edges, so a site that\ndelegates TARGET to a helper still adheres. Returns 'reaches, 'unreached, or\n'unresolved (site absent from the call graph).\n\nParameters:\n  target : string\nReturns: procedure\nCategory: goast-belief\n\nExamples:\n  (reaches-call \"MarkChainShared\")\n\nSee also: `contains-call', `paired-with', `callers-of'."
+  (lambda (site ctx)
+    (let* ((cg (ctx-callgraph ctx))
+           (start (cg-node-name-for cg site)))
+      (cond ((not start) 'unresolved)
+            ((cg-reaches-short? cg start target) 'reaches)
+            (else 'unreached)))))
+
 ;; (co-mutated field ...) — checks whether all named fields are stored
 ;; together in the function. Uses the pre-built field index from Go.
 ;; Returns: 'co-mutated, 'partial, or 'missing
