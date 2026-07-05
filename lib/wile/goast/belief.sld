@@ -41,7 +41,7 @@
     ;; Predicate combinators
     all-of any-of none-of
     ;; Property checkers
-    paired-with ordered dominates-call flows-to-all co-mutated
+    paired-with ordered dominates-call flows-to-all single-call-site co-mutated
     receiver-parameter-asymmetry
     reaches-call
     checked-before-use custom aggregate-custom

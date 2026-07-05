@@ -355,6 +355,34 @@
                     ((> union-recv 0) 'partial)
                     (else 'none)))))))))
 
+;; ── Call-site cardinality checker ───────────────────────
+;;
+;; (single-call-site op) — verifies the site function contains EXACTLY ONE call
+;; to OP. The structural acceptance test behind wile finding #9's belief B3
+;; (callcc-mode-selection-single-seam): after the PrimCallCC / PrimCallWith-
+;; ComposableContinuation dual-mode restructure, each capture primitive applies
+;; its callback through ONE apply seam (ambient-vs-sub is a target selection, not
+;; two hand-written ApplyCallable arms). A future edit that re-splits the apply
+;; back into two arms reintroduces a second call site -> 'multiple, so the
+;; family-consensus belief diverges (weak). Counts SSA call instructions to OP
+;; (a re-split is two source calls -> two SSA calls), at the same ssa-call-to?
+;; granularity as `flows-to-all`. Returns:
+;;   'single   — exactly one call to OP
+;;   'multiple — more than one call to OP (the re-split violation)
+;;   'missing  — OP is not called in the function
+(define (single-call-site op)
+  "Property checker: verify the site function calls OP exactly once.\nCounts SSA call instructions to OP (method or function). Returns 'single (one\ncall), 'multiple (more than one — e.g. a callback re-split across two mode\narms), or 'missing (OP absent). The structural acceptance test for a\nsingle-apply-seam refactor.\n\nParameters:\n  op : string\nReturns: procedure\nCategory: goast-belief\n\nExamples:\n  (single-call-site \"ApplyCallable\")\n\nSee also: `dominates-call', `flows-to-all', `contains-call'."
+  (lambda (site ctx)
+    (let* ((fname (nf site 'name))
+           (pkg-path (nf site 'pkg-path))
+           (ssa-fn (and pkg-path (ctx-find-ssa-func ctx pkg-path fname))))
+      (if (not ssa-fn) 'missing
+        (let* ((instrs (ssa-all-instrs ssa-fn))
+               (n (length (filter (lambda (i) (ssa-call-to? i op)) instrs))))
+          (cond ((= n 0) 'missing)
+                ((= n 1) 'single)
+                (else 'multiple)))))))
+
 ;; ── Transitive-reachability checker ─────────────────────
 ;;
 ;; Map a site's AST func-decl to its call-graph node name. Call-graph node
