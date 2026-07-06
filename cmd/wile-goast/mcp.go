@@ -318,7 +318,7 @@ const maxEvalResultBytes = 16384
 
 // evalTruncationHint teaches projection: return less, or use a bounded pipeline
 // tool. Appended to any truncated eval result.
-const evalTruncationHint = "Return only what you need — map over the " +
+const evalTruncationHint = "Return only what you need: map over the " +
 	"declarations projecting names/positions, or use a pipeline tool " +
 	"(bounded output). See the `reference` tool for query idioms."
 
@@ -333,7 +333,7 @@ func capEvalResult(s string) string {
 	for cut > 0 && !utf8.RuneStart(s[cut]) {
 		cut--
 	}
-	return fmt.Sprintf("%s\n\n;; Result truncated at %d of %d chars. %s",
+	return fmt.Sprintf("%s\n\n;; Result truncated at %d of %d bytes. %s",
 		s[:cut], cut, len(s), evalTruncationHint)
 }
 
@@ -364,7 +364,7 @@ func (ms *mcpServer) handleEval(ctx context.Context, req mcp.CallToolRequest) (*
 
 // handleReference returns the distilled Scheme cheatsheet so a caller can load
 // query idioms and exact arities before its first eval. Same content the eval
-// error path appends — single source of truth (reference/cheatsheet.md).
+// error path appends: single source of truth (reference/cheatsheet.md).
 func (ms *mcpServer) handleReference(_ context.Context, _ mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	return mcp.NewToolResultText(cheatsheet), nil
 }

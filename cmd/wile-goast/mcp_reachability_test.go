@@ -18,6 +18,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/mark3labs/mcp-go/client"
 	"github.com/mark3labs/mcp-go/mcp"
@@ -155,6 +156,25 @@ func TestInstructions_ContainDifferentiation(t *testing.T) {
 		c.Assert(strings.Contains(initRes.Instructions, kw), qt.IsTrue,
 			qt.Commentf("instructions missing differentiation keyword %q", kw))
 	}
+}
+
+// capEvalResult must never split a multibyte rune: it backs up to a rune
+// boundary before truncating. "中" is 3 bytes, and 16384 is not a multiple of
+// 3, so the cut lands mid-rune and the back-up loop must engage. The truncated
+// body must remain valid UTF-8.
+func TestCapEvalResult_TruncatesOnRuneBoundary(t *testing.T) {
+	c := qt.New(t)
+	// 6000 * 3 = 18000 bytes, over the 16384 cap.
+	s := strings.Repeat("中", 6000)
+	out := capEvalResult(s)
+	c.Assert(len(out) < len(s), qt.IsTrue)
+	c.Assert(strings.Contains(out, "truncated"), qt.IsTrue)
+	// The body before the appended hint must be valid UTF-8 (no split rune).
+	body := out
+	if i := strings.Index(out, "\n\n;;"); i >= 0 {
+		body = out[:i]
+	}
+	c.Assert(utf8.ValidString(body), qt.IsTrue)
 }
 
 // The eval description must be task-indexed — leading with the concrete
