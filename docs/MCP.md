@@ -15,9 +15,18 @@ defined beliefs) and serializes concurrent `eval`s within a session via a
 per-engine mutex. stdio is the degenerate one-session case. See
 `plans/2026-05-30-http-mcp-server-design.md`.
 
-## Tool
+## Tools
 
-Single tool: `eval` — takes a `code` string (Scheme expression), returns the evaluation result.
+- `eval`: takes a `code` string (Scheme expression), returns the result.
+  Results over 16 KB (`maxEvalResultBytes`) are truncated on a UTF-8 boundary
+  and annotated with a projection hint; on a Scheme error the result carries the
+  distilled cheatsheet (`cmd/wile-goast/reference/cheatsheet.md`) so the caller
+  can self-correct. Task-indexed description: duplicates, call paths,
+  checked-before-use, cross-site beliefs.
+- `reference`: returns the distilled Scheme cheatsheet (exact primitive
+  arities, the parse→query→project pattern, missing builtins, small-output
+  idioms). Single source of truth, also appended to `eval` errors. Load it
+  before writing a non-trivial `eval`.
 
 ## Pipeline Tools (Phase 1)
 
@@ -56,6 +65,10 @@ appear on both stdio and HTTP. Implemented in `lib/wile/goast/pipelines.scm`
 | `goast-split` | Package cohesion analysis and split recommendations |
 
 Prompt content lives in `cmd/wile-goast/prompts/*.md` (embedded in binary).
+
+The `goast-scheme-ref` prompt is the long-form Scheme reference; the `reference`
+tool serves the distilled short form from `cmd/wile-goast/reference/cheatsheet.md`,
+which is also appended to `eval` error results.
 
 ## Client Config
 
