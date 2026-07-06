@@ -85,6 +85,25 @@ func (ms *mcpServer) registerPhase1Tools(s *server.MCPServer) {
 		ms.handleRecommendBoundaries,
 	)
 	s.AddTool(
+		mcp.NewTool("find_duplicates",
+			mcp.WithDescription("Are functions in this package semantic duplicates? "+
+				"Scans a Go package for duplicate function pairs and reports "+
+				"SSA/AST-verified structural equivalence (proven/structural/divergent) "+
+				"per pair, not token similarity: answers what grep/dupl and gopls "+
+				"cannot. Returns scored, located candidate pairs; pass verdict=true "+
+				"for an opt-in duplicate/likely-duplicate/distinct label."),
+			mcp.WithString("target", mcp.Required(),
+				mcp.Description("Go package pattern (e.g., 'my/pkg/...')")),
+			mcp.WithNumber("threshold",
+				mcp.Description("Similarity/unifiability threshold that sets each pair's "+
+					"equivalence tier (default 0.6). Does not filter which pairs are returned.")),
+			mcp.WithBoolean("verdict",
+				mcp.Description("Attach the opt-in categorical verdict "+
+					"(duplicate/likely-duplicate/distinct) per candidate (default false)")),
+		),
+		ms.handleFindDuplicates,
+	)
+	s.AddTool(
 		mcp.NewTool("find_false_boundaries",
 			mcp.WithDescription("Find struct boundaries whose removal would enable "+
 				"unification: FCA concepts spanning multiple struct types, annotated "+
@@ -265,6 +284,27 @@ func (ms *mcpServer) handleFindFalseBoundaries(ctx context.Context, req mcp.Call
 	}
 	code := `(import (wile goast pipelines))
 (pipeline-find-false-boundaries ` + schemeStringLiteral(target) +
+		` (list ` + strings.Join(optsParts, " ") + `))`
+	return ms.invokePipeline(ctx, code)
+}
+
+func (ms *mcpServer) handleFindDuplicates(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	target := req.GetString("target", "")
+	if target == "" {
+		return mcp.NewToolResultError("target parameter is required"), nil
+	}
+	args := req.GetArguments()
+	var optsParts []string
+	if v, ok := args["threshold"]; ok {
+		optsParts = append(optsParts, fmt.Sprintf("(cons 'threshold %v)", v))
+	}
+	if v, ok := args["verdict"]; ok {
+		if b, _ := v.(bool); b {
+			optsParts = append(optsParts, "(cons 'verdict #t)")
+		}
+	}
+	code := `(import (wile goast pipelines))
+(pipeline-find-duplicates ` + schemeStringLiteral(target) +
 		` (list ` + strings.Join(optsParts, " ") + `))`
 	return ms.invokePipeline(ctx, code)
 }

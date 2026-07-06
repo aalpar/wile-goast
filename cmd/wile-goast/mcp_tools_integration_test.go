@@ -280,7 +280,70 @@ func TestPipelineFindDuplicates_EvalSmoke(t *testing.T) {
 	}
 }
 
-// All five Phase 1 tools must be advertised by the server (alongside the
+// find_duplicates surfaces the SSA/AST-verified clone pair from the dupcluster
+// fixture: SumSlice/TotalSlice, both located, tier proven or structural.
+func TestFindDuplicates_DupclusterFixture(t *testing.T) {
+	mc := inProcessClient(t)
+	env := callTool(t, mc, "find_duplicates", map[string]any{"target": dupclusterPkg})
+	envelopeOK(t, env, 1.0)
+
+	prov := env["provenance"].(map[string]any)
+	qt.Assert(t, prov["verdict_included"], qt.Equals, false)
+	qt.Assert(t, prov["candidate_count"].(float64) > 0, qt.IsTrue)
+
+	results := env["result"].([]any)
+	clone := findCandidateWithPair(results, "SumSlice", "TotalSlice")
+	qt.Assert(t, clone, qt.Not(qt.IsNil), qt.Commentf("clone pair not surfaced: %v", results))
+
+	tier := clone["equiv_tier"].(string)
+	qt.Assert(t, tier == "proven" || tier == "structural", qt.IsTrue,
+		qt.Commentf("tier=%s", tier))
+
+	funcs := clone["functions"].([]any)
+	qt.Assert(t, len(funcs), qt.Equals, 2)
+	for _, f := range funcs {
+		fm := f.(map[string]any)
+		pos, ok := fm["position"].(string)
+		qt.Assert(t, ok, qt.IsTrue, qt.Commentf("position not a string: %v", fm["position"]))
+		qt.Assert(t, strings.Contains(pos, "clones.go:"), qt.IsTrue, qt.Commentf("pos=%s", pos))
+	}
+	// Marshalling fidelity: measures is a nested object of numbers; equiv_tier
+	// is a string (symbol round-trip). No verdict field by default.
+	measures := clone["measures"].(map[string]any)
+	_, hasBenefit := measures["benefit"]
+	qt.Assert(t, hasBenefit, qt.IsTrue)
+	_, hasVerdict := clone["verdict"]
+	qt.Assert(t, hasVerdict, qt.IsFalse)
+}
+
+// findCandidateWithPair returns the first candidate whose functions[].name set
+// contains both a and b, or nil. Used by the find_duplicates tests.
+func findCandidateWithPair(results []any, a, b string) map[string]any {
+	for _, r := range results {
+		cand, ok := r.(map[string]any)
+		if !ok {
+			continue
+		}
+		funcs, ok := cand["functions"].([]any)
+		if !ok {
+			continue
+		}
+		names := map[string]bool{}
+		for _, f := range funcs {
+			if fm, ok := f.(map[string]any); ok {
+				if n, ok := fm["name"].(string); ok {
+					names[n] = true
+				}
+			}
+		}
+		if names[a] && names[b] {
+			return cand
+		}
+	}
+	return nil
+}
+
+// All six Phase 1 tools must be advertised by the server (alongside the
 // always-present eval tool), over the same registration path stdio and
 // HTTP use.
 func TestPhase1ToolsRegistered(t *testing.T) {
@@ -296,6 +359,7 @@ func TestPhase1ToolsRegistered(t *testing.T) {
 	for _, want := range []string{
 		"check_beliefs", "discover_beliefs",
 		"recommend_split", "recommend_boundaries", "find_false_boundaries",
+		"find_duplicates",
 	} {
 		qt.Assert(t, names[want], qt.IsTrue, qt.Commentf("missing tool: %s", want))
 	}

@@ -178,13 +178,24 @@
 ;; project each candidate into marshaller-clean alists. Pure surfacing: no
 ;; change to dup-detect.scm.
 
+;; ->float64: coerce an inexact real to a JSON-marshallable float64.
+;; score-diffs emits effective-similarity via exact->inexact over Rational,
+;; which produces BigFloat (256-bit). The marshaller maps *values.BigFloat
+;; to errMarshalUnsupported; inexact-with-accuracy is the only primitive
+;; that explicitly truncates BigFloat to float64 (it returns (values Float
+;; acc-symbol)). Returns Float unchanged.
+(define (->float64 n)
+  (call-with-values (lambda () (inexact-with-accuracy n))
+    (lambda (v _) v)))
+
 ;; clean-finding: a make-finding record -> ((name . fn) (position . where)
 ;; (score . s)). Drops the leading 'finding tag and the redundant nested
-;; measures carried in the finding's why.
+;; measures carried in the finding's why. Score is coerced to float64 so
+;; the marshaller can emit it as a JSON number.
 (define (clean-finding f)
   (list (cons 'name     (finding-value f))
         (cons 'position (finding-where f))
-        (cons 'score    (finding-score f))))
+        (cons 'score    (->float64 (finding-score f)))))
 
 ;; candidate->clean: a scored candidate -> the tool's public shape. Lifts
 ;; equiv-tier and similarity to top level, keeps the numeric measures
@@ -195,7 +206,7 @@
   (let* ((measures (cdr (assq 'measures cand)))
          (findings (cdr (assq 'findings cand)))
          (tier     (cdr (assq 'equiv-tier measures)))
-         (sim      (cdr (assq 'similarity measures)))
+         (sim      (->float64 (cdr (assq 'similarity measures))))
          (base
            (list (cons 'functions (map clean-finding findings))
                  (cons 'score sim)
