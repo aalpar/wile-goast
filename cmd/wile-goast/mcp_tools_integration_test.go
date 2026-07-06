@@ -249,6 +249,37 @@ func TestFindFalseBoundaries_Phase1Fixture(t *testing.T) {
 	envelopeOK(t, env, 1.0)
 }
 
+// dupclusterPkg is the proven duplicate-bearing fixture: clones.go holds the
+// SumSlice/TotalSlice clone pair (share "sort"); dupcluster.go holds json/log
+// clusters. See goast/dup_detect_test.go for the library-level proof.
+const dupclusterPkg = "github.com/aalpar/wile-goast/examples/goast-query/testdata/dupcluster"
+
+// pipeline-find-duplicates must load (exercises the new .sld imports) and
+// project the clone pair into the clean contract shape. Driven through the
+// always-present eval tool so the Scheme layer is testable before the
+// dedicated tool exists (Task 2). eval returns the value's SchemeString.
+func TestPipelineFindDuplicates_EvalSmoke(t *testing.T) {
+	mc := inProcessClient(t)
+	ctx := context.Background()
+	req := mcp.CallToolRequest{}
+	req.Params.Name = "eval"
+	req.Params.Arguments = map[string]any{
+		"code": `(begin (import (wile goast pipelines))
+		  (pipeline-find-duplicates "` + dupclusterPkg + `" (list)))`,
+	}
+	res, err := mc.CallTool(ctx, req)
+	qt.Assert(t, err, qt.IsNil)
+	qt.Assert(t, res.IsError, qt.IsFalse)
+	tc, ok := mcp.AsTextContent(res.Content[0])
+	qt.Assert(t, ok, qt.IsTrue)
+	// The projected shape uses kebab-case in Scheme (marshaller snake-cases at
+	// the JSON boundary, which this eval path does not cross).
+	for _, want := range []string{"functions", "equiv-tier", "SumSlice", "TotalSlice"} {
+		qt.Assert(t, strings.Contains(tc.Text, want), qt.IsTrue,
+			qt.Commentf("eval output missing %q:\n%s", want, tc.Text))
+	}
+}
+
 // All five Phase 1 tools must be advertised by the server (alongside the
 // always-present eval tool), over the same registration path stdio and
 // HTTP use.

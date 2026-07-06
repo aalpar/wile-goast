@@ -31,7 +31,8 @@
     pipeline-discover-beliefs
     pipeline-recommend-split
     pipeline-recommend-boundaries
-    pipeline-find-false-boundaries)
+    pipeline-find-false-boundaries
+    pipeline-find-duplicates)
   (import
     (wile goast)
     (wile goast ssa)
@@ -39,5 +40,7 @@
     (wile goast split)
     (wile goast fca)
     (wile goast fca-algebra)
-    (wile goast fca-recommend))
+    (wile goast fca-recommend)
+    (only (wile goast dup-detect) find-scored-candidates candidate->verdict)
+    (only (wile goast provenance) finding-value finding-where finding-score))
   (include "pipelines.scm"))

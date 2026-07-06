@@ -168,3 +168,62 @@
             (cons 'lattice-size (length lattice))
             (cons 'cross-boundary-count (length cross)))
       annotated)))
+
+;; ── find_duplicates ──────────────────────────────────────
+;;
+;; Surface (wile goast dup-detect)'s find-scored-candidates as a
+;; command-level tool. The raw candidate carries make-finding records whose
+;; leading 'finding tag defeats the JSON marshaller's alist detection (it
+;; would emit an array of {car,cdr} objects); clean-finding / candidate->clean
+;; project each candidate into marshaller-clean alists. Pure surfacing: no
+;; change to dup-detect.scm.
+
+;; clean-finding: a make-finding record -> ((name . fn) (position . where)
+;; (score . s)). Drops the leading 'finding tag and the redundant nested
+;; measures carried in the finding's why.
+(define (clean-finding f)
+  (list (cons 'name     (finding-value f))
+        (cons 'position (finding-where f))
+        (cons 'score    (finding-score f))))
+
+;; candidate->clean: a scored candidate -> the tool's public shape. Lifts
+;; equiv-tier and similarity to top level, keeps the numeric measures
+;; sub-object, reshapes the two located findings. VERDICT? attaches the
+;; opt-in categorical verdict (computed from the RAW candidate, which still
+;; carries measures.equiv-tier).
+(define (candidate->clean cand verdict?)
+  (let* ((measures (cdr (assq 'measures cand)))
+         (findings (cdr (assq 'findings cand)))
+         (tier     (cdr (assq 'equiv-tier measures)))
+         (sim      (cdr (assq 'similarity measures)))
+         (base
+           (list (cons 'functions (map clean-finding findings))
+                 (cons 'score sim)
+                 (cons 'equiv-tier tier)
+                 (cons 'measures
+                       (list (cons 'benefit      (cdr (assq 'benefit measures)))
+                             (cons 'type-params  (cdr (assq 'type-params measures)))
+                             (cons 'value-params (cdr (assq 'value-params measures)))
+                             (cons 'similarity   sim))))))
+    (if verdict?
+      (append base (list (cons 'verdict (candidate->verdict cand))))
+      base)))
+
+;; pipeline-find-duplicates: scan TARGET for semantic duplicate function pairs
+;; (FCA reference clustering + SSA/AST-verified equivalence). OPTS is an alist;
+;; recognised keys are threshold (number, default 0.6 -- the unify/similarity
+;; threshold that sets each pair's equiv-tier) and verdict (bool, default #f --
+;; attach the opt-in categorical verdict). NB: threshold does not filter which
+;; pairs are returned; every within-cluster pair that resolves to AST is a
+;; candidate. An empty result (no clusterable pairs) is a success, count 0.
+(define (pipeline-find-duplicates target opts)
+  (let* ((threshold (or (assoc-default opts 'threshold) 0.6))
+         (verdict?  (and (assoc-default opts 'verdict) #t))
+         (cands     (find-scored-candidates target threshold))
+         (clean     (map (lambda (c) (candidate->clean c verdict?)) cands)))
+    (pipeline-envelope 1
+      (list (cons 'target target)
+            (cons 'threshold threshold)
+            (cons 'candidate-count (length cands))
+            (cons 'verdict-included verdict?))
+      clean)))
