@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -344,6 +345,30 @@ func TestFindDuplicates_VerdictOptIn(t *testing.T) {
 	cv := clone["verdict"].(string)
 	qt.Assert(t, cv == "duplicate" || cv == "likely-duplicate", qt.IsTrue,
 		qt.Commentf("clone verdict=%s", cv))
+}
+
+// True-negative / precision guard: unrelated functions in different reference
+// clusters (SumSlice in the "sort" cluster, LogX in the "log" cluster) must
+// never be paired as a candidate. Guards against a clustering regression that
+// would lump unrelated functions together.
+func TestFindDuplicates_TrueNegative(t *testing.T) {
+	mc := inProcessClient(t)
+	env := callTool(t, mc, "find_duplicates", map[string]any{"target": dupclusterPkg})
+	results := env["result"].([]any)
+	qt.Assert(t, findCandidateWithPair(results, "SumSlice", "LogX"), qt.IsNil,
+		qt.Commentf("unrelated functions paired: %v", results))
+}
+
+// Determinism: identical (target, threshold, verdict) -> structurally equal
+// result. reflect.DeepEqual over the parsed result is the practical form of the
+// design's "byte-identical" criterion.
+func TestFindDuplicates_Deterministic(t *testing.T) {
+	mc := inProcessClient(t)
+	args := map[string]any{"target": dupclusterPkg}
+	a := callTool(t, mc, "find_duplicates", args)
+	b := callTool(t, mc, "find_duplicates", args)
+	qt.Assert(t, reflect.DeepEqual(a["result"], b["result"]), qt.IsTrue,
+		qt.Commentf("non-deterministic result:\n a=%v\n b=%v", a["result"], b["result"]))
 }
 
 // findCandidateWithPair returns the first candidate whose functions[].name set
