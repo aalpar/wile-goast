@@ -316,6 +316,36 @@ func TestFindDuplicates_DupclusterFixture(t *testing.T) {
 	qt.Assert(t, hasVerdict, qt.IsFalse)
 }
 
+// verdict is opt-in: absent by default (asserted in Task 2), present and
+// well-formed when verdict:true. The proven/structural clone pair maps to
+// duplicate or likely-duplicate.
+func TestFindDuplicates_VerdictOptIn(t *testing.T) {
+	mc := inProcessClient(t)
+	env := callTool(t, mc, "find_duplicates", map[string]any{
+		"target":  dupclusterPkg,
+		"verdict": true,
+	})
+	envelopeOK(t, env, 1.0)
+
+	prov := env["provenance"].(map[string]any)
+	qt.Assert(t, prov["verdict_included"], qt.Equals, true)
+
+	results := env["result"].([]any)
+	valid := map[string]bool{"duplicate": true, "likely-duplicate": true, "distinct": true}
+	for _, r := range results {
+		cand := r.(map[string]any)
+		v, ok := cand["verdict"].(string)
+		qt.Assert(t, ok, qt.IsTrue, qt.Commentf("verdict missing/not string: %v", cand))
+		qt.Assert(t, valid[v], qt.IsTrue, qt.Commentf("bad verdict: %q", v))
+	}
+
+	clone := findCandidateWithPair(results, "SumSlice", "TotalSlice")
+	qt.Assert(t, clone, qt.Not(qt.IsNil))
+	cv := clone["verdict"].(string)
+	qt.Assert(t, cv == "duplicate" || cv == "likely-duplicate", qt.IsTrue,
+		qt.Commentf("clone verdict=%s", cv))
+}
+
 // findCandidateWithPair returns the first candidate whose functions[].name set
 // contains both a and b, or nil. Used by the find_duplicates tests.
 func findCandidateWithPair(results []any, a, b string) map[string]any {
