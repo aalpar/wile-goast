@@ -21,3 +21,6 @@ var embeddedScripts embed.FS
 
 //go:embed prompts
 var embeddedPrompts embed.FS
+
+//go:embed reference/cheatsheet.md
+var cheatsheet string

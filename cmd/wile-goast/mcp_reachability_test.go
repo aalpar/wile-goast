@@ -78,3 +78,33 @@ func TestHandleEval_SmallResultUnchanged(t *testing.T) {
 	c.Assert(res.IsError, qt.IsFalse)
 	c.Assert(resultText(t, res), qt.Equals, "3")
 }
+
+// The reference tool must be advertised so Claude can pull the cheatsheet
+// before its first eval.
+func TestReferenceTool_Registered(t *testing.T) {
+	mc := inProcessClient(t)
+	res, err := mc.ListTools(context.Background(), mcp.ListToolsRequest{})
+	qt.Assert(t, err, qt.IsNil)
+
+	names := map[string]bool{}
+	for _, tool := range res.Tools {
+		names[tool.Name] = true
+	}
+	qt.Assert(t, names["reference"], qt.IsTrue)
+}
+
+// The reference tool must return the distilled cheatsheet content.
+func TestReferenceTool_ReturnsCheatsheet(t *testing.T) {
+	mc := inProcessClient(t)
+	req := mcp.CallToolRequest{}
+	req.Params.Name = "reference"
+	res, err := mc.CallTool(context.Background(), req)
+	qt.Assert(t, err, qt.IsNil)
+	qt.Assert(t, res.IsError, qt.IsFalse)
+	qt.Assert(t, len(res.Content) > 0, qt.IsTrue)
+
+	tc, ok := mcp.AsTextContent(res.Content[0])
+	qt.Assert(t, ok, qt.IsTrue)
+	qt.Assert(t, strings.Contains(tc.Text, "go-parse-file"), qt.IsTrue)
+	qt.Assert(t, strings.Contains(tc.Text, "go-callgraph"), qt.IsTrue)
+}

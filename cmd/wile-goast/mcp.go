@@ -218,6 +218,15 @@ func (ms *mcpServer) newServer() (*server.MCPServer, error) {
 		ms.handleEval,
 	)
 
+	s.AddTool(
+		mcp.NewTool("reference",
+			mcp.WithDescription("Get the wile-goast Scheme cheatsheet: exact "+
+				"primitive arities, the parse→query→project pattern, missing "+
+				"builtins, and small-output idioms. Load this before writing a "+
+				"non-trivial eval to avoid arity/idiom failures.")),
+		ms.handleReference,
+	)
+
 	ms.registerPhase1Tools(s)
 
 	err := ms.registerPrompts(s)
@@ -341,6 +350,13 @@ func (ms *mcpServer) handleEval(ctx context.Context, req mcp.CallToolRequest) (*
 		return mcp.NewToolResultText(""), nil
 	}
 	return mcp.NewToolResultText(capEvalResult(val.SchemeString())), nil
+}
+
+// handleReference returns the distilled Scheme cheatsheet so a caller can load
+// query idioms and exact arities before its first eval. Same content the eval
+// error path appends — single source of truth (reference/cheatsheet.md).
+func (ms *mcpServer) handleReference(_ context.Context, _ mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	return mcp.NewToolResultText(cheatsheet), nil
 }
 
 func (ms *mcpServer) registerPrompts(s *server.MCPServer) error {
