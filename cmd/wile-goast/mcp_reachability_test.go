@@ -171,8 +171,9 @@ func TestCapEvalResult_TruncatesOnRuneBoundary(t *testing.T) {
 	c.Assert(strings.Contains(out, "truncated"), qt.IsTrue)
 	// The body before the appended hint must be valid UTF-8 (no split rune).
 	body := out
-	if i := strings.Index(out, "\n\n;;"); i >= 0 {
-		body = out[:i]
+	prefix, _, found := strings.Cut(out, "\n\n;;")
+	if found {
+		body = prefix
 	}
 	c.Assert(utf8.ValidString(body), qt.IsTrue)
 }
