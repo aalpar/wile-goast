@@ -343,7 +343,7 @@ func (ms *mcpServer) handleEval(ctx context.Context, req mcp.CallToolRequest) (*
 
 	val, err := entry.engine.EvalMultiple(ctx, code)
 	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
+		return mcp.NewToolResultError(err.Error() + "\n\n" + cheatsheet), nil
 	}
 
 	if val == nil || val.IsVoid() {

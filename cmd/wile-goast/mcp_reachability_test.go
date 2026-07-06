@@ -108,3 +108,22 @@ func TestReferenceTool_ReturnsCheatsheet(t *testing.T) {
 	qt.Assert(t, strings.Contains(tc.Text, "go-parse-file"), qt.IsTrue)
 	qt.Assert(t, strings.Contains(tc.Text, "go-callgraph"), qt.IsTrue)
 }
+
+// An eval that errors on an undefined symbol must return an error result that
+// carries the cheatsheet, so the caller can self-correct without a human
+// invoking a prompt.
+func TestHandleEval_ErrorAppendsCheatsheet(t *testing.T) {
+	c := qt.New(t)
+	ctx := context.Background()
+	ms := &mcpServer{}
+	defer ms.closeAll()
+
+	res, err := ms.handleEval(ctx, evalReq(`(this-symbol-does-not-exist 1 2)`))
+	c.Assert(err, qt.IsNil)
+	c.Assert(res.IsError, qt.IsTrue)
+
+	text := resultText(t, res)
+	// The original error is preserved AND the cheatsheet is appended.
+	c.Assert(strings.Contains(text, "go-callgraph"), qt.IsTrue)
+	c.Assert(strings.Contains(text, "parse → query → project"), qt.IsTrue)
+}
