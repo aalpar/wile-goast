@@ -26,6 +26,7 @@ import (
 	"sync"
 	"syscall"
 	"time"
+	"unicode/utf8"
 
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
@@ -290,6 +291,33 @@ func doHTTP(ctx context.Context, addr string, idleTTL time.Duration) error {
 	}
 }
 
+// maxEvalResultBytes caps an eval result before it is returned to the client.
+// A correct eval can still poison the context window (go-parse-file has
+// returned ~110K chars; a forced go-callgraph ~2.3M). Truncating converts that
+// downside into a bounded, teachable one. Fixed, not configurable.
+const maxEvalResultBytes = 16384
+
+// evalTruncationHint teaches projection: return less, or use a bounded pipeline
+// tool. Appended to any truncated eval result.
+const evalTruncationHint = "Return only what you need — map over the " +
+	"declarations projecting names/positions, or use a pipeline tool " +
+	"(bounded output). See the `reference` tool for query idioms."
+
+// capEvalResult truncates s to maxEvalResultBytes on a UTF-8 rune boundary and
+// appends the projection hint. Results at or under the cap pass through
+// unchanged.
+func capEvalResult(s string) string {
+	if len(s) <= maxEvalResultBytes {
+		return s
+	}
+	cut := maxEvalResultBytes
+	for cut > 0 && !utf8.RuneStart(s[cut]) {
+		cut--
+	}
+	return fmt.Sprintf("%s\n\n;; Result truncated at %d of %d chars. %s",
+		s[:cut], cut, len(s), evalTruncationHint)
+}
+
 func (ms *mcpServer) handleEval(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	code := req.GetString("code", "")
 	if code == "" {
@@ -312,7 +340,7 @@ func (ms *mcpServer) handleEval(ctx context.Context, req mcp.CallToolRequest) (*
 	if val == nil || val.IsVoid() {
 		return mcp.NewToolResultText(""), nil
 	}
-	return mcp.NewToolResultText(val.SchemeString()), nil
+	return mcp.NewToolResultText(capEvalResult(val.SchemeString())), nil
 }
 
 func (ms *mcpServer) registerPrompts(s *server.MCPServer) error {
