@@ -385,8 +385,10 @@ func findCandidateWithPair(results []any, a, b string) map[string]any {
 		}
 		names := map[string]bool{}
 		for _, f := range funcs {
-			if fm, ok := f.(map[string]any); ok {
-				if n, ok := fm["name"].(string); ok {
+			fm, ok := f.(map[string]any)
+			if ok {
+				n, ok := fm["name"].(string)
+				if ok {
 					names[n] = true
 				}
 			}

@@ -44,6 +44,7 @@ appear on both stdio and HTTP. Implemented in `lib/wile/goast/pipelines.scm`
 | `recommend_split` | `target`, `idf_threshold?`, `refine?`, `max_attributes?` | split proposal + `confidence` |
 | `recommend_boundaries` | `target`, `mode?` | `{splits, merges, extracts}` Pareto frontiers |
 | `find_false_boundaries` | `target`, `mode?`, `min_extent?`, `min_intent?`, `min_types?` | cross-boundary report |
+| `find_duplicates` | `target`, `threshold?`, `verdict?` | scored, located duplicate-pair candidates with `equiv_tier`; opt-in `verdict` |
 
 - Envelope `version` is a per-tool integer (bumped only on breaking
   `result`-shape changes); errors surface via MCP's `isError`, not the

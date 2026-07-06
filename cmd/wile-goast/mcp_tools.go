@@ -295,11 +295,14 @@ func (ms *mcpServer) handleFindDuplicates(ctx context.Context, req mcp.CallToolR
 	}
 	args := req.GetArguments()
 	var optsParts []string
-	if v, ok := args["threshold"]; ok {
+	v, ok := args["threshold"]
+	if ok {
 		optsParts = append(optsParts, fmt.Sprintf("(cons 'threshold %v)", v))
 	}
-	if v, ok := args["verdict"]; ok {
-		if b, _ := v.(bool); b {
+	v, ok = args["verdict"]
+	if ok {
+		b, _ := v.(bool)
+		if b {
 			optsParts = append(optsParts, "(cons 'verdict #t)")
 		}
 	}
