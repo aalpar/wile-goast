@@ -315,6 +315,22 @@ func TestFindDuplicates_DupclusterFixture(t *testing.T) {
 	qt.Assert(t, hasBenefit, qt.IsTrue)
 	_, hasVerdict := clone["verdict"]
 	qt.Assert(t, hasVerdict, qt.IsFalse)
+
+	// The BigFloat->float64 score projection: score is a JSON number in (0,1],
+	// and the top-level score, measures.similarity, and each function's score
+	// are the same effective-similarity value.
+	score, ok := clone["score"].(float64)
+	qt.Assert(t, ok, qt.IsTrue, qt.Commentf("score not a float64: %v", clone["score"]))
+	qt.Assert(t, score > 0 && score <= 1, qt.IsTrue, qt.Commentf("score out of range: %v", score))
+	sim, ok := measures["similarity"].(float64)
+	qt.Assert(t, ok, qt.IsTrue, qt.Commentf("similarity not a float64: %v", measures["similarity"]))
+	qt.Assert(t, sim, qt.Equals, score)
+	for _, f := range funcs {
+		fm := f.(map[string]any)
+		fs, ok := fm["score"].(float64)
+		qt.Assert(t, ok, qt.IsTrue, qt.Commentf("function score not a float64: %v", fm["score"]))
+		qt.Assert(t, fs, qt.Equals, score)
+	}
 }
 
 // verdict is opt-in: absent by default (asserted in Task 2), present and
