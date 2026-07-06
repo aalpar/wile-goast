@@ -398,6 +398,34 @@ func findCandidateWithPair(results []any, a, b string) map[string]any {
 	return nil
 }
 
+const nodupsPkg = "github.com/aalpar/wile-goast/cmd/wile-goast/testdata/nodups"
+
+// Empty success: a package with no clusterable pairs returns a valid envelope
+// with candidate_count 0 and an empty result array — not an error. "No
+// duplicates found" is a useful answer.
+func TestFindDuplicates_EmptySuccess(t *testing.T) {
+	mc := inProcessClient(t)
+	env := callTool(t, mc, "find_duplicates", map[string]any{"target": nodupsPkg})
+	envelopeOK(t, env, 1.0)
+	prov := env["provenance"].(map[string]any)
+	qt.Assert(t, prov["candidate_count"], qt.Equals, float64(0))
+	qt.Assert(t, env["result"], qt.DeepEquals, []any{})
+}
+
+// Error path: a bad target propagates the Scheme load failure as an MCP tool
+// error (isError), not a malformed envelope. Uses raw CallTool because the
+// callTool helper fatals on isError.
+func TestFindDuplicates_BadTarget(t *testing.T) {
+	mc := inProcessClient(t)
+	ctx := context.Background()
+	req := mcp.CallToolRequest{}
+	req.Params.Name = "find_duplicates"
+	req.Params.Arguments = map[string]any{"target": "github.com/aalpar/wile-goast/NONEXISTENT"}
+	res, err := mc.CallTool(ctx, req)
+	qt.Assert(t, err, qt.IsNil) // transport ok; tool-level error is in the result
+	qt.Assert(t, res.IsError, qt.IsTrue)
+}
+
 // All six Phase 1 tools must be advertised by the server (alongside the
 // always-present eval tool), over the same registration path stdio and
 // HTTP use.
