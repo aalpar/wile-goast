@@ -19,6 +19,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/mark3labs/mcp-go/client"
 	"github.com/mark3labs/mcp-go/mcp"
 
 	qt "github.com/frankban/quicktest"
@@ -126,4 +127,52 @@ func TestHandleEval_ErrorAppendsCheatsheet(t *testing.T) {
 	// The original error is preserved AND the cheatsheet is appended.
 	c.Assert(strings.Contains(text, "go-callgraph"), qt.IsTrue)
 	c.Assert(strings.Contains(text, "parse → query → project"), qt.IsTrue)
+}
+
+// The server instructions must lead with differentiation from the tools Claude
+// already reaches for. These keywords are the contract; a future wording edit
+// that drops them should fail here.
+func TestInstructions_ContainDifferentiation(t *testing.T) {
+	c := qt.New(t)
+	ms := &mcpServer{}
+	t.Cleanup(ms.closeAll)
+
+	s, err := ms.newServer()
+	c.Assert(err, qt.IsNil)
+	cl, err := client.NewInProcessClient(s)
+	c.Assert(err, qt.IsNil)
+	t.Cleanup(func() { _ = cl.Close() })
+
+	ctx := context.Background()
+	c.Assert(cl.Start(ctx), qt.IsNil)
+	initReq := mcp.InitializeRequest{}
+	initReq.Params.ProtocolVersion = mcp.LATEST_PROTOCOL_VERSION
+	initReq.Params.ClientInfo = mcp.Implementation{Name: "test", Version: "1.0.0"}
+	initRes, err := cl.Initialize(ctx, initReq)
+	c.Assert(err, qt.IsNil)
+
+	for _, kw := range []string{"grep", "gopls", "can't"} {
+		c.Assert(strings.Contains(initRes.Instructions, kw), qt.IsTrue,
+			qt.Commentf("instructions missing differentiation keyword %q", kw))
+	}
+}
+
+// The eval description must be task-indexed — leading with the concrete
+// questions it answers, not "evaluate a Scheme expression".
+func TestEvalDescription_TaskIndexed(t *testing.T) {
+	c := qt.New(t)
+	mc := inProcessClient(t)
+	res, err := mc.ListTools(context.Background(), mcp.ListToolsRequest{})
+	c.Assert(err, qt.IsNil)
+
+	var desc string
+	for _, tool := range res.Tools {
+		if tool.Name == "eval" {
+			desc = tool.Description
+		}
+	}
+	for _, kw := range []string{"duplicate", "call path", "checked"} {
+		c.Assert(strings.Contains(desc, kw), qt.IsTrue,
+			qt.Commentf("eval description missing task phrase %q", kw))
+	}
 }

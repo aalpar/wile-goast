@@ -171,45 +171,55 @@ func (ms *mcpServer) newServer() (*server.MCPServer, error) {
 		server.WithHooks(hooks),
 		server.WithInstructions(
 			"# The wile-goast MCP server\n\n"+
-				"Go static analysis via Scheme. Use this server for structural queries about Go code "+
-				"that go beyond what grep or file reading can answer reliably.\n\n"+
-				"## When to use\n\n"+
-				"- Finding similar or duplicate functions → AST diff via `(wile goast)`\n"+
-				"- Checking consistency patterns (every Lock has Unlock, etc.) → belief DSL via `(wile goast belief)`\n"+
-				"- Understanding call relationships → call graph queries via `(wile goast callgraph)`\n"+
-				"- Analyzing control flow (dominance, reachability, paths) → CFG via `(wile goast cfg)`\n"+
-				"- Running lint/analysis passes → `(wile goast lint)`\n"+
-				"- Examining SSA form and data flow → `(wile goast ssa)`\n\n"+
-				"The `eval` tool accepts Scheme expressions with these libraries pre-loaded. "+
-				"Parse Go packages with `go-parse-file` or `go-typecheck-package`, then query the result.\n\n"+
-				"## Pipeline tools\n\n"+
-				"Five pipeline tools return structured JSON reports without LLM orchestration. "+
-				"Each takes a `target` Go package pattern and returns a `{version, provenance, result}` envelope:\n"+
-				"- `check_beliefs` — run a directory of .scm beliefs against a package\n"+
-				"- `discover_beliefs` — run discovery beliefs, suppress committed ones, emit survivors as source\n"+
-				"- `recommend_split` — IDF-weighted FCA + min-cut package split recommendation\n"+
-				"- `recommend_boundaries` — function-level split/merge/extract Pareto frontiers\n"+
-				"- `find_false_boundaries` — cross-struct FCA concepts with lattice annotations\n\n"+
-				"Prefer a pipeline tool for its known structural query; use `eval` for open-ended exploration.\n\n"+
+				"Structural analysis of Go that grep and gopls can't do. grep finds "+
+				"text; gopls finds references, definitions, and diagnostics. "+
+				"wile-goast answers questions neither can: are these two functions "+
+				"semantic duplicates? does every Lock have an Unlock across all N "+
+				"call sites? is this value checked before use on every path? which "+
+				"struct fields are a false boundary? Reach here when the question is "+
+				"about *structure and relationships*, not text or symbols.\n\n"+
+				"## Default: the pipeline tools (bounded output)\n\n"+
+				"Prefer these for a known query. Each takes a `target` package "+
+				"pattern and returns a small `{version, provenance, result}` JSON "+
+				"envelope, no Scheme required:\n"+
+				"- `check_beliefs`: run a directory of .scm beliefs against a package\n"+
+				"- `discover_beliefs`: mine new consistency patterns, suppressing committed ones\n"+
+				"- `recommend_split`: IDF-weighted FCA + min-cut package split recommendation\n"+
+				"- `recommend_boundaries`: function-level split/merge/extract Pareto frontiers\n"+
+				"- `find_false_boundaries`: cross-struct FCA concepts with lattice annotations\n\n"+
+				"## Escape hatch: `eval` (open-ended)\n\n"+
+				"For questions the pipeline tools don't cover, `eval` runs Scheme with "+
+				"the analysis libraries loaded: (wile goast), (wile goast ssa), "+
+				"(wile goast cfg), (wile goast callgraph), (wile goast lint), "+
+				"(wile goast belief), (wile goast utils). **Load the `reference` tool "+
+				"first** for exact arities and small-output idioms; a cold `eval` "+
+				"tends to fail on arity, and unprojected results are truncated. "+
+				"Parse with `go-parse-file` / `go-typecheck-package`, then project "+
+				"down to names/positions before returning.\n\n"+
 				"## When NOT to use\n\n"+
 				"- Scheme runtime behavior, primitive signatures, library docs → use wile instead\n"+
 				"- Go symbol navigation, references, diagnostics, renaming → use gopls instead\n"+
 				"- Reading a single short function → direct file reading is faster\n\n"+
 				"## Prompts\n\n"+
-				"Five prompts are available:\n"+
-				"- `goast-analyze` — selects the right analysis layer for a structural question\n"+
-				"- `goast-beliefs` — defines and runs consistency checks via the belief DSL\n"+
-				"- `goast-refactor` — finds unification candidates and verifies refactoring correctness\n"+
-				"- `goast-scheme-ref` — Wile Scheme reference: available/missing primitives, idioms, exports, gotchas. **Load before writing non-trivial Scheme.**\n"+
-				"- `goast-split` — analyze package cohesion and recommend splits via IDF-weighted FCA\n",
+				"- `goast-analyze`: selects the right analysis layer for a structural question\n"+
+				"- `goast-beliefs`: defines and runs consistency checks via the belief DSL\n"+
+				"- `goast-refactor`: finds unification candidates and verifies refactoring correctness\n"+
+				"- `goast-scheme-ref`: long-form Scheme reference (the `reference` tool is the short form)\n"+
+				"- `goast-split`: analyze package cohesion and recommend splits via IDF-weighted FCA\n",
 		),
 	)
 
 	s.AddTool(
 		mcp.NewTool("eval",
-			mcp.WithDescription("Evaluate a Scheme expression with Go static analysis primitives loaded. "+
-				"Available libraries: (wile goast), (wile goast ssa), (wile goast cfg), "+
-				"(wile goast callgraph), (wile goast lint), (wile goast belief), (wile goast utils)."),
+			mcp.WithDescription("Answer open-ended structural questions about Go via "+
+				"Scheme: are these two functions duplicates? what's the call path "+
+				"from A to B? is this value checked before use? which functions "+
+				"match a belief across every call site? Runs Scheme with the "+
+				"analysis libraries loaded: (wile goast), (wile goast ssa), "+
+				"(wile goast cfg), (wile goast callgraph), (wile goast lint), "+
+				"(wile goast belief), (wile goast utils). Load the `reference` tool "+
+				"first for exact arities; large results are truncated, so project "+
+				"to names/positions or prefer a pipeline tool."),
 			mcp.WithString("code",
 				mcp.Required(),
 				mcp.Description("Scheme expression to evaluate"),
