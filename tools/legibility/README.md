@@ -32,3 +32,11 @@ pairs match the tier-implied bucket. The valuable output is the per-pair diff on
 a FAIL: it names exactly which pair an agent mis-read, pointing at the field or
 name in the output contract to sharpen. Requires the `claude` CLI installed and
 authed (or use `--answer`).
+
+A PASS is weak evidence, not strong: the tool description forwarded into the
+prompt (kept in, by design, for fidelity to what an agent actually receives)
+already names the tiers `proven`/`structural`/`divergent`, and those words'
+plain-English connotations do much of the bucketing on their own. So a PASS
+partly reflects legible tier *names*, not proof that the structured measures
+behind them are legible. The FAIL diff remains the discriminating evidence,
+since it names exactly which pair the model mis-read.

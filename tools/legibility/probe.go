@@ -32,8 +32,8 @@ var fixtures = map[string]string{
 
 // runTool drives the real wile-goast binary over MCP stdio and returns the
 // find_duplicates envelope for pkg plus the tool's advertised description.
-// It uses the same mcp-go client the integration tests use, so the JSON is
-// byte-for-byte what an agent receives (the marshal.go path, incl.
+// It uses the same mcp-go client the integration tests use, so the JSON has
+// the same values an agent receives (the marshal.go path, incl.
 // BigFloat->float64). The binary is launched via `go run ./cmd/wile-goast
 // --mcp` so no prebuild step is needed; set WILE_GOAST_BIN to a prebuilt
 // binary path to skip the compile.
@@ -362,9 +362,6 @@ func main() {
 	}
 
 	passes := 0
-	var lastRows []scoreRow
-	var lastHeadline bool
-	var lastAgree, lastTotal int
 	for i := 0; i < *runs; i++ {
 		raw, err := getAnswer(prompt, *modelFlag, *answer)
 		if err != nil {
@@ -377,7 +374,6 @@ func main() {
 			os.Exit(1)
 		}
 		rows, headlineOK, agree, total := score(buckets, tiers, model)
-		lastRows, lastHeadline, lastAgree, lastTotal = rows, headlineOK, agree, total
 		if *runs > 1 {
 			fmt.Printf("--- run %d/%d ---\n", i+1, *runs)
 		}
@@ -385,14 +381,10 @@ func main() {
 			passes++
 		}
 	}
-	_ = lastRows
-	_ = lastHeadline
-	_ = lastAgree
-	_ = lastTotal
 	if *runs > 1 {
 		fmt.Printf("\nMAJORITY: %d/%d runs PASS -> %s\n", passes, *runs, passWord(passes*2 > *runs))
 	}
-	if passes == 0 {
+	if passes*2 <= *runs {
 		os.Exit(1)
 	}
 }
