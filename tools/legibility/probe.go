@@ -13,10 +13,12 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"sort"
 	"strings"
+	"text/tabwriter"
 	"time"
 
 	"github.com/mark3labs/mcp-go/client"
@@ -209,6 +211,101 @@ func getAnswer(prompt, model, answerFile string) (string, error) {
 	return out.String(), nil
 }
 
+type modelBucket struct {
+	Functions []string `json:"functions"`
+	Bucket    string   `json:"bucket"`
+}
+
+type scoreRow struct {
+	pair, tier, expected, model string
+	ok                          bool
+}
+
+// parseAnswer extracts the JSON array from the model's reply, tolerating a
+// ```json fence or surrounding prose by slicing from the first '[' to the last
+// ']'. A reply with no array is an error (itself a legibility signal).
+func parseAnswer(raw string) ([]modelBucket, error) {
+	i, j := strings.Index(raw, "["), strings.LastIndex(raw, "]")
+	if i < 0 || j < 0 || j < i {
+		return nil, fmt.Errorf("no JSON array in model reply")
+	}
+	var out []modelBucket
+	if err := json.Unmarshal([]byte(raw[i:j+1]), &out); err != nil {
+		return nil, fmt.Errorf("parse model JSON: %w", err)
+	}
+	return out, nil
+}
+
+// score joins the model's buckets to the expected buckets on pairKey and
+// returns one row per EXPECTED pair (so a pair the model omitted counts as a
+// miss). headlineOK is false if any proven pair is not bucketed "verified".
+func score(buckets, tiers map[string]string, model []modelBucket) (rows []scoreRow, headlineOK bool, agree, total int) {
+	got := map[string]string{}
+	for _, mb := range model {
+		got[pairKey(mb.Functions)] = mb.Bucket
+	}
+	headlineOK = true
+	keys := make([]string, 0, len(buckets))
+	for k := range buckets {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		exp := buckets[key]
+		m := got[key] // "" if the model omitted this pair
+		ok := m == exp
+		if ok {
+			agree++
+		}
+		if tiers[key] == "proven" && m != "verified" {
+			headlineOK = false
+		}
+		total++
+		rows = append(rows, scoreRow{pair: strings.ReplaceAll(key, "|", " / "), tier: tiers[key], expected: exp, model: m, ok: ok})
+	}
+	return rows, headlineOK, agree, total
+}
+
+// printReport prints the per-pair table and the verdict. Returns the pass bool.
+// PASS = headline (all proven -> verified) AND agreement >= 80%.
+func printReport(w io.Writer, fixture, model string, runs int, rows []scoreRow, headlineOK bool, agree, total int) bool {
+	modelName := model
+	if modelName == "" {
+		modelName = "<default>"
+	}
+	fmt.Fprintf(w, "fixture: %s   model: %s   runs: %d\n\n", fixture, modelName, runs)
+	tw := tabwriter.NewWriter(w, 0, 2, 2, ' ', 0)
+	fmt.Fprintln(tw, "pair\ttool_tier\texpected\tmodel\tok")
+	for _, r := range rows {
+		mark, shown := "OK", r.model
+		if !r.ok {
+			mark = "X"
+		}
+		if shown == "" {
+			shown = "<omitted>"
+		}
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", r.pair, r.tier, r.expected, shown, mark)
+	}
+	tw.Flush()
+
+	pct := 100
+	if total > 0 {
+		pct = agree * 100 / total
+	}
+	pass := headlineOK && pct >= 80
+	fmt.Fprintf(w, "\nheadline (all proven -> verified): %s\n", passWord(headlineOK))
+	fmt.Fprintf(w, "overall agreement: %d/%d (%d%%)\n", agree, total, pct)
+	fmt.Fprintf(w, "RESULT: %s\n", passWord(pass))
+	return pass
+}
+
+func passWord(b bool) string {
+	if b {
+		return "PASS"
+	}
+	return "FAIL"
+}
+
 func main() {
 	fixture := flag.String("fixture", "dupcluster", "fixture name: dupcluster or nodups")
 	dumpJSON := flag.Bool("dump-json", false, "print the raw tool envelope JSON and exit")
@@ -216,6 +313,7 @@ func main() {
 	modelFlag := flag.String("model", "", "model for claude -p (default: CLI default)")
 	answer := flag.String("answer", "", "read model answer from this file instead of calling claude")
 	printPrompt := flag.Bool("print-prompt", false, "print the model prompt and exit")
+	runs := flag.Int("runs", 1, "run the model call N times (majority verdict)")
 	flag.Parse()
 
 	pkg, ok := fixtures[*fixture]
@@ -251,15 +349,18 @@ func main() {
 		fmt.Println(prompt)
 		return
 	}
-	_ = answer
-	_ = modelFlag
-	fmt.Printf("fixture %s: got envelope with keys %v\n", *fixture, keysOf(env))
-}
-
-func keysOf(m map[string]any) []string {
-	ks := make([]string, 0, len(m))
-	for k := range m {
-		ks = append(ks, k)
+	raw, err := getAnswer(prompt, *modelFlag, *answer)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "error:", err)
+		os.Exit(1)
 	}
-	return ks
+	model, err := parseAnswer(raw)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "FAIL: %v\n--- raw model reply ---\n%s\n", err, raw)
+		os.Exit(1)
+	}
+	rows, headlineOK, agree, total := score(buckets, tiers, model)
+	if !printReport(os.Stdout, *fixture, *modelFlag, *runs, rows, headlineOK, agree, total) {
+		os.Exit(1)
+	}
 }

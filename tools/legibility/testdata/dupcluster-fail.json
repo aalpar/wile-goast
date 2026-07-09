@@ -1,0 +1,7 @@
+[
+  {"functions":["EncodeA","EncodeB"],"bucket":"verified"},
+  {"functions":["EncodeA","EncodeC"],"bucket":"distinct"},
+  {"functions":["EncodeB","EncodeC"],"bucket":"verified"},
+  {"functions":["SumSlice","TotalSlice"],"bucket":"verified"},
+  {"functions":["LogX","LogY"],"bucket":"review"}
+]
