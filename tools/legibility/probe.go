@@ -12,6 +12,8 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/mark3labs/mcp-go/client"
@@ -89,9 +91,73 @@ func runTool(ctx context.Context, pkg string) (map[string]any, string, error) {
 	return nil, "", fmt.Errorf("tool returned neither structured nor text JSON")
 }
 
+// resultCandidates extracts the result array as candidate maps. Non-map or
+// missing result yields an empty slice (the empty-success case).
+func resultCandidates(env map[string]any) []map[string]any {
+	raw, ok := env["result"].([]any)
+	if !ok {
+		return nil
+	}
+	out := make([]map[string]any, 0, len(raw))
+	for _, r := range raw {
+		if c, ok := r.(map[string]any); ok {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+// candFunctions returns the function short names of a candidate's pair.
+func candFunctions(c map[string]any) []string {
+	fs, _ := c["functions"].([]any)
+	names := make([]string, 0, len(fs))
+	for _, f := range fs {
+		if fm, ok := f.(map[string]any); ok {
+			if n, ok := fm["name"].(string); ok {
+				names = append(names, n)
+			}
+		}
+	}
+	return names
+}
+
+// pairKey is the order-independent identity of a pair: sorted names joined by
+// "|". Lets model answers join to expected regardless of function order.
+func pairKey(names []string) string {
+	s := append([]string(nil), names...)
+	sort.Strings(s)
+	return strings.Join(s, "|")
+}
+
+// tierToBucket is the oracle: the machine-verified tier's implied action.
+func tierToBucket(tier string) string {
+	switch tier {
+	case "proven":
+		return "verified"
+	case "structural":
+		return "review"
+	default: // divergent or anything else
+		return "distinct"
+	}
+}
+
+// expectedBuckets derives, from the tool's own output, the correct bucket and
+// the raw tier for each candidate pair.
+func expectedBuckets(cands []map[string]any) (buckets, tiers map[string]string) {
+	buckets, tiers = map[string]string{}, map[string]string{}
+	for _, c := range cands {
+		key := pairKey(candFunctions(c))
+		tier, _ := c["equiv_tier"].(string)
+		tiers[key] = tier
+		buckets[key] = tierToBucket(tier)
+	}
+	return buckets, tiers
+}
+
 func main() {
 	fixture := flag.String("fixture", "dupcluster", "fixture name: dupcluster or nodups")
 	dumpJSON := flag.Bool("dump-json", false, "print the raw tool envelope JSON and exit")
+	dumpExpected := flag.Bool("dump-expected", false, "print derived expected buckets and exit")
 	flag.Parse()
 
 	pkg, ok := fixtures[*fixture]
@@ -111,6 +177,14 @@ func main() {
 	if *dumpJSON {
 		b, _ := json.MarshalIndent(env, "", "  ")
 		fmt.Println(string(b))
+		return
+	}
+	cands := resultCandidates(env)
+	buckets, tiers := expectedBuckets(cands)
+	if *dumpExpected {
+		for key := range buckets {
+			fmt.Printf("%-40s tier=%-11s expected=%s\n", key, tiers[key], buckets[key])
+		}
 		return
 	}
 	fmt.Printf("fixture %s: got envelope with keys %v\n", *fixture, keysOf(env))
