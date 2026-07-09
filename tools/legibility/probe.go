@@ -263,6 +263,13 @@ func score(buckets, tiers map[string]string, model []modelBucket) (rows []scoreR
 		total++
 		rows = append(rows, scoreRow{pair: strings.ReplaceAll(key, "|", " / "), tier: tiers[key], expected: exp, model: m, ok: ok})
 	}
+	// Penalise hallucinated pairs (model returned a pair the tool never did).
+	for _, mb := range model {
+		if _, ok := buckets[pairKey(mb.Functions)]; !ok {
+			total++
+			rows = append(rows, scoreRow{pair: strings.ReplaceAll(pairKey(mb.Functions), "|", " / "), tier: "-", expected: "<none>", model: mb.Bucket, ok: false})
+		}
+	}
 	return rows, headlineOK, agree, total
 }
 
@@ -336,6 +343,10 @@ func main() {
 		return
 	}
 	cands := resultCandidates(env)
+	if len(cands) == 0 && *fixture != "nodups" {
+		fmt.Fprintf(os.Stderr, "FAIL: fixture %s produced no candidates; nothing to probe\n", *fixture)
+		os.Exit(1)
+	}
 	buckets, tiers := expectedBuckets(cands)
 	if *dumpExpected {
 		for key := range buckets {
@@ -349,18 +360,39 @@ func main() {
 		fmt.Println(prompt)
 		return
 	}
-	raw, err := getAnswer(prompt, *modelFlag, *answer)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "error:", err)
-		os.Exit(1)
+
+	passes := 0
+	var lastRows []scoreRow
+	var lastHeadline bool
+	var lastAgree, lastTotal int
+	for i := 0; i < *runs; i++ {
+		raw, err := getAnswer(prompt, *modelFlag, *answer)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "error:", err)
+			os.Exit(1)
+		}
+		model, err := parseAnswer(raw)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "FAIL (run %d): %v\n--- raw model reply ---\n%s\n", i+1, err, raw)
+			os.Exit(1)
+		}
+		rows, headlineOK, agree, total := score(buckets, tiers, model)
+		lastRows, lastHeadline, lastAgree, lastTotal = rows, headlineOK, agree, total
+		if *runs > 1 {
+			fmt.Printf("--- run %d/%d ---\n", i+1, *runs)
+		}
+		if printReport(os.Stdout, *fixture, *modelFlag, *runs, rows, headlineOK, agree, total) {
+			passes++
+		}
 	}
-	model, err := parseAnswer(raw)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "FAIL: %v\n--- raw model reply ---\n%s\n", err, raw)
-		os.Exit(1)
+	_ = lastRows
+	_ = lastHeadline
+	_ = lastAgree
+	_ = lastTotal
+	if *runs > 1 {
+		fmt.Printf("\nMAJORITY: %d/%d runs PASS -> %s\n", passes, *runs, passWord(passes*2 > *runs))
 	}
-	rows, headlineOK, agree, total := score(buckets, tiers, model)
-	if !printReport(os.Stdout, *fixture, *modelFlag, *runs, rows, headlineOK, agree, total) {
+	if passes == 0 {
 		os.Exit(1)
 	}
 }
