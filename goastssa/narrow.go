@@ -46,6 +46,8 @@ import (
 	"sort"
 
 	"golang.org/x/tools/go/ssa"
+
+	"github.com/aalpar/wile-goast/goast"
 )
 
 // confidence classifies a narrowResult. Typed enum over string literals
@@ -781,8 +783,8 @@ func mergeResults(rs []*narrowResult) *narrowResult {
 	if len(rs) == 0 {
 		return newNoPaths("")
 	}
-	typeSet := make(map[string]bool)
-	reasonSet := make(map[string]bool)
+	typeSet := make(goast.Set[string])
+	reasonSet := make(goast.Set[string])
 	anyWidened := false
 	allNoPaths := true
 	for _, r := range rs {
@@ -790,10 +792,10 @@ func mergeResults(rs []*narrowResult) *narrowResult {
 			continue
 		}
 		for _, t := range r.Types {
-			typeSet[t] = true
+			typeSet.Add(t)
 		}
 		for _, reason := range r.Reasons {
-			reasonSet[reason] = true
+			reasonSet.Add(reason)
 		}
 		switch r.Confidence {
 		case confWidened:
@@ -821,7 +823,7 @@ func mergeResults(rs []*narrowResult) *narrowResult {
 
 // keysSorted returns the keys of m in deterministic order. Callers rely on
 // stability for reproducible output.
-func keysSorted(m map[string]bool) []string {
+func keysSorted(m goast.Set[string]) []string {
 	out := make([]string, 0, len(m))
 	for k := range m {
 		out = append(out, k)

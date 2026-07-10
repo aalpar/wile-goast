@@ -72,7 +72,7 @@ type funcRefEntry struct {
 	name    string
 	pkg     string
 	pos     string                     // "file:line:col", or "" when the position is invalid
-	extRefs map[string]map[string]bool // ext-pkg-path -> set of object names
+	extRefs map[string]Set[string] // ext-pkg-path -> set of object names
 }
 
 // buildFuncRefs walks all FuncDecls in the given packages, collecting
@@ -104,7 +104,7 @@ func buildFuncRefs(pkgs []*packages.Package) values.Value {
 					name:    name,
 					pkg:     pkg.PkgPath,
 					pos:     pos,
-					extRefs: make(map[string]map[string]bool),
+					extRefs: make(map[string]Set[string]),
 				}
 
 				ast.Inspect(fn.Body, func(n ast.Node) bool {
@@ -122,9 +122,9 @@ func buildFuncRefs(pkgs []*packages.Package) values.Value {
 					}
 					extPath := objPkg.Path()
 					if entry.extRefs[extPath] == nil {
-						entry.extRefs[extPath] = make(map[string]bool)
+						entry.extRefs[extPath] = make(Set[string])
 					}
-					entry.extRefs[extPath][obj.Name()] = true
+					entry.extRefs[extPath].Add(obj.Name())
 					return true
 				})
 

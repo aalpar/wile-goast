@@ -150,17 +150,17 @@ func PrimGoListDeps(mc machine.CallContext) error {
 	}
 
 	// BFS to collect transitive import paths.
-	seen := make(map[string]bool)
+	seen := make(Set[string])
 	queue := append([]*packages.Package{}, pkgs...)
 	for len(queue) > 0 {
 		pkg := queue[0]
 		queue = queue[1:]
-		if seen[pkg.PkgPath] {
+		if seen.Contains(pkg.PkgPath) {
 			continue
 		}
-		seen[pkg.PkgPath] = true
+		seen.Add(pkg.PkgPath)
 		for _, imp := range pkg.Imports {
-			if !seen[imp.PkgPath] {
+			if !seen.Contains(imp.PkgPath) {
 				queue = append(queue, imp)
 			}
 		}

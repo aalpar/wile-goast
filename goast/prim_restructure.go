@@ -234,13 +234,13 @@ const (
 // are ignored — stripping them would break the output AST.
 func classifyGotos(block *ast.BlockStmt) gotoClass {
 	// First pass: collect all goto target names.
-	gotoTargets := map[string]bool{}
+	gotoTargets := make(Set[string])
 	for _, stmt := range block.List {
 		ast.Inspect(stmt, func(n ast.Node) bool {
 			switch v := n.(type) {
 			case *ast.BranchStmt:
 				if v.Tok == token.GOTO && v.Label != nil {
-					gotoTargets[v.Label.Name] = true
+					gotoTargets.Add(v.Label.Name)
 				}
 			case *ast.FuncLit:
 				return false
@@ -257,7 +257,7 @@ func classifyGotos(block *ast.BlockStmt) gotoClass {
 	labelPos := map[string]int{}
 	for i, stmt := range block.List {
 		ls, ok := stmt.(*ast.LabeledStmt)
-		if ok && gotoTargets[ls.Label.Name] {
+		if ok && gotoTargets.Contains(ls.Label.Name) {
 			labelPos[ls.Label.Name] = i
 		}
 	}

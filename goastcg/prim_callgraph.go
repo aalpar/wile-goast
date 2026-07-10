@@ -16,6 +16,8 @@ package goastcg
 
 import (
 	"go/token"
+	"maps"
+	"slices"
 	"strings"
 
 	"golang.org/x/tools/go/callgraph"
@@ -41,14 +43,54 @@ var (
 	errCGNoMainFunction   = werr.NewStaticError("no main function for rta")
 )
 
-// validAlgorithms lists the accepted algorithm symbols.
-var validAlgorithms = map[string]bool{
-	"static":  true,
-	"cha":     true,
-	"rta":     true,
-	"vta":     true,
-	"precise": true,
+// callgraphBuilders maps each accepted algorithm symbol to its call graph
+// constructor. The map does double duty: its key set is the validation set
+// (membership == "is this a known algorithm?") and its values are the dispatch
+// table. This collapses what would otherwise be a Set of names kept in sync by
+// hand with a switch enumerating the same names -- a hand-unrolled dispatch
+// table. See PrimGoCallgraph for validation and dispatchCallgraph for lookup.
+// The user-facing "valid algorithms" message derives from these keys too
+// (validAlgorithmNames), so no copy of the name list survives to drift.
+var callgraphBuilders = map[string]func(*ssa.Program) (*callgraph.Graph, error){
+	"static": func(prog *ssa.Program) (*callgraph.Graph, error) {
+		return static.CallGraph(prog), nil
+	},
+
+	"cha": func(prog *ssa.Program) (*callgraph.Graph, error) {
+		return cha.CallGraph(prog), nil
+	},
+
+	"rta": func(prog *ssa.Program) (*callgraph.Graph, error) {
+		mains := ssautil.MainPackages(prog.AllPackages())
+		var roots []*ssa.Function
+		for _, m := range mains {
+			f := m.Func("main")
+			if f != nil {
+				roots = append(roots, f)
+			}
+		}
+		if len(roots) == 0 {
+			return nil, werr.WrapForeignErrorf(errCGNoMainFunction,
+				"go-callgraph: rta requires a main function; use cha or vta for libraries")
+		}
+		result := rta.Analyze(roots, true)
+		return result.CallGraph, nil
+	},
+
+	"vta": func(prog *ssa.Program) (*callgraph.Graph, error) {
+		initial := cha.CallGraph(prog)
+		allFuncs := ssautil.AllFunctions(prog)
+		return vta.CallGraph(allFuncs, initial), nil
+	},
+
+	"precise": func(prog *ssa.Program) (*callgraph.Graph, error) {
+		return preciseCallGraph(prog), nil
+	},
 }
+
+// validAlgorithmNames is the sorted key set of callgraphBuilders, used to build
+// the "valid algorithms" error message deterministically (map order isn't).
+var validAlgorithmNames = slices.Sorted(maps.Keys(callgraphBuilders))
 
 // PrimGoCallgraph implements (go-callgraph target algorithm).
 // target is a package pattern string or a GoSession from go-load.
@@ -58,9 +100,10 @@ func PrimGoCallgraph(mc machine.CallContext) error {
 		return err
 	}
 
-	if !validAlgorithms[algo.Key] {
+	if _, ok := callgraphBuilders[algo.Key]; !ok {
 		return werr.WrapForeignErrorf(errCGInvalidAlgorithm,
-			"go-callgraph: algorithm must be static, cha, rta, vta, or precise; got %s", algo.Key)
+			"go-callgraph: algorithm must be one of %s; got %s",
+			strings.Join(validAlgorithmNames, ", "), algo.Key)
 	}
 
 	return goast.DispatchSessionOrPattern(mc.Arg(0), "go-callgraph",
@@ -68,6 +111,8 @@ func PrimGoCallgraph(mc machine.CallContext) error {
 		func(p *values.String) error { return callgraphFromPattern(mc, p, algo.Key) })
 }
 
+// callgraphFromSession builds the call graph from an already-loaded GoSession,
+// reusing its SSA program and file set, then sets the mapped graph as the result.
 func callgraphFromSession(mc machine.CallContext, session *goast.GoSession, algorithm string) error {
 	prog := session.SSAAllPackages()
 
@@ -81,6 +126,9 @@ func callgraphFromSession(mc machine.CallContext, session *goast.GoSession, algo
 	return nil
 }
 
+// callgraphFromPattern loads and type-checks the packages matching pattern,
+// builds their SSA program from scratch, then dispatches to the algorithm and
+// sets the mapped graph as the result. Used when no GoSession is supplied.
 func callgraphFromPattern(mc machine.CallContext, pattern *values.String, algorithm string) error {
 	fset := token.NewFileSet()
 
@@ -109,43 +157,15 @@ func callgraphFromPattern(mc machine.CallContext, pattern *values.String, algori
 	return nil
 }
 
-// dispatchCallgraph dispatches to the selected call graph algorithm.
+// dispatchCallgraph dispatches to the selected call graph algorithm by looking
+// its builder up in callgraphBuilders.
 func dispatchCallgraph(prog *ssa.Program, algorithm string) (*callgraph.Graph, error) {
-	switch algorithm {
-	case "static":
-		return static.CallGraph(prog), nil
-
-	case "cha":
-		return cha.CallGraph(prog), nil
-
-	case "rta":
-		mains := ssautil.MainPackages(prog.AllPackages())
-		var roots []*ssa.Function
-		for _, m := range mains {
-			f := m.Func("main")
-			if f != nil {
-				roots = append(roots, f)
-			}
-		}
-		if len(roots) == 0 {
-			return nil, werr.WrapForeignErrorf(errCGNoMainFunction,
-				"go-callgraph: rta requires a main function; use cha or vta for libraries")
-		}
-		result := rta.Analyze(roots, true)
-		return result.CallGraph, nil
-
-	case "vta":
-		initial := cha.CallGraph(prog)
-		allFuncs := ssautil.AllFunctions(prog)
-		return vta.CallGraph(allFuncs, initial), nil
-
-	case "precise":
-		return preciseCallGraph(prog), nil
-
-	default:
+	build, ok := callgraphBuilders[algorithm]
+	if !ok {
 		return nil, werr.WrapForeignErrorf(errCGInvalidAlgorithm,
 			"go-callgraph: unknown algorithm %s", algorithm)
 	}
+	return build(prog)
 }
 
 // findCGNode walks a list of cg-node s-expressions and returns the

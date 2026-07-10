@@ -274,7 +274,7 @@ type fieldInfo struct {
 // collect field accesses. Returns nil if the function accesses no fields.
 func buildFuncSummary(fn *ssa.Function, pkgPath string) values.Value {
 	fieldAddrs := map[string]fieldInfo{} // register name -> info
-	storeTargets := map[string]bool{}    // addr register names that are stored to
+	storeTargets := make(goast.Set[string]) // addr register names that are stored to
 	var directReads []fieldInfo          // Field (not FieldAddr) instructions
 
 	for _, block := range fn.Blocks {
@@ -290,7 +290,7 @@ func buildFuncSummary(fn *ssa.Function, pkgPath string) values.Value {
 					recv:       v.X.Name(),
 				}
 			case *ssa.Store:
-				storeTargets[v.Addr.Name()] = true
+				storeTargets.Add(v.Addr.Name())
 			case *ssa.Field:
 				structType := typesDeref(v.X.Type())
 				sName, sPkg := structTypeName(structType)
@@ -311,7 +311,7 @@ func buildFuncSummary(fn *ssa.Function, pkgPath string) values.Value {
 	var accesses []values.Value
 	for reg, info := range fieldAddrs {
 		mode := "read"
-		if storeTargets[reg] {
+		if storeTargets.Contains(reg) {
 			mode = "write"
 		}
 		accesses = append(accesses, fieldAccessNode(info, mode))
