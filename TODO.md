@@ -665,7 +665,7 @@ Effort tags: S (hours), M (day), L (multi-day).
       **Fix — bias toward strings** (the more flexible source representation; the query
       surface already speaks strings for every identifier). Accept a *string*
       algorithm in `go-callgraph` — the value is used internally as `algo.Key` and
-      validated against the `map[string]bool` `validAlgorithms`, so no symbol
+      validated against the `validAlgorithms` set (`goast.Set[string]`), so no symbol
       semantics are needed. Prefer accepting BOTH symbol and string for back-compat,
       but document strings as canonical and add a regression test for
       `(go-callgraph prog "cha")`. Then audit the query surface for any other
@@ -673,6 +673,20 @@ Effort tags: S (hours), M (day), L (multi-day).
       the AST/SSA node-map *tag* symbols (`prim_goast.go`, `prim_ssa.go`,
       `prim_canonicalize.go`, …) — those are the node-representation discriminator, a
       separate and intentional symbol design, not a query-arg type. **[S]**
+
+- [ ] **`go-callgraph-reachable` returns an unlabeled flat set for every soundness
+      class — add a must/may split** — the reachable-set query erases the algorithm's
+      soundness: `'precise` (sound), `'vta`/`'cha` (upper bounds), `'static` (lower
+      bound) all come back as one indistinguishable flat list
+      (`lib/wile/goast/path-algebra.scm:61`). Measured harm: on the LLMAccuracy
+      constant-index-dispatch benchmark the flat `'vta` bound drove Opus 4.8 from 73%
+      (no tool) to 40% (**−33%**, pure tool-anchoring); a strict prose "treat as upper
+      bound, filter by hand" mandate on the *same* output flipped it to 100% (**+27%**).
+      Fix pushes that mandate into the return value: label soundness at the query
+      boundary, and offer a `(must . may)` variant (`must` = sound lower bound via
+      `'precise`; `may` = the over-approximation surplus the caller must discharge).
+      Design + reproducer refs: `plans/2026-07-09-callgraph-reachable-soundness-legibility-design.md`.
+      **[M, return-type change is a v0.x break — decision gated]**
 
 ## Belief DSL — CFG/dominance + DX gaps (from wile #9 `PrimCallCC` belief work, 2026-07-03)
 
