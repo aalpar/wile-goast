@@ -91,6 +91,18 @@ func TestGoCallgraph_Precise(t *testing.T) {
 	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
 }
 
+// TestGoCallgraph_StringAlgorithm is the regression guard for the symbol-vs-string
+// arg fix: a *string* algorithm is canonical and must work identically to the symbol
+// form, aligning go-callgraph with go-callgraph-callers/-callees and go-cfg.
+func TestGoCallgraph_StringAlgorithm(t *testing.T) {
+	c := qt.New(t)
+	engine := newEngine(t)
+
+	result := eval(t, engine,
+		`(pair? (go-callgraph "github.com/aalpar/wile-goast/goast" "cha"))`)
+	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
+}
+
 func newSessionEngine(t *testing.T) *wile.Engine {
 	t.Helper()
 	engine, err := wile.NewEngine(context.Background(),
@@ -117,7 +129,8 @@ func TestGoCallgraph_Errors(t *testing.T) {
 		code string
 	}{
 		{name: "wrong pattern type", code: `(go-callgraph 42 'static)`},
-		{name: "wrong algorithm type", code: `(go-callgraph "pkg" "static")`},
+		{name: "wrong algorithm type", code: `(go-callgraph "pkg" 42)`},
+		{name: "invalid algorithm string", code: `(go-callgraph "github.com/aalpar/wile-goast/goast" "unknown")`},
 		{name: "invalid algorithm", code: `(go-callgraph "github.com/aalpar/wile-goast/goast" 'unknown)`},
 		{name: "nonexistent package", code: `(go-callgraph "github.com/aalpar/wile/does-not-exist-xyz" 'static)`},
 	}

@@ -94,21 +94,30 @@ var validAlgorithmNames = slices.Sorted(maps.Keys(callgraphBuilders))
 
 // PrimGoCallgraph implements (go-callgraph target algorithm).
 // target is a package pattern string or a GoSession from go-load.
+// algorithm is a string (canonical); a symbol is also accepted for back-compat,
+// keeping the query surface's string convention shared with go-callgraph-callers,
+// go-callgraph-callees, and go-cfg.
 func PrimGoCallgraph(mc machine.CallContext) error {
-	algo, err := helpers.RequireArg[*values.Symbol](mc, 1, werr.ErrNotASymbol, "go-callgraph")
-	if err != nil {
-		return err
+	var algorithm string
+	switch v := mc.Arg(1).(type) {
+	case *values.String:
+		algorithm = v.Value
+	case *values.Symbol:
+		algorithm = v.Key
+	default:
+		return werr.WrapForeignErrorf(werr.ErrNotAString,
+			"go-callgraph: argument 2: expected an algorithm string but got %T", mc.Arg(1))
 	}
 
-	if _, ok := callgraphBuilders[algo.Key]; !ok {
+	if _, ok := callgraphBuilders[algorithm]; !ok {
 		return werr.WrapForeignErrorf(errCGInvalidAlgorithm,
 			"go-callgraph: algorithm must be one of %s; got %s",
-			strings.Join(validAlgorithmNames, ", "), algo.Key)
+			strings.Join(validAlgorithmNames, ", "), algorithm)
 	}
 
 	return goast.DispatchSessionOrPattern(mc.Arg(0), "go-callgraph",
-		func(s *goast.GoSession) error { return callgraphFromSession(mc, s, algo.Key) },
-		func(p *values.String) error { return callgraphFromPattern(mc, p, algo.Key) })
+		func(s *goast.GoSession) error { return callgraphFromSession(mc, s, algorithm) },
+		func(p *values.String) error { return callgraphFromPattern(mc, p, algorithm) })
 }
 
 // callgraphFromSession builds the call graph from an already-loaded GoSession,

@@ -649,8 +649,13 @@ Effort tags: S (hours), M (day), L (multi-day).
       test-name greppability and coupled state. Audit overcounted problem
       severity. **[L, deferred — low value]**
 
-- [ ] **Callgraph query API: `go-callgraph` algorithm arg is a symbol, breaking the
+- [x] **Callgraph query API: `go-callgraph` algorithm arg is a symbol, breaking the
       string convention of the rest of the query surface — bias to strings** —
+      DONE: `go-callgraph` now accepts a string algorithm (canonical) via a type
+      switch, keeping symbol for back-compat; validated against the
+      `callgraphBuilders` key set. Regression `TestGoCallgraph_StringAlgorithm`;
+      audit confirmed no other `RequireArg[*values.Symbol]` query-selectors remain.
+      Original report follows. —
       `go-callgraph` requires its algorithm selector as a *symbol*
       (`(go-callgraph prog 'cha)`; `goastcg/prim_callgraph.go:56`
       `RequireArg[*values.Symbol]`), while every other analysis-query primitive takes
