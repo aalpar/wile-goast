@@ -224,3 +224,6 @@ Bug fixes:
 - Call graph construction (`go-callgraph`, callers/callees/reachable)
 - CFG and dominators (`go-cfg`, `go-cfg-dominators`, `go-cfg-paths`)
 - Lint framework (`go-analyze`, ~25 built-in analyzers)
+
+[Unreleased]: https://github.com/aalpar/wile-goast/compare/v0.5.111...HEAD
+[0.5.111]: https://github.com/aalpar/wile-goast/compare/v0.5.108...v0.5.111
