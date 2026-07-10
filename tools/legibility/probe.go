@@ -194,7 +194,12 @@ func getAnswer(prompt, model, answerFile string) (string, error) {
 		b, err := os.ReadFile(answerFile)
 		return string(b), err
 	}
-	args := []string{"-p", "--output-format", "text"}
+	// No answerFile: live probe, pipes the prompt to `claude -p`.
+	// --strict-mcp-config ignores any ambient .mcp.json (e.g. this repo's
+	// wile-goast server) so the model answers from the embedded JSON alone,
+	// not by calling find_duplicates itself. That keeps the probe a test of
+	// output legibility rather than tool access.
+	args := []string{"-p", "--output-format", "text", "--strict-mcp-config"}
 	if model != "" {
 		args = append(args, "--model", model)
 	}
