@@ -29,6 +29,19 @@
                (targets (map (lambda (e) (cons (nf e 'callee) e)) edges-out)))
           (loop (cdr nodes) (cons (cons name targets) adj))))))
 
+;; Build the TRANSPOSED adjacency from CG node list, keyed caller-ward:
+;; ((name . ((caller . edge) ...)) ...). Reads edges-in/caller where
+;; build-adjacency reads edges-out/callee, so a single-source query over it
+;; yields transitive CALLERS instead of callees.
+(define (build-adjacency-in cg)
+  (let loop ((nodes cg) (adj '()))
+    (if (null? nodes) adj
+        (let* ((node (car nodes))
+               (name (nf node 'name))
+               (edges-in (nf node 'edges-in))
+               (sources (map (lambda (e) (cons (nf e 'caller) e)) edges-in)))
+          (loop (cdr nodes) (cons (cons name sources) adj))))))
+
 ;; --- Constructor ---
 
 (define (make-path-analysis semiring cg edge-weight)
@@ -65,6 +78,16 @@
             (map car (path-query-all
                        (make-path-analysis (boolean-semiring) cg #f)
                        root)))
+      '()))
+
+(define (go-callgraph-reaching cg target)
+  "Return the sorted list of fully-qualified function names that can REACH\nTARGET in call graph CG (its transitive callers, including TARGET itself),\nor '() when TARGET is not a node in CG. The caller-ward mirror of\n`go-callgraph-reachable': a single-source boolean-semiring `path-query-all'\nover the transposed graph (edges-in), so the traversal still lives in\n(wile algebra graph).\n\nParameters:\n  cg : list    ; cg-node list from `go-callgraph'\n  target : string\nReturns: list\nCategory: goast-path\n\nExamples:\n  (go-callgraph-reaching cg \"pkg.helper\")  ; => (\"pkg.helper\" \"pkg.main\" ...)\n\nSee also: `go-callgraph-reachable', `path-query-all', `go-callgraph'."
+  (if (cg-node-name? cg target)
+      (sort string<?
+            (map car (path-query-all
+                       (make-graph-analysis (boolean-semiring)
+                                            (build-adjacency-in cg) #f)
+                       target)))
       '()))
 
 ;; --- SCC side-query API (call-graph mutual-recursion detection) ---

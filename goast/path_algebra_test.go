@@ -461,6 +461,42 @@ func TestGoCallgraphReachable_Scheme(t *testing.T) {
 	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
 }
 
+func TestGoCallgraphReaching_Scheme(t *testing.T) {
+	c := qt.New(t)
+	engine := newBeliefEngine(t)
+
+	// A -> B -> C chain. go-callgraph-reaching reads edges-in/caller (the
+	// transpose), so unlike the reachable test the synthetic nodes populate
+	// edges-in here.
+	eval(t, engine, `
+		(import (wile goast path-algebra))
+		(define cg (list
+			(list 'cg-node (cons 'name "A") (cons 'id 0) (cons 'edges-in '())
+				(cons 'edges-out (list (list 'cg-edge (cons 'caller "A") (cons 'callee "B")))))
+			(list 'cg-node (cons 'name "B") (cons 'id 1)
+				(cons 'edges-in (list (list 'cg-edge (cons 'caller "A") (cons 'callee "B"))))
+				(cons 'edges-out (list (list 'cg-edge (cons 'caller "B") (cons 'callee "C")))))
+			(list 'cg-node (cons 'name "C") (cons 'id 2)
+				(cons 'edges-in (list (list 'cg-edge (cons 'caller "B") (cons 'callee "C"))))
+				(cons 'edges-out '()))))`)
+
+	// Everything reaches C: sorted set {A,B,C}, target included.
+	result := eval(t, engine, `(equal? (go-callgraph-reaching cg "C") (list "A" "B" "C"))`)
+	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
+
+	// The chain root is reached only by itself: {A}.
+	result = eval(t, engine, `(equal? (go-callgraph-reaching cg "A") (list "A"))`)
+	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
+
+	// B is reached by A and itself: {A,B}.
+	result = eval(t, engine, `(equal? (go-callgraph-reaching cg "B") (list "A" "B"))`)
+	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
+
+	// A target absent from the graph returns the empty set (not the seeded target).
+	result = eval(t, engine, `(null? (go-callgraph-reaching cg "Z"))`)
+	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
+}
+
 func TestGoCallgraphReachable_RealGraph(t *testing.T) {
 	c := qt.New(t)
 	engine := newBeliefEngine(t)
