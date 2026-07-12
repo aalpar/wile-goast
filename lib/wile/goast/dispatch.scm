@@ -93,10 +93,63 @@
                     (upper? (string-ref s (+ i 1)))))
               (else (loop (- i 1)))))))
 
-(define (edge->candidate e)
-  (list 'candidate
-        (cons 'callee   (nf e 'callee))
-        (cons 'concrete (nf e 'recv))))
+;; witness-index: SSA -> alist of (concrete-type . list of witness).
+;; Each witness is a tagged node: (witness (func . f) (pos . p-or-#f)).
+;;
+;; The witness answers "where did this concrete type ENTER this interface?", not
+;; "how did it reach this site" — VTA's type-flow graph is not exported by x/tools,
+;; so the stronger claim would be fabricated.
+;;
+;; POSITIONS ARE OFTEN ABSENT. ssa.MakeInterface carries a valid Pos() only for an
+;; EXPLICIT conversion (I(T{})). The three implicit forms — var decl, call arg,
+;; assignment — yield NoPos, and they are nearly all real Go. So `func` is the
+;; always-available part of the witness and `pos` may be #f. An absent position is
+;; reported as absent: degrade to a MISSING witness, never a WRONG one.
+;;
+;; 'positions is REQUIRED here (a variadic SYMBOL rest-arg, not a list).
+(define (witness-index pattern)
+  (let ((fns (go-ssa-build pattern 'positions)))
+    (let floop ((fs fns) (acc '()))
+      (if (null? fs)
+          acc
+          (let ((fname (nf (car fs) 'name)))
+            (let bloop ((bs (or (nf (car fs) 'blocks) '())) (a acc))
+              (if (null? bs)
+                  (floop (cdr fs) a)
+                  (let iloop ((is (or (nf (car bs) 'instrs) '())) (a2 a))
+                    (if (null? is)
+                        (bloop (cdr bs) a2)
+                        (let ((i (car is)))
+                          (if (not (tag? i 'ssa-make-interface))
+                              (iloop (cdr is) a2)
+                              (let* ((ct  (nf i 'concrete))
+                                     ;; Tagged like every other node in this codebase
+                                     ;; (candidate, dispatch, ...) so `nf` — which
+                                     ;; discards the node's car as the tag — can find
+                                     ;; 'func and 'pos. An untagged alist here would
+                                     ;; make (nf w 'func) always #f.
+                                     (w   (list 'witness
+                                                (cons 'func fname)
+                                                (cons 'pos (ssa-instr-pos i))))
+                                     (hit (assoc ct a2)))
+                                (if hit
+                                    (begin (set-cdr! hit (cons w (cdr hit)))
+                                           (iloop (cdr is) a2))
+                                    (iloop (cdr is)
+                                           (cons (cons ct (list w)) a2)))))))))))))))
+
+(define (witnesses-for idx concrete)
+  (let ((hit (assoc concrete idx)))
+    (if hit (cdr hit) '())))
+
+(define (edge->candidate idx e)
+  (let ((recv (nf e 'recv)))
+    (list 'candidate
+          (cons 'callee   (nf e 'callee))
+          (cons 'concrete recv)
+          ;; '() is honest here: the conversion is real, but no MakeInterface for
+          ;; this type was found in scope (generics, synthetic SSA, external pkg).
+          (cons 'witness  (witnesses-for idx recv)))))
 
 ;; make-dispatch-site: assemble ONE finding.
 ;;
@@ -104,7 +157,7 @@
 ;; consumer read "no candidates" off a 27-way site — the silent false negative,
 ;; reintroduced through the encoding. `n` is ALWAYS the true count, so the knob can
 ;; never make a site look smaller than it is.
-(define (make-dispatch-site key edges scope narrowed k)
+(define (make-dispatch-site key edges scope narrowed k idx)
   (let* ((n     (length edges))
          (e0    (car edges))
          (iface (nf e0 'iface))
@@ -122,7 +175,8 @@
                       (if full?
                           (append base
                                   (list (cons 'candidates
-                                              (map edge->candidate edges))))
+                                              (map (lambda (e) (edge->candidate idx e))
+                                                   edges))))
                           base))))
     (make-finding (class-of n) where why #f)))
 
@@ -139,10 +193,11 @@
   (let* ((k      (if (null? rest) default-dispatch-k (car rest)))
          (vta    (go-callgraph pattern 'vta))
          (cha    (go-callgraph pattern 'cha))
-         (counts (counts-by-key cha)))
+         (counts (counts-by-key cha))
+         (idx    (witness-index pattern)))
     (map (lambda (p)
            (make-dispatch-site (car p) (cdr p) pattern
-                               (count-at counts (car p)) k))
+                               (count-at counts (car p)) k idx))
          (invoke-sites vta))))
 
 ;; --- accessors --------------------------------------------------------------

@@ -97,3 +97,61 @@ func TestDispatch_IsAFinding(t *testing.T) {
 	c.Assert(eval(t, engine, `(eq? (car (finding-why d)) 'dispatch)`).Internal(), qt.Equals, values.TrueValue)
 	c.Assert(eval(t, engine, `(string? (render-finding d))`).Internal(), qt.Equals, values.TrueValue)
 }
+
+// TestDispatch_WitnessLocatesTheConversion: a candidate says WHERE its concrete type
+// entered the interface. `func` is always present; `pos` may be #f — MakeInterface
+// carries a position only for an EXPLICIT conversion, and implicit conversion is the
+// common form in real Go.
+func TestDispatch_WitnessLocatesTheConversion(t *testing.T) {
+	c := qt.New(t)
+	engine := newBeliefEngine(t)
+
+	eval(t, engine, `(import (wile goast dispatch) (wile goast utils))`)
+	eval(t, engine, `(define ds (dispatch-sites `+dispatchPkg+`))`)
+	eval(t, engine, `
+		(define must-site
+		  (let loop ((l ds))
+		    (cond ((null? l) #f)
+		          ((and (eq? (dispatch-class (car l)) 'must)
+		                (string-contains? (or (dispatch-iface (car l)) "") "Single")) (car l))
+		          (else (loop (cdr l))))))`)
+	eval(t, engine, `(define cand (car (dispatch-candidates must-site)))`)
+
+	// Every witness names the function in which the conversion happens.
+	c.Assert(eval(t, engine, `
+		(let loop ((ws (nf cand 'witness)))
+		  (cond ((null? ws) #t)
+		        ((string? (nf (car ws) 'func)) (loop (cdr ws)))
+		        (else #f)))`).Internal(), qt.Equals, values.TrueValue)
+}
+
+// TestDispatch_WitnessPosIsAbsentNotFabricated: an implicit conversion has no
+// MakeInterface position. The witness must report #f — never a nearby line, never a
+// guess. A WRONG witness is worse than a MISSING one, because the consumer cannot
+// detect it.
+func TestDispatch_WitnessPosIsAbsentNotFabricated(t *testing.T) {
+	c := qt.New(t)
+	engine := newBeliefEngine(t)
+
+	eval(t, engine, `(import (wile goast dispatch) (wile goast utils))`)
+	eval(t, engine, `(define ds (dispatch-sites `+dispatchPkg+`))`)
+
+	// Every witness pos is either a string or #f. Nothing else is legal.
+	c.Assert(eval(t, engine, `
+		(let sloop ((sites ds) (ok #t))
+		  (if (or (not ok) (null? sites))
+		      ok
+		      (let ((cs (dispatch-candidates (car sites))))
+		        (if (not cs)
+		            (sloop (cdr sites) ok)
+		            (let cloop ((cs cs) (o ok))
+		              (if (or (not o) (null? cs))
+		                  (sloop (cdr sites) o)
+		                  (let wloop ((ws (nf (car cs) 'witness)) (w #t))
+		                    (if (or (not w) (null? ws))
+		                        (cloop (cdr cs) w)
+		                        (let ((p (nf (car ws) 'pos)))
+		                          (wloop (cdr ws)
+		                                 (or (string? p) (eq? p #f)))))))))))) `).Internal(),
+		qt.Equals, values.TrueValue)
+}
