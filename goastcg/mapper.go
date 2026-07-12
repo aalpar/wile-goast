@@ -82,10 +82,20 @@ func (p *cgMapper) mapNode(n *callgraph.Node) values.Value {
 // report why THIS callee. Their presence is also the dispatch-site predicate:
 // consumers test for `iface` rather than string-matching "dynamic method call".
 func (p *cgMapper) mapEdge(e *callgraph.Edge) values.Value {
-	fields := make([]values.Value, 0, 7)
+	fields := make([]values.Value, 0, 8)
 
 	if e.Caller != nil && e.Caller.Func != nil {
 		fields = append(fields, goast.Field("caller", goast.Str(e.Caller.Func.String())))
+		// caller-synthetic: ssa.Function.Synthetic is non-empty for compiler-
+		// generated forwarding functions ($bound/$thunk closures, interface
+		// method-set wrappers, promoted-embedding stubs, ...). Their single
+		// invoke has no source position, so a (wile goast dispatch) site keyed
+		// on such a caller is a PHANTOM: it does not exist as a call site in
+		// source. Carrying the descriptive string (not just a bool) costs
+		// nothing and tells a consumer WHY the caller is synthetic.
+		if e.Caller.Func.Synthetic != "" {
+			fields = append(fields, goast.Field("caller-synthetic", goast.Str(e.Caller.Func.Synthetic)))
+		}
 	}
 	if e.Callee != nil && e.Callee.Func != nil {
 		fields = append(fields, goast.Field("callee", goast.Str(e.Callee.Func.String())))

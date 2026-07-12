@@ -16,6 +16,8 @@
   (export dispatch-sites
           dispatch-class dispatch-n dispatch-iface dispatch-method
           dispatch-narrowed-from dispatch-candidates dispatch-detail
+          dispatch-iface-exported dispatch-reflection-in-scope
+          dispatch-synthetic-caller
           default-dispatch-k)
   (import (wile goast utils)
           (wile goast provenance))

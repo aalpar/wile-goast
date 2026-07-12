@@ -23,10 +23,24 @@ import (
 )
 
 const dispatchPkg = `"github.com/aalpar/wile-goast/goast/testdata/dispatch"`
+const dispatchReflectPkg = `"github.com/aalpar/wile-goast/goast/testdata/dispatch_reflect"`
+const dispatchSyntheticPkg = `"github.com/aalpar/wile-goast/goast/testdata/dispatch_synthetic"`
+const dispatchStructuralPkg = `"github.com/aalpar/wile-goast/goast/testdata/dispatch_structural"`
 
 // TestDispatch_MustSite: one implementor flows to the site, so VTA's SOUND set is
 // a singleton — the true callee set is a subset of {(OnlyImpl).S}. That is a
 // genuine `must`, and it needs no analysis beyond counting.
+//
+// CAVEAT: this soundness argument is VTA's, and VTA's is conditional. x/tools
+// go/callgraph/vta/vta.go:74-75 states the call graph is sound "MODULO USE OF
+// REFLECTION AND UNSAFE" — a concrete type injected into an interface only
+// through reflection (reflect.New(t).Elem().Interface().(I), the reflective-
+// registry idiom used by encoding/json, database/sql, protobuf, and
+// apimachinery's runtime.Scheme) never appears in a MakeInterface, so VTA
+// cannot see it flow in and `must` CAN BE WRONG in a scope that uses
+// reflect/unsafe. See TestDispatch_ReflectionInScope, which reproduces exactly
+// this: a `must` finding with the WRONG candidate, disclosed via the
+// `reflection-in-scope` defeater field rather than silently trusted.
 func TestDispatch_MustSite(t *testing.T) {
 	c := qt.New(t)
 	engine := newBeliefEngine(t)
@@ -241,5 +255,114 @@ func TestDispatch_KInvariant(t *testing.T) {
 		        ((and (> (dispatch-n (car l)) 0)
 		              (not (= (length (dispatch-candidates (car l)))
 		                      (dispatch-n (car l))))) #f)
+		        (else (loop (cdr l)))))`).Internal(), qt.Equals, values.TrueValue)
+}
+
+// TestDispatch_ReflectionInScope: THE CRITICAL reproduction. dispatch_reflect's
+// `Make` returns a Greeter via reflection (reflect.New(t).Elem().Interface()
+// .(Greeter)) on every path except the literal "alpha" branch, which is the
+// ONLY explicit MakeInterface in the package. VTA's flow set for the interface
+// is therefore {Alpha} alone, so a call built as `Make("beta")` — whose GROUND
+// TRUTH callee is (Beta).Greet — is reported `must`, n=1, candidate=Alpha: A
+// FALSE `must`, exactly as x/tools go/callgraph/vta/vta.go:74-75 predicts
+// ("sound... MODULO USE OF REFLECTION AND UNSAFE"). The class itself does NOT
+// change — VTA genuinely cannot see Beta — but the finding must carry its own
+// defeater: `reflection-in-scope` is #t here, and #f on a scope that never
+// touches reflect/unsafe (dispatchPkg, the plain fixture).
+func TestDispatch_ReflectionInScope(t *testing.T) {
+	c := qt.New(t)
+	engine := newBeliefEngine(t)
+
+	eval(t, engine, `(import (wile goast dispatch) (wile goast utils))`)
+	eval(t, engine, `(define dr (dispatch-sites `+dispatchReflectPkg+`))`)
+
+	// Exactly one dispatch site: the reflective-registry reproduction.
+	c.Assert(eval(t, engine, `(= (length dr) 1)`).Internal(), qt.Equals, values.TrueValue)
+
+	// The FALSE must, reproduced: class=must, n=1, candidate=Alpha -- while the
+	// ground truth (running the program) is Beta. This is not a bug to fix; the
+	// class is exactly what VTA can support given what it can see. What must be
+	// true is that the finding DISCLOSES the mechanism that makes it fallible.
+	c.Assert(eval(t, engine, `(eq? (dispatch-class (car dr)) 'must)`).Internal(), qt.Equals, values.TrueValue)
+	c.Assert(eval(t, engine, `(= (dispatch-n (car dr)) 1)`).Internal(), qt.Equals, values.TrueValue)
+	c.Assert(eval(t, engine, `
+		(string-contains? (nf (car (dispatch-candidates (car dr))) 'callee) "Alpha")`).Internal(),
+		qt.Equals, values.TrueValue)
+
+	// THE DEFEATER: reflection-in-scope is #t on this finding.
+	c.Assert(eval(t, engine, `(eq? (dispatch-reflection-in-scope (car dr)) #t)`).Internal(),
+		qt.Equals, values.TrueValue)
+
+	// A scope that never touches reflect/unsafe carries #f on every finding --
+	// the defeater is not fabricated where the mechanism is absent.
+	eval(t, engine, `(define ds (dispatch-sites `+dispatchPkg+`))`)
+	c.Assert(eval(t, engine, `
+		(let loop ((l ds))
+		  (cond ((null? l) #t)
+		        ((eq? (dispatch-reflection-in-scope (car l)) #f) (loop (cdr l)))
+		        (else #f)))`).Internal(), qt.Equals, values.TrueValue)
+}
+
+// TestDispatch_SyntheticCallerMarksPhantomSites: dispatch_synthetic's BoundSite
+// takes a METHOD VALUE (`f := x.M`) rather than calling immediately. The SSA
+// builder synthesizes a compiler-generated forwarding function
+// ((Ifc).M$bound, ssa.Function.Synthetic != "") whose single invoke has no
+// source position — it is not a call site that exists in source at all. This
+// is the mechanism behind client-go's 61-of-62 phantom pos-less `must`
+// findings ($bound/$thunk closures and embedded-interface promotion stubs).
+// `synthetic-caller` marks it so a consumer can filter phantom sites out.
+func TestDispatch_SyntheticCallerMarksPhantomSites(t *testing.T) {
+	c := qt.New(t)
+	engine := newBeliefEngine(t)
+
+	eval(t, engine, `(import (wile goast dispatch) (wile goast provenance) (wile goast utils))`)
+	eval(t, engine, `(define dsy (dispatch-sites `+dispatchSyntheticPkg+`))`)
+
+	c.Assert(eval(t, engine, `(= (length dsy) 1)`).Internal(), qt.Equals, values.TrueValue)
+
+	// The phantom site: no source position, exactly the shape client-go's
+	// pos-less findings have.
+	c.Assert(eval(t, engine, `(eq? (finding-where (car dsy)) #f)`).Internal(), qt.Equals, values.TrueValue)
+	c.Assert(eval(t, engine, `(eq? (dispatch-synthetic-caller (car dsy)) #t)`).Internal(),
+		qt.Equals, values.TrueValue)
+
+	// A real, source-level call site is NOT marked synthetic.
+	eval(t, engine, `(define ds (dispatch-sites `+dispatchPkg+`))`)
+	c.Assert(eval(t, engine, `
+		(let loop ((l ds))
+		  (cond ((null? l) #t)
+		        ((eq? (dispatch-synthetic-caller (car l)) #f) (loop (cdr l)))
+		        (else #f)))`).Internal(), qt.Equals, values.TrueValue)
+}
+
+// TestDispatch_StructuralInterfaceIsUnnamed: dispatch_structural's UseAnon
+// dispatches on `interface{Close() error}`, a TYPE LITERAL with no package to
+// be "exported" FROM. The original type-exported? assumed every `iface` was a
+// qualified type name and read whatever capital letter it found scanning from
+// the end — #f here (FALSE REASSURANCE: any package anywhere can structurally
+// satisfy this interface, so `must` is MORE scope-limited than an exported
+// named interface, not less). `dispatch-iface-exported` must report 'unnamed,
+// never fabricate a boolean, on a structural interface.
+func TestDispatch_StructuralInterfaceIsUnnamed(t *testing.T) {
+	c := qt.New(t)
+	engine := newBeliefEngine(t)
+
+	eval(t, engine, `(import (wile goast dispatch) (wile goast utils))`)
+	eval(t, engine, `(define dst (dispatch-sites `+dispatchStructuralPkg+`))`)
+
+	c.Assert(eval(t, engine, `(= (length dst) 1)`).Internal(), qt.Equals, values.TrueValue)
+	c.Assert(eval(t, engine, `
+		(string-contains? (dispatch-iface (car dst)) "interface{")`).Internal(),
+		qt.Equals, values.TrueValue)
+	c.Assert(eval(t, engine, `(eq? (dispatch-iface-exported (car dst)) 'unnamed)`).Internal(),
+		qt.Equals, values.TrueValue)
+
+	// A NAMED exported interface (the plain fixture's Single/Multi) is
+	// unaffected by the fix -- still a plain boolean.
+	eval(t, engine, `(define ds (dispatch-sites `+dispatchPkg+`))`)
+	c.Assert(eval(t, engine, `
+		(let loop ((l ds))
+		  (cond ((null? l) #f)
+		        ((eq? (dispatch-iface-exported (car l)) #t) #t)
 		        (else (loop (cdr l)))))`).Internal(), qt.Equals, values.TrueValue)
 }

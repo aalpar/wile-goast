@@ -221,10 +221,57 @@ what makes `class` and `n` well-defined in the first place.
   `0` -> `none` (no concrete type flows here *within scope*), `1` -> `must` (VTA's
   sound set is a singleton, so the true callee set is a subset of it: if the call
   executes, it calls that function), `>1` -> `may`. No judgment enters.
+- **`must` rests on VTA's soundness, and VTA's soundness is conditional.**
+  `golang.org/x/tools/go/callgraph/vta/vta.go:74-75`: the call graph is sound
+  "MODULO USE OF REFLECTION AND UNSAFE". A concrete type injected into an
+  interface only through reflection — `reflect.New(t).Elem().Interface().(I)`,
+  the reflective-registry idiom used by `encoding/json`, `database/sql`,
+  protobuf, and apimachinery's `runtime.Scheme` — never appears in an
+  `ssa.MakeInterface` instruction, so VTA cannot see it flow in and `must` **can
+  be wrong** in a scope that uses reflect/unsafe. This cannot be computed away
+  (VTA's own doc names it an inherent limit), so every finding instead discloses
+  it: `dispatch-reflection-in-scope` is `#t` when the analyzed scope reaches
+  `reflect`/`unsafe` anywhere, `#f` otherwise. **This is a DEFEATER PRESENCE
+  flag, not a proof that any specific finding is wrong** — `#t` means the
+  mechanism that can hide a type from VTA is reachable somewhere in scope, so
+  `must` there needs independent verification before being trusted; it does not
+  mean *this* `must` is incorrect, only that it cannot be trusted on VTA's word
+  alone.
 - **`must` is must-*within-scope*.** On an exported interface in a library, an
   external caller can inject a type VTA never saw. Every finding carries `scope`
   (the pattern analyzed) and `iface-exported` so the consumer can see the limit of
   the claim, not just the claim.
+- **`iface-exported` is `'unnamed`, not a fabricated boolean, on a structural
+  interface.** `type-exported?` (which computes it) originally assumed its input
+  was always a *qualified type name* ("pkg.Type"); an anonymous interface
+  (`interface{Close() error}`) arrives as a *type literal* instead, and reading
+  a capital letter off it is not a coherent "is this exported" answer — a naive
+  scan returned `#f` for `interface{Close() error}` (FALSE REASSURANCE: any
+  package anywhere can structurally satisfy it, so `must` there is *more*
+  scope-limited than an exported named interface, not less), and `#t` for
+  `interface{Write(b *bytes.Buffer) error}` only by accident, off the `B` in
+  `bytes.Buffer` inside a method signature. `dispatch-iface-exported` reports
+  `'unnamed` for any type literal (detected structurally — the string contains
+  `{` or `(` — not by a hardcoded name list), so a structural interface can
+  never silently read as "not exported / safely in scope".
+- **`dispatch-narrowed-from` is `#f` on a CHA key miss, never a fabricated `0`.**
+  VTA's candidate set is a subset of CHA's (VTA only prunes, never invents), so
+  a fabricated `0` could print the impossible `narrowed-from: 0, n: 5` — CHA
+  finding *fewer* candidates than VTA. `#f` means "no CHA count is available for
+  this site-key", not "CHA counted zero"; it is not clamped to `n` (that would
+  hide a genuine key-mismatch between VTA's and CHA's site enumeration rather
+  than surface it).
+- **`dispatch-synthetic-caller` marks phantom sites.** A compiler-generated
+  forwarding function (`ssa.Function.Synthetic != ""` — `$bound`/`$thunk`
+  closures, interface method-set wrappers, promoted-embedding stubs) can be the
+  *caller* of an invoke edge. Its single invoke has no source position because
+  it is not a call site that exists in source at all; it is trivially `must`
+  (one forwarding call, one target) and, left unmarked, inflates a `must`-rate
+  census with sites that are not really there — on client-go, 61 of 62
+  position-less findings are exactly this. Surfaced from `cg-edge`'s
+  `caller-synthetic` (the raw `ssa.Function.Synthetic` string), which
+  `goastcg/mapper.go`'s edge mapper carries whenever the edge's caller is
+  synthetic.
 - **`dispatch-candidates` is `#f` when elided, never `'()`.** An empty list would
   let a 27-way site read as "no candidates" — the silent false negative,
   reintroduced through the encoding. `dispatch-n` is always the true candidate
@@ -258,9 +305,12 @@ what makes `class` and `n` well-defined in the first place.
 | `dispatch-n` | `(dispatch-n f)` — VTA's true candidate count at this site, independent of `k`/`detail` |
 | `dispatch-iface` | `(dispatch-iface f)` — the interface type dispatched on |
 | `dispatch-method` | `(dispatch-method f)` — the interface method invoked |
-| `dispatch-narrowed-from` | `(dispatch-narrowed-from f)` — CHA's candidate count at the same site; the gap to `n` is VTA's evidence of work done |
+| `dispatch-narrowed-from` | `(dispatch-narrowed-from f)` — CHA's candidate count at the same site, or `#f` on a CHA key miss (never a fabricated `0`); the gap to `n` is VTA's evidence of work done |
 | `dispatch-candidates` | `(dispatch-candidates f)` — list of `candidate` alists (`callee`, `concrete`, `witness`) when `n <= k`; `#f` — never `'()` — when elided |
 | `dispatch-detail` | `(dispatch-detail f)` — `'full` or `'elided` |
+| `dispatch-iface-exported` | `(dispatch-iface-exported f)` — `#t`/`#f` for a qualified type name, or `'unnamed` for a type literal (a structural/anonymous interface) |
+| `dispatch-reflection-in-scope` | `(dispatch-reflection-in-scope f)` — `#t` when the analyzed scope reaches `reflect`/`unsafe` anywhere. A DEFEATER PRESENCE flag: `#t` means `must` here needs independent verification, not that this finding is wrong |
+| `dispatch-synthetic-caller` | `(dispatch-synthetic-caller f)` — `#t` when the site's caller is a compiler-generated forwarding function (no source position; a phantom site) |
 | `default-dispatch-k` | Default `k` (8) used by `dispatch-sites` when omitted |
 
 ## Source Map

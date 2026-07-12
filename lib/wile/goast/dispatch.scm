@@ -30,6 +30,25 @@
 ;; "Genuine polymorphism" is NOT decidable and is never claimed: given 27
 ;; candidates the tool cannot know whether the site is truly 27-way or whether
 ;; VTA merely failed to narrow. See the design doc for the measurement.
+;;
+;; *** CAVEAT: VTA's soundness is NOT unconditional. *** golang.org/x/tools
+;; go/callgraph/vta/vta.go:74-75: "CallGraph is then sound, MODULO USE OF
+;; REFLECTION AND UNSAFE, if the initial call graph is sound." The `must` class
+;; is built entirely on that soundness claim, so it inherits the exception. A
+;; concrete type injected into an interface ONLY through reflection --
+;; reflect.New(t).Elem().Interface().(I), the reflective-registry idiom used by
+;; encoding/json, database/sql, protobuf, and apimachinery's runtime.Scheme --
+;; never appears in an ssa.MakeInterface instruction, so VTA cannot see it flow
+;; in. `must` CAN THEREFORE BE WRONG in a scope that uses reflect/unsafe: VTA
+;; may report a singleton candidate set that omits the type actually invoked at
+;; runtime. Do not gate anything on `must` in such a scope.
+;;
+;; Because this cannot be fixed by better computation (VTA's own doc names it
+;; an inherent limit, not a bug), the finding instead DISCLOSES it: every `why`
+;; carries `reflection-in-scope` (#t/#f). This is a DEFEATER PRESENCE flag, NOT
+;; a proof that any particular site is wrong -- #t means a mechanism VTA cannot
+;; see (reflect/unsafe) is reachable SOMEWHERE in the analyzed scope, so `must`
+;; there needs independent verification before being trusted.
 
 (define default-dispatch-k 8)
 
@@ -67,8 +86,15 @@
 (define (counts-by-key cg)
   (map (lambda (p) (cons (car p) (length (cdr p)))) (invoke-sites cg)))
 
+;; count-at: CHA's count for a VTA site-key, or #f on a KEY MISS. #f, never a
+;; fabricated 0: VTA's candidate set is a subset of CHA's (VTA only prunes,
+;; never invents), so "narrowed-from: 0, n: 5" would claim CHA found FEWER
+;; candidates than VTA -- an impossible reading. A miss means "no CHA count is
+;; available for this site", not "CHA counted zero". (max narrowed n) is NOT
+;; used here on purpose: clamping to n would HIDE a genuine key-mismatch
+;; between VTA's and CHA's site enumeration rather than surface it.
 (define (count-at counts k)
-  (let ((hit (assoc k counts))) (if hit (cdr hit) 0)))
+  (let ((hit (assoc k counts))) (if hit (cdr hit) #f)))
 
 ;; class is a pure function of n. That is the whole rule.
 (define (class-of n)
@@ -81,17 +107,42 @@
 ;; OUTSIDE the analyzed scope, so `must` on one is must-WITHIN-SCOPE.
 (define (upper? c) (and (char>=? c #\A) (char<=? c #\Z)))
 
+;; type-literal?: is S a Go TYPE LITERAL (e.g. "interface{Close() error}")
+;; rather than a QUALIFIED TYPE NAME (e.g. "pkg.Type")? A literal has no
+;; package to be "exported" FROM at all -- types.TypeString renders an
+;; anonymous interface's method set inline, so "{" or "(" appearing anywhere
+;; means there is no single trailing identifier to test. This is a STRUCTURAL
+;; test on Go's own printed syntax, not a hardcoded name list.
+(define (type-literal? s) (or (has-char? s #\{) (has-char? s #\()))
+
+;; type-exported?: #t / #f for a qualified type name; 'unnamed for a TYPE
+;; LITERAL (a structural/anonymous interface), where "exported" is not a
+;; coherent question.
+;;
+;; The original version assumed every input was a qualified name and read
+;; whatever capital letter it found scanning from the end. On a literal that
+;; is WRONG both ways: `interface{Close() error}` -> #f (FALSE REASSURANCE --
+;; any package anywhere can structurally satisfy it, so a `must` there is MORE
+;; scope-limited than a named exported interface, not less); `interface{Write
+;; (b *bytes.Buffer) error}` -> #t, correct only BY ACCIDENT, off the B in
+;; bytes.Buffer INSIDE A METHOD SIGNATURE, not the interface's own name (it
+;; has none). Returning 'unnamed instead of fabricating a boolean means a
+;; structural interface can never silently read as "not exported / safely in
+;; scope" -- the caller must handle the third state explicitly.
 (define (type-exported? s)
-  (if (or (not (string? s)) (= (string-length s) 0))
-      #f
-      ;; Walk DOWN from the end: the first '.' found is the LAST one, so the char
-      ;; after it starts the type identifier. No dot => the whole string is it.
+  (cond
+    ((or (not (string? s)) (= (string-length s) 0)) #f)
+    ((type-literal? s) 'unnamed)
+    (else
+      ;; Walk DOWN from the end: the first '.' found is the LAST one, so the
+      ;; char after it starts the type identifier. No dot => the whole string
+      ;; is it.
       (let loop ((i (- (string-length s) 1)))
         (cond ((< i 0)                      (upper? (string-ref s 0)))
               ((char=? (string-ref s i) #\.)
                (and (< (+ i 1) (string-length s))
                     (upper? (string-ref s (+ i 1)))))
-              (else (loop (- i 1)))))))
+              (else (loop (- i 1))))))))
 
 ;; witness-index: SSA -> alist of (concrete-type . list of witness).
 ;; Each witness is a tagged node: (witness (func . f) (pos . p-or-#f) (iface . i)).
@@ -166,26 +217,64 @@
           ;; this type was found in scope (generics, synthetic SSA, external pkg).
           (cons 'witness  (witnesses-for idx recv)))))
 
+;; reflect-or-unsafe-node?: does N's function belong to package "reflect" or
+;; "unsafe"? Prefer `pkg` (go/types-derived, exact) and fall back to a
+;; substring test on the fully-qualified `name` for nodes whose `pkg` is unset
+;; (some synthetic/external nodes carry no pkg field). Both signals come from
+;; data the callgraph already computed -- neither is a hardcoded function list.
+(define (reflect-or-unsafe-node? n)
+  (let ((p  (nf n 'pkg))
+        (nm (or (nf n 'name) "")))
+    (or (equal? p "reflect") (equal? p "unsafe")
+        (string-contains? nm "reflect.") (string-contains? nm "unsafe."))))
+
+;; reflection-in-scope?: does the analyzed callgraph reach package reflect or
+;; unsafe ANYWHERE? See the header comment on VTA soundness "modulo reflection
+;; and unsafe". This is a DEFEATER PRESENCE flag, not a per-site proof: #t
+;; means the mechanism that can hide a type from VTA is reachable somewhere in
+;; scope, not that any specific finding is wrong. Computed once per
+;; dispatch-sites call over the callgraph it already builds -- no new Go
+;; primitive, no extra build.
+(define (reflection-in-scope? cg)
+  (let loop ((ns cg))
+    (cond ((null? ns) #f)
+          ((reflect-or-unsafe-node? (car ns)) #t)
+          (else (loop (cdr ns))))))
+
 ;; make-dispatch-site: assemble ONE finding.
 ;;
 ;; `candidates` is ABSENT (not '()) when elided. An empty list would let a careless
 ;; consumer read "no candidates" off a 27-way site — the silent false negative,
 ;; reintroduced through the encoding. `n` is ALWAYS the true count, so the knob can
 ;; never make a site look smaller than it is.
-(define (make-dispatch-site key edges scope narrowed k idx)
+;;
+;; `refl` (reflection-in-scope) is a single value computed ONCE for the whole
+;; dispatch-sites call and stamped onto every finding -- see reflection-in-scope?.
+;;
+;; `synthetic-caller` is #t when the SITE'S CALLER is a compiler-generated
+;; forwarding function (ssa.Function.Synthetic != "", surfaced as cg-edge's
+;; `caller-synthetic`). Such a site is a PHANTOM: its single invoke has no
+;; source position because it does not exist as a call site in source at all
+;; ($bound/$thunk closures, interface method-set wrappers, promoted-embedding
+;; stubs). It is trivially `must` (one forwarding call, one target) and would
+;; otherwise silently inflate a `must`-rate census with sites that are not
+;; really there.
+(define (make-dispatch-site key edges scope narrowed k idx refl)
   (let* ((n     (length edges))
          (e0    (car edges))
          (iface (nf e0 'iface))
          (where (or (nf e0 'pos) #f))
          (full? (<= n k))
-         (base  (list (cons 'iface          iface)
-                      (cons 'method         (nf e0 'method))
-                      (cons 'caller         (car (split-key key)))
-                      (cons 'n              n)
-                      (cons 'narrowed-from  narrowed)
-                      (cons 'scope          scope)
-                      (cons 'iface-exported (type-exported? iface))
-                      (cons 'detail         (if full? 'full 'elided))))
+         (base  (list (cons 'iface              iface)
+                      (cons 'method             (nf e0 'method))
+                      (cons 'caller             (car (split-key key)))
+                      (cons 'n                  n)
+                      (cons 'narrowed-from      narrowed)
+                      (cons 'scope              scope)
+                      (cons 'iface-exported     (type-exported? iface))
+                      (cons 'reflection-in-scope refl)
+                      (cons 'synthetic-caller   (and (nf e0 'caller-synthetic) #t))
+                      (cons 'detail             (if full? 'full 'elided))))
          (why   (cons 'dispatch
                       (if full?
                           (append base
@@ -220,20 +309,29 @@
          (cha    (go-callgraph pattern 'cha))
          (counts (counts-by-key cha))
          (idx    (witness-index pattern))
+         (refl   (reflection-in-scope? vta))
          (sites  (sort (lambda (a b) (string<? (car a) (car b)))
                         (invoke-sites vta))))
     (map (lambda (p)
            (make-dispatch-site (car p) (cdr p) pattern
-                               (count-at counts (car p)) k idx))
+                               (count-at counts (car p)) k idx refl))
          sites)))
 
 ;; --- accessors --------------------------------------------------------------
 ;; dispatch-candidates returns #f when elided (the key is absent), NEVER '().
+;; dispatch-narrowed-from returns #f on a CHA key miss ("no count available"),
+;; NEVER a fabricated 0 -- see count-at.
+;; dispatch-iface-exported returns #t / #f for a qualified type name, or
+;; 'unnamed for a type literal (a structural/anonymous interface) -- see
+;; type-exported?.
 
-(define (dispatch-class f)         (finding-value f))
-(define (dispatch-n f)             (nf (finding-why f) 'n))
-(define (dispatch-iface f)         (nf (finding-why f) 'iface))
-(define (dispatch-method f)        (nf (finding-why f) 'method))
-(define (dispatch-narrowed-from f) (nf (finding-why f) 'narrowed-from))
-(define (dispatch-detail f)        (nf (finding-why f) 'detail))
-(define (dispatch-candidates f)    (nf (finding-why f) 'candidates))
+(define (dispatch-class f)              (finding-value f))
+(define (dispatch-n f)                  (nf (finding-why f) 'n))
+(define (dispatch-iface f)              (nf (finding-why f) 'iface))
+(define (dispatch-method f)             (nf (finding-why f) 'method))
+(define (dispatch-narrowed-from f)      (nf (finding-why f) 'narrowed-from))
+(define (dispatch-detail f)             (nf (finding-why f) 'detail))
+(define (dispatch-candidates f)         (nf (finding-why f) 'candidates))
+(define (dispatch-iface-exported f)     (nf (finding-why f) 'iface-exported))
+(define (dispatch-reflection-in-scope f) (nf (finding-why f) 'reflection-in-scope))
+(define (dispatch-synthetic-caller f)   (nf (finding-why f) 'synthetic-caller))
