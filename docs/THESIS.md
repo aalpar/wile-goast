@@ -19,6 +19,44 @@ exposed as first-class primitives the agent composes at tool-time rather than
 reconstructing at inference-time. The benchmark measures whether this shift
 produces capability uplift on tasks where flat tooling currently fails.
 
+## Amendment (2026-07-12): the "unreliable at inference-time composition" claim is too broad
+
+The Short form asserts that flat tooling forces the agent to compose facts at
+inference time, "at which it is unreliable." Measurement says that is **not
+unconditionally true**, and the correction sharpens the bet rather than sinking it.
+
+Three results (LLMAccuracy; see `docs/when-tools-win.md` for the full argument):
+
+| task | one step is | control | tool | verdict |
+|---|---|---|---|---|
+| call-graph reachability, 47-hop scrambled chain | a syntactic **lookup** | 91.7–100% | 100% | **margin over conventional tooling = 0.0%** |
+| `powerset_lattice` (hard) | a set **computation** | 33% | 57% | tool wins (+23) |
+| constant-index `[]func()` dispatch | a **wrong rule** | 65% | 100% | tool wins (+35, p<1e-6) |
+
+The agent composes **47 sequential call-graph hops essentially perfectly**, and a
+grep-armed baseline matches the tool exactly (margin 0.0 at every depth, n=60/rung,
+source-withheld, adoption-gated). Composition *per se* is not the gap. The
+reachability differentiation claim is **falsified**: there the tool buys efficiency
+(5.7× fewer output tokens), not accuracy.
+
+What actually predicts a tool win is the model's **per-step error rate**, not the
+number of steps. Error only compounds if there is error to compound. Two things
+make it non-zero:
+
+1. **The step is a fallible computation** (lattice joins). Error compounds with
+   depth; the tool wins. The original thesis is *correct here*.
+2. **The step is a wrong rule** — the local syntactic reading disagrees with the
+   semantics. The model fails at depth one; depth is irrelevant. Higher-order
+   dispatch: the model treats *address-taken* as *invoked*, i.e. it re-derives
+   CHA's exact over-approximation by hand, and is confidently wrong.
+
+Where syntax tells the truth and each step is a lookup (direct call graphs), no
+pre-composition can help, because there is nothing to get wrong.
+
+**Restated bet:** the substrate earns accuracy where the agent's own derivation is
+*unreliable* — not merely where it is *long*. Cross-layer facts qualify mostly
+because they are arm-1 or arm-2, not because they are compositional.
+
 ## The compositional gap
 
 Existing agent tooling for code understanding falls into three shapes:
