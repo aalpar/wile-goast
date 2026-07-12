@@ -116,10 +116,46 @@ hide the tool's own blind spot. Emitting them turns a silence into a finding.
   27-way site — the silent false negative, reintroduced through the encoding.
 - **`n` is always the true count**, independent of `detail`. The knob can never make a
   site *look* smaller than it is.
-- **`witness` is deliberately weaker than a flow path.** It lists `ssa.MakeInterface`
-  positions: *where this concrete type entered this interface*, not *how it reached
-  this site*. VTA's type-flow graph is not exported by `x/tools`, so any stronger claim
-  would be fabricated.
+- **`witness` is deliberately weaker than a flow path.** It reports *where this concrete
+  type entered this interface*, not *how it reached this site*. VTA's type-flow graph is
+  not exported by `x/tools`, so any stronger claim would be fabricated.
+- **A witness may have no position, and says so.** See below: `ssa.MakeInterface.Pos()`
+  is valid only for *explicit* conversions. `(pos . #f)` is the honest encoding of "the
+  conversion is real, its position is not recoverable." **Degrade to a missing witness,
+  never a wrong one.**
+
+### The witness — what is actually obtainable (measured 2026-07-12)
+
+`ssa.MakeInterface` carries a position **only for an explicit conversion**. Measured
+against a package containing all four forms:
+
+| conversion form | `MakeInterface.Pos()` |
+|---|---|
+| `var x I = T1{}` (implicit, var decl) | `#f` |
+| `take(T2{})` (implicit, call arg) | `#f` |
+| `var x I; x = T3{}` (implicit, assign) | `#f` |
+| `I(T1{})` (**explicit**) | `main.go:16:18` ✓ |
+
+Implicit conversion is the overwhelmingly common form in real Go, so a witness defined
+as "the `MakeInterface` position" is unavailable for most conversions. The witness is
+therefore a **fallback chain**, and its shape admits absence:
+
+```scheme
+(witness
+  (concrete . "example.com/p.T1")
+  (func     . "example.com/p.a")   ; ALWAYS available
+  (pos      . "main.go:16:18"))    ; or #f
+```
+
+1. `MakeInterface.Pos()` — precise; explicit conversions only.
+2. **The position of the instruction that consumes the conversion** (`v.Referrers()`).
+   For `take(T2{})` that is the `Call` — the line a human would actually open. Recovers
+   the common case for ~6 lines of Go.
+3. **The enclosing function** — always available, and free: the Scheme walk already
+   knows which `ssa-func` the instruction sits in.
+
+`func` is never absent, so a witness always locates the conversion to a function even
+when no line is recoverable.
 
 ### The knob
 
@@ -145,16 +181,30 @@ letting the consumer project.
 
 ### Go change 1 — `goastssa/mapper.go:586`
 
-`mapMakeInterface` emits `name`, `x`, `type`, `operands`. It discards the two facts
-that make it a witness:
+`mapMakeInterface` emits `name`, `x`, `type`, `operands`.
+
+**`pos` is not missing — it is opt-in.** `mapInstruction` (`mapper.go:104-119`) already
+injects `(pos . "file:line:col")`, but only when `p.positions` is set, which the caller
+requests as `(go-ssa-build "." 'positions)` (a *variadic symbol* rest-arg, not a list —
+`prim_ssa.go:38-62`). The dispatch library simply passes it. **No Go change is needed
+for `pos`.** That opt-in gate is itself the parent note's named defect ("provenance is
+opt-in, not load-bearing"); making it load-bearing is a separate change, out of scope
+here.
+
+What *is* missing is the concrete type. Today it is recoverable only by splitting the
+`x` field on a colon — `"example.com/p.T1{}:example.com/p.T1"` — i.e. by parsing a name
+that is not a contract:
 
 ```go
 goast.Field("concrete", ...v.X.Type()...)   // NEW: what type entered the interface
-goast.Field("pos",      ...v.Pos()...)      // NEW: where it entered
 ```
 
-*Open item:* verify `ssaMapper` carries an `fset` (the cg mapper does, `mapper.go:89`).
-If not, that is plumbing, not a design change.
+Optional, and worth it (~6 lines): when `v.Pos()` is invalid, fall back to the first
+`v.Referrers()` instruction with a valid position. This recovers the *implicit* call-arg
+and assignment conversions, which the measurement above shows are the common case.
+
+*Resolved:* `ssaMapper` does carry an `fset` (`mapper.go:30`), so there is no plumbing
+change.
 
 ### Go change 2 — `goastcg/mapper.go:78`
 
@@ -190,17 +240,19 @@ analysis; it folds facts that already exist.
 dispatch-sites(pattern, K=8)
   vta ← (go-callgraph pattern 'vta)
   cha ← (go-callgraph pattern 'cha)
-  ssa ← (go-ssa-build pattern)
+  ssa ← (go-ssa-build pattern 'positions)    ; 'positions is REQUIRED for witnesses
 
   invoke-edges(g) = edges WHERE the `iface` field is present
   site-key        = (caller . where)
   candidates[key] = invoke-edges(vta) grouped by site-key
   narrowed-from   = |invoke-edges(cha) at same key|
-  witness-index   = ssa-make-interface nodes indexed by `concrete` → [pos]
+  witness-index   = ssa-make-interface nodes indexed by `concrete`
+                    → (func, pos-or-#f); `func` from the enclosing ssa-func
+                      in the walk, `pos` from the mapper when valid
   class           = f(n)
 ```
 
-Cost is 2× the call graph (both CHA and VTA): ~1s on a 15k-node repo.
+Cost is 2× the call graph (both CHA and VTA) plus one SSA build: ~1s on a 15k-node repo.
 
 ## Soundness
 
@@ -208,8 +260,11 @@ Cost is 2× the call graph (both CHA and VTA): ~1s on a 15k-node repo.
   this package set*. On an exported interface in a library, an external caller can
   inject a type VTA never saw. The finding says so rather than asserting a proof it
   does not have.
-- **Invalid positions.** Synthetic and generated SSA has no `Pos()`; `witness` is then
-  `'()` — an honest empty witness, never a fabricated one.
+- **Invalid positions are the NORM, not an edge case.** `ssa.MakeInterface.Pos()` is
+  valid only for explicit conversions (measured above). A witness therefore always
+  carries `func`, and `pos` may be `#f`. Synthetic and generated SSA likewise has no
+  `Pos()`. An absent position is reported as absent — never fabricated, never inferred
+  from a neighbouring line.
 - **Generics — unresolved risk.** Instantiated methods produce type strings that may
   not join cleanly against the witness index. A testdata case must settle this. If it
   breaks, the failure must be a *missing* witness, never a wrong one.
@@ -222,7 +277,8 @@ Go units: `mapMakeInterface` emits `pos`/`concrete`; `mapEdge` emits
 Golden testdata package: single-impl → `must`; three impls all flowing → `may n=3`;
 **an impl allocated but never converted to the interface** (the decoy — proves VTA
 prunes what CHA folds in); a zero-candidate site → `none`; a site above `K` → `elided`;
-a generic instantiation.
+a generic instantiation; and **all four conversion forms** (var decl, call arg, assign,
+explicit) so the witness fallback chain is exercised where `Pos()` is invalid.
 
 **The invariant that is the design:**
 
