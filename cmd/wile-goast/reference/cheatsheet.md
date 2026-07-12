@@ -27,11 +27,39 @@ tags, load the `goast-scheme-ref` prompt or see docs/AST-NODES.md.
     (go-analyze <pattern> <analyzer> ...)    -> list of diagnostic
     (go-analyze-list)                        -> list of analyzer names
 
-- `<algo>` is a symbol: `'static` `'cha` `'rta` `'vta`. Example:
-  `(go-callgraph "." 'static)`.
 - `opts` are symbols, e.g. `'positions` `'comments`.
 - Call-graph names are qualified: `"(*Server).ProcessRequest"`,
   `"command-line-arguments.main"`.
+
+### Call-graph algorithms — the result's soundness IS the algorithm's
+
+`<algo>` is a symbol. **The choice changes what the answer means.** Every one of
+these returns the same shape, so the return value cannot tell you whether you are
+holding an exact set or a bound. You must know which you asked for.
+
+| algo | soundness | use when |
+|------|-----------|----------|
+| `'static` | **UNDER-approx** (a lower bound) | resolves only direct calls; **ignores calls through function values**, so it MISSES edges in higher-order code. Rarely what you want. |
+| `'cha` | **OVER-approx** (an upper bound) | resolves each indirect call to EVERY signature-compatible function. Sound, but very loose. |
+| `'rta` | **OVER-approx**, tighter than `'cha` | prunes `'cha` to types actually instantiated. |
+| `'vta` | **OVER-approx**, tightest of the standard three | flow-sensitive type propagation. Still a bound: it can include a function whose constant index is never invoked. |
+| `'precise` | **EXACT on constant-index `[]func()`**; `'cha` elsewhere | CHA refined by resolving `t := []func(){...}; t[k]()` (k constant) from SSA. Never less sound than `'cha`. |
+
+**Default to `'precise` for higher-order dispatch** (`[]func()` indexed by a
+constant). It is exact there and never worse than `'cha` anywhere else:
+
+    (import (wile goast path-algebra))
+    (go-callgraph-reachable (go-callgraph "." 'precise) "p.f0")
+
+**If you use an over-approximating algorithm (`'cha`/`'rta`/`'vta`), you are holding
+an UPPER BOUND, not the answer.** Its surplus is yours to discharge: for each
+function reached only through an indexed `[]func()` call, check that some *invoked*
+constant index actually selects it, and drop the ones none selects. Reporting a
+bound as if it were exact is the single most common way to get a wrong answer here.
+
+**`'precise` does NOT resolve interface dispatch** (`x.M()`); it falls back to `'cha`
+edges there. For interfaces `'vta` is the tightest available and is still an upper
+bound — the discharge obligation above applies.
 
 ## Missing builtins (don't reach for these)
 
