@@ -253,3 +253,51 @@ func TestGoCallgraph_RTA_NoMain(t *testing.T) {
 	evalExpectError(t, engine,
 		`(go-callgraph "github.com/aalpar/wile-goast/goast" 'rta)`)
 }
+
+// TestCgEdge_InvokeFields: on an interface-dispatch edge, cg-edge names the
+// interface, the method, and the concrete receiver. Without these a consumer
+// cannot tell a CHA guess from a proven call — the two are byte-identical today.
+func TestCgEdge_InvokeFields(t *testing.T) {
+	c := qt.New(t)
+	engine := newEngine(t)
+
+	// Any edge carrying `iface` must also carry `method` and `recv`.
+	result := eval(t, engine, `
+		(let ((cg (go-callgraph "github.com/aalpar/wile-goast/goast/testdata/dispatch" 'vta)))
+		  (let nloop ((ns cg) (seen #f))
+		    (if (null? ns)
+		        seen
+		        (let eloop ((es (cdr (assq 'edges-out (cdr (car ns))))) (s seen))
+		          (if (null? es)
+		              (nloop (cdr ns) s)
+		              (let ((e (cdr (car es))))
+		                (if (assq 'iface e)
+		                    (eloop (cdr es)
+		                           (and (assq 'method e) (assq 'recv e) #t))
+		                    (eloop (cdr es) s))))))))`)
+	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
+}
+
+// TestCgEdge_StaticCallHasNoIface: the fields appear ONLY on invoke sites. A static
+// call has no interface, and inventing one would make the field useless as the
+// dispatch-site predicate.
+func TestCgEdge_StaticCallHasNoIface(t *testing.T) {
+	c := qt.New(t)
+	engine := newEngine(t)
+
+	result := eval(t, engine, `
+		(let ((cg (go-callgraph "github.com/aalpar/wile-goast/goast/testdata/dispatch" 'vta)))
+		  (let nloop ((ns cg) (bad #f))
+		    (if (null? ns)
+		        bad
+		        (let eloop ((es (cdr (assq 'edges-out (cdr (car ns))))) (b bad))
+		          (if (null? es)
+		              (nloop (cdr ns) b)
+		              (let* ((e (cdr (car es)))
+		                     (d (cdr (assq 'description e))))
+		                (eloop (cdr es)
+		                       (or b (and (equal? d "static function call")
+		                                  (assq 'iface e)
+		                                  #t)))))))))`)
+	c.Assert(result.Internal(), qt.Not(qt.Equals), values.TrueValue)
+}

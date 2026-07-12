@@ -16,6 +16,7 @@ package goastcg
 
 import (
 	"go/token"
+	"go/types"
 	"sort"
 
 	"golang.org/x/tools/go/callgraph"
@@ -75,8 +76,13 @@ func (p *cgMapper) mapNode(n *callgraph.Node) values.Value {
 }
 
 // mapEdge converts a callgraph.Edge to a cg-edge s-expression.
+//
+// On an INVOKE site (interface dispatch) the edge additionally carries `iface`,
+// `method`, and `recv`. `description` only ever reported the call's KIND; these
+// report why THIS callee. Their presence is also the dispatch-site predicate:
+// consumers test for `iface` rather than string-matching "dynamic method call".
 func (p *cgMapper) mapEdge(e *callgraph.Edge) values.Value {
-	fields := make([]values.Value, 0, 4)
+	fields := make([]values.Value, 0, 7)
 
 	if e.Caller != nil && e.Caller.Func != nil {
 		fields = append(fields, goast.Field("caller", goast.Str(e.Caller.Func.String())))
@@ -91,6 +97,22 @@ func (p *cgMapper) mapEdge(e *callgraph.Edge) values.Value {
 	}
 
 	fields = append(fields, goast.Field("description", goast.Str(e.Description())))
+
+	if e.Site != nil {
+		if c := e.Site.Common(); c != nil && c.IsInvoke() {
+			fields = append(fields, goast.Field("iface", goast.Str(types.TypeString(c.Value.Type(), nil))))
+			if c.Method != nil {
+				fields = append(fields, goast.Field("method", goast.Str(c.Method.Name())))
+			}
+			// recv: the concrete receiver of the resolved callee. Joins to
+			// ssa-make-interface's `concrete` so a witness needs no name parsing.
+			if e.Callee != nil && e.Callee.Func != nil {
+				if sig := e.Callee.Func.Signature; sig != nil && sig.Recv() != nil {
+					fields = append(fields, goast.Field("recv", goast.Str(types.TypeString(sig.Recv().Type(), nil))))
+				}
+			}
+		}
+	}
 
 	return goast.Node("cg-edge", fields...)
 }
