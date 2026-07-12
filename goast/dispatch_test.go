@@ -155,3 +155,34 @@ func TestDispatch_WitnessPosIsAbsentNotFabricated(t *testing.T) {
 		                                 (or (string? p) (eq? p #f)))))))))))) `).Internal(),
 		qt.Equals, values.TrueValue)
 }
+
+// TestDispatch_WitnessNamesTheInterfaceItEntered: witness-index keys on concrete
+// type alone, so a witness list MAY contain conversions of this type into a
+// DIFFERENT interface than the site dispatches on (see the doc comment on
+// witness-index). Every witness is therefore LABELLED with the interface it
+// actually entered — `iface`, ssa-make-interface's own `type` field — so the
+// consumer can tell which witness matches this site and which does not.
+func TestDispatch_WitnessNamesTheInterfaceItEntered(t *testing.T) {
+	c := qt.New(t)
+	engine := newBeliefEngine(t)
+
+	eval(t, engine, `(import (wile goast dispatch) (wile goast utils))`)
+	eval(t, engine, `(define ds (dispatch-sites `+dispatchPkg+`))`)
+
+	// Every witness on every candidate of every site carries a STRING iface.
+	c.Assert(eval(t, engine, `
+		(let sloop ((sites ds) (ok #t))
+		  (if (or (not ok) (null? sites))
+		      ok
+		      (let ((cs (dispatch-candidates (car sites))))
+		        (if (not cs)
+		            (sloop (cdr sites) ok)
+		            (let cloop ((cs cs) (o ok))
+		              (if (or (not o) (null? cs))
+		                  (sloop (cdr sites) o)
+		                  (let wloop ((ws (nf (car cs) 'witness)) (w #t))
+		                    (if (or (not w) (null? ws))
+		                        (cloop (cdr cs) w)
+		                        (wloop (cdr ws) (string? (nf (car ws) 'iface))))))))))) `).Internal(),
+		qt.Equals, values.TrueValue)
+}

@@ -94,11 +94,25 @@
               (else (loop (- i 1)))))))
 
 ;; witness-index: SSA -> alist of (concrete-type . list of witness).
-;; Each witness is a tagged node: (witness (func . f) (pos . p-or-#f)).
+;; Each witness is a tagged node: (witness (func . f) (pos . p-or-#f) (iface . i)).
 ;;
-;; The witness answers "where did this concrete type ENTER this interface?", not
-;; "how did it reach this site" — VTA's type-flow graph is not exported by x/tools,
-;; so the stronger claim would be fabricated.
+;; The index is keyed on CONCRETE TYPE ALONE — it does not consult which interface
+;; the site dispatches on. A witness list for concrete type T therefore MAY contain
+;; conversions of T into a DIFFERENT interface than the site that looked it up. Each
+;; witness is LABELLED with `iface`, the interface it was actually converted INTO
+;; (ssa.MakeInterface's own `type`, not a new field this library computes), so the
+;; consumer can tell which witness matches this site's interface and which does not.
+;; Nothing is filtered out and nothing is fabricated: the witness stops claiming to
+;; be "this site's conversion" and instead reports, truthfully, what it is.
+;;
+;; A strict (concrete, iface) string-equality FILTER was considered and REJECTED: it
+;; deletes legitimate witnesses under interface embedding/widening. Example: interface
+;; K embeds I; a value enters only via `return K(T{})`, so the MakeInterface records
+;; type = K; the call site later narrows to I via ChangeInterface, so the site's iface
+;; is I. Requiring type == iface demands K == I, matches nothing, and the only witness
+;; for T vanishes — even though it is the correct, and only, explanation. Correct
+;; filtering would require interface IMPLICATION (types.Implements), not string
+;; equality; that is a new Go primitive and out of scope here.
 ;;
 ;; POSITIONS ARE OFTEN ABSENT. ssa.MakeInterface carries a valid Pos() only for an
 ;; EXPLICIT conversion (I(T{})). The three implicit forms — var decl, call arg,
@@ -130,7 +144,8 @@
                                      ;; make (nf w 'func) always #f.
                                      (w   (list 'witness
                                                 (cons 'func fname)
-                                                (cons 'pos (ssa-instr-pos i))))
+                                                (cons 'pos (ssa-instr-pos i))
+                                                (cons 'iface (nf i 'type))))
                                      (hit (assoc ct a2)))
                                 (if hit
                                     (begin (set-cdr! hit (cons w (cdr hit)))
