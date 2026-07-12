@@ -44,7 +44,7 @@ wile-goast-side consumer/follow-up status.
 | `2026-07-06-find-duplicates-tool-design.md` | `find_duplicates` command-level MCP tool: surface the shipped `(wile goast dup-detect)` scan as tool #6; measure surface default, opt-in verdict; two acceptance gates (product correctness / A/B wedge value) | Design complete — see `2026-07-06-find-duplicates-tool-impl.md` |
 | `2026-07-06-find-duplicates-tool-impl.md` | Impl: 6 TDD tasks — clean-candidate projection in `pipeline-find-duplicates`, Go handler + registration, verdict discipline, true-neg/determinism, empty+error paths (reuses `dupcluster` fixture), MCP.md row | Ready to implement |
 | `2026-07-12-interface-dispatch-findings-design.md` | Interface dispatch as located, justified findings: site-unit findings, `class = f(n)`, witnesses, the detail-not-sites knob | Design complete |
-| `2026-07-12-interface-dispatch-findings-impl.md` | Impl: 7 tasks — `concrete` on ssa-make-interface, `iface`/`method`/`recv` on cg-edge, golden fixture, `(wile goast dispatch)`, witnesses, K-invariant | (update on completion) |
+| `2026-07-12-interface-dispatch-findings-impl.md` | Impl: 7 tasks — `concrete` on ssa-make-interface, `iface`/`method`/`recv` on cg-edge, golden fixture, `(wile goast dispatch)`, witnesses, K-invariant | Shipped 2026-07-12 (12 commits, `5662f82..7515585`). Gate reproduces the design census on real source sites: 137 sites / 97 `must` vs 137 / 96. **`must` is sound only modulo reflection+unsafe** — a false `must` was reproduced and the finding now carries a `reflection-in-scope` defeater. Follow-ups in [`TODO.md`](../TODO.md) → *Interface Dispatch*. |
 
 ## Completed Plans (moved to `memory/`)
 

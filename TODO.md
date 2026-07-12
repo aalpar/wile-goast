@@ -788,3 +788,77 @@ recheck (stale-binary suspected — see the last item).
       server silently lags source until reinstalled — consider a `--version`/lib-hash
       the MCP server reports, or a dev flag to load `lib/` from disk. **[M]**
 
+
+## Interface Dispatch — follow-ups (from `(wile goast dispatch)`, shipped 2026-07-12)
+
+Shipped in `5662f82..7515585`. Design + impl:
+`plans/2026-07-12-interface-dispatch-findings-{design,impl}.md`. The gate reproduces
+the design's independently-derived census on real source sites (137 sites / 97 `must`
+vs 137 / 96). These are the residuals the build surfaced.
+
+- [ ] **[measured — NOT optional] Level-2 witness fallback: the consuming instruction's position.**
+      The impl plan deferred this pending a measurement, and **the measurement came back
+      0/516 (0%)**. `ssa.MakeInterface.Pos()` is valid *only* for explicit conversions
+      (`I(T{})`), and those essentially never occur in idiomatic Go — every conversion in
+      `client-go/tools/cache` is implicit (var decl, call arg, assignment), all `NoPos`. So
+      witness level 1 yields **nothing** on real code and only level 3 (the enclosing func)
+      survives. A witness that cannot name a line is barely a witness. **Fix:** scan forward
+      in the same `ssa-block` for the first instruction whose `operands` contain this
+      `ssa-make-interface`'s `name`, and take *that* instruction's `pos`. **Pure Scheme —
+      no Go change** (`lib/wile/goast/dispatch.scm`, `witness-index`). Keep the
+      degrade-to-missing-never-wrong rule: if no consumer is found, `pos` stays `#f`. **[M]**
+
+- [ ] **[design decision] The `none` class is unreachable by construction.**
+      `invoke-sites` enumerates sites *from VTA edges that exist*, so every site has `n >= 1`
+      and `class-of`'s `n = 0 -> 'none` arm is dead code. Verified empirically (`fmt`: 5 sites,
+      fixture: 4 sites, client-go: 208 — zero `none` in any). A package with no dispatch returns
+      `'()`, not a `none` finding. But the design doc treats `none` ("zero VTA candidates") as a
+      real class — and arguably it is *the most interesting* one: a site VTA cannot populate is
+      either dead code or a VTA failure, and today the tool is **silent** about it. **Decide:**
+      either (a) enumerate the site set from the SSA invoke instructions (or CHA's site set) so
+      zero-candidate sites become visible, or (b) drop `none` from the design and say plainly
+      that the tool cannot see them. Option (a) is the one that removes a silent false negative.
+      **[S to drop, M to make reachable — design gated]**
+
+- [ ] **[bug] Candidate order within a site is nondeterministic.**
+      `dispatch-sites` sorts *sites* (by site-key) but not the *candidates* within one.
+      `goastcg/mapper.go:43` sorts nodes by ID, but `node.Out` is never sorted and VTA builds
+      callee sets from Go maps — so the same site emits its candidates in a different order run
+      to run. `docs/LIBRARIES.md`'s output-stability claim therefore reads broader than what is
+      delivered. Same bug class as the site-ordering defect the K-invariant test caught
+      (`14b2388`). **Fix:** sort `edges` by callee name in `make-dispatch-site`, and narrow the
+      doc's claim to what actually holds. **[S]**
+
+- [ ] **[precision] `reflection-in-scope` is whole-scope, not per-caller.**
+      The defeater added in `7515585` flags the *analysed scope* as reflection-touched, so every
+      `must` in a package that imports `reflect` anywhere is warned — including sites reflection
+      provably cannot reach. Deliberate (over-warn, never under-warn) but blunt: on a scope like
+      apimachinery it warns nearly everything, and a warning that always fires is a warning
+      nobody reads. **Fix:** narrow to per-caller reachability — does *this* caller transitively
+      reach `reflect.`/`unsafe.`? The call graph is already built in `dispatch-sites`; this is a
+      reachability query over it, not new analysis. **[M]**
+
+- [ ] **[fidelity] Site-key over-merge (much smaller than first believed, but real).**
+      `cg-edge` omits `pos` when `e.Pos()` is invalid, so sites in the same caller that *both*
+      lack a position collapse to one `"caller@?"` key and `n` becomes their sum. On client-go
+      this is **1 of 62** position-less findings — the other 61 turned out to be synthetic
+      forwarding stubs, now marked with `synthetic-caller` (`7515585`), not merges. **It cannot
+      produce a false `must`**: merging only *adds* edges, so `n` only grows (`must -> may`),
+      and `class = must` implies exactly one edge at the key, i.e. no merge occurred. Proven
+      from `x/tools/go/callgraph/callgraph.go:111` — `Edge.Pos()` is a function of the *site*,
+      so a site can never *split* across keys. Precision loss only. **Fix:** key on the SSA call
+      instruction rather than `(caller, pos)`, which needs a stable instruction id on `cg-edge`.
+      **[M — low priority; bounded and sound]**
+
+- [ ] **[pre-existing, unrelated] `make ci` is red on master: 7 lint issues.**
+      `goastcg/prim_callgraph.go` ×5, `goastssa/prim_ssa.go` ×1, `goast/prim_funcrefs.go` ×1 —
+      all `gocritic` compound-if-init ruleguard hits. Predates the dispatch work (measured at
+      `5662f82`); the dispatch plan added **zero**. But it means `make ci` cannot be used as a
+      green gate by anyone, and `SKIP_LINT=1` is the de-facto workaround. **[S]**
+
+- [ ] **[pre-existing, unrelated] `TestGoSSANarrowParameterWidens` is a latent flake.**
+      It picks the first function whose parameter type *contains* `"values.Value"` — which also
+      matches the **slice** `[]values.Value` on `goast.ValueList`, the sole one of 76 candidates
+      that yields `narrow`. It passes only because of enumeration order, which is unstable. Same
+      bug class as the site-ordering defect fixed in `14b2388`. **Fix:** tighten the type
+      predicate to an exact match. **[S]**
