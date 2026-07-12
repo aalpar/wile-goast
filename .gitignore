@@ -34,7 +34,12 @@ Thumbs.db
 # Anthropic files
 AGENTS.md
 CLAUDE.md
-.claude/
+# Skills document the analysis API and are versioned alongside it. Git cannot
+# re-include a child of an excluded directory, so .claude/ itself must be
+# un-excluded (~/.gitignore_global excludes it) and only its contents ignored.
+!.claude/
+.claude/*
+!.claude/skills/
 *.local.md
 *.mcp.json
 .serena/
