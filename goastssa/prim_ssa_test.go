@@ -347,3 +347,29 @@ func TestGoSSAFieldIndex_FuncPosition(t *testing.T) {
 	c.Assert(strings.Contains(pos, "falseboundary.go:"), qt.IsTrue,
 		qt.Commentf("pos = %s", pos))
 }
+
+// TestSSAMakeInterface_Concrete: the concrete type that entered the interface is a
+// FIELD, not something a consumer must recover by splitting `x` on a colon.
+// (wile goast dispatch) joins witnesses to callees on this exact string.
+func TestSSAMakeInterface_Concrete(t *testing.T) {
+	c := qt.New(t)
+	engine := newEngine(t)
+
+	result := eval(t, engine, `
+		(let loop ((fns (go-ssa-build "github.com/aalpar/wile-goast/goast/testdata/dispatch"))
+		           (found #f))
+		  (if (or found (null? fns))
+		      found
+		      (loop (cdr fns)
+		            (let bloop ((bs (cdr (assq 'blocks (cdr (car fns))))) (hit #f))
+		              (if (or hit (null? bs))
+		                  hit
+		                  (let iloop ((is (cdr (assq 'instrs (cdr (car bs))))))
+		                    (cond ((null? is) (bloop (cdr bs) #f))
+		                          ((and (eq? (car (car is)) 'ssa-make-interface)
+		                                (assq 'concrete (cdr (car is))))
+		                           (cdr (assq 'concrete (cdr (car is)))))
+		                          (else (iloop (cdr is))))))))))`)
+	// Result should be a string (the concrete type), not #f.
+	c.Assert(result.SchemeString(), qt.Not(qt.Equals), "#f")
+}

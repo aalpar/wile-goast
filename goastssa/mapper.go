@@ -588,6 +588,11 @@ func (p *ssaMapper) mapMakeInterface(v *ssa.MakeInterface) values.Value {
 		goast.Field("name", goast.Str(v.Name())),
 		goast.Field("x", valName(v.X)),
 		goast.Field("type", goast.Str(types.TypeString(v.Type(), nil))),
+		// concrete: the type that ENTERED the interface. (wile goast dispatch)
+		// joins a callee's `recv` to this string to attach a witness. Without it
+		// the only route is splitting `x` on a colon — parsing a name that is not
+		// a contract.
+		goast.Field("concrete", goast.Str(types.TypeString(v.X.Type(), nil))),
 		goast.Field("operands", goast.ValueList([]values.Value{valName(v.X)})),
 	)
 }
