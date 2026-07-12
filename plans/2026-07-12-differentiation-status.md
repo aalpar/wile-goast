@@ -77,9 +77,16 @@ tokens, find where the curves cross. This is the same axis as the scale win.
 - **`'precise` decision closed by evidence.** The −33% regression was the *surface*
   (a `vta`-only exposure), not the tool. Exposing `'precise` → 100%. Ship it as the
   documented default for higher-order dispatch; never ship a `vta`-only surface.
-  Recorded in `plans/2026-07-09-mcp-legibility-roadmap.md`. must/may (encoding (a))
-  remains worthwhile for the undecidable residue but is no longer load-bearing or
-  blocking.
+  Recorded in `plans/2026-07-09-mcp-legibility-roadmap.md`.
+
+- **must/may: NOT dismissed — scope correction (2026-07-12).** An earlier note here
+  said must/may was "no longer load-bearing." **That was scoped to `[]func()` without
+  saying so.** `goastcg/precise.go:68` bails on interface dispatch
+  (`if common.IsInvoke() { return nil }`) and falls back to CHA. So for **interface
+  dispatch there is no exact algorithm at all** — `vta` is the tightest available and
+  is still a sound *over-approximation*. A bound-shaped return is precisely the
+  condition that produced the −33% anchoring regression. **must/may is likely
+  load-bearing for interfaces**, and experiment #2 below is what decides it.
 - **THESIS.md amended.** "Unreliable at inference-time composition" was too broad.
 
 ## Next axes, ranked by the criterion
