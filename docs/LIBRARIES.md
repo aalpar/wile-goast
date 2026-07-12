@@ -207,6 +207,62 @@ justify is an incomplete result.
 | `render-finding` | One-line audit string `"where — why [score]"` |
 | `render-category` | Editor-walkable report for a category: a `LABEL (N)` header then one indented `render-finding` line per member. Generic over any finding list (belief adherence/deviations, an FCA concept's extent, …). The literal "show me every X and a one-line why." |
 
+## Interface Dispatch — `(wile goast dispatch)`
+
+Located, justified findings for interface call sites. Introduces no new analysis:
+it folds facts VTA, CHA, and SSA positions already compute into site-unit
+`(wile goast provenance)` findings (`value` = class, `where` = call position,
+`why` = `(dispatch ...)`, `score` = `#f` — no natural confidence exists here, so
+none is fabricated). The unit is the call site, not the raw edge: grouping VTA's
+invoke edges by `caller@pos` turns "27 rows" into one 27-way finding, which is
+what makes `class` and `n` well-defined in the first place.
+
+- **`class` is a pure function of `n`** (the VTA candidate count at the site):
+  `0` -> `none` (no concrete type flows here *within scope*), `1` -> `must` (VTA's
+  sound set is a singleton, so the true callee set is a subset of it: if the call
+  executes, it calls that function), `>1` -> `may`. No judgment enters.
+- **`must` is must-*within-scope*.** On an exported interface in a library, an
+  external caller can inject a type VTA never saw. Every finding carries `scope`
+  (the pattern analyzed) and `iface-exported` so the consumer can see the limit of
+  the claim, not just the claim.
+- **`dispatch-candidates` is `#f` when elided, never `'()`.** An empty list would
+  let a 27-way site read as "no candidates" — the silent false negative,
+  reintroduced through the encoding. `dispatch-n` is always the true candidate
+  count regardless of `k`, so `default-dispatch-k` (8) controls *detail*, never
+  *sites* or *truth*: every site is always returned, and `n` never shrinks.
+- **A witness may have no position.** `ssa.MakeInterface` carries a valid `Pos()`
+  only for an *explicit* conversion (`I(T{})`); the three implicit forms (var
+  decl, call arg, assignment) are nearly all of real Go and yield `NoPos`. `func`
+  (the enclosing SSA function) is always present; `pos` degrades to `#f` rather
+  than a guess — a missing witness, never a wrong one.
+- **A witness carries `iface`, the interface it actually entered**, which may
+  differ from the site's own `iface`. The witness index is keyed on concrete type
+  alone, so a witness list for type `T` can include a conversion of `T` into a
+  *different* interface than the one this site dispatches on. Witnesses are
+  labelled with their true `iface` rather than filtered by string equality
+  against the site's `iface`: that filter would delete legitimate witnesses under
+  interface embedding (`K` embeds `I`: the only `MakeInterface` for a `K` value
+  records `type = K`, while the call site narrows to `I`).
+- **`dispatch-sites` sorts by site-key before returning**, so output order is
+  stable across calls. CHA/VTA traverse Go maps internally, so raw discovery
+  order is not reproducible call to call, even at identical `k`.
+- **`'precise` cannot help with interface questions.** `goastcg/precise.go:66-68`
+  declines any site where `Common().IsInvoke()` and falls through to CHA's edge
+  unrefined — while the mode is named `'precise`. On an interface corpus,
+  `'precise` returns exactly CHA's over-approximate bound.
+
+| Export | Description |
+|--------|-------------|
+| `dispatch-sites` | `(dispatch-sites pattern [k])` — entry point. One finding per interface call site in `pattern`. Folds VTA (candidates), CHA (`narrowed-from`), and SSA positions (witnesses). `k` defaults to `default-dispatch-k`; every site is always returned regardless of `k` |
+| `dispatch-class` | `(dispatch-class f)` — `none` / `must` / `may`, a pure function of `n`. Alias for `finding-value` |
+| `dispatch-n` | `(dispatch-n f)` — VTA's true candidate count at this site, independent of `k`/`detail` |
+| `dispatch-iface` | `(dispatch-iface f)` — the interface type dispatched on |
+| `dispatch-method` | `(dispatch-method f)` — the interface method invoked |
+| `dispatch-narrowed-from` | `(dispatch-narrowed-from f)` — CHA's candidate count at the same site; the gap to `n` is VTA's evidence of work done |
+| `dispatch-candidates` | `(dispatch-candidates f)` — list of `candidate` alists (`callee`, `concrete`, `witness`) when `n <= k`; `#f` — never `'()` — when elided |
+| `dispatch-detail` | `(dispatch-detail f)` — `'full` or `'elided` |
+| `default-dispatch-k` | Default `k` (8) used by `dispatch-sites` when omitted |
+
 ## Source Map
 
 | File | Purpose |
@@ -235,5 +291,6 @@ justify is an incomplete result.
 | `lib/wile/goast/path-algebra.scm` | Semiring path algebra: Bellman-Ford over call graphs (embedded in binary) |
 | `lib/wile/goast/domains.scm` | Pre-built abstract domains: reaching defs, liveness, constant prop, sign, interval (embedded in binary) |
 | `lib/wile/goast/provenance.scm` | Provenance: resolve SSA instructions to source positions (`ssa-instr-pos`, `ssa-call-position`); first primitive of the auditable-finding facility (embedded in binary) |
+| `lib/wile/goast/dispatch.scm` | Interface dispatch as located, justified findings: site-unit grouping over VTA/CHA/SSA (embedded in binary) |
 | `goast/prim_restructure.go` | Block restructuring: goto elimination, loop return rewriting, guard folding (`go-cfg-to-structured`) |
 | `goastssa/prim_canonicalize.go` | SSA function canonicalization (`go-ssa-canonicalize`) |
