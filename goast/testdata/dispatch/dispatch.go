@@ -37,6 +37,11 @@ func MustSite() {
 
 type Multi interface{ M() }
 
+// A, B, C stay zero-size on purpose: they become visible to VTA through their
+// MakeInterface conversions to Multi below, so their SSA representation
+// never has to carry a value. Decoy has no such conversion — an allocation
+// is its only route to existing in SSA at all, which is why it alone needs a
+// nonzero-size field (see Decoy's doc comment).
 type A struct{}
 type B struct{}
 type C struct{}
@@ -45,13 +50,27 @@ func (A) M() {}
 func (B) M() {}
 func (C) M() {}
 
-// Decoy implements Multi and IS allocated below — but is never converted to
-// Multi, so no Multi value ever holds it. CHA folds it in (it implements the
-// interface); VTA must prune it. If `Decoy` appears among MaySite's candidates,
-// the library is reporting a CHA bound, not a value trace.
-type Decoy struct{}
+// Decoy implements Multi and a Decoy value IS genuinely allocated and live in
+// MaySite below — it simply never gets converted to Multi, so no Multi value
+// ever holds it. CHA folds it in (it satisfies the method set); VTA must
+// prune it. If Decoy ever appears among MaySite's candidates, the library is
+// reporting a CHA bound rather than a value trace.
+//
+// The `tag` field is load-bearing: as struct{} this type is zero-size, and
+// its allocation would be elided by the SSA builder (x/tools/go/ssa emits no
+// instruction for storing a zero-size value to any location — blank, local,
+// or package global), silently weakening the fixture to "a type with no
+// values is pruned" — a strictly easier property than the one this fixture
+// must pin.
+type Decoy struct{ tag int }
 
 func (Decoy) M() {}
+
+// DecoySink makes the Decoy value ESCAPE. It also must be a NONZERO-SIZE
+// type: the SSA builder elides stores of zero-size values (struct{})
+// entirely, so an empty Decoy would emit no instruction and could not be
+// "allocated" at all.
+var DecoySink Decoy
 
 func MaySite(which int) {
 	var ms []Multi
@@ -62,7 +81,7 @@ func MaySite(which int) {
 	c = C{} // implicit: assignment
 	ms = append(ms, c)
 
-	_ = Decoy{} // allocated, never converted to Multi — the decoy
+	DecoySink = Decoy{tag: 7} // allocated, LIVE, escapes — never converted to Multi
 
 	ms[which].M() // n = 3 (A, B, C) — NOT 4
 }
