@@ -41,8 +41,36 @@ on control, p=0.006), `3feacd5` (`--withhold-source` + adoption gate), `17a3e8d`
    *invoked*, re-deriving CHA's exact over-approximation by hand, confidently.
 
 Where syntax tells the truth *and* each step is a lookup (direct call graphs),
-nothing can help: there is nothing to get wrong. The tool still wins on **cost**
-there (5.7× fewer output tokens, 1 call vs 3), but cost is not differentiation.
+nothing can help: there is nothing to get wrong.
+
+## The cost axis — corrected 2026-07-12 (the first pass was wrong)
+
+The original write-up claimed "the tool wins on cost, 5.7× fewer output tokens."
+That was **output-only** and measured against the **weakest** denominator. Both
+faults. Total tokens (input+output; prompt caching off, all zeros):
+
+| | control (read-file) | baseline (grep) | treatment |
+|---|---|---|---|
+| reachability (n=120) | **2,228** | 12,470 | 2,320 |
+| dispatch (n=60) | **1,443** | 19,586 | 2,867 |
+
+- **vs grep: 5.4–6.8× cheaper.** Real, and the first pass *understated* it — grep's
+  cost is nearly all *input* (11k–18k tokens), because each of its 3–6 noisy
+  round-trips re-sends the accumulated history. Output-only reporting hid this.
+- **vs control (just read the file): cost-neutral to 2× WORSE.** The tool round-trip
+  (system prompt describing the tool + call + result back as input) costs more than
+  reading a ~1.2k-token, 80-function file.
+
+Grep-dumping a small file is a *bad strategy*; an agent with a read-file tool would
+not do it. **Beating a bad strategy is not differentiation** — the same discipline
+that discounted the dispatch accuracy margin from +76.7 to +35 applies here, and was
+not applied the first time. On the reachability axis the tool currently buys
+**neither accuracy nor cost**.
+
+**Expiry date.** control cost is `O(source)`; tool cost is `O(answer)` — the tool
+returns a compact set regardless of file size. A crossover must exist. **Unmeasured.**
+Do not assert it. Cheap to settle: sweep n (f50→f384), control vs treatment, total
+tokens, find where the curves cross. This is the same axis as the scale win.
 
 ## Consequences already applied
 

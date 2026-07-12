@@ -36,8 +36,28 @@ Three results (LLMAccuracy; see `docs/when-tools-win.md` for the full argument):
 The agent composes **47 sequential call-graph hops essentially perfectly**, and a
 grep-armed baseline matches the tool exactly (margin 0.0 at every depth, n=60/rung,
 source-withheld, adoption-gated). Composition *per se* is not the gap. The
-reachability differentiation claim is **falsified**: there the tool buys efficiency
-(5.7× fewer output tokens), not accuracy.
+reachability differentiation claim is **falsified**.
+
+**And the consolation prize is smaller than it first looked.** Total tokens
+(input+output; caching off):
+
+| | control (read-file) | baseline (grep) | treatment |
+|---|---|---|---|
+| reachability | **2,228** | 12,470 | 2,320 |
+| dispatch | **1,443** | 19,586 | 2,867 |
+
+The tool is 5.4–6.8× cheaper than **grep** — grep's cost is nearly all *input*, since
+each noisy round-trip re-sends the history. But grep-dumping an 80-function file is a
+*bad strategy*, and beating a bad strategy is not differentiation. Against the honest
+denominator — an agent that simply reads the file — the tool is **cost-neutral
+(2,320 vs 2,228) or 2× worse (2,867 vs 1,443)**, because the tool round-trip costs
+more than reading a ~1.2k-token file.
+
+So on this axis the tool currently buys **neither accuracy nor cost**. That claim has
+an expiry date, though: control's cost is `O(source)` while the tool's is
+`O(answer)` — the tool returns a compact set no matter how big the file is. A
+crossover must exist at larger `n`. It is **unmeasured**, and should not be asserted
+until it is.
 
 What actually predicts a tool win is the model's **per-step error rate**, not the
 number of steps. Error only compounds if there is error to compound. Two things
