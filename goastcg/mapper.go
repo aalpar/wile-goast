@@ -99,7 +99,8 @@ func (p *cgMapper) mapEdge(e *callgraph.Edge) values.Value {
 	fields = append(fields, goast.Field("description", goast.Str(e.Description())))
 
 	if e.Site != nil {
-		if c := e.Site.Common(); c != nil && c.IsInvoke() {
+		c := e.Site.Common()
+		if c != nil && c.IsInvoke() {
 			fields = append(fields, goast.Field("iface", goast.Str(types.TypeString(c.Value.Type(), nil))))
 			if c.Method != nil {
 				fields = append(fields, goast.Field("method", goast.Str(c.Method.Name())))
@@ -107,7 +108,8 @@ func (p *cgMapper) mapEdge(e *callgraph.Edge) values.Value {
 			// recv: the concrete receiver of the resolved callee. Joins to
 			// ssa-make-interface's `concrete` so a witness needs no name parsing.
 			if e.Callee != nil && e.Callee.Func != nil {
-				if sig := e.Callee.Func.Signature; sig != nil && sig.Recv() != nil {
+				sig := e.Callee.Func.Signature
+				if sig != nil && sig.Recv() != nil {
 					fields = append(fields, goast.Field("recv", goast.Str(types.TypeString(sig.Recv().Type(), nil))))
 				}
 			}
