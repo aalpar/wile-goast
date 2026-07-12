@@ -204,16 +204,28 @@
 
 ;; dispatch-sites: the entry point. K controls DETAIL, never SITES — every site is
 ;; always returned.
+;;
+;; Sites are sorted by site-key before mapping. CHA/VTA build their graphs by
+;; traversing Go maps internally (e.g. ssautil.AllFunctions), so raw discovery
+;; order is NOT reproducible call to call even for byte-identical input — two
+;; `dispatch-sites` calls that differ only in k rebuild the callgraph from
+;; scratch and can enumerate the same sites in a different order. Without this
+;; sort, list POSITION would not identify a site, silently breaking any
+;; consumer (including TestDispatch_KInvariant) that compares sites across k
+;; by position. The sort key (caller@pos) is derived from static program
+;; structure, so it is itself deterministic regardless of map order.
 (define (dispatch-sites pattern . rest)
   (let* ((k      (if (null? rest) default-dispatch-k (car rest)))
          (vta    (go-callgraph pattern 'vta))
          (cha    (go-callgraph pattern 'cha))
          (counts (counts-by-key cha))
-         (idx    (witness-index pattern)))
+         (idx    (witness-index pattern))
+         (sites  (sort (lambda (a b) (string<? (car a) (car b)))
+                        (invoke-sites vta))))
     (map (lambda (p)
            (make-dispatch-site (car p) (cdr p) pattern
                                (count-at counts (car p)) k idx))
-         (invoke-sites vta))))
+         sites)))
 
 ;; --- accessors --------------------------------------------------------------
 ;; dispatch-candidates returns #f when elided (the key is absent), NEVER '().

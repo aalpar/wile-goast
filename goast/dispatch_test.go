@@ -186,3 +186,60 @@ func TestDispatch_WitnessNamesTheInterfaceItEntered(t *testing.T) {
 		                        (wloop (cdr ws) (string? (nf (car ws) 'iface))))))))))) `).Internal(),
 		qt.Equals, values.TrueValue)
 }
+
+// TestDispatch_KInvariant is THE property. The knob may remove DETAIL, never TRUTH.
+//
+// For ANY k, at every site:
+//   - the set of sites is identical (k never hides a site)
+//   - `n` is identical (k never makes a site look smaller than it is)
+//   - only `detail` and the PRESENCE of `candidates` may differ
+//   - `candidates` is ABSENT (#f) when elided — never '() — so a 27-way site can
+//     never read as "no candidates" to a careless consumer
+//
+// If this fails, the knob has become the silent false negative that the entire
+// finding shape was designed to make impossible.
+func TestDispatch_KInvariant(t *testing.T) {
+	c := qt.New(t)
+	engine := newBeliefEngine(t)
+
+	eval(t, engine, `(import (wile goast dispatch) (wile goast utils))`)
+	eval(t, engine, `(define k1    (dispatch-sites `+dispatchPkg+` 1))`)
+	eval(t, engine, `(define k8    (dispatch-sites `+dispatchPkg+` 8))`)
+	eval(t, engine, `(define kbig  (dispatch-sites `+dispatchPkg+` 1000))`)
+
+	// Same number of sites at every k.
+	c.Assert(eval(t, engine, `
+		(and (= (length k1) (length k8)) (= (length k8) (length kbig)))`).Internal(),
+		qt.Equals, values.TrueValue)
+
+	// n is identical, site by site, at every k.
+	c.Assert(eval(t, engine, `
+		(let loop ((a k1) (b k8) (c kbig))
+		  (cond ((null? a) #t)
+		        ((and (= (dispatch-n (car a)) (dispatch-n (car b)))
+		              (= (dispatch-n (car b)) (dispatch-n (car c))))
+		         (loop (cdr a) (cdr b) (cdr c)))
+		        (else #f)))`).Internal(), qt.Equals, values.TrueValue)
+
+	// candidates is #f when elided — never '(). At k=1, every site with n>1 is
+	// elided, and every one of them must report #f.
+	c.Assert(eval(t, engine, `
+		(let loop ((l k1))
+		  (cond ((null? l) #t)
+		        ((> (dispatch-n (car l)) 1)
+		         (if (eq? (dispatch-candidates (car l)) #f)
+		             (loop (cdr l))
+		             #f))
+		        (else (loop (cdr l)))))`).Internal(), qt.Equals, values.TrueValue)
+
+	// At a large k nothing is elided: every site enumerates, and the enumeration
+	// length equals n.
+	c.Assert(eval(t, engine, `
+		(let loop ((l kbig))
+		  (cond ((null? l) #t)
+		        ((eq? (dispatch-detail (car l)) 'elided) #f)
+		        ((and (> (dispatch-n (car l)) 0)
+		              (not (= (length (dispatch-candidates (car l)))
+		                      (dispatch-n (car l))))) #f)
+		        (else (loop (cdr l)))))`).Internal(), qt.Equals, values.TrueValue)
+}
