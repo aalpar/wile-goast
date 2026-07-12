@@ -370,6 +370,5 @@ func TestSSAMakeInterface_Concrete(t *testing.T) {
 		                                (assq 'concrete (cdr (car is))))
 		                           (cdr (assq 'concrete (cdr (car is)))))
 		                          (else (iloop (cdr is))))))))))`)
-	// Result should be a string (the concrete type), not #f.
-	c.Assert(result.SchemeString(), qt.Not(qt.Equals), "#f")
+	c.Assert(result.Internal(), qt.Not(qt.Equals), values.FalseValue)
 }
