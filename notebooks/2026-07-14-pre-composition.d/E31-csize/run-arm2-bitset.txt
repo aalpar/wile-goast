@@ -1,0 +1,54 @@
+TARGET            /Users/aalpar/projects/wile-workspace/wile
+load+ssa          674ms
+extract           169ms
+
+functions         29151
+nodes             850295
+objects           77001
+constraints       832233
+  addr               77001
+  copy              255666
+  gep               390610
+  load               57541
+  store              43763
+  invoke              5143
+  icall               2509
+
+─── SOLVE (difference propagation; SPARSE BITSET carrier; no HVN, no cycle elim) ───
+status            TIMED OUT after 10m0s
+wall              10m0.103s
+propagations      76840622
+SET UNIONS        419324776
+element ops       9219029
+worklist pops     4583424
+copy edges        4475089
+nodes w/ pts      297817
+total pts size    76840622
+MEAN |pts|        258.01
+dispatch resolved 79207
+heap              2268 MB
+
+─── CARRIER DENSITY (is the bit vector actually a bit vector?) ───
+id space (nodes)  850295
+object id span    850293
+pts blocks used   15863174
+BITS SET / BLOCK  4.84  (out of 256)
+bytes / pair      11.6  (56B per block)
+      602.97 real       611.21 user         3.73 sys
+          2843541504  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+              185428  page reclaims
+                   7  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                   0  messages sent
+                   0  messages received
+               25869  signals received
+                4611  voluntary context switches
+              212243  involuntary context switches
+       1937494340470  instructions retired
+       2548827765024  cycles elapsed
+          2840300088  peak memory footprint

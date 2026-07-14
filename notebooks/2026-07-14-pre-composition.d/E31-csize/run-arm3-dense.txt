@@ -1,0 +1,54 @@
+TARGET            /Users/aalpar/projects/wile-workspace/wile
+load+ssa          709ms
+extract           181ms
+
+functions         29151
+nodes             850295
+objects           77001
+constraints       832233
+  addr               77001
+  copy              255666
+  gep               390610
+  load               57541
+  store              43763
+  invoke              5143
+  icall               2509
+
+─── SOLVE (difference propagation; SPARSE BITSET over a DENSE OBJECT ID SPACE) ───
+status            TIMED OUT after 10m0s
+wall              10m0.284s
+propagations      142764258
+SET UNIONS        1586229172
+element ops       17351303
+worklist pops     10811392
+copy edges        8148686
+nodes w/ pts      309779
+total pts size    142764258
+MEAN |pts|        460.86
+dispatch resolved 104095
+heap              1779 MB
+
+─── CARRIER DENSITY ───
+node id space     850295
+ELEMENT SPACE (M) 90340   (compaction 9.41x)
+pts blocks used   6578180
+BITS SET / BLOCK  21.70  (out of 256)
+bytes / pair      2.6  (56B per block)
+      603.27 real       609.66 user         3.68 sys
+          2342715392  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+              154740  page reclaims
+                   0  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                   0  messages sent
+                   0  messages received
+               26711  signals received
+                1838  voluntary context switches
+              172445  involuntary context switches
+       2820394705223  instructions retired
+       2646055727400  cycles elapsed
+          2339260648  peak memory footprint

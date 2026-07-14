@@ -1,0 +1,214 @@
+E31 -- REFUTED. The container is not the lever. Three carriers, none converges,
+       and the hash map is the FASTEST of the three.
+
+=================== WHAT WAS TESTED ===================
+
+E30 eliminated extractor precision and solve schedule as explanations for why
+whole-program Andersen does not converge on wile, and concluded the cost is
+intrinsic. E31 declared that conclusion premature: a third explanation was
+never considered. go/pointer's own doc.go says it represents points-to sets as
+SPARSE BIT VECTORS, "more space- and time-efficient than sets based on Go's
+built-in map type" -- and the E30 solver used precisely a map[int]bool.
+
+The hypothesis: the 32.3 billion "membership tests" are an artifact of the
+CONTAINER, not a property of the fixpoint. Swap the carrier's representation,
+change nothing else, and the solve converges.
+
+THREE ARMS. Identical extractor (main.go byte-for-byte identical across all
+three; `diff -q` verified). Identical six constraint forms, identical lfp(F),
+identical difference-propagation schedule. No HVN. No cycle elimination.
+All three pinned to x/tools v0.42.0. ALL THREE VALIDATED 126/126 AGAINST THE
+go/pointer ORACLE before being trusted on wile.
+
+  arm 1  map        map[int]bool, elements are node ids   (the E30 baseline)
+  arm 2  bitset     intsets.Sparse, elements are node ids (the naive swap)
+  arm 3  dense      intsets.Sparse, elements are COMPACTED object ids
+
+Arm 3 exists because arm 2 exposed a defect in arm 2. See DENSITY below.
+
+=================== THE RESULT ===================
+
+wile, 29,151 functions / 850,295 nodes / 77,001 objects / 832,233 constraints.
+Same 10-minute budget, same machine, same program, one at a time.
+
+  metric                  map           bitset         dense
+  --------------------    -----------   -----------    -----------
+  status                  TIMED OUT     TIMED OUT      TIMED OUT
+  TOTAL PTS PAIRS         158,992,115    76,840,622    142,764,258
+  mean |pts|                   509.28        258.01         460.86
+  dispatch resolved           121,628        79,207        104,095
+  copy edges                8,784,290     4,475,089      8,148,686
+  worklist pops            12,674,048     4,583,424     10,811,392
+  peak RSS                    8.61 GB       2.65 GB        2.18 GB
+  instructions retired        8.12e12       1.94e12        2.82e12
+  cycles                      2.45e12       2.55e12        2.65e12
+  IPC                            3.31          0.76           1.06
+
+NOTHING CONVERGES. And the ranking is the opposite of the hypothesis: the HASH
+MAP gets furthest up the Kleene chain. Since neither run reaches lfp, the only
+sound cross-arm progress metric is TOTAL PTS PAIRS (the chain is monotone
+increasing, so more pairs = further along). The map reaches 159.0M; the best
+bitset reaches 142.8M, i.e. 90% of the map's progress in the same wall time.
+
+E31's hypothesis, as pre-registered, IS REFUTED.
+
+=================== THE DENSITY DEFECT, AND WHY ARM 3 EXISTS ===================
+
+Arm 2 was not a fair test of the hypothesis, and its own diagnostics said so:
+
+  BITS SET / BLOCK   4.84  (out of 256)     <-- 1.9% occupancy
+  bytes / pair       11.6  (56B per block)
+
+An intsets.Sparse block is 56 bytes covering 256 consecutive ids. At 4.84 bits
+set per block the "bit vector" is a linked list of near-empty blocks, and every
+word-parallel union the hypothesis was buying is gone.
+
+CAUSE: main.go draws value nodes and object nodes from ONE counter (fresh() and
+obj() both bump b.nNodes). Measured object id span: 850,293 out of 850,295. So
+the 77,001 object ids are sprayed across the ENTIRE node id space, interleaved
+with ~773k value nodes that can never appear in a points-to set. A bit vector
+indexed by node id is therefore ~90% structurally guaranteed empty.
+
+A bit vector only beats a hash map when co-occurring elements are NUMERICALLY
+ADJACENT. Arm 2 imported the container without the numbering that makes it work.
+
+ARM 3 fixes exactly that: compact the element space, so every object sub-node
+gets a contiguous index in [0, M). A BIJECTION on the element set -- same
+lattice, same transfer functions, same lfp, same schedule. Still 126/126.
+
+  ELEMENT SPACE (M)  90,340    (compaction 9.41x)
+  BITS SET / BLOCK   21.70     (up 4.5x from arm 2)
+  bytes / pair       2.6       (down from 11.6)
+
+The compaction did everything it was supposed to do. Memory fell to 2.18 GB,
+FOUR TIMES BELOW THE HASH MAP. And it still propagates 10% fewer pairs than the
+map in the same wall clock, and it still does not converge.
+
+=================== WHY THE BITSET LOSES. THIS IS THE FINDING ===================
+
+SPARSE BITSETS AND DIFFERENCE PROPAGATION ARE ANTAGONISTIC.
+
+intsets keeps blocks in a sorted linked list, so Difference(delta, pts[dst])
+followed by UnionWith is a MERGE WALK costing O(blocks(delta) + blocks(pts[dst])).
+The cost is dominated by the size of the TARGET, not the size of the delta.
+
+The hash map's cost is O(|delta|): one hash op per object, and it never touches
+the target's other elements.
+
+So the bitset wins only when |pts[dst]|/256 < |delta|. But DIFFERENCE PROPAGATION
+EXISTS PRECISELY TO MAKE DELTAS TINY. At the measured mean |pts| of 461 (~21
+blocks), the bitset walks ~21 blocks -- pointer-chasing, one cache miss each --
+to insert the two or three elements the map inserts in two or three hash ops.
+
+The instruction counters say it outright. The dense bitset retires 2.9x FEWER
+instructions than the map and gets 10% LESS DONE, in the same cycles: IPC 1.06
+against the map's 3.31. It is not compute-bound. It is STALLED ON MEMORY.
+
+THE BETTER THE SCHEDULE, THE WORSE THE BITSET'S RELATIVE POSITION. The two
+optimizations are subtractive, and E31 assumed they would compound.
+
+Why go/pointer gets away with it: its points-to sets are SMALL (single digits),
+so blocks(pts) ~= 1 and the merge walk is free. go/pointer did not pick a magic
+container. It runs HVN first and analyzes non-adversarial targets, which keeps
+|pts| small enough for the container to pay off. THE CONTAINER WAS NEVER DOING
+THE WORK E31 CREDITED IT WITH.
+
+=================== THE WILE PROJECTION, WHICH IS THE POINT ===================
+
+E31 argued: 151M pairs is only ~19 MB of bits, therefore not an intractable
+object, therefore representation is the lever.
+
+The STORAGE claim is true and irrelevant. The dense arm confirms it: 2.6 bytes
+per pair, 2.18 GB total, 4x better than the map.
+
+The OPERATION count is untouched. The dense arm performs 1,586,229,172 SET
+UNIONS in 600 s = 2.6M unions/sec. Wile runs ~62x slower than Go (E29), so
+~42k unions/sec => those same unions take ~10.5 HOURS -- and that run has still
+not converged.
+
+Representation buys a 4x memory win and ZERO operations. It does not touch a
+100x gap. There is no version of this where the Scheme solver runs.
+
+=================== WHAT THIS SETTLES ===================
+
+E30's core claim SURVIVES A THIRD ELIMINATION. The blowup is not extractor
+precision (E30), not the schedule (E30), and not the carrier's representation
+(this entry). The solution is genuinely large and no container avoids
+materializing it.
+
+E31 was right that E30 had not considered the container, and right that the
+question was cheap and decisive. It was WRONG about which way it would fall, and
+wrong in a way worth naming: it reasoned from a quoted sentence in doc.go
+("more space- and time-efficient than ... map") to a 100x, without asking what
+that efficiency is a function of. It is a function of |pts| and of adjacency,
+and on this target both are hostile.
+
+=================== WHAT IT DOES *NOT* SETTLE ===================
+
+It says NOTHING about accuracy. This notebook's thesis, and the algebraic-bet
+notebook's thesis, are both about accuracy. This is a cost result.
+
+AND THE TARGET IS ADVERSARIAL, WHICH BOUNDS THE CLAIM. wile is a Scheme
+interpreter: one eval, a universal Value type, generic environments. Everything
+flows through everything. A mean points-to set of ~500 is what context-
+INSENSITIVITY does to an interpreter, and no container and no schedule fixes an
+imprecision that large. The supported claim is:
+
+  "Whole-program context-insensitive Andersen does not converge on wile within
+   10 minutes under any of three representations."
+
+NOT "Andersen is intractable on Go." A less self-referential Go program may well
+converge. That has not been tested.
+
+=================== WHAT IS LEFT ===================
+
+The solution is large because the ANALYSIS IS IMPRECISE on this program. The
+remedy for that is not a better container and not a better schedule. It is to
+stop materializing the whole solution:
+
+  * DEMAND-DRIVEN / CFL-reachability: answer a query without computing lfp
+    everywhere. E31 pre-registered this as the fallback if the container failed.
+    The container has failed.
+  * CONTEXT SENSITIVITY: attack mean |pts| = 509 at its source. Expensive, and
+    it makes the fixpoint bigger before it makes it smaller.
+
+HVN is NOT the answer either, and C7 already established why: its own PERFORMANCE
+section reports a net ~1.3x. The gap is ~100x.
+
+=================== HARNESS NOTES / TRAPS HIT ===================
+
+TWO CONFOUNDS WERE HIT AND KILLED DURING THIS RUN. Both would have produced a
+publishable-looking number.
+
+1. A stray `go get golang.org/x/tools/container/intsets` SILENTLY UPGRADED
+   x/tools from v0.42.0 to v0.48.0 in the bitset module. A different x/tools is
+   a different go/ssa builder, hence a DIFFERENT PROGRAM: 96,965 objects instead
+   of 76,938. The first bitset run compared a bitset on program A against a map
+   on program B and would have attributed the difference to "representation."
+   The go get was unnecessary in the first place -- intsets already ships inside
+   x/tools v0.42.0.
+
+   THE TELL: gep (390,585), invoke (5,143) and icall (2,501) came out
+   byte-identical across the two runs while addr moved by 20,027. A changed
+   source tree perturbs everything a little; a changed SSA builder perturbs
+   allocation-shaped things while leaving field/call structure alone. The
+   residual pattern named the cause. All three arms were then re-pinned and
+   re-run.
+
+2. The wile working tree drifted mid-experiment (29,130 -> 29,151 functions).
+   The map arm was RE-RUN so that all three arms sit on one snapshot. The two
+   map runs agree to within 1% (158,992,115 vs 160,508,056 pairs), so the drift
+   was immaterial -- but it was checked rather than assumed.
+
+VALIDATION IS NOT OPTIONAL HERE, and E29 is why: E29's bug #2 UNDER-APPROXIMATED
+and CONVERGED IN 3.3 SECONDS. A fast wrong answer. Convergence without oracle
+agreement is worthless, so every arm was validated 126/126 against the vendored
+go/pointer oracle BEFORE being run on wile.
+
+  arm 1  map      126 agree, 0 differ
+  arm 2  bitset   126 agree, 0 differ
+  arm 3  dense    126 agree, 0 differ
+
+The map arm reproduces E30's extraction exactly (849,982 nodes / 76,938 objects
+/ 831,965 constraints on the pre-drift snapshot), which is what licenses calling
+it the E30 baseline.

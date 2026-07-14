@@ -259,22 +259,32 @@ conservatively excluded.
 `pointer/doc.go` states that `go/pointer` represents points-to sets as **sparse bit
 vectors**, "more space- and time-efficient than sets based on Go's built-in map type."
 
-The measurement in [[2026-07-14-pre-composition/E30]] used exactly a hash map, and spent
-32.3 billion membership tests without converging. Under a bit vector there are no
-per-element membership tests: a union is a word-parallel OR, roughly 8 word operations at
-the measured mean set size of 486 where a map performs 486 hash lookups.
-
-**The solution size is intrinsic; the operation count is not.** 151 million points-to pairs
-is what the analysis *means*. It is also about 19 MB of bits. That is not an intractable
-object; it is an object for which a hash map is the wrong container.
-
 **The operator laws say nothing about how a lattice element is stored.** Associativity,
 idempotence, absorption, distributivity, monotonicity: none of them constrain the encoding
 of a set. Representation is therefore a decision made strictly *below* the algebra,
 invisible to the composition rules, and it **cannot forfeit the bet however clever it
-gets**. It is the only escape hatch identified so far that costs the bet nothing.
+gets**. That principle is sound and it still stands.
 
-Which relocates the risk rather than removing it, and section 11 is where that lands.
+**What does not stand is the inference this section originally drew from it.** It read the
+`doc.go` sentence above and concluded that [[2026-07-14-pre-composition/E30]]'s 32.3
+billion membership tests were an artifact of the *container* rather than a property of the
+fixpoint — that "the solution size is intrinsic; the operation count is not," and that 151M
+pairs is "an object for which a hash map is the wrong container."
+
+**[[2026-07-14-pre-composition/E31]] measured that, and it is false.** Three carriers,
+identical everything else, each validated 126/126: none converges, and `map[int]bool` is
+the **fastest of the three**. A compacted `intsets.Sparse` wins 4× on memory and **zero on
+operations**. The error was reasoning from "bit vectors are more time-efficient than maps"
+to a 100×, without asking what that efficiency is a *function of*. It is a function of
+`|pts|` and of **adjacency**, and on this target both are hostile: a bit-vector union is a
+merge walk costing `O(blocks(target))` against a hash insert's `O(|delta|)`, and difference
+propagation exists precisely to make deltas tiny. **The two optimizations are subtractive,
+not compounding.** `go/pointer` gets away with it because HVN plus benign targets keep its
+`|pts|` in single digits, so the walk is free.
+
+So representation remains free to try and cannot cost the bet anything — and trying it
+bought nothing. It is an escape hatch that is real in principle and **empty in fact**.
+Section 11 is where that lands.
 
 The vendored oracle contains both barred optimizations (`pointer/hvn.go`,
 `pointer/opt.go`). They stay as a reference for the fast path, and as the fallback if the
@@ -344,22 +354,38 @@ the same silent-failure shape E27 found in the oracle, one layer down.
 4. **Validate on the corpora.** 126/126 against the oracle. This is the only place a hard
    exactness gate is available, because the corpora are generics-free.
 5. **Lift `precise.go:66`.** Expose `'andersen` in the call-graph menu.
-5b. **Settle the representation question before anything else about cost.**
-   [[2026-07-14-pre-composition/E31]]: swap the points-to set from a hash map to a sparse
-   bit vector in the Go reference solver, change nothing else, re-validate 126/126, re-run
-   wile. One container swap, decisive in both directions, and it gates every cost judgment
-   downstream. **Do not tune, do not adopt HVN, and do not pivot to demand-driven CFL until
-   this has run** — all three are answers to a diagnosis that has not been confirmed.
+5b. ~~**Settle the representation question before anything else about cost.**~~ **DONE, and
+   it came back negative.** [[2026-07-14-pre-composition/E31]] ran the container swap
+   (three carriers, one variable, each validated 126/126) and **refuted** it: nothing
+   converges, and the hash map is the *fastest* of the three. A compacted sparse bit vector
+   buys 4× on memory and nothing on operations. Sparse bit vectors and difference
+   propagation are antagonistic — a bit-vector union costs `O(blocks(target))` while a hash
+   insert costs `O(|delta|)`, and difference propagation exists to make deltas tiny.
 
-   Then the Wile-side form of the same question: can `P(Object)` be represented efficiently
-   *inside Wile*? Its native set is a list, which for this carrier is the worst available
-   choice. If the answer is no, that is a fact about the substrate, not about the algebra
-   (section 8b), and it must be recorded as such.
+   **The gate this step imposed is therefore lifted, and the answer it was waiting for is
+   "no."** Tuning, HVN, and demand-driven CFL are no longer blocked on an unconfirmed
+   diagnosis. The diagnosis is confirmed: **the cost is intrinsic**, having survived
+   precision (E30), schedule (E30), and representation (E31).
+
+   The Wile-side form of the question is now **moot, not open**. It asked whether
+   `P(Object)` can be represented efficiently *inside Wile*, whose native set is a list.
+   That question presupposed the carrier was the bottleneck. In Go it was not — the *hash
+   map won* — so a better Wile carrier cannot buy what this design needs. Do not spend
+   effort there.
+
+5c. **Before abandoning the whole-program route, test a non-adversarial target.** wile is a
+   Scheme interpreter (one `eval`, a universal `Value` type, generic environments), which is
+   close to the worst case for context-*insensitive* points-to: mean `|pts|` = 509. What E31
+   establishes is that the analysis does not converge **on wile**, not that it cannot
+   converge on Go. Run the same solver on a Go program with ordinary dataflow (a CLI, a
+   server) and see whether `|pts|` stays small. Cheap, and it decides whether the intrinsic
+   cost is a property of Andersen or a property of interpreters.
 
 6. **Run on real Go** (wile itself, ~11.9k call-graph nodes under `'cha`/`'vta`). Two
    distinct questions, and only one of them has a method:
-   - *Does it finish?* Measured, and today the answer is **no** (E29, E30). Gated on 5b
-     before that answer means anything about the algebra.
+   - *Does it finish?* Measured, and the answer is **no** (E29, E30, E31) — on wile, under
+     every representation tried. No longer gated on 5b: 5b has run. Gated on **5c** before
+     the answer is generalized from *wile* to *Go*.
    - *Is it right?* **No oracle exists here** (section 9). Soundness envelope plus
      audited spot checks is the best currently available, and closing that properly is
      its own work item.
@@ -378,32 +404,61 @@ defect in the extractor moved mean set size by 7.8% while oracle agreement held 
 so it is not an artifact of the extractor. No permitted *schedule* helps; difference
 propagation fails further into the blowup than naive iteration does.
 
-**But the diagnosis is not what it looks like, and section 8b is why.** That measurement
-represented points-to sets as `map[int]bool`, which is precisely the container
-`pointer/doc.go` names as the slow one. The 32.3 billion operations are a property of the
-container, not of the fixpoint. **The solution size (151M pairs, ~19 MB as bits) is
-intrinsic; the operation count is not.**
+**And the diagnosis is exactly what it looks like. The representation defence is dead,
+measured.** [[2026-07-14-pre-composition/E31]] ran the container swap this section once
+staked its hopes on, and it **refuted** it. Three carriers, one variable, identical
+extractor, identical `lfp(F)`, identical schedule, each validated 126/126 against the
+oracle before being trusted on wile:
 
-The open experiment is [[2026-07-14-pre-composition/E31]]: swap in a sparse bit vector,
-change nothing else, re-validate 126/126, re-run wile. It is decisive in both directions.
-If it converges, the whole-program route is alive and this section is wrong. If it does
-not, the cost is intrinsic, that claim will have survived the three explanations that could
-have defeated it (precision, schedule, representation), and the design must pivot to
-demand-driven CFL or abandon real-code coverage.
+| carrier | total pts pairs in 10 min | peak RSS | status |
+|---|---|---|---|
+| `map[int]bool` (the E30 baseline) | **158,992,115** | 8.61 GB | timed out |
+| `intsets.Sparse`, node ids | 76,840,622 | 2.65 GB | timed out |
+| `intsets.Sparse`, compacted object ids | 142,764,258 | **2.18 GB** | timed out |
 
-**Where the risk really sits, for the Scheme half.** Wile's native set is a **list**, and
-for a carrier of this size a list is the worst available representation. The cost question
-for `(wile goast andersen)` was never "is the algebra tractable." It is **"can `P(Object)`
-be represented efficiently inside Wile."** That is a representation question wearing an
-algebra question's clothes, and it is the one to answer.
+**None converges, and the hash map is the fastest of the three.** A compacted bit vector
+wins 4× on memory and **zero** on operations, and operations are the only quantity the
+Scheme projection depends on. The reason is structural and generalizes: **sparse bit
+vectors and difference propagation are antagonistic.** A bit-vector union is a merge walk
+costing `O(blocks(target))`; a hash insert costs `O(|delta|)`; and difference propagation
+exists precisely to make deltas tiny. The better the schedule, the worse the bit vector.
+`go/pointer` escapes this only because HVN and non-adversarial targets keep its `|pts|` in
+single digits, so the walk is free — a fact about *its* inputs, not about the container.
 
-**If the cost turns out to be intrinsic after all, record what it does and does not show.**
-It would refute the algebra as an *implementation substrate* for whole-program analysis at
-scale. It would say nothing whatever about the accuracy claim, which is what E26 set out to
-measure, and the three-arm experiment would still run on the corpora, where the constraint
-sets are small. **A slow container is not a wrong theory**, and neither is a slow
-interpreter: if the algebra fails here it must be for a reason attributable to its
-operators, not to the substrate they happen to be written in.
+So the cost **is** intrinsic, and that claim now stands having survived all three
+explanations that could have defeated it: **precision** (E30), **schedule** (E30), and
+**representation** (E31). Section 8b's *principle* is untouched — representation really
+does sit below the algebra and really could not have forfeited the bet — but as an
+*escape hatch* it is empirically empty.
+
+**Where the risk really sits, now that the carrier is exonerated.** The pre-E31 framing
+was that the cost question "was never 'is the algebra tractable' but 'can `P(Object)` be
+represented efficiently inside Wile.'" That framing is **wrong**, and E31 is why: the
+container was not the problem. The hash map beat both bit vectors. Wile's list-backed set
+is still a bad carrier, but fixing it cannot buy what this design needs, because fixing the
+carrier in *Go* bought nothing.
+
+The cost is intrinsic **because the analysis is imprecise on this program**: mean `|pts|`
+of 509 across ~312k nodes is 159M pairs and still climbing at the cutoff. Imprecision is
+not answerable by a container or a schedule. It is answerable only by not materializing the
+whole solution (demand-driven CFL) or by attacking `|pts|` at its source (context
+sensitivity, which makes the fixpoint bigger before it makes it smaller).
+
+**But bound the claim, because the target is adversarial.** wile is a Scheme interpreter:
+one `eval`, a universal `Value` type, generic environments. Everything flows through
+everything, and a mean points-to set of ~500 is what context-*insensitivity* does to an
+interpreter. What is established is *"whole-program context-insensitive Andersen does not
+converge on wile within 10 minutes under any of three representations"* — **not**
+*"Andersen is intractable on Go."* A less self-referential Go program may well converge,
+and that has not been tested. Testing it is cheap and is the obvious next move before
+abandoning the whole-program route.
+
+**What this does and does not show.** It bears on the algebra as an *implementation
+substrate* for whole-program analysis at this scale, on this target. It says **nothing
+whatever** about the accuracy claim, which is what E26 set out to measure, and the
+three-arm experiment still runs on the corpora, where the constraint sets are small. **A
+slow container is not a wrong theory** — and E31's finding is that the container was not
+even slow, so the cost cannot be charged to the substrate at all.
 
 **The barred optimizations are a partial escape hatch, and taking them has a cost.** If
 step 6 fails on performance, `hvn.go`/`opt.go` show the fast path. Adopting them buys a

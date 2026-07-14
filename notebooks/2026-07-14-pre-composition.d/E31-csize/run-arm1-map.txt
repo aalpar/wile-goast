@@ -1,0 +1,45 @@
+TARGET            /Users/aalpar/projects/wile-workspace/wile
+load+ssa          697ms
+extract           225ms
+
+functions         29151
+nodes             850295
+objects           77001
+constraints       832233
+  addr               77001
+  copy              255666
+  gep               390610
+  load               57541
+  store              43763
+  invoke              5143
+  icall               2509
+
+─── SOLVE (difference propagation; no HVN, no cycle elimination) ───
+status            TIMED OUT after 10m0s
+wall              10m0.106s
+propagations      158992115
+MEMBERSHIP TESTS  34707032480
+worklist pops     12674048
+copy edges        8784290
+nodes w/ pts      312192
+total pts size    158992115
+MEAN |pts|        509.28
+dispatch resolved 121628
+      601.49 real       603.71 user         5.69 sys
+          9246244864  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+              856001  page reclaims
+                 314  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                   0  messages sent
+                   0  messages received
+               26768  signals received
+                1898  voluntary context switches
+              220654  involuntary context switches
+       8118748580352  instructions retired
+       2446967253648  cycles elapsed
+          9812057504  peak memory footprint
