@@ -1,0 +1,27 @@
+TARGET            /Users/aalpar/projects/wazero
+load+ssa          524ms
+extract           77ms
+
+functions         15899
+nodes             351539
+objects           38242
+constraints       339582
+  addr               38242
+  copy              129287
+  gep               120942
+  load               27564
+  store              19172
+  invoke              3505
+  icall                870
+
+─── SOLVE (difference propagation; no HVN, no cycle elimination) ───
+status            TIMED OUT after 1m0s
+wall              1m0.181s
+propagations      43479858
+MEMBERSHIP TESTS  4943688546
+worklist pops     993280
+copy edges        1912312
+nodes w/ pts      178684
+total pts size    43479858
+MEAN |pts|        243.33
+dispatch resolved 15076

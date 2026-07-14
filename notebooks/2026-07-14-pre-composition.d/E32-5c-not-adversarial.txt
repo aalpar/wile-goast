@@ -1,0 +1,19 @@
+5c — is the non-convergence a property of INTERPRETERS or of ANDERSEN-on-Go?
+Map carrier (E31's fastest), 60s budget, ssa.InstantiateGenerics. mean |pts| at 60s.
+
+target     kind          functions  constraints  mean|pts|   status
+-------------------------------------------------------------------------------
+wazero     interpreter       15899       339582     243.33  timeout
+wile       interpreter       29120       831546     169.62  timeout
+ollama     ordinary          49381      1251277     150.33  timeout
+etcd       ordinary          52905      1188306     150.50  timeout
+kopia      ordinary          92125      2316134      68.84  timeout
+kubectl    ordinary          97188      1959027      52.64  timeout
+rclone     ordinary         121101      3697462      88.01  timeout
+
+NONE converges. Ordinary CLIs/servers behave exactly like the two interpreters.
+E31's 'wile is an adversarial target' caveat is REFUTED: the blowup is not special to wile.
+
+go/pointer (the oracle) cannot be run on ANY of these to get a head-to-head:
+  generics panic / *types.Alias / nil-deref, even with GODEBUG=gotypesalias=0.
+  Confirms the design's stated hole: there is no oracle for real Go.

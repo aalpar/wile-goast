@@ -1,0 +1,27 @@
+TARGET            /Users/aalpar/projects/ollama
+load+ssa          19.042s
+extract           365ms
+
+functions         49381
+nodes             1303845
+objects           121452
+constraints       1251277
+  addr              121452
+  copy              419493
+  gep               545032
+  load               86607
+  store              59221
+  invoke             16744
+  icall               2728
+
+─── SOLVE (difference propagation; no HVN, no cycle elimination) ───
+status            TIMED OUT after 1m0s
+wall              1m0.008s
+propagations      69709978
+MEMBERSHIP TESTS  3948710178
+worklist pops     5997568
+copy edges        2769877
+nodes w/ pts      463708
+total pts size    69709978
+MEAN |pts|        150.33
+dispatch resolved 35106

@@ -125,7 +125,10 @@ containers, not within one.
 
 ## 5. Constraint forms
 
-Six, all emitted statically by Go.
+Eight, all emitted statically by Go. (The design originally specified six; the two
+type-assertion forms were added after [[2026-07-14-pre-composition/E33]] found that
+omitting them made every `x.(T)` leak the whole interface points-to set. `go/pointer` has
+had both since always — `pointer/solve.go` has eight solve methods, `pointer/gen.go:388`.)
 
 | Form | Meaning |
 |------|---------|
@@ -135,12 +138,16 @@ Six, all emitted statically by Go.
 | `(load p q)` | `∀o ∈ pts(q): pts(p) ⊇ pts(o)` |
 | `(store p q)` | `∀o ∈ pts(p): pts(o) ⊇ pts(q)` |
 | `(invoke recv m args ret)` | `∀o ∈ pts(recv)`: look up `impl(type(o), m)`; wire args to params, result to ret |
+| `(tfilter p q I)` | `p = q.(I)`, `I` an interface: `pts(p) ⊇ {o ∈ pts(q) : AssignableTo(type(o), I)}` |
+| `(untag p q C)` | `p = q.(C)`, `C` concrete: `∀o ∈ pts(q) with Identical(type(o), C): pts(p) ⊇ pts(o)` |
 
 Field sensitivity lives entirely in `gep`, so `load` and `store` stay field-free
 dereferences.
 
-The last three are dynamic: each quantifies over a points-to set and adds copy edges as
-that set grows.
+The last five are dynamic: each quantifies over a points-to set and adds copy edges (or,
+for the two type-assertion forms, filters objects by dynamic type) as that set grows.
+`tfilter` keeps the tagged object itself (the result is still an interface); `untag` copies
+out its payload (the result is the concrete value). Both are `exact` for a `TypeAssert`.
 
 ## 6. Interface dispatch is a load
 
@@ -373,13 +380,15 @@ the same silent-failure shape E27 found in the oracle, one layer down.
    map won* — so a better Wile carrier cannot buy what this design needs. Do not spend
    effort there.
 
-5c. **Before abandoning the whole-program route, test a non-adversarial target.** wile is a
-   Scheme interpreter (one `eval`, a universal `Value` type, generic environments), which is
-   close to the worst case for context-*insensitive* points-to: mean `|pts|` = 509. What E31
-   establishes is that the analysis does not converge **on wile**, not that it cannot
-   converge on Go. Run the same solver on a Go program with ordinary dataflow (a CLI, a
-   server) and see whether `|pts|` stays small. Cheap, and it decides whether the intrinsic
-   cost is a property of Andersen or a property of interpreters.
+5c. ~~**Before abandoning the whole-program route, test a non-adversarial target.**~~ **DONE
+   ([[2026-07-14-pre-composition/E32]]), and the "adversarial target" hope is refuted.** The
+   map solver was run on seven real Go programs — two interpreters (wile, wazero) and five
+   ordinary ones (ollama, etcd, kopia, kubectl, rclone). **All seven time out**, ordinary
+   CLIs and servers exactly like the interpreters, with mean `|pts|` (52–243 @60s) showing
+   no interpreter/ordinary split. The non-convergence is a property of context-insensitive
+   Andersen on real Go, not of wile and not of interpreters. `go/pointer` cannot be run on
+   any of the seven (generics / `*types.Alias` / nil-deref), so no head-to-head is available
+   — the "no oracle for real Go" hole biting where it matters most.
 
 6. **Run on real Go** (wile itself, ~11.9k call-graph nodes under `'cha`/`'vta`). Two
    distinct questions, and only one of them has a method:
@@ -444,14 +453,18 @@ not answerable by a container or a schedule. It is answerable only by not materi
 whole solution (demand-driven CFL) or by attacking `|pts|` at its source (context
 sensitivity, which makes the fixpoint bigger before it makes it smaller).
 
-**But bound the claim, because the target is adversarial.** wile is a Scheme interpreter:
-one `eval`, a universal `Value` type, generic environments. Everything flows through
-everything, and a mean points-to set of ~500 is what context-*insensitivity* does to an
-interpreter. What is established is *"whole-program context-insensitive Andersen does not
-converge on wile within 10 minutes under any of three representations"* — **not**
-*"Andersen is intractable on Go."* A less self-referential Go program may well converge,
-and that has not been tested. Testing it is cheap and is the obvious next move before
-abandoning the whole-program route.
+**The "adversarial target" bound is refuted, and the real cause is now identified.**
+[[2026-07-14-pre-composition/E32]] ran the solver on seven real Go programs; all seven blow
+up, ordinary CLIs/servers just like the interpreters, so the cost is **not** a property of
+wile. [[2026-07-14-pre-composition/E33]] then found the signature: the blowup is
+concentrated in ~6% of nodes carrying ~3,000-element sets, and one `*errors.errorString`
+object reaches 28,671 distinct nodes. This is **context-insensitive hot-allocator
+flooding** — one abstract object per allocation site, reaching everywhere errors flow. E33
+also eliminated the last two candidate levers: adding the missing type-filter constraint
+(see §5) bought 12% and cycle elimination is inapplicable (the copy graph is nearly
+acyclic, largest SCC ≤ 37). The only remaining levers act on set size at its source:
+**context sensitivity** (the direct cure, expensive) or **HVN** if the god-set nodes are
+pointer-equivalent (untested; §8a shows HVN is algebraic).
 
 **What this does and does not show.** It bears on the algebra as an *implementation
 substrate* for whole-program analysis at this scale, on this target. It says **nothing

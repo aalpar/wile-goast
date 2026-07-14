@@ -1,0 +1,27 @@
+TARGET            /Users/aalpar/projects/kopia
+load+ssa          20.094s
+extract           529ms
+
+functions         92125
+nodes             2428733
+objects           243059
+constraints       2316134
+  addr              243059
+  copy              655241
+  gep              1078323
+  load              169420
+  store             143403
+  invoke             21363
+  icall               5325
+
+─── SOLVE (difference propagation; no HVN, no cycle elimination) ───
+status            TIMED OUT after 1m0s
+wall              1m0.678s
+propagations      73920595
+MEMBERSHIP TESTS  4398781783
+worklist pops     7996416
+copy edges        2842467
+nodes w/ pts      1073875
+total pts size    73920595
+MEAN |pts|        68.84
+dispatch resolved 79442

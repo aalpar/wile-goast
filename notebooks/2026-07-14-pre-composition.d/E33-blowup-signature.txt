@@ -1,0 +1,121 @@
+E33 — The blowup has a signature, and it is none of the levers tried. It is
+      context-insensitive hot-allocator flooding.
+
+=================== SETUP ===================
+
+E32 refuted "wile is adversarial": ordinary Go blows up too. This entry asks
+WHY any of it blows up. Three probes, all on the map carrier (E31's fastest),
+all keeping the 126/126 oracle agreement.
+
+=================== PROBE 1: A MISSING CONSTRAINT FORM ===================
+
+go/pointer has EIGHT constraint kinds (pointer/solve.go); the design has SIX.
+The two missing ones both FILTER:
+
+  typeFilterConstraint  dst = src.(Iface)     keep tagged o iff AssignableTo(type(o), Iface)
+  untagConstraint       dst = src.(Concrete)  keep payload of o iff Identical(type(o), Concrete)
+
+Our extractor passed EVERY type assertion through as an unfiltered copy
+(main.go: `case *ssa.TypeAssert: cCopy rs[0] node(v.X)`), so `x.(*Foo)` copied
+the WHOLE interface points-to set, not just the *Foo-typed objects. Site counts:
+
+  wile 3,949   wazero 817   ollama 5,159   etcd 3,526   rclone 10,112
+  kubectl 4,850   kopia 11,088   type assertions, every one leaking.
+
+FIXED: added cTFilter + cUntag mirroring go/pointer's typeAssert(T,dst,src,exact=true)
+(gen.go:388). Our MakeInterface already builds the tagged-object model
+(objType[o] = concrete dynamic type; the payload stored into o), so the filter
+had everything it needed. Re-validated 126/126.
+
+RESULT: it is NOT the blowup. wile mean |pts| moved 169.62 -> 148.54 at 60s
+(a 12% precision gain, real -- dispatch resolved dropped 74,145 -> 55,427 --
+but the solve still times out). A genuine correctness bug that the corpora were
+structurally blind to (they exercise `invoke`, not type assertions), and it does
+not change the cost conclusion. It is worth keeping regardless; go/pointer's
+model has it for a reason.
+
+This also settles a loose end in [[E30]]: E30 declared "the confound is dead"
+after repairing four extractor defects. There was a FIFTH (the type filter),
+invisible to the 126/126 gate. E30's CONCLUSION stands -- fixing it does not make
+the solve converge -- but its claim to have repaired all precision confounds was
+incomplete.
+
+=================== PROBE 2: THE SHAPE OF THE SOLUTION ===================
+
+|pts| histogram on wile @ 60s (type filter on), total 47.9M pairs over 322,315
+non-empty nodes:
+
+  |pts| <= 1        238,550 nodes   <- the program is MOSTLY precise
+  |pts| 2..1024      ~63,000 nodes
+  |pts| 1025..2048     2,752 nodes
+  |pts| 2049..4094    17,945 nodes  <- ~18k nodes hold ~3000-elt sets
+  MAX |pts|            4,094
+
+The blowup is NOT uniform imprecision. ~20,700 nodes (6% of non-empty) carry
+almost the entire 47.9M. The other 300,000 nodes are essentially exact.
+
+GOD OBJECT: a single `*errors.errorString` is in the points-to set of 28,671
+DISTINCT nodes. That is one allocation site (`errors.New` / `fmt.Errorf` returns
+`&errorString{...}`) producing ONE abstract object under context-INsensitivity,
+which then flows to every error-typed value in the program. Errors are
+everywhere, so the object is everywhere.
+
+This is the classic Andersen hot-allocator flood. It is DUAL to what HVN and
+cycle elimination attack (redundant pointers), and it is cured by CONTEXT
+SENSITIVITY (heap cloning), which gives each call site its own abstract object,
+not by any container, schedule, or graph rewrite.
+
+=================== PROBE 3: IS IT COPY-CYCLES? (cycle elimination's target) ===================
+
+Cycle elimination collapses strongly-connected components of the copy (subset)
+edge graph. If the ~18k god-set nodes were a few big copy-cycles, cycle
+elimination would collapse them. Tarjan SCC over the static copy graph (Phi,
+Convert, ChangeType, ChangeInterface, Slice, static-call param/arg bindings):
+
+  target    copy nodes   nontrivial SCCs   nodes in cycles   largest SCC
+  wile        175,883         1,176             2,928            21
+  ollama      321,546         1,987             5,034            37
+  etcd        251,131         1,443             3,574            37
+  kubectl     505,413         1,896             4,806            37
+
+THE COPY GRAPH IS NEARLY ACYCLIC. Largest SCC is 37 nodes; ~1-3% of nodes are in
+any cycle at all. Cycle elimination would collapse almost NOTHING. It is not the
+lever. (Caveat: this is the static copy graph; Andersen adds copy edges online
+via load/store resolution. But a nearly-acyclic static skeleton is strong
+evidence the god-sets are not primarily copy-cycles.)
+
+=================== WHAT IS NOW ELIMINATED AS THE LEVER ===================
+
+  container / representation   E31    refuted (map beats bitset)
+  solve schedule               E30    refuted (diff-prop worse than naive)
+  extractor precision          E30    refuted (7.8% on |pts|)
+  the type filter              here   refuted (12% on |pts|, still times out)
+  cycle elimination            here   refuted (copy graph is acyclic)
+
+=================== WHAT REMAINS, AND IT IS NOT A REPRESENTATION QUESTION ===================
+
+The solution is large because ONE abstract object per hot allocation site floods
+the graph under context insensitivity. Two things could touch that, and neither
+is a container or a schedule:
+
+  * CONTEXT SENSITIVITY (heap cloning, k-CFA, or object sensitivity). Attacks the
+    god-set at its source by giving errors.New's result a per-context identity.
+    Makes the fixpoint bigger before smaller; the real fix, and expensive.
+  * HVN, if -- and only if -- the ~18k god-set nodes are pointer-EQUIVALENT
+    (identical pts without being in a copy-cycle). HVN's equivalence is broader
+    than cycle-equivalence, so probe 3 does NOT rule it out. UNTESTED: confirming
+    it requires implementing offline HVN. If they are equivalent, HVN stores the
+    god-set ONCE instead of ~18,000 times, which is a storage collapse far larger
+    than the 1.3x solve-time figure [[2026-07-14-algebraic-bet/C7]] quoted -- that
+    figure was measured on inputs that already fit. See C7/C8: HVN is algebraic
+    (a sublattice restriction), so adopting it need not forfeit the bet.
+
+=================== NO HEAD-TO-HEAD IS AVAILABLE ===================
+
+The obvious control -- run go/pointer on these same programs and compare mean
+|pts| -- is IMPOSSIBLE. go/pointer fails on every one (generics panic, or
+*types.Alias, or a nil deref, even with GODEBUG=gotypesalias=0). This is the
+design's stated hole ("no oracle for real Go") biting exactly where it would be
+most useful. Whether go/pointer's own mean |pts| on wile-scale code is small
+(HVN doing the work) or also large (the solution genuinely being this big) is
+therefore not measurable with the oracle on real targets.

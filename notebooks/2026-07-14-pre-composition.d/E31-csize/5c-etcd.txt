@@ -1,0 +1,27 @@
+TARGET            /Users/aalpar/projects/etcd
+load+ssa          2.391s
+extract           311ms
+
+functions         52905
+nodes             1248065
+objects           127403
+constraints       1188306
+  addr              127403
+  copy              391468
+  gep               482809
+  load              100422
+  store              68669
+  invoke             14181
+  icall               3354
+
+─── SOLVE (difference propagation; no HVN, no cycle elimination) ───
+status            TIMED OUT after 1m0s
+wall              1m1.431s
+propagations      67941082
+MEMBERSHIP TESTS  4277440336
+worklist pops     4450304
+copy edges        2951095
+nodes w/ pts      451441
+total pts size    67941082
+MEAN |pts|        150.50
+dispatch resolved 48336

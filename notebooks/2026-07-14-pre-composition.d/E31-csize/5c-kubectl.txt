@@ -1,0 +1,27 @@
+TARGET            /Users/aalpar/projects/kubectl
+load+ssa          4.721s
+extract           452ms
+
+functions         97188
+nodes             2075576
+objects           230733
+constraints       1959027
+  addr              230733
+  copy              746677
+  gep               654497
+  load              188684
+  store             116923
+  invoke             17096
+  icall               4417
+
+─── SOLVE (difference propagation; no HVN, no cycle elimination) ───
+status            TIMED OUT after 1m0s
+wall              1m0.079s
+propagations      35932263
+MEMBERSHIP TESTS  4730907345
+worklist pops     2263040
+copy edges        3703707
+nodes w/ pts      682596
+total pts size    35932263
+MEAN |pts|        52.64
+dispatch resolved 38383

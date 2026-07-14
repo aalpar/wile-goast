@@ -1,0 +1,27 @@
+TARGET            /Users/aalpar/projects/rclone
+load+ssa          5.443s
+extract           1.033s
+
+functions         121101
+nodes             3841408
+objects           330691
+constraints       3697462
+  addr              330691
+  copy             1034493
+  gep              1830883
+  load              269810
+  store             198249
+  invoke             26667
+  icall               6669
+
+─── SOLVE (difference propagation; no HVN, no cycle elimination) ───
+status            TIMED OUT after 1m0s
+wall              1m0.062s
+propagations      108469393
+MEMBERSHIP TESTS  4816803109
+worklist pops     3414016
+copy edges        3421661
+nodes w/ pts      1232479
+total pts size    108469393
+MEAN |pts|        88.01
+dispatch resolved 157396
