@@ -1,0 +1,68 @@
+TARGET            /Users/aalpar/projects/ollama
+load+ssa          1.05s
+extract           371ms
+
+functions         49381
+nodes             1303845
+objects           121452
+constraints       1251277
+  addr              121452
+  copy              414334
+  gep               545032
+  load               86607
+  store              59221
+  invoke             16744
+  icall               2728
+  tfilter             1325
+  untag               3834
+
+─── SOLVE (difference propagation; no HVN, no cycle elimination) ───
+status            TIMED OUT after 1m0s
+wall              1m0.005s
+propagations      55689937
+MEMBERSHIP TESTS  4131644010
+worklist pops     2553856
+copy edges        2742825
+nodes w/ pts      482674
+total pts size    55689937
+MEAN |pts|        115.38
+dispatch resolved 69311
+MAX |pts|         4035  (at node 136332)
+GOD OBJECT        node 817690, in pts of 37511 nodes, type *errors.errorString
+|pts| histogram (log2 buckets):
+  <=2^0     352839 nodes
+  <=2^1      32537 nodes
+  <=2^2      20807 nodes
+  <=2^3      30038 nodes
+  <=2^4       8062 nodes
+  <=2^5       3455 nodes
+  <=2^6       3313 nodes
+  <=2^7       2507 nodes
+  <=2^8       1837 nodes
+  <=2^9         74 nodes
+  <=2^10      1900 nodes
+  <=2^11      2811 nodes
+  <=2^12     22494 nodes
+
+─── OFFLINE HVN ───
+wall              1.386s
+main nodes        1303845
+PE classes        575683
+node reduction    55.85%   (1303845 -> 575683)
+indirect nodes    243047  (18.6% — fresh label, HVN-unmergeable)
+
+─── GOD-SET COLLAPSE (the E33 question) ───
+carriers of god object n817690   nodes  37511   indirect   6613 (18%)   PE classes  14416   (direct-only classes 8439)
+
+─── FAT-SET COLLAPSE (by |pts| threshold) ───
+|pts| >= 64                      nodes  31623   indirect   6747 (21%)   PE classes  15589   (direct-only classes 9408)
+|pts| >= 256                     nodes  27279   indirect   6455 (24%)   PE classes  13663   (direct-only classes 7761)
+|pts| >= 1024                    nodes  25305   indirect   6192 (24%)   PE classes  13252   (direct-only classes 7586)
+|pts| >= 2048                    nodes  22494   indirect   6018 (27%)   PE classes  11702   (direct-only classes 6203)
+
+─── SOUNDNESS (PE class <=> identical pts) ───
+solve             TIMED OUT — partial pts, indicative only
+non-ptr w/ pts    0  (HVN said empty, solver disagrees — must be 0)
+non-empty classes 244662  (multi-member 61840)
+per-class check   SKIPPED (solve timed out; set SOUND=1 to force). npFlood above is still authoritative.
+VERDICT           no non-pointer floods on the partial solve (indicative)

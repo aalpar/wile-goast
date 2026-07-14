@@ -1,0 +1,161 @@
+E34 — The god-set nodes are NOT pointer-equivalent. Offline HVN collapses them
+      ~2x, not to a handful. HVN is refuted as the lever; C7 stands.
+
+=================== THE QUESTION ===================
+
+E33 eliminated every candidate lever for the Andersen blowup except two, and
+left one of them untested: HVN, IF the ~20,700 god-set nodes are pointer-
+equivalent (identical points-to sets by graph topology alone). E33 could not
+settle it: its probe 3 (Tarjan SCC over the copy graph) tests only CYCLE-
+equivalence, and HVN's pointer-equivalence is strictly broader -- it also merges
+DAG-equivalent nodes (nodes combining the same set of predecessor labels, no
+cycle required). So "the copy graph is acyclic" does NOT imply "HVN won't help."
+
+If the god-set nodes ARE pointer-equivalent, HVN stores the flood set ONCE per
+class instead of ~20,000 times -- a storage collapse far larger than the 1.3x
+solve-time figure C7 quoted. This entry builds the offline HVN and measures it.
+
+=================== HARNESS ===================
+
+E34-hvn/: a Go probe reusing E31's frozen extractor (extract.go = E31's
+main-v2-typefilter.go with func main() stripped) and its difference-propagation
+solver (solve.go, modified only to RETURN pts + the god object). hvn.go is a
+faithful port of go/pointer's offline HVN (Hardekopf & Lin, SAS'07; hvn.go).
+
+  * Offline graph: 2N onodes -- N main nodes + one ref(X)=X+N per node. ref
+    nodes are indirect by construction (the unknown pts of a dereferenced ptr).
+  * All 8 E31 constraint forms mapped to go/pointer's presolve rules:
+      addr    -> seed peLabel {obj};   implicit ref(dst)~~>obj
+      copy    -> real edge dst-->src;  implicit ref(dst)~~>ref(src)
+      gep     -> fresh memoized label per (src,offset)  [= offsetAddr]
+      load    -> real edge dst-->ref(src)
+      store   -> real edge ref(dst)-->src
+      tfilter -> mark dst indirect
+      untag   -> mark dst indirect
+      invoke  -> mark R-block (rets) indirect
+      icall   -> mark R-block (rets) indirect
+  * markIndirectNodes: every addr object span (A-T objects, subsumes map-value
+    and array-elem); P-blocks of address-taken functions (methods, closures,
+    synthetic thunks, or value-flowed top-level funcs).
+  * Two-pass, not online: plain iterative Tarjan for SCCs, then a topological
+    sweep assigning each SCC one PE label from (a) its indirect flag and (b) the
+    labels flowing in along REAL edges. Semantically equivalent to hvn.go's
+    online visit/labelSCC coalescing; far less error-prone. |P|=0 -> non-ptr;
+    |P|=1 -> that label; |P|>1 -> hash-value-number the label set.
+
+Diagnostic only: it labels, it does not renumber or re-solve.
+
+=================== VALIDATION: NO ORACLE, SO CHECK SOUNDNESS ===================
+
+go/pointer cannot run on any real target (E32: generics panic / *types.Alias /
+nil deref), so the head-to-head that would validate the PE-class count is
+impossible -- the same hole E29/E32 hit. But HVN's defining PROPERTY is
+checkable without an oracle:
+
+  same PE label  <=>  identical points-to set.
+
+So on a CONVERGED solve, every PE class must be uniform in the solved pts. A
+non-uniform class = HVN over-merged = unsound. This is the exact analog of the
+126/126 oracle gate, run against the solver's own fixpoint instead of go/pointer.
+
+Target: a self-contained fixture (scratchpad/soundfix) exercising every form the
+flood flows through -- interfaces (invoke), errors (flood in miniature), type
+assertions (untag+tfilter), closures (icall), struct field store/load, phi
+chains -- small enough that difference propagation CONVERGES (84 ms, 153,502
+nodes, the whole runtime+reflect+os pulled in). Result after the fix below:
+
+  non-ptr w/ pts     0     (HVN said empty, solver disagrees -- must be 0)
+  multi-member PE classes  14,952
+  over-merged        0     (0 subset-ordered, 0 incomparable)
+  VERDICT            SOUND -- every PE class has uniform pts.
+
+ONE BUG, CAUGHT BY THE CHECK (the E29 failure mode). The first run flagged 10
+nodes labelled non-pointer that the solver floods (|pts| up to 80). All 10 were
+params of closures / anonymous funcs / bound-method thunks ($1, $bound). The A-T
+test (Recv()!=nil OR node(fn) value-flows) missed them: a closure's params are
+wired dynamically through the MakeClosure VALUE node, not through node(fn), so
+node(fn) never reads as value-used. Under-marking indirect -> over-merge, and
+over-merge INFLATES "HVN collapses the god-set" -- the dangerous direction. Fix:
+a function's params are captured offline only if it is exclusively a static
+callee; mark indirect on Recv()!=nil OR Parent()!=nil (closure/nested) OR
+Synthetic!="" (thunk) OR value-flowed. After the fix: 0 floods, 0 over-merges.
+
+=================== RESULT: THE GOD-SET DOES NOT COLLAPSE ===================
+
+Three of E33's targets, 60 s solve budget (partial pts, sufficient to identify
+the flood -- mean |pts| is already massive at 60 s per E33). The god object is
+`*errors.errorString` on ALL THREE.
+
+CARRIERS OF THE GOD OBJECT (nodes whose pts contains the single errorString):
+
+  target   carriers   -> PE classes   ratio   indirect (unmergeable floor)
+  ------   --------      ----------    -----   ----------------------------
+  wile      28,662        13,557       2.11x    6,476  (23%)
+  etcd      42,443        14,839       2.86x    7,439  (18%)
+  ollama    37,511        14,416       2.60x    6,613  (18%)
+
+  (wile carriers vary +/-0.03% run to run: the 60s solve is timed out, so how far
+   the flood develops depends on the wall-clock cutoff. The 2.11x ratio is stable.)
+
+THE FAT-SET (|pts| >= 1024 -- E33's ~20,700 nodes):
+
+  target   fat nodes   -> PE classes   ratio
+  ------   ---------      ----------    -----
+  wile      20,697        12,522        1.65x
+  etcd      24,396        12,884        1.89x
+  ollama    25,305        13,252        1.91x
+
+HVN stores the flood set ~12,500-14,800 times, NOT once. E33's hoped-for
+"~18,000 -> a handful" collapse does not happen. The god-set nodes are provably
+NOT pointer-equivalent: they are genuinely distinct pointers that share a large
+OVERLAPPING pts because of the flood, not identical pts.
+
+WHY SO MANY CLASSES -- two structural reasons, both visible in the numbers:
+
+  1. INDIRECT FLOOR (18-29% of carriers). Error values flow through exactly the
+     constructs HVN marks indirect: interface unwrap (untag/tfilter), invoke/
+     icall R-blocks, dynamically-wired closure/method params, A-T struct fields.
+     Each gets a fresh unique label -- unmergeable BY CONSTRUCTION. This floor is
+     solve-independent (a pure function of the constraint graph) and no HVN
+     tuning can lower it. ~6,500 classes on every target.
+
+  2. FAN-IN DIVERSITY (the direct carriers). Even the direct error values do not
+     collapse: HVN's |P|>1 rule assigns a distinct class per distinct set of
+     incoming source labels. Two error values are pointer-equivalent only if
+     they receive the EXACT same set of pointer sources; errors flow through
+     many different source combinations, so the direct carriers still fragment
+     into ~7,600-8,400 classes.
+
+=================== WHAT THIS MEANS ===================
+
+HVN is refuted as the lever. It delivers ~2x storage reduction on the god-set,
+same ORDER as C7's ~1.3x solve-time figure (the difference is storage-count vs
+solve-time; both are far from the ~100x / non-convergence gap). C7 STANDS -- this
+diagnostic confirms it rather than overturning it. E33's speculation that C7's
+figure was an underestimate "measured on inputs that already fit" is itself
+refuted: the collapse is ~2x on inputs that do NOT fit.
+
+HVN is not broken -- global node reduction is 54-59% (matching the H&L paper's
+~2/3), so HVN works exactly as advertised. It simply does not CONCENTRATE its
+benefit on the god-set. The god-set is the single WEAKEST place for HVN, because
+it is dominated by indirect error-flow and fan-in diversity. And even a 2x node
+reduction does not change convergence: the fixpoint still propagates the huge
+sets to ~13,000 reps, and the errorString object still floods.
+
+Full elimination table for the Andersen blowup lever:
+
+  container / representation   E31    refuted (map beats bitset)
+  solve schedule               E30    refuted (diff-prop worse than naive)
+  extractor precision          E30    refuted (7.8% on |pts|)
+  the type filter              E33    refuted (12% on |pts|, still times out)
+  cycle elimination            E33    refuted (copy graph acyclic)
+  HVN                          E34    refuted (god-set ~2x, not a collapse)
+
+The ONLY remaining lever is CONTEXT SENSITIVITY (heap cloning / k-CFA / object
+sensitivity): give errors.New's result a per-call-site identity so the flood
+never forms. It attacks the god-set at its source, makes the fixpoint bigger
+before smaller, and is the expensive real fix. Nothing cheaper remains.
+
+Artifacts: run-wile.txt, run-etcd.txt, run-ollama.txt (60s budget, the measured
+targets); run-soundfix-CONVERGED.txt (the soundness gate). Probe: extract.go,
+solve.go, hvn.go, main.go.

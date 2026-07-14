@@ -1,0 +1,63 @@
+TARGET            /private/tmp/claude-501/-Users-aalpar-projects-wile-workspace-wile-goast/83c4587d-97da-4fe1-9d07-be39f684dd07/scratchpad/soundfix
+load+ssa          401ms
+extract           26ms
+
+functions         6868
+nodes             153502
+objects           14261
+constraints       146604
+  addr               14261
+  copy               47345
+  gep                67406
+  load                9831
+  store               6945
+  invoke               319
+  icall                277
+  tfilter               54
+  untag                166
+
+─── SOLVE (difference propagation; no HVN, no cycle elimination) ───
+status            CONVERGED
+wall              91ms
+propagations      598711
+MEMBERSHIP TESTS  2661709
+worklist pops     166549
+copy edges        87998
+nodes w/ pts      89303
+total pts size    598711
+MEAN |pts|        6.70
+dispatch resolved 804
+MAX |pts|         228  (at node 709)
+GOD OBJECT        node 18226, in pts of 4781 nodes, type runtime.mheap
+|pts| histogram (log2 buckets):
+  <=2^0      74183 nodes
+  <=2^1       3091 nodes
+  <=2^2       2649 nodes
+  <=2^3       1171 nodes
+  <=2^4       1448 nodes
+  <=2^5       1085 nodes
+  <=2^6        522 nodes
+  <=2^7       4926 nodes
+  <=2^8        228 nodes
+
+─── OFFLINE HVN ───
+wall              40ms
+main nodes        153502
+PE classes        68598
+node reduction    55.31%   (153502 -> 68598)
+indirect nodes    22492  (14.7% — fresh label, HVN-unmergeable)
+
+─── GOD-SET COLLAPSE (the E33 question) ───
+carriers of god object n18226    nodes   4781   indirect    588 (12%)   PE classes   2306   (direct-only classes 1755)
+
+─── FAT-SET COLLAPSE (by |pts| threshold) ───
+|pts| >= 64                      nodes   5154   indirect    798 (15%)   PE classes   2407   (direct-only classes 1657)
+
+─── SOUNDNESS (PE class <=> identical pts) ───
+solve             CONVERGED — authoritative
+non-ptr w/ pts    0  (HVN said empty, solver disagrees — must be 0)
+non-empty classes 38189  (multi-member 14952)
+over-merged       0 classes  (0 nodes)
+  subset-ordered   0  (sound superset — the documented dead-code *p-cycle case)
+  incomparable     0  (genuine over-merge — a real HVN bug)
+VERDICT           HVN is sound on this target (every PE class has uniform pts)
