@@ -1,0 +1,78 @@
+E28 -- go/pointer CANNOT analyze real generic Go. E27 is retracted.
+
+WHAT E27 CLAIMED (now retracted):
+  'The oracle is exact on generics, given ssa.InstantiateGenerics. It is not
+   compromised for real code; it is compromised by one harness flag, and the
+   flag is free.'
+
+FALSE. E27 measured three TOY packages. It never ran the oracle on real Go.
+
+=================== THE MEASUREMENT ===================
+
+Target: the wile interpreter (36 generic function declarations).
+Oracle: vendored go/pointer, goastcg/testdata/oracle/.
+GODEBUG=gotypesalias=0 is REQUIRED first (see below), and is not sufficient.
+
+  SSA mode                  result
+  -----------------------   ---------------------------------------------
+  default                   PANIC
+  ssa.InstantiateGenerics   PANIC   <- the flag does NOT help
+
+  internal error in pointer analysis: ForEachElement called on type
+  containing *types.TypeParam (please report this bug)
+
+Root cause: pointer/gen.go:1335 iterates prog.RuntimeTypes(). Any type that
+still contains a *types.TypeParam panics ForEachElement. InstantiateGenerics
+creates the instantiated copies but does not remove the generic TEMPLATES from
+the program, so their TypeParam-bearing types still reach RuntimeTypes().
+The panic is inside x/tools, not in code we vendored or can patch.
+
+=================== WHY THE TOY PASSED ===================
+
+E27's gen/hard package uses a generic container Box[T Ia], a generic function
+Each[T Ia], and a nested Pair[A,B] -- and Andersen resolved it exactly. That
+was an ACCIDENT of the sample: it never converts a GENERIC type into an
+interface, so no TypeParam-bearing type is ever registered as a runtime type,
+so RuntimeTypes() stays clean and ForEachElement is never given one.
+
+There is therefore a narrow class of generic Go that go/pointer survives. It is
+an accidental condition, invisible from the call site, and not a guarantee
+anything can be built on. Real Go crosses it immediately.
+
+SECOND INCOMPATIBILITY, fixable, listed for completeness:
+  'cannot flatten unsupported type *types.Alias' -- materialized type aliases,
+  Go 1.22+, years after this code was frozen. Workaround: GODEBUG=gotypesalias=0.
+  It clears that error and immediately exposes the TypeParam panic above.
+
+=================== WHAT SURVIVES ===================
+
+  * Corpora A and B are GENERICS-FREE. The oracle is exact on 126/126 (E24)
+    and that gate stands. E26's three-arm measurement is unaffected.
+  * The shipped tool is fine on wile: cha/vta build it in under half a second
+    (~11.9k nodes). Nothing about wile-goast is broken. It is the ORACLE that
+    cannot run, not the tool.
+
+=================== WHAT IT COSTS, AND WHAT IT BUYS ===================
+
+COSTS: there is NO ORACLE FOR REAL GO. E26 step 6 -- 'run (wile goast andersen)
+on real Go' -- has nothing to validate against. Correctness on real code cannot
+be established by differential testing against go/pointer, because go/pointer
+does not run there. That gap is now open and must be closed some other way.
+
+BUYS: implementing points-to ourselves is no longer the PURER of two routes.
+It is the ONLY route. The single off-the-shelf exact, inclusion-based,
+field-sensitive points-to analysis for Go was deleted from x/tools and predates
+generics badly enough that it cannot run on modern code. So for any Go program
+using generics -- which is most of them -- VTA genuinely IS the ceiling of what
+exists. E24 said 'the fact is computable and no shipped tool computes it.' That
+was true but too weak: the fact is computable in principle, and the only
+implementation that ever computed it is dead.
+
+=================== THE PROCESS FAILURE, RECORDED ===================
+
+This error was made TWICE on the same code, one session apart. The prior session
+wrote: 'I told you vendoring was proven. It was proven on generics-free toy
+code, and I should have tested it against real Go before saying so.' That lesson
+was in a transcript that was never read, the finding was re-derived from a fresh
+toy, and the toy passed. The claim a harness cannot exercise is the claim it
+will not refute.
