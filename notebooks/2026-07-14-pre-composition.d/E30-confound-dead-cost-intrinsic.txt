@@ -1,0 +1,91 @@
+E30 -- The E29 confound is DEAD. The cost is intrinsic, not my imprecision.
+
+=================== WHAT WAS TESTED ===================
+
+E29 could not attribute its blowup, because the extractor was crude exactly
+where the validation corpora were silent: *ssa.Extract merged whole tuples
+(so every Go (v, err) collapsed into one node), indirect calls through func
+values emitted a bogus load and never wired params, and closures were barely
+modelled. The corpora contain no tuples, no indirect calls, no closures. So
+the 100x gap in mean |pts| (527 on wile vs ~5 on the corpora) might have been
+entirely my bug, and no cost conclusion was attributable to the algebra.
+
+v2 of the extractor fixes all four:
+  * tuple results are PER-COMPONENT (one node per result, not one per call)
+  * functions and closures are OBJECTS, so a func value has provenance
+  * indirect calls get a real 'icall' dynamic constraint that wires params
+  * closure bindings flow to the callee's FREE VARS
+
+v2 still agrees with the go/pointer oracle 126/126, so precision went UP
+without correctness going down.
+
+=================== THE RESULT ===================
+
+  metric                v1 (E29)     v2 (fixed)      change
+  -------------------   ----------   ----------   ---------
+  mean |pts|                 526.9        486.1       -7.8%
+  membership tests          31.4e9       32.3e9       +2.9%
+  propagations             135.8M       151.1M       +11.3%
+  status                   TIMEOUT      TIMEOUT        same
+  oracle agreement         126/126      126/126        same
+
+Scheme viability needed a ~100x drop in mean |pts|. It got 1.08x.
+
+  v2 on wile, full:  849,982 nodes / 76,938 objects / 831,965 constraints
+                     (addr 76,938; copy 255,553; gep 390,585; load 57,533;
+                      store 43,712; invoke 5,143; icall 2,501)
+                     TIMED OUT at 10 min in GO. 8.46M copy edges. mean |pts|
+                     486.1 and the solution was still growing at the cutoff.
+
+=================== WHAT THIS SETTLES ===================
+
+THE CONFOUND IS ELIMINATED. The blowup is NOT an artifact of my extractor.
+Context-insensitive inclusion-based points-to on wile genuinely does not
+converge when the solve is restricted to lfp-preserving SCHEDULES ONLY --
+which is exactly the restriction plans/2026-07-14-andersen-pointsto-design.md
+imposes so that a result would speak to the algebraic bet.
+
+The solution ITSELF is large: ~486 objects per node across 310,862 nodes is
+151 million points-to pairs, and still climbing. No schedule can help with
+that; difference propagation is already the best permitted schedule and it
+reaches the timeout FURTHER INTO the blowup than naive chaotic iteration.
+The work is not being wasted on a bad visit order. The answer is just big.
+
+=================== WHAT IT DOES *NOT* SETTLE ===================
+
+It does NOT show that exact points-to on real Go is impossible. go/pointer
+ran on real (pre-generics) Go for years. Its tractability comes from HVN
+(pointer/hvn.go; Hardekopf & Lin, SAS'07): a PRE-SOLVER pass that finds
+POINTER-EQUIVALENT variables and COLLAPSES THEM before the fixpoint runs.
+pointer/doc.go states it does not even do online cycle detection. HVN is the
+whole game, and HVN attacks precisely the quantity that is killing us: it
+shrinks the node count by merging nodes that provably share a points-to set,
+so 310,862 nodes carrying 151M pairs becomes far fewer classes carrying far
+fewer sets.
+
+It also does NOT touch any ACCURACY claim. Both notebooks' theses are about
+accuracy. This is a cost result. It says the fact is expensive to precompute;
+it says nothing about whether precomputing it buys the agent reliability.
+
+=================== THE DECISIVE QUESTION, NOW ON THE CRITICAL PATH ==========
+
+The design bars HVN because a graph rewrite looked like hand-written solver
+engineering rather than operator-instantiation. That judgment is now the
+single load-bearing assumption in the whole plan, and it may be WRONG.
+
+HVN quotients the constraint graph by an equivalence relation ~ (pointer
+equivalence). IF ~ is a CONGRUENCE with respect to the transfer functions,
+then
+        lfp on D/~   , then lift back
+is quotient-by-a-congruence: a STANDARD ALGEBRAIC CONSTRUCTION, i.e. exactly
+'instantiating an existing operator at a new (coarser) carrier', which is the
+bet's own stated promise. In that case HVN is not a defection from the
+algebra. It IS the algebra, and adopting it buys tractability AT NO COST to
+the measurement.
+
+If ~ is NOT a congruence, then the design's line was right, the algebra
+cannot compute this query on real Go under its own rules, and that is a
+genuine count against the bet -- the second one, after (wile algebra cfl).
+
+Either way the answer is decisive and it is CHECKABLE. Nobody in this project
+has asked it. It should be asked before another line of solver is written.
