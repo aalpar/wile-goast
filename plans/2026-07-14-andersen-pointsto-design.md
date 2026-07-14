@@ -219,10 +219,62 @@ not.
 
 - **Permitted:** chaotic iteration, worklist ordering, delta propagation. These provably
   compute the same `lfp` and change only the visit order.
-- **Barred:** cycle elimination (HCD/LCD), hash-value numbering, hybrid solvers. Those
-  rewrite the constraint graph. They are algorithms, not operators, and a win won by them
-  would be a win for hand-written solver engineering, leaving the bet exactly where
+- **Permitted, and initially barred by mistake: HVN.** See section 8a.
+- **Permitted, and orthogonal to the algebra entirely: the representation of a points-to
+  set.** See section 8b. This is where the cost problem actually lives.
+- **Barred:** cycle elimination (HCD/LCD), hybrid solvers. Those rewrite the constraint
+  graph by an argument that is not a lattice construction. A win won by them would be a
+  win for hand-written solver engineering, leaving the bet exactly where
   [[2026-07-14-algebraic-bet/C1]] found it: no win, no loss.
+
+### 8a. HVN is algebraic. The original bar was wrong
+
+An earlier version of this design barred hash-value numbering alongside cycle elimination,
+on the belief that any constraint-graph rewrite must be hand-written solver engineering.
+That was a mistake, and [[2026-07-14-algebraic-bet/C7]] records it.
+
+HVN's equivalence `~` is on the **index set** (the variables), not on the value lattice.
+Let `L = D^V` and let `S ⊆ L` be the maps constant on `~`-classes. `S` is closed under `⊔`
+and `⊓` pointwise and contains `⊥`, so it is a **sublattice**, and `S ≅ D^(V/~)`. HVN's
+soundness argument is exactly `F(S) ⊆ S`. Given that, the Kleene chain from `⊥` never
+leaves `S`, so `lfp(F) ∈ S` and `lfp(F) = lfp(F|S)`.
+
+That is Knaster-Tarski restricted to an **F-invariant sublattice**: the same operator at a
+coarser carrier, identical fixpoint. It is operator-instantiation, which is what the bet
+says a new query should be made of.
+
+Two caveats worth carrying. `hvn.go` can collapse `*p` cycles even when `pts(p)` is empty,
+so the implementation is a sound *abstraction* rather than an exact restriction (precision
+loss, confined to dead code). And it survives on-the-fly dispatch only by marking as
+`indirect`, and never merging, "the parameters of address-taken functions (which includes
+all functions in method sets)" — the nodes a dynamically added edge can write to are
+conservatively excluded.
+
+**But do not put HVN on the critical path.** Its own PERFORMANCE section measures a 30 to
+42 percent solve-time reduction against a 15 percent cost to run it: a net factor of about
+1.3. The gap is about 100.
+
+### 8b. The representation of a points-to set is below the algebra
+
+`pointer/doc.go` states that `go/pointer` represents points-to sets as **sparse bit
+vectors**, "more space- and time-efficient than sets based on Go's built-in map type."
+
+The measurement in [[2026-07-14-pre-composition/E30]] used exactly a hash map, and spent
+32.3 billion membership tests without converging. Under a bit vector there are no
+per-element membership tests: a union is a word-parallel OR, roughly 8 word operations at
+the measured mean set size of 486 where a map performs 486 hash lookups.
+
+**The solution size is intrinsic; the operation count is not.** 151 million points-to pairs
+is what the analysis *means*. It is also about 19 MB of bits. That is not an intractable
+object; it is an object for which a hash map is the wrong container.
+
+**The operator laws say nothing about how a lattice element is stored.** Associativity,
+idempotence, absorption, distributivity, monotonicity: none of them constrain the encoding
+of a set. Representation is therefore a decision made strictly *below* the algebra,
+invisible to the composition rules, and it **cannot forfeit the bet however clever it
+gets**. It is the only escape hatch identified so far that costs the bet nothing.
+
+Which relocates the risk rather than removing it, and section 11 is where that lands.
 
 The vendored oracle contains both barred optimizations (`pointer/hvn.go`,
 `pointer/opt.go`). They stay as a reference for the fast path, and as the fallback if the
@@ -292,9 +344,22 @@ the same silent-failure shape E27 found in the oracle, one layer down.
 4. **Validate on the corpora.** 126/126 against the oracle. This is the only place a hard
    exactness gate is available, because the corpora are generics-free.
 5. **Lift `precise.go:66`.** Expose `'andersen` in the call-graph menu.
+5b. **Settle the representation question before anything else about cost.**
+   [[2026-07-14-pre-composition/E31]]: swap the points-to set from a hash map to a sparse
+   bit vector in the Go reference solver, change nothing else, re-validate 126/126, re-run
+   wile. One container swap, decisive in both directions, and it gates every cost judgment
+   downstream. **Do not tune, do not adopt HVN, and do not pivot to demand-driven CFL until
+   this has run** — all three are answers to a diagnosis that has not been confirmed.
+
+   Then the Wile-side form of the same question: can `P(Object)` be represented efficiently
+   *inside Wile*? Its native set is a list, which for this carrier is the worst available
+   choice. If the answer is no, that is a fact about the substrate, not about the algebra
+   (section 8b), and it must be recorded as such.
+
 6. **Run on real Go** (wile itself, ~11.9k call-graph nodes under `'cha`/`'vta`). Two
    distinct questions, and only one of them has a method:
-   - *Does it finish?* Measurable. This is the performance risk, section 11.
+   - *Does it finish?* Measured, and today the answer is **no** (E29, E30). Gated on 5b
+     before that answer means anything about the algebra.
    - *Is it right?* **No oracle exists here** (section 9). Soundness envelope plus
      audited spot checks is the best currently available, and closing that properly is
      its own work item.
@@ -304,17 +369,41 @@ the same silent-failure shape E27 found in the oracle, one layer down.
 
 ## 11. Risks, named
 
-**Performance, at step 6.** A Scheme fixpoint over a real program's constraint set may
-simply be too slow. Andersen is roughly cubic, the constraint sets are large, and
-`(wile goast)` memory records that Wile threads give no speedup (global reads re-resolve
-under an RWMutex RLock, so CPU-bound loops run 2-3x *slower*). This is the single biggest
-risk in the design.
+**Performance. This risk has FIRED, and it fired somewhere other than where this section
+predicted.** [[2026-07-14-pre-composition/E29]] and [[2026-07-14-pre-composition/E30]]
+measured it. Extraction is free (146 ms, 831,965 constraints on wile). The **solve** does
+not converge: 32.3 billion membership tests, timed out at 10 minutes, **in Go**, under
+difference propagation, with the solution still growing. Repairing every known precision
+defect in the extractor moved mean set size by 7.8% while oracle agreement held at 126/126,
+so it is not an artifact of the extractor. No permitted *schedule* helps; difference
+propagation fails further into the blowup than naive iteration does.
 
-**If it materializes, record what it does and does not show.** It refutes the algebra as
-an *implementation substrate* for whole-program analysis at scale. It says nothing
-whatever about the accuracy claim, which is what E26 set out to measure. A performance
-failure must not be written up as an accuracy refutation, and the three-arm experiment can
-still run on the corpora, where the constraint sets are small.
+**But the diagnosis is not what it looks like, and section 8b is why.** That measurement
+represented points-to sets as `map[int]bool`, which is precisely the container
+`pointer/doc.go` names as the slow one. The 32.3 billion operations are a property of the
+container, not of the fixpoint. **The solution size (151M pairs, ~19 MB as bits) is
+intrinsic; the operation count is not.**
+
+The open experiment is [[2026-07-14-pre-composition/E31]]: swap in a sparse bit vector,
+change nothing else, re-validate 126/126, re-run wile. It is decisive in both directions.
+If it converges, the whole-program route is alive and this section is wrong. If it does
+not, the cost is intrinsic, that claim will have survived the three explanations that could
+have defeated it (precision, schedule, representation), and the design must pivot to
+demand-driven CFL or abandon real-code coverage.
+
+**Where the risk really sits, for the Scheme half.** Wile's native set is a **list**, and
+for a carrier of this size a list is the worst available representation. The cost question
+for `(wile goast andersen)` was never "is the algebra tractable." It is **"can `P(Object)`
+be represented efficiently inside Wile."** That is a representation question wearing an
+algebra question's clothes, and it is the one to answer.
+
+**If the cost turns out to be intrinsic after all, record what it does and does not show.**
+It would refute the algebra as an *implementation substrate* for whole-program analysis at
+scale. It would say nothing whatever about the accuracy claim, which is what E26 set out to
+measure, and the three-arm experiment would still run on the corpora, where the constraint
+sets are small. **A slow container is not a wrong theory**, and neither is a slow
+interpreter: if the algebra fails here it must be for a reason attributable to its
+operators, not to the substrate they happen to be written in.
 
 **The barred optimizations are a partial escape hatch, and taking them has a cost.** If
 step 6 fails on performance, `hvn.go`/`opt.go` show the fast path. Adopting them buys a
