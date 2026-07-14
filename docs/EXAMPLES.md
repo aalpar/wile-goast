@@ -1,8 +1,13 @@
 # Example Scripts
 
-Annotated walkthroughs of the example scripts in `examples/goast-query/`.
-Each script demonstrates a different analysis technique using the goast
-primitives.
+Annotated walkthroughs of the example scripts in `examples/goast-query/` and
+`examples/etcd/`. Each script demonstrates a different analysis technique using
+the goast primitives.
+
+Four of them (`goast-query`, `unify-detect`, `unify-detect-pkg`,
+`belief-example`) are also embedded in the binary under `cmd/wile-goast/scripts/`,
+so they run by name via `--run` (`--list-scripts` lists them). The rest run from
+disk with `-f`.
 
 Primitives referenced below are documented in
 [PRIMITIVES.md](PRIMITIVES.md).
@@ -259,9 +264,12 @@ against a large, production Go codebase.
 | Script | Target | What it finds |
 |--------|--------|---------------|
 | `convention-mine.scm` | `etcd/server` | Statistical call-convention discovery: per receiver type, which callees appear in >= threshold% of methods |
-| `lock-beliefs.scm` | `etcd/server` | Lock/Unlock pairing consistency |
-| `etcd-beliefs.scm` | `etcd/server` | Storage layer co-mutation patterns |
-| `mvcc-beliefs.scm` | `etcd/server` | MVCC package: locking, co-mutation in concurrent watcher/transaction code |
+| `lock-beliefs.scm` | `etcd/server` | Lock/Unlock and RLock/RUnlock pairing, plus Lock-before-Unlock ordering, in `etcdserver` |
+| `lock-sweep.scm` | `etcd/server` | The same pairing beliefs swept across all of `server/v3/...`, filtering out Lock/Unlock implementations and generated gRPC handlers |
+| `etcd-beliefs.scm` | `etcd/server` | `etcdserver`: WAL write/close pairing, error-logging context, tracing span start/end |
+| `mvcc-beliefs.scm` | `etcd/server` | MVCC package: locking pairs and `Txn` -> `End` in concurrent watcher/transaction code |
+| `backend-tx-discipline.scm` | `etcd/server` | Backend transaction lifecycle: `LockInsideApply`/`LockOutsideApply` -> `Unlock`, `ConcurrentReadTx` -> `RUnlock` (txWg leak), `Unsafe*` callers holding a lock |
+| `auth-gate-consistency.scm` | `etcd/server` | Auth enforcement across etcd's three layers (RPC decorator, apply, v3_server) |
 | `raft-dispatch-consistency.scm` | `etcd/server` | Inconsistent use of `raftRequest` vs. `raftRequestOnce` |
 | `raft-check-beliefs.scm` | `etcd/raft` | Value-guarding beliefs in raft functions |
 | `raft-error-handling.scm` | `etcd/raft` | Consistent error handling across callers of `raft.Step` |
@@ -287,7 +295,7 @@ wile-goast -f /path/to/examples/etcd/<script>.scm
 | `inline-expand.scm` | AST | `ast-transform`, `ast-splice`, round-trip inlining |
 | `ssa-unify-detect.scm` | AST + SSA + Unify | Three-stage similarity pipeline |
 | `belief-validate-categories.scm` | Belief DSL | All four checker categories against synthetic testdata |
-| etcd scripts (7) | Belief DSL | Real-world beliefs against etcd (pairing, co-mutation, ordering, conventions) |
+| etcd scripts (11) | Belief DSL | Real-world beliefs against etcd (pairing, ordering, transaction discipline, auth gating, conventions) |
 
 ### Utility Functions
 

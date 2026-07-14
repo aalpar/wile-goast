@@ -1,7 +1,7 @@
 # AST Node Reference
 
-Field types for every node tag produced by the goast mapper. Generated from
-`goast/mapper.go`.
+Field types for every node tag produced by the goast mapper (`goast/mapper.go`,
+`goast/mapper_comments.go`, and `mapPackage` in `goast/prim_goast.go`).
 
 ## Field Type Legend
 
@@ -20,17 +20,28 @@ Field types for every node tag produced by the goast mapper. Generated from
 
 Fields marked with `†` appear only with `'positions` option.
 Fields marked with `‡` appear only with `'comments` option.
-Fields marked with `§` appear only with type-checked packages (`go-typecheck-package`).
+Fields marked with `§` appear only with type-checked packages
+(`go-typecheck-package`), and only for nodes the type checker recorded an entry
+for.
 
 ---
 
 ## Top-Level
 
+### `package`
+Emitted by `go-typecheck-package`, one per loaded package.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `name` | string | Package name |
+| `path` | string | Package import path |
+| `files` | list | `file` nodes |
+
 ### `file`
 | Field | Type | Description |
 |-------|------|-------------|
 | `name` | string | Package name |
-| `decls` | list | Declarations (func-decl, gen-decl, bad-decl) |
+| `decls` | list | Declarations (func-decl, gen-decl, bad-decl); with `'comments`, also comment-group |
 | `comments` ‡ | list? | All comment groups in the file |
 
 ---
@@ -41,7 +52,7 @@ Fields marked with `§` appear only with type-checked packages (`go-typecheck-pa
 | Field | Type | Description |
 |-------|------|-------------|
 | `doc` ‡ | list? | Doc comment strings |
-| `name` | string | Function name |
+| `name` | string | Function name; qualified under `go-typecheck-package`: `pkg/path.Func`, `(*pkg/path.Type).Method` |
 | `recv` | list? | Receiver field list (methods) or `#f` (functions) |
 | `type` | node (func-type) | Function signature |
 | `body` | node? (block) | Function body or `#f` (external) |
@@ -58,6 +69,14 @@ Fields marked with `§` appear only with type-checked packages (`go-typecheck-pa
 |-------|------|-------------|
 | `pos` † | string | Position "file:line:col" |
 | `end` † | string | End position |
+
+### `comment-group` ‡
+A comment group attached to no declaration. Interleaved with the declarations in
+`file`'s `decls`, in source order.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `text` | list | Comment line strings |
 
 ---
 
@@ -382,8 +401,19 @@ Fields marked with `§` appear only with type-checked packages (`go-typecheck-pa
 | `doc` ‡ | list? | Doc comment strings |
 | `names` | list | Name strings (empty for embedded fields) |
 | `type` | node | Type expression |
-| `tag` | node? (lit) | Struct tag literal (only when present) |
+| `tag` | node (lit) | Struct tag literal; the field is omitted when the struct field has no tag |
 | `comment` ‡ | list? | Line comment |
+
+---
+
+## Fallback
+
+### `unknown`
+Any `go/ast` node the mapper does not handle.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `go-type` | string | Go type of the unmapped node, for diagnostics |
 
 ---
 

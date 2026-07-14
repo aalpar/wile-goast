@@ -176,13 +176,15 @@ confirms all callers of the old functions now reference the unified replacement.
 
 ## What else can I ask
 
-The MCP server includes three guided prompts that structure the analysis:
+The MCP server includes five guided prompts that structure the analysis:
 
 | Prompt | Use when you want to... |
 |--------|------------------------|
 | `goast-analyze` | Query code structure: AST shape, data flow, control flow, call relationships |
 | `goast-beliefs` | Define and run consistency checks across a package |
 | `goast-refactor` | Find unification candidates and verify refactoring correctness |
+| `goast-split` | Assess package cohesion and get split recommendations |
+| `goast-scheme-ref` | Load the Scheme reference before writing a non-trivial query |
 
 Beyond the walkthrough above, the analysis layers support:
 
@@ -199,7 +201,14 @@ Beyond the walkthrough above, the analysis layers support:
   equivalent or redundant logic.
 - **Path algebra** — semiring-parameterized shortest paths over call graphs
   (coupling distance, error propagation depth, etc.)
-- **40+ lint analyzers** — the full `go/analysis` suite, invocable by name.
+- **Interface dispatch** — every interface call site as a located finding: the
+  interface, the method, the concrete candidates, and a witness for where each
+  concrete type entered the interface.
+- **Taint and IFDS** — source-to-sink flows over a valid-path (context-sensitive)
+  reachability grammar.
+- **Points-to** — allocation sites for a value, plus a lock layer and a
+  goroutine-escape measure.
+- **25 lint analyzers** — the `go/analysis` vet suite, invocable by name.
 
 ## As a Go library
 
@@ -208,6 +217,9 @@ If you want to embed the analysis in your own tooling:
 ```go
 engine, err := wile.NewEngine(ctx,
     wile.WithProfile(wile.KitchenSink),
+    wile.WithSourceFS(wile.StdLibFS),   // (wile algebra), (scheme ...)
+    wile.WithSourceFS(wilegoast.Lib),   // (wile goast belief), (wile goast fca), ...
+    wile.WithLibraryPaths("lib"),
     wile.WithExtension(goast.Extension),
     wile.WithExtension(goastssa.Extension),
     wile.WithExtension(goastcfg.Extension),
@@ -218,6 +230,11 @@ defer engine.Close()
 
 val, err := engine.Eval(ctx, `(go-parse-expr "1 + 2")`)
 ```
+
+The two `WithSourceFS` calls and `WithLibraryPaths` are what make the Scheme
+libraries importable. Without them you get the Go primitives and nothing else.
+`wilegoast.Lib` is the embedded `lib/` tree, exported from the repository root
+package.
 
 ## Build and test
 
@@ -233,9 +250,12 @@ make ci          # Full CI: lint + build + test + covercheck + verify-mod
 | Document | Content |
 |----------|---------|
 | [docs/PRIMITIVES.md](docs/PRIMITIVES.md) | Complete reference for all analysis primitives |
+| [docs/LIBRARIES.md](docs/LIBRARIES.md) | The higher-level Scheme analysis libraries |
 | [docs/AST-NODES.md](docs/AST-NODES.md) | Field reference for all 50+ Go AST node types |
-| [docs/EXAMPLES.md](docs/EXAMPLES.md) | Annotated walkthroughs of example scripts |
+| [docs/MCP.md](docs/MCP.md) | MCP server: transports, tools, prompts, client config |
 | [docs/GO-STATIC-ANALYSIS.md](docs/GO-STATIC-ANALYSIS.md) | Cross-layer usage guide |
+| [docs/EXAMPLES.md](docs/EXAMPLES.md) | Annotated walkthroughs of example scripts |
+| [docs/THESIS.md](docs/THESIS.md) | Why pre-composition is the substrate, and what is measured |
 
 ## Dependencies
 

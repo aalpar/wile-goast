@@ -1,16 +1,18 @@
 # MCP Server
 
 `wile-goast` exposes its analysis surface over the Model Context Protocol. Two
-transports share the same tool, pipeline tools, and prompts.
+transports share the same eight tools and five prompts.
 
 - `wile-goast --mcp` — stdio MCP server (JSON-RPC). One session keyed `"stdio"`.
 - `wile-goast --http[=ADDR]` — Streamable HTTP MCP server. `--http` alone binds
   `127.0.0.1:8080` (loopback); `--http=:9000` binds all interfaces. Endpoint is
   `/mcp`. Stateful sessions; graceful shutdown on SIGINT/SIGTERM.
+- `--http-idle-ttl=<dur>` tunes the idle-session sweeper (default `30m`; `0`
+  disables). Requires `--http`.
 
 **Engine model:** one `*wile.Engine` per MCP session, keyed by `SessionID()`,
-built lazily on first `eval` and closed on session unregister (clean DELETE or
-30-min idle sweep). This isolates each HTTP client's state (`go-load` sessions,
+built lazily on first tool call and closed on session unregister (clean DELETE
+or idle sweep). This isolates each HTTP client's state (`go-load` sessions,
 defined beliefs) and serializes concurrent `eval`s within a session via a
 per-engine mutex. stdio is the degenerate one-session case. See
 `plans/2026-05-30-http-mcp-server-design.md`.
@@ -30,7 +32,7 @@ per-engine mutex. stdio is the degenerate one-session case. See
 
 ## Pipeline Tools (Phase 1)
 
-Five coarse-grained tools wrap already-implemented analyses, returning a
+Six coarse-grained tools wrap already-implemented analyses, returning a
 `{version, provenance, result}` JSON envelope (via `NewToolResultJSON`,
 both text + `structuredContent`) instead of requiring `eval`-driven
 orchestration. Registered in `newServer` (`registerPhase1Tools`), so they
@@ -51,7 +53,13 @@ appear on both stdio and HTTP. Implemented in `lib/wile/goast/pipelines.scm`
   envelope. JSON keys are snake_case; Scheme alists stay kebab-case
   (converted by `cmd/wile-goast/marshal.go`).
 - `mode` is the FCA field-access mode: `write-only` (default),
-  `read-write`, or `type-only`.
+  `read-write`, or `type-only`. Any other value is a tool error.
+- Optional-parameter defaults: `idf_threshold` 0.36, `max_attributes` 30,
+  `refine` false, `threshold` 0.6, `verdict` false, `min_extent` /
+  `min_intent` / `min_types` 2. `find_duplicates`'s `threshold` sets each
+  pair's `equiv_tier`; it does not filter which pairs are returned.
+  `discover_beliefs` with `committed_path` omitted or `""` disables
+  suppression and returns raw discovery output.
 - Prefer a pipeline tool for its known structural query; use `eval` for
   open-ended exploration. Design: `plans/2026-04-19-mcp-tool-surface-{design,impl}.md`.
 

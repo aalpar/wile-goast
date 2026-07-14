@@ -70,8 +70,8 @@ func addPrimitives(r *registry.Registry) error {
 			Doc: "Returns a sorted list of available analyzer names as strings.\n" +
 				"These names are valid arguments to go-analyze.\n\n" +
 				"Examples:\n" +
-				"  (go-analyze-list)  ; => (\"appends\" \"asmdecl\" \"assign\" ...)\n" +
-				"  (length (go-analyze-list))  ; => ~40 analyzers\n\n" +
+				"  (go-analyze-list)  ; => (\"assign\" \"bools\" \"composite\" ...)\n" +
+				"  (length (go-analyze-list))  ; => 25 analyzers\n\n" +
 				"See also: `go-analyze'.",
 			ParamNames: []string{},
 			Category:   "goast-lint",

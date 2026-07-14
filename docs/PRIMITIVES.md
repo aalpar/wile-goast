@@ -45,13 +45,27 @@ source. Optionally type-checks packages via `go/packages`.
 | `(go-parse-expr source)` | tagged alist | Parse a single Go expression |
 | `(go-format ast)` | string | Convert s-expression AST back to Go source |
 | `(go-node-type ast)` | symbol | Return the tag symbol of an AST node |
-| `(go-typecheck-package target . options)` | list of tagged alists | Load and type-check Go package(s) |
-| `(go-interface-implementors name target)` | tagged alist | Find types implementing a named interface |
-| `(go-load pattern ... . options)` | GoSession | Load packages into a reusable session |
+| `(go-typecheck-package [target] . options)` | list of tagged alists | Load and type-check Go package(s) |
+| `(go-interface-implementors name [target])` | tagged alist | Find types implementing a named interface |
+| `(go-load [pattern]... . options)` | GoSession | Load packages into a reusable session |
 | `(go-session? v)` | boolean | Type predicate for GoSession |
 | `(go-list-deps pattern ...)` | list of strings | Transitive import path discovery |
-| `(go-func-refs target)` | list of tagged alists | Per-function external reference profiles |
-| `(go-cfg-to-structured block [func-type])` | block or `#f` | Restructure block into single-exit form: goto elimination, loop return rewriting, guard folding |
+| `(go-func-refs [target])` | list of tagged alists | Per-function external reference profiles |
+| `(go-cfg-to-structured block [func-type])` | block | Restructure block into single-exit form: goto elimination, loop return rewriting, guard folding |
+
+### Target Parameter
+
+`current-go-target` is an R7RS parameter holding the default package pattern.
+Primitives whose target is optional (`go-load`, `go-typecheck-package`,
+`go-interface-implementors`, `go-func-refs`, `go-ssa-build`,
+`go-ssa-field-index`) use it when called with no target argument. Initialized
+from `WILE_GOAST_TARGET`, defaulting to `"./..."`. Override with `parameterize`.
+
+```scheme
+(current-go-target)                       ; => "./..."
+(parameterize ((current-go-target "my/pkg/..."))
+  (go-ssa-build))
+```
 
 ### Session Management
 
@@ -309,9 +323,10 @@ flow is explicit via basic blocks, and phi nodes merge values at join points.
 
 | Primitive | Returns | Description |
 |-----------|---------|-------------|
-| `(go-ssa-build pattern . options)` | list of `ssa-func` nodes | Build SSA for a Go package |
-| `(go-ssa-field-index pattern)` | list of `ssa-field-summary` nodes | Pre-correlated per-function field access index |
+| `(go-ssa-build [target] . options)` | list of `ssa-func` nodes | Build SSA for a Go package |
+| `(go-ssa-field-index [target])` | list of `ssa-field-summary` nodes | Pre-correlated per-function field access index |
 | `(go-ssa-canonicalize ssa-func)` | `ssa-func` node | Canonicalize blocks (dominator pre-order) and registers (alpha-rename) |
+| `(go-ssa-narrow ssa-func value-name)` | `narrow-result` node | Narrow an SSA value to its concrete producing types |
 
 ### Options
 
@@ -373,6 +388,12 @@ an `(operands ...)` field listing its SSA value operands by name.
 
 **Fallback:** `ssa-unknown` (unmapped instruction types)
 
+`ssa-make-interface` carries a `concrete` field: the type that entered the
+interface, as a type string. It joins to `cg-edge`'s `recv` by string equality,
+which is how a dispatch site gets a witness without parsing SSA value names.
+The instruction's position is a valid source location only for an explicit
+conversion; an implicit one has no position of its own.
+
 ### `go-ssa-canonicalize`
 
 Canonicalizes an `ssa-func` s-expression for structural comparison:
@@ -399,9 +420,10 @@ Each `(ssa-field-summary ...)` node contains:
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `func` | string | Function short name |
+| `func` | string | SSA-qualified function name |
 | `pkg` | string | Package import path |
 | `fields` | list of `ssa-field-access` | Field access entries |
+| `pos` | string | Function position (when valid) |
 
 Each `(ssa-field-access ...)` contains:
 
@@ -413,12 +435,33 @@ Each `(ssa-field-access ...)` contains:
 | `recv` | string | SSA receiver register name |
 | `mode` | symbol | `read` or `write` |
 
+### `go-ssa-narrow`
+
+Walks an SSA value's definition chain and returns the concrete types that can
+produce it. `value-name` is a string matching `ssa.Value.Name()` (e.g. `"t0"`).
+
+```scheme
+(go-ssa-narrow fn "t0")
+;; => (narrow-result (types . ("*foo.Bar")) (confidence . narrow) (reasons . ()))
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `types` | list of strings | Concrete producing type names |
+| `confidence` | symbol | `narrow`, `widened`, or `no-paths` |
+| `reasons` | list of symbols | Why the result widened |
+
+`widened` means at least one path hit an untyped boundary. Reason symbols:
+`parameter`, `global-load`, `field-load`, `nil-constant`, `cycle`,
+`interface-method-dispatch`.
+
 ### Security
 
 | Primitive | Resource | Action |
 |-----------|----------|--------|
 | `go-ssa-build` | `ResourceProcess` | `ActionLoad` |
 | `go-ssa-field-index` | `ResourceProcess` | `ActionLoad` |
+| `go-ssa-canonicalize`, `go-ssa-narrow` | none | none |
 
 ### Usage
 
@@ -460,34 +503,35 @@ Each `(ssa-field-access ...)` contains:
 
 **Go package:** `goastcg`
 
-Builds whole-program call graphs using four algorithms of varying precision and
-cost. Queries return callers, callees, and transitive reachability.
+Builds whole-program call graphs using five algorithms of varying precision and
+cost. Queries return callers and callees.
 
 ### Primitives
 
 | Primitive | Returns | Description |
 |-----------|---------|-------------|
-| `(go-callgraph pattern algorithm)` | list of `cg-node` | Build call graph |
+| `(go-callgraph target algorithm)` | list of `cg-node` | Build call graph |
 | `(go-callgraph-callers graph func-name)` | list of `cg-edge` or `#f` | Direct callers of a function |
 | `(go-callgraph-callees graph func-name)` | list of `cg-edge` or `#f` | Direct callees of a function |
 
 ### Parameters
 
-- **pattern** (string): A `go list`-compatible pattern.
-- **algorithm** (symbol): One of `'static`, `'cha`, `'rta`, `'vta`.
+- **target** (string or GoSession): A `go list`-compatible pattern or a session.
+- **algorithm** (string, or symbol for back-compat): One of `"static"`, `"cha"`,
+  `"rta"`, `"vta"`, `"precise"`.
 - **graph** (list): The call graph returned by `go-callgraph`.
-- **func-name** (string): Fully qualified function name as it appears in the
-  graph's `name` fields (e.g. `"(*pkg.Type).Method"`).
-- **root-name** (string): Starting function for reachability.
+- **func-name** (string): Function name as it appears in the graph's `name`
+  fields (e.g. `"(*pkg.Type).Method"`); a short name is matched against them.
 
 ### Algorithms
 
 | Algorithm | Precision | Requirements | Description |
 |-----------|-----------|--------------|-------------|
-| `'static` | Lowest | Any package | Direct calls only (no virtual dispatch) |
-| `'cha` | Medium | Any package | Class Hierarchy Analysis -- resolves interface calls |
-| `'rta` | High | Requires `main` | Rapid Type Analysis -- interface + reachability |
-| `'vta` | Highest | Any package | Variable Type Analysis -- refines CHA with flow |
+| `static` | Lowest | Any package | Direct calls only; omits indirect calls (under-approximates) |
+| `cha` | Medium | Any package | Class Hierarchy Analysis -- resolves interface calls |
+| `rta` | High | Requires `main` | Rapid Type Analysis -- interface + reachability |
+| `vta` | High | Any package | Variable Type Analysis -- refines CHA with flow |
+| `precise` | High | Any package | CHA refined by statically resolving the decidable indirect calls (constant index into a literal `[]func()`); keeps CHA's edges elsewhere |
 
 `'rta` raises an error if the loaded packages contain no `main` function.
 
@@ -508,14 +552,26 @@ Each `(cg-edge ...)` contains:
 | Field | Type | Description |
 |-------|------|-------------|
 | `caller` | string | Caller function name |
+| `caller-synthetic` | string | Present only when the caller is compiler-generated; the reason (`$bound`, method-set wrapper, promoted-embedding stub, ...) |
 | `callee` | string | Callee function name |
 | `pos` | string | Call site position (when valid) |
 | `description` | string | Edge description from the analysis |
+| `iface` | string | Present only on invoke (interface) sites: the interface type |
+| `method` | string | Present only on invoke sites: the method name |
+| `recv` | string | Present only on invoke sites: the concrete receiver of the resolved callee |
+
+A synthetic caller's single invoke has no source position, so a call site keyed
+on one is a phantom: it does not exist in source. The field carries the reason
+rather than a bool so a consumer can say why.
+
+`recv` joins to `ssa-make-interface`'s `concrete` field by string equality. That
+is the seam `(wile goast dispatch)` uses to attach a witness (where a concrete
+type entered the interface) without parsing names.
 
 `go-callgraph-callers` and `go-callgraph-callees` return the `edges-in` or
 `edges-out` list directly, or `#f` if the function is not in the graph.
-(There is no `go-callgraph-reachable` primitive; compute transitive reachability
-by walking `go-callgraph-callees` yourself.)
+There is no `go-callgraph-reachable` primitive: transitive reachability lives in
+the `(wile goast path-algebra)` Scheme layer, over the graph built here.
 
 ### Security
 
@@ -775,6 +831,19 @@ handles layer selection, data loading, and statistical comparison.
 - **target** -- a `go list`-compatible pattern (e.g. `"."`, `"./..."`,
   `"my/package/..."`).
 
+### Registry
+
+| Export | Description |
+|--------|-------------|
+| `(current-beliefs)` | Live list of registered per-site beliefs |
+| `(aggregate-beliefs)` | Live list of registered aggregate beliefs |
+| `(reset-beliefs!)` | Clear both registries |
+| `(register-aggregate-belief! name sites-fn analyzer sites-expr analyze-expr)` | Procedural form of `define-aggregate-belief` |
+
+The `*beliefs*` / `*aggregate-beliefs*` variables are not exported: importing a
+mutable variable copies its value at import time, so a second import would
+diverge from the registry the DSL mutates. Read them via the procedures above.
+
 ### Site Selectors
 
 | Selector | Description |
@@ -784,8 +853,12 @@ handles layer selection, data loading, and statistical comparison.
 | `(methods-of "Type")` | All methods on a receiver type |
 | `(implementors-of "Interface")` | All func-decls whose receiver implements the interface |
 | `(interface-methods "Interface" [method])` | Func-decls implementing interface methods, optionally narrowed to one method |
-| `(all-func-decls)` | All function declarations across all packages |
+| `(all-functions-in)` | All func-decls in the context's loaded packages (scope set by `run-beliefs`' target) |
 | `(sites-from "belief" 'which 'adherence)` | Results from a prior belief (bootstrapping) |
+
+`(all-func-decls pkgs)` is exported too, but it is the underlying helper, not a
+selector: it extracts func-decl nodes (annotated with `pkg-path`) from a package
+list, e.g. `(all-func-decls (ctx-pkgs ctx))` inside a `custom` lambda.
 
 ### Selector Predicates
 
@@ -809,6 +882,10 @@ Used as arguments to `functions-matching`:
 | `(contains-call "func" ...)` | `'present` / `'absent` | Call present in body? |
 | `(paired-with "A" "B")` | `'paired-defer` / `'paired-call` / `'unpaired` | A paired with B? |
 | `(ordered "A" "B")` | `'a-dominates-b` / `'b-dominates-a` / `'unordered` / `'missing` | SSA block dominance; same-block resolved by instruction position |
+| `(dominates-call "A" "B")` | `'dominates-all` / `'partial` / `'none` / `'missing` / `'malformed-ssa` | Does some A-block dominate *every* B-block? Multi-site generalization of `ordered`; block-granular |
+| `(flows-to-all "A" "B")` | `'flows-all` / `'partial` / `'none` / `'missing` | Does one A-def's value reach every B call site? Value-flow analog of `dominates-call` |
+| `(single-call-site "A")` | `'single` / `'multiple` / `'missing` | Exactly one SSA call to A? |
+| `(reaches-call "A")` | `'reaches` / `'unreached` / `'unresolved` | Transitively calls A through the call graph (not just the body) |
 | `(co-mutated "field" ...)` | `'co-mutated` / `'partial` / `'missing` | Fields stored together? |
 | `(checked-before-use "val")` | `'guarded` / `'unguarded` / `'missing` | Value checked before use? Product lattice fixpoint via `(wile algebra)` with early exit. 4-hop def-use reachability |
 | `(receiver-parameter-asymmetry)` | `'candidate` / `'forwarder` / `'mutation` / `'accessor` / `'multi-read` / `'unused-recv` / `'interface-method` | SSA: receiver-vs-parameter usage asymmetry |
@@ -817,7 +894,7 @@ Used as arguments to `functions-matching`:
 A checker may return either a bare category symbol or `(symbol . evidence)` where
 `evidence = ((where . W) (why . Y) (score . S))`; a bare symbol stays valid (it yields an
 unlocated finding). The category alone drives voting; the evidence becomes the per-site
-`finding`. All six SSA-aware checkers emit the tail: `ordered` (the two call
+`finding`. Six checkers emit the tail: `ordered` (the two call
 positions), `paired-with` (op-a's call site; `unpaired` lands exactly at the
 operation needing a pair), `co-mutated` (the first field-store), `checked-before-use`
 (the comparison feeding the guard — the `ssa-if` itself carries no position),
@@ -833,17 +910,19 @@ Available in `custom` lambdas:
 
 | Accessor | Description |
 |----------|-------------|
+| `(make-context target)` | Build a lazy-loading context for a package pattern |
 | `(ctx-pkgs ctx)` | Lazy-loaded type-checked packages |
 | `(ctx-ssa ctx)` | Lazy-loaded SSA functions |
 | `(ctx-callgraph ctx)` | Lazy-loaded call graph |
 | `(ctx-field-index ctx)` | Lazy-loaded field access index |
+| `(ctx-session ctx)` | The GoSession backing the context |
 | `(ctx-find-ssa-func ctx pkg-path name)` | Look up SSA function by package + name |
 
 ### Utility Functions
 
-Re-exported from `(wile goast utils)` for use in `custom` lambdas:
-
-`nf`, `tag?`, `walk`, `filter-map`, `flat-map`, `member?`, `unique`
+Re-exported for use in `custom` lambdas: `nf`, `tag?`, `walk`, `filter-map`,
+`flat-map`, `member?`, `unique` (from `(wile goast utils)`), plus
+`string-contains` (index or `#f`) and `string-contains?` (predicate).
 
 ### Usage
 
@@ -948,7 +1027,8 @@ Aggregate beliefs evaluate whole-package properties instead of per-site patterns
 
 | Analyzer | Description |
 |----------|-------------|
-| `(single-cluster . opts)` | Package cohesion via `recommend-split` |
+| `(single-cluster . opts)` | Package cohesion via `recommend-split`. Exported by `(wile goast split)`, not by the belief library |
+| `(aggregate-custom (lambda (sites ctx) ...))` | Escape hatch: returns a result alist |
 
 ---
 
@@ -963,14 +1043,19 @@ Traversal utilities for the tagged-alist node format shared by all layers.
 | `(nf node 'key)` | Get field value by key, or `#f` if absent |
 | `(tag? node 'tag)` | Test whether node has a given tag |
 | `(walk val visitor)` | Depth-first walk; collect non-`#f` visitor results |
+| `(filter pred lst)` | Keep elements satisfying `pred` |
 | `(filter-map f lst)` | Map, keeping only non-`#f` results |
 | `(flat-map f lst)` | Map (f returns list), concatenate results |
 | `(member? x lst)` | Membership test using `equal?` |
 | `(unique lst)` | Remove duplicates, preserving order |
 | `(has-char? s c)` | Does string `s` contain character `c`? |
+| `(string-contains s sub)` | SRFI-13, re-exported: match index or `#f` |
+| `(string-contains? s sub)` | Predicate variant: `#t` / `#f` |
+| `(string-join lst delim)` | SRFI-13, re-exported |
 | `(ordered-pairs lst)` | All unordered pairs from a list (each pair once) |
 | `(take lst n)` | First n elements |
 | `(drop lst n)` | Drop first n elements |
+| `(opt-ref opts key default)` | Look up a keyword option in a `'key value ...` list |
 | `(ast-transform node f)` | Depth-first pre-order tree rewriter. `f` returns replacement or `#f` (keep). Note: `#f` cannot be used as a replacement value |
 | `(ast-splice lst f)` | Flat-map rewriter for lists. `f` returns list (splice) or `#f` (keep). Note: `#f` cannot be a splice element |
 
@@ -1036,10 +1121,14 @@ Shared diff/scoring library for AST and SSA structural comparison. Pluggable cla
 | `(ast-diff node-a node-b)` | Diff two AST nodes with path-based classification |
 | `(ssa-diff node-a node-b)` | Diff two SSA nodes with tag-based classification |
 | `(tree-diff node-a node-b classifier)` | Generic diff with custom classifier |
+| `(classify-ast-diff tag field str-a str-b path)` | AST classifier: `'type` / `'identifier` / `'literal` / `'structural` |
+| `(classify-ssa-diff tag field str-a str-b path)` | SSA classifier: `'type` / `'register` / `'structural` |
 | `(diff-result-similarity r)` | Extract similarity (0.0--1.0) from diff result |
 | `(diff-result-shared r)` | Shared node count |
 | `(diff-result-diff-count r)` | Differing node count |
 | `(diff-result-diffs r)` | List of `(category path val-a val-b)` entries |
+| `(find-root-substitutions pairs)` | Minimal substitution set from `(val-a . val-b)` diff pairs |
+| `(collapse-diffs diffs roots)` | Drop diffs derivable from the root substitutions |
 | `(score-diffs shared diff-count diffs)` | Compute effective similarity with substitution collapsing |
 | `(unifiable? result threshold)` | Verdict: `#t` when effective similarity >= threshold and all remaining diffs are type/register |
 | `(ssa-equivalent? node-a node-b)` | Algebraic equivalence via `discover-equivalences`: checks if two SSA nodes share a normal form under any sub-theory |

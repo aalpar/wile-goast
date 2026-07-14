@@ -17,7 +17,7 @@ built-in scripts are embedded.
 
 ```bash
 # Evaluate a Scheme expression
-wile-goast '(go-parse-expr "1 + 2")'
+wile-goast -e '(go-parse-expr "1 + 2")'
 
 # Run an embedded script
 wile-goast --run goast-query
@@ -48,6 +48,8 @@ The same `assoc`, `walk`, `filter-map` patterns work across every layer.
 ### Parse Go source and extract function names
 
 ```scheme
+(import (wile goast utils))   ; filter-map
+
 (define file (go-parse-string
   "package demo
    func Add(a, b int) int { return a + b }
@@ -65,8 +67,18 @@ names ; => ("Add" "helper")
 
 ### Type-check a package and find error-returning functions
 
+`go-typecheck-package` returns `package` nodes; the func-decls are two levels
+down, under each file's `decls`.
+
 ```scheme
+(import (wile goast utils))
+
 (define pkgs (go-typecheck-package "my/package"))
+
+(define funcs
+  (flat-map
+    (lambda (f) (filter (lambda (d) (tag? d 'func-decl)) (nf f 'decls)))
+    (flat-map (lambda (p) (nf p 'files)) pkgs)))
 
 (define (returns-error? func)
   (let* ((ftype (cdr (assoc 'type (cdr func))))
@@ -79,30 +91,42 @@ names ; => ("Add" "helper")
                          (equal? (cdr (assoc 'name (cdr t))) "error")))
                   #t)
                  (else (loop (cdr rs))))))))
+
+(map (lambda (f) (nf f 'name)) (filter returns-error? funcs))
 ```
 
 ### Build a call graph and query callers
 
+Names in the graph are fully qualified with the package path:
+`my/pkg.Func`, `(*my/pkg.Server).Handle`. Algorithms: `static`, `cha`, `rta`,
+`vta`, `precise`.
+
 ```scheme
 (import (wile goast callgraph))
 
-(define cg (go-callgraph "." 'cha))
-(define callers (go-callgraph-callers cg "(*Server).Handle"))
+(define cg (go-callgraph "./..." 'cha))
+(define callers (go-callgraph-callers cg "(*my/pkg.Server).Handle"))
 
 ;; What does main call directly?
-(define callees (go-callgraph-callees cg "command-line-arguments.main"))
+(define callees (go-callgraph-callees cg "my/pkg.main"))
 ```
+
+Both return `#f` when the name is not in the graph.
 
 ### Check control flow dominance
 
-```scheme
-(import (wile goast cfg))
+Blocks are identified by index; `go-cfg-dominates?` takes two of them.
 
-(define cfg (go-cfg "." "ProcessRequest"))
+```scheme
+(import (wile goast cfg) (wile goast utils))
+
+(define cfg (go-cfg "./..." "ProcessRequest"))
 (define dom (go-cfg-dominators cfg))
 
-;; Does the auth check dominate the handler?
-(go-cfg-dominates? dom auth-block handler-block)
+(map (lambda (b) (nf b 'index)) cfg)  ; => (0 1 2 ...)
+
+;; Does the entry block dominate block 2?
+(go-cfg-dominates? dom 0 2)           ; => #t
 ```
 
 ### Run lint analyzers
@@ -193,9 +217,9 @@ pattern string to avoid redundant `packages.Load` calls:
 (go-callgraph s 'cha)      ;; same snapshot
 ```
 
-Seven primitives accept this dual-accept pattern: `go-typecheck-package`,
+Eight primitives accept this dual-accept pattern: `go-typecheck-package`,
 `go-ssa-build`, `go-ssa-field-index`, `go-cfg`, `go-callgraph`, `go-analyze`,
-and `go-interface-implementors`.
+`go-interface-implementors`, and `go-func-refs`.
 
 `go-list-deps` uses lightweight loading (`NeedName | NeedImports` only) for
 dependency discovery before committing to a full load.
@@ -220,8 +244,9 @@ rewriter) and `ast-splice` (flat-map list rewriter) for custom transformations.
 `wile-goast --mcp` starts a stdio MCP server. One persistent Wile engine
 serves all `eval` tool calls within the session.
 
-Three prompts provide guided workflows: `goast-analyze` (structural analysis),
-`goast-beliefs` (belief DSL), and `goast-refactor` (unification detection).
+Five prompts provide guided workflows: `goast-analyze` (structural analysis),
+`goast-beliefs` (belief DSL), `goast-refactor` (unification detection),
+`goast-split` (package cohesion), and `goast-scheme-ref` (Scheme reference).
 
 ```json
 {"mcpServers": {"wile-goast": {"command": "wile-goast", "args": ["--mcp"]}}}
@@ -256,7 +281,7 @@ Example `.goast-beliefs/lock-unlock.scm`:
 Run all beliefs:
 
 ```bash
-wile-goast '(begin
+wile-goast -e '(begin
   (import (wile goast belief))
   (load ".goast-beliefs/lock-unlock.scm")
   (run-beliefs "./..."))'
