@@ -3,12 +3,25 @@
 References for the static analysis techniques underlying wile-goast's five
 extension layers: AST parsing and type-checking, SSA construction and data-flow
 analysis, call graph construction, control flow graphs with dominance, and
-pluggable lint passes via the go/analysis framework. Scheme and Lisp language
+pluggable lint passes via the go/analysis framework. Sections 6 through 11 cover
+the theory behind the higher-level Scheme analysis libraries: the belief DSL, FCA
+and boundary discovery, interprocedural dataflow, and the logic-based systems
+wile-goast's algebraic substrate is bet against. Scheme and Lisp language
 references are covered by the parent Wile project and are not repeated here.
 
 ---
 
 ## 1. Foundational Static Analysis
+
+Patrick Cousot and Radhia Cousot.
+"Abstract Interpretation: A Unified Lattice Model for Static Analysis of Programs by Construction or Approximation of Fixpoints."
+In *Proceedings of the 4th ACM SIGACT-SIGPLAN Symposium on Principles of Programming Languages (POPL '77)*, pp. 238--252. ACM, 1977.
+https://doi.org/10.1145/512950.512973
+
+The lattice foundation every later layer assumes: abstract domains are lattices,
+transfer functions are monotone, and fixpoints exist by Tarski. wile-goast's
+abstract-domains library (sign, interval, reaching definitions, liveness, constant
+propagation) is a direct instance.
 
 Flemming Nielson, Hanne Riis Nielson, and Chris Hankin.
 *Principles of Program Analysis*.
@@ -258,3 +271,74 @@ exceeds a minimum support threshold. Addresses the combinatorial explosion
 of full concept lattices on large contexts. Complements the IDF-based
 attribute filtering already used in wile-goast's `(wile goast split)` with
 extent-based concept filtering.
+
+## 10. Interprocedural Dataflow and CFL-Reachability
+
+Micha Sharir and Amir Pnueli.
+"Two Approaches to Interprocedural Data Flow Analysis."
+In Steven S. Muchnick and Neil D. Jones (eds.), *Program Flow Analysis: Theory and Applications*, pp. 189--233. Prentice-Hall, 1981.
+
+Introduces the functional and call-strings approaches. It also draws the distinction
+the whole area rests on: an interprocedurally executable path is not merely a path
+through the supergraph, because each procedure return must match its own call.
+
+Thomas Reps, Susan Horwitz, Mooly Sagiv, and Genevieve Rosay.
+"Speeding up Slicing."
+In *Proceedings of the 2nd ACM SIGSOFT Symposium on Foundations of Software Engineering (SIGSOFT '94)*, pp. 11--20. ACM, 1994.
+https://doi.org/10.1145/193173.195287
+
+Casts interprocedural slicing as reachability over a language of matched call/return
+edges. That language is the valid-path grammar `(wile algebra cfl)` implements. Being
+a Dyck language, it cannot be expressed as a semiring weight, which is why the CFL
+layer exists separately from `(wile goast path-algebra)`.
+
+Thomas Reps, Susan Horwitz, and Mooly Sagiv.
+"Precise Interprocedural Dataflow Analysis via Graph Reachability."
+In *Proceedings of the 22nd ACM SIGPLAN-SIGACT Symposium on Principles of Programming Languages (POPL '95)*, pp. 49--61. ACM, 1995.
+https://doi.org/10.1145/199448.199462
+
+IFDS. Interprocedural, finite, distributive subset problems reduce to graph
+reachability over an exploded supergraph. The basis for `(wile goast ifds)` and,
+through it, `(wile goast taint)`.
+
+Mooly Sagiv, Thomas Reps, and Susan Horwitz.
+"Precise Interprocedural Dataflow Analysis with Applications to Constant Propagation."
+*Theoretical Computer Science*, 167(1--2):131--170, 1996.
+https://doi.org/10.1016/0304-3975(96)00072-2
+
+IDE. Generalizes IFDS from subsets to distributive environment transformers over a
+semilattice, so a single machine answers a family of problems by changing only the
+weight domain. This pair (IFDS, IDE) is what `docs/THESIS.md` means by
+"interprocedural analysis as semiring."
+
+Thomas Reps.
+"Program Analysis via Graph Reachability."
+*Information and Software Technology*, 40(11--12):701--726, 1998.
+https://doi.org/10.1016/S0950-5849(98)00093-7
+
+The survey that unifies the above: a large class of interprocedural analyses are
+CFL-reachability problems. Useful as the map when deciding whether a new query
+belongs in the semiring layer or the CFL layer.
+
+## 11. Logic-Based Program Analysis
+
+Martin Bravenboer and Yannis Smaragdakis.
+"Strictly Declarative Specification of Sophisticated Points-to Analyses."
+In *Proceedings of the 24th ACM SIGPLAN Conference on Object-Oriented Programming, Systems, Languages, and Applications (OOPSLA '09)*, pp. 243--262. ACM, 2009.
+https://doi.org/10.1145/1640089.1640108
+
+Doop. Points-to analysis specified entirely in Datalog, with the solver supplying the
+evaluation strategy. Composition here is logical inference over relations, not
+instantiation of operators that satisfy equational laws. That makes Doop the direct
+competitor to wile-goast's substrate rather than a neighbor of it, and the falsifier
+named in the algebraic bet (`docs/THESIS.md`, hypothesis 4).
+
+Pavel Avgustinov, Oege de Moor, Michael Peyton Jones, and Max Schaefer.
+"QL: Object-oriented Queries on Relational Data."
+In *Proceedings of the 30th European Conference on Object-Oriented Programming (ECOOP 2016)*,
+Leibniz International Proceedings in Informatics, vol. 56, pp. 2:1--2:25. Schloss Dagstuhl, 2016.
+https://doi.org/10.4230/LIPIcs.ECOOP.2016.2
+
+The query language behind Semmle and CodeQL: Datalog with classes and recursion over
+a relational encoding of program facts. Queries are composed by humans, which is the
+audience distinction wile-goast draws against it.

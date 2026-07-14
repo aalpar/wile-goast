@@ -4,8 +4,9 @@
 **One line:** Composition was the wrong variable. Per-step error rate is the right
 one. Reachability is a dead axis; dispatch is a live one.
 
-Full argument: [`docs/when-tools-win.md`](../docs/when-tools-win.md).
-Thesis amended in place: [`docs/THESIS.md`](../docs/THESIS.md) ("Amendment (2026-07-12)").
+Full argument: [`docs/THESIS.md`](../docs/THESIS.md). (`docs/when-tools-win.md` was
+deleted 2026-07-13: its central claim, ε = 0 for lookup steps, is contradicted by the
+data. See THESIS.md §Superseded claims. Recover at `70e2fc8`.)
 Experiments + raw results: `~/ClaudeProjects/LLMAccuracy` (all committed to master).
 
 ## The three results
