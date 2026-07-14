@@ -1,0 +1,29 @@
+E2 -- Interface dispatch, MAY-UNION corpus: control at ceiling, no tool arm.
+Recomputed from the raw result JSON named below, not transcribed from prose.
+
+Generator: generate_interface_dispatch.py (Family-C2). Its own docstring states the
+construction: makeIa(n) returns EVERY implementor, so the sound reachable set must
+UNION every implementor's method at each dispatch site. Consequently:
+
+    static -> no edge from the dispatch  -> UNDER-approximates
+    cha    -> resolves to ALL implementors -> IS THE MAY-SET (exact here)
+
+CHA is the oracle by construction. Ground truth was oracle-verified against
+`go-callgraph 'cha` at generation time; a mismatch aborts generation.
+
+results_iface_control_pilot.json         flat dispatch    control 12/12 = 100.0%   n_reachable 8-16
+results_iface_nest_control_pilot.json    nested dispatch  control 12/12 = 100.0%   n_reachable 13-25
+results_iface_scale_control.json         scaled           control  9/9  = 100.0%   n_reachable 62-152
+---------------------------------------- ---------------- -------------------------
+POOLED                                                    control 33/33 = 100.0%
+
+ARMS RUN: control only. No baseline arm. NO TREATMENT ARM WAS EVER RUN.
+PROTOCOL: June 9 2026 -- predates --withhold-source and tool-call adoption
+recording (3feacd5, July 11). Control is unaffected by source-withholding (it is
+given the source by design), but no margin can be computed from this run at all.
+
+READ: where the syntactic rule ("any implementor could be called") IS the correct
+semantics, syntax tells the truth, and unaided control is perfect. There is no
+headroom for any tool. This is the criterion's negative half, confirmed a second
+time -- NOT the interface falsification test, which needs the DECOY variant where
+CHA over-approximates and the truth excludes the decoy. See notebook E11.

@@ -1,0 +1,104 @@
+E24 -- CORRECTION: an exact algorithm DOES exist. "no exact algorithm" is retracted.
+
+WHAT WAS CLAIMED (E11, and the --bound generator docstring):
+
+  "'precise does not handle interface dispatch at all ... So for interfaces there is
+   NO EXACT ALGORITHM; 'vta is the tightest available and it remains a sound
+   over-approximation."
+
+THAT IS FALSE. It conflated three different claims:
+
+  (i)   exact may-reachability is undecidable IN GENERAL
+        -> TRUE, but vacuous: true of every Go program, and NOT what these corpora
+           exhibit. Corpus B's truth is trivially computable, and a human reads it off
+           the page (TaD goes into 'spare'; nothing ever ranges over 'spare').
+
+  (ii)  no exact algorithm exists FOR CORPUS B
+        -> FALSE. Measured below: a field-sensitive Andersen analysis is exact 63/63.
+
+  (iii) no exact algorithm exists AMONG THE ONES WILE-GOAST SHIPS
+        -> TRUE, and this is the only load-bearing claim. The menu is exactly
+           {static, cha, rta, vta} (goastcg/prim_callgraph.go:55-86), which is also
+           x/tools' entire callgraph menu.
+
+=================== THE MEASUREMENT ===================
+
+go/pointer is x/tools' Andersen-style, INCLUSION-BASED, FIELD-SENSITIVE points-to
+analysis. It is third-party and predates these corpora by years, so it cannot have been
+tuned to them. Pinned at x/tools v0.9.0, built under go1.21.13. Each library package
+was rooted by synthesizing 'func main() { f0() }', which does not change what is
+reachable FROM f0.
+
+  corpus                 n     Andersen EXACT   over   under   err
+  B (bound, vta over)    63    63               0      0       0
+  A (decoy, vta exact)   63    63               0      0       0
+
+  ANDERSEN IS EXACT ON 126/126.
+
+Per-algorithm, on corpus B:
+
+  static    misses m0, m1 entirely                         UNDER
+  cha       includes the decoy m2                          OVER
+  rta       returns EMPTY (needs a main; these are libs)   UNAVAILABLE
+  vta       includes the decoy m2                          OVER   <- the shipped ceiling
+  andersen  excludes m2, matches truth                     EXACT  <- not shipped anywhere
+
+=================== WHY VTA FAILS, EXACTLY ===================
+
+x/tools' VTA is FIELD-BASED: it abstracts container elements BY TYPE, not by variable.
+Every []Ia in the program shares ONE abstract element node. So 'registry' and 'spare'
+are the SAME node to VTA, and TaD leaks across into the dispatched receiver. That is a
+deliberate scalability trade-off in one implementation. It is not a law of static
+analysis, and an inclusion-based analysis that keeps the two globals apart resolves it
+exactly.
+
+=================== THE FACT THAT ACTUALLY MATTERS ===================
+
+go/pointer was REMOVED FROM x/tools AFTER v0.9.0 (mid-2023). Verified absent from
+v0.10, v0.11, v0.12, v0.13, v0.16, v0.20, v0.22, v0.24, v0.26, v0.30, v0.42, v0.46.
+The maintained Go analysis toolkit tops out at VTA.
+
+So corpus B is NOT "a case where the fact cannot be pre-computed". It is
+
+    A CASE WHERE THE FACT IS PERFECTLY COMPUTABLE AND NO SHIPPED TOOL COMPUTES IT.
+
+That is an AVAILABILITY fact, not a COMPUTABILITY fact, and it inverts the reading: it
+is not an argument against pre-composition, it is the strongest argument FOR it. The gap
+is exactly what a pre-composition substrate exists to fill.
+
+Two consequences, both new:
+
+  1. THE MISSING ANALYSIS IS ARM-1 SHAPED. Inclusion-based points-to is constraint
+     propagation to a LEAST FIXED POINT over a points-to lattice. That is precisely the
+     "fallible computation" category the algebra was built for and that has never been
+     measured (E17). Corpus B may be an arm-1 opportunity in an arm-2 costume.
+
+  2. IT NAMES A SHIPPABLE GAP IN 'precise. goastcg/precise.go:66 returns nil for
+     IsInvoke() -- it declines interface dispatch. A field-sensitive points-to layer is
+     what would let it stop declining. This corpus found a concrete tool defect BEFORE
+     any API budget was spent.
+
+=================== WHAT SURVIVES ===================
+
+  SURVIVES:  E11's experiment (corpus A, the falsification test). vta IS exact on
+             corpus A, so the tool sells a FACT there and the criterion gets a fair
+             test. Nothing about that changes.
+  SURVIVES:  corpus B's construction and its cha-validation. vta over-approximates on
+             63/63, by exactly the decoy. That measurement stands.
+  RETRACTED: the words "there is no exact algorithm". There is one. We do not ship it.
+
+=================== THE DISTINCTION THIS FORCES ===================
+
+"Pre-compute THE FACT" assumes the tool CAN compute the fact. That assumption hides two
+separable claims, and they have now come apart:
+
+  P1 (the METHOD)   : hand the agent the exact fact and it beats the agent deriving it.
+                      SUPPORTED -- E6, +35 points.
+  P2 (the COVERAGE) : the tool can actually compute the exact fact for the questions
+                      that matter.
+                      NEVER EXAMINED -- and corpus B is a case where it FAILS, not
+                      because the fact is hard, but because we ship the wrong algorithm.
+
+E3 (-33 pts) and corpus B are both P2 failures: the tool hands over a BOUND, the agent
+anchors on it, and does worse than with no tool at all. The remedy for a P2 failure is
+to close the coverage gap, not to document the damage.

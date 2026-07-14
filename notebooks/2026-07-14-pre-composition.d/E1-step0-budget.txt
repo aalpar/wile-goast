@@ -1,0 +1,21 @@
+E1 -- Budget confound: is the negative treatment delta starvation, or interference?
+Recomputed from the raw result JSON named below, not transcribed from prose.
+
+Source : algebra-accuracy/results_step0_opus48_b5000.json   (control + treatment @ 5k)
+         algebra-accuracy/results_step0_opus48_b10000.json  (treatment @ 10k)
+Corpus : gradient_problems_v2.json, 90 problems (ALGEBRA corpus, not Go)
+Model  : claude-opus-4-8.  Variable moved: --total-budget only.
+
+arm / budget                 correct        accuracy
+control                      67/90          74.4%
+treatment @ 5,000 tokens     56/90          62.2%   (margin -12.2)
+treatment @ 10,000 tokens    65/90          72.2%   (margin -2.2)
+
+Doubling the budget alone moves treatment +10.0 points. Per the Step-0 report
+(plans/2026-06-09-step0-budget-confound-report.md), starvation drops 30 -> 15.
+
+READ: the earlier negative delta was budget starvation (A), not tools interfering
+with reasoning (B). Confound resolved. The protocol fix gates every later run.
+
+CAVEAT: this is the ALGEBRA corpus, not Go source, and not wile-goast. It is a
+harness-validity result. It is NOT a measurement of arm 1 -- see notebook E12.

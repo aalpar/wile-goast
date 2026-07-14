@@ -1,0 +1,54 @@
+E3 -- A returned BOUND harmed the consumer: the tool scored 33 points BELOW no tool.
+Recomputed from the raw result JSON named below, not transcribed from prose.
+
+Source : E3-results_reach_sub.json         (LLMAccuracy a663024, 2026-07-08 22:57)
+         E3-results_reach_sub_verify.json  (LLMAccuracy a9a135b, 2026-07-08 23:17)
+         Both raw files are co-located in this .d/ directory -- the refuting
+         evidence travels with the notebook.
+Corpus : 15 problems. 'precise is WITHHELD from both arms; 'vta is the tool.
+         Built so 'vta over-approximates by exactly ONE address-taken decoy.
+Design : identical problems, identical ground truth. ONLY THE PROMPT CHANGES.
+
+arm                                        correct    accuracy   margin vs control
+control (no tool at all)                   11/15       73.3%      --
+treatment: 'vta, report its result         6/15        40.0%      -33.3
+treatment: 'vta + re-derive each member's
+  constant index BY HAND, drop unselected  15/15     100.0%      +26.7
+
+PAIRED (the comparison that matters -- same 15 ids):
+  id                           ctrl  vta   vta+mandate
+  reach-f16-000                PASS  PASS  PASS  
+  reach-f16-001                PASS  fail  PASS  <-- fixed by mandate
+  reach-f16-002                fail  fail  PASS  <-- fixed by mandate
+  reach-f16-003                fail  fail  PASS  <-- fixed by mandate
+  reach-f16-004                PASS  PASS  PASS  
+  reach-f24-000                PASS  fail  PASS  <-- fixed by mandate
+  reach-f24-001                PASS  fail  PASS  <-- fixed by mandate
+  reach-f24-002                PASS  PASS  PASS  
+  reach-f24-003                PASS  fail  PASS  <-- fixed by mandate
+  reach-f24-004                PASS  PASS  PASS  
+  reach-f8-000                 PASS  fail  PASS  <-- fixed by mandate
+  reach-f8-001                 fail  PASS  PASS  
+  reach-f8-002                 fail  fail  PASS  <-- fixed by mandate
+  reach-f8-003                 PASS  fail  PASS  <-- fixed by mandate
+  reach-f8-004                 PASS  PASS  PASS  
+
+  mandate FIXED 9, BROKE 0.
+  McNemar exact, 2-sided, 9 discordant all one way: p = 2*(0.5)^9 = 0.0039
+  control results IDENTICAL across the two runs: True
+
+READ: handed a SOUND OVER-APPROXIMATION, the model reported the bound as the answer
+and scored BELOW having no tool at all. Cases where the tool left the model worse
+than no tool: 6 -> 0.
+
+WHY THIS REFUTES: the thesis says the way to buy reliability is to PRE-COMPUTE THE
+FACT. Here pre-computation delivered a BOUND, not a fact, and the agent got worse.
+What recovered the 60 points was not a better tool description -- both prompts
+describe 'vta identically -- but an instruction to DISTRUST the tool and re-derive
+the answer by hand. The points came from the very step pre-composition was supposed
+to remove.
+
+NOT DISCHARGED. Standing scope limit: the corpus was engineered to make the tool
+hurt (evaluate_reachability.py:108-109 calls it "a rigged tool, not the tool
+wile-goast actually ships"), and 'precise IS exact where it applies. Neither fact
+is a re-run of this measurement, so neither answers it.

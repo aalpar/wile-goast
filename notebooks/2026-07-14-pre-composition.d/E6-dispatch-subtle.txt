@@ -1,0 +1,42 @@
+E6 -- Higher-order dispatch: the one clean win. +35.0 points over control.
+Recomputed from the raw result JSON named below, not transcribed from prose.
+
+Source : code-restructuring/results_dispatch_subtle.json  (LLMAccuracy 6a2d887)
+Corpus : n=60, 50 functions/problem, exactly one never-invoked decoy.
+         source-withheld, adoption-gated.
+
+The construction makes the obvious syntactic reading WRONG:
+
+    func f0() {
+        t := []func(){f40, f34, f4}
+        t[0](); t[1]();
+    }
+
+Three names appear in f0's body; the pattern-matching rule fires on all three. But
+the slice holds three and only two are invoked. f4 is ADDRESS-TAKEN, NEVER CALLED.
+The fact lives in the JOIN of two lines (the literal, and the invocation) -- that
+join is constant propagation through SSA. The model's rule is LOCAL; the inference
+is not.
+
+arm                                correct     accuracy
+control   (clean source, no tools)  39/60        65.0%
+baseline  (gopls + grep)            14/60        23.3%
+treatment (wile-goast 'precise)     60/60       100.0%
+
+  treatment - control  = +35.0 points   (p < 1e-6)
+  treatment - baseline = +76.7 points   <-- NOT the headline
+
+ADOPTION GATE: treatment called a tool on 60/60 problems.
+
+HONEST DENOMINATOR: the headline is +35.0 over CONTROL, not +76.7 over grep. grep is
+line-oriented and the fact spans two lines, so its collapse to 23.3% is a
+self-inflicted retrieval wound, not evidence about the tool.
+
+THE FAILURE MODE IS THE FINDING: control's wrong answers were systematically the true
+set PLUS the address-taken decoy. Reasoning from syntax, the model re-derived Class
+Hierarchy Analysis's exact over-approximation, and was CONFIDENTLY WRONG. It does not
+hedge. From the inside, the 65% case and the 100% case feel identical.
+
+STANDING CHARGE (notebook hypothesis 5, circularity): goastcg/precise.go:26-27
+describes the tool as resolving "a constant index into a literal []func()" -- the
+tool's docstring is a description of this benchmark. The escape is E11.

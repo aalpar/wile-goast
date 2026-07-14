@@ -28,7 +28,6 @@ Thumbs.db
 # Temporary files
 *.tmp
 *.bak
-*.txt
 *#
 
 # Anthropic files

@@ -1,0 +1,33 @@
+E7 -- Cost: against the honest denominator the tool buys NO savings either.
+Recomputed from the raw result JSON named below, not transcribed from prose.
+
+Source : results_reach_final.json, results_dispatch_subtle.json
+         (reproduced with the project's own report_cost.py -- LLMAccuracy 3ee0cdb)
+Metric : mean tokens/problem, input + cache + output. PROMPT CACHING WAS OFF
+         (cache_read = cache_creation = 0 in every row -- verified, not assumed).
+
+reachability, f80 (n=120):
+  control    in   1,243  cache_r     0  out    985   TOTAL   2,228
+  baseline   in  10,984  cache_r     0  out  1,485   TOTAL  12,470
+  treatment  in   2,060  cache_r     0  out    260   TOTAL   2,320
+
+dispatch, f50 (n=60):
+  control    in   1,008  cache_r     0  out    435   TOTAL   1,443
+  baseline   in  18,269  cache_r     0  out  1,317   TOTAL  19,586
+  treatment  in   2,630  cache_r     0  out    237   TOTAL   2,867
+
+  vs GREP    : the tool is 5.4x - 6.8x cheaper. grep's cost is nearly all INPUT --
+               each noisy round-trip re-sends the accumulated history.
+  vs CONTROL : cost-NEUTRAL at f80 (2,320 vs 2,228) and
+               2x WORSE at f50 (2,867 vs 1,443).
+
+Beating grep is beating a bad strategy: grep-dumping an 80-function file is
+something an agent with a read-file tool would never do. Against the honest
+denominator the tool round-trip costs MORE than reading a ~1.2k-token file.
+
+On this axis the tool currently buys NEITHER accuracy (E5) NOR savings.
+
+THE SURVIVING CONJECTURE: control's cost is O(source); treatment's is O(answer).
+Slope gap ~13 tokens/function => a crossover MUST exist... IF the answer set grows
+sublinearly in the source. E4 suggests it may not (218 of 384 reachable). The
+crossover is PRE-REGISTERED AT n = 85-100 AND UNMEASURED. See E14. Do not assert it.

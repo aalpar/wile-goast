@@ -1,0 +1,58 @@
+E23 -- The E11 decoy corpus, RESCALED to match E6. Supersedes E22's corpus.
+
+WHY THIS SUPERSEDES E22. E22's corpus was correct but SMALL: mean 22.0 functions,
+14.0 reachable. E6 -- the corpus whose +35pt result E11 must generalize -- was 50
+functions with 26.6 reachable. Had control landed at ceiling on the smaller corpus,
+outcome (c) (CRITERION FALSIFIED) would have been indistinguishable from 'the corpus
+was just easier than E6's', and the falsifier would have been unusable. Matching E6
+on BOTH axes costs nothing and removes the confound before it can be raised.
+
+Invocation:
+  python generate_interface_dispatch.py --decoy --depths 15 20 25 --impls 2 4 6 \
+      --count 7 --seed 31337 --dead 22 \
+      --out-dir packages_iface_decoy --output problems_iface_decoy.json
+
+Reachable-set size is depth + k + 4, so the depth band sets the answer length and the
+dead-chain length sets the distractor count. Both are now pinned to E6.
+
+=================== SCALE, AGAINST E6 ===================
+
+                        E11 (this corpus)      E6 (the dispatch win)
+  n_funcs               mean 50.0 (43-57)      50
+  n_reachable           mean 28.0 (21-35)      26.6 (23-30)
+  decoys per problem    1                      1
+  n                     63                     60
+
+Neither working-memory load nor answer length differs materially between the two
+corpora. What differs is the MECHANISM by which syntax lies: an address-taken
+function in a []func() literal (E6) against an allocated type that implements the
+interface but cannot reach the dispatch site (here).
+
+=================== CONSTRUCTION FIX ===================
+
+E22's generator spliced the decoy allocation and the dispatch with sorted() applied
+to the sample, so the allocation appeared textually BEFORE the dispatch in 63/63
+problems. Reachability is order-independent, so the sort bought nothing and merely
+baked a positional regularity into every problem. Removed. The allocation now falls
+before the dispatch in roughly half the corpus and after it in the rest.
+
+=================== ORACLE + DIAGNOSTIC ===================
+
+  cha oracle : 63/63 validated  (cha == truth UNION {decoy}, checked against the
+               real Go toolchain; a mismatch throws the problem away)
+  vta        : EXACT on 63/63, every rung, to k=6 implementors and depth 25
+
+  per rung:  d15k2 7/7   d15k4 7/7   d15k6 7/7
+             d20k2 7/7   d20k4 7/7   d20k6 7/7
+             d25k2 7/7   d25k4 7/7   d25k6 7/7
+
+  one decoy per problem : yes, 63/63
+  decoy leaks into truth: none, 0/63
+
+READ: unchanged from E22, and now it holds at E6's scale. Outcome (b) is DEAD on this
+corpus -- the tool hands the treatment arm an EXACT fact, not a bound, so the -33pt
+anchoring trap of E3 cannot reproduce here and must/may is not on trial. E11 is a
+clean two-way test: outcome (a), the tool wins and the criterion generalizes beyond
+the single pattern it was formulated on; or outcome (c), control is at ceiling unaided
+and THE CRITERION IS FALSIFIED -- and now that verdict cannot be dismissed as an
+artifact of a smaller corpus.

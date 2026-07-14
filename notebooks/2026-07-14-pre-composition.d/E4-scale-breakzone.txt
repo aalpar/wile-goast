@@ -1,0 +1,28 @@
+E4 -- Scale axis: both conventional arms degrade, the tool holds. CONFOUNDED.
+Recomputed from the raw result JSON named below, not transcribed from prose.
+
+Source : code-restructuring/results_reach_breakzone_all3.json
+Corpus : n=8 per rung, f128..f384.
+
+  f128   control 8/8  baseline 8/8  treatment 8/8
+  f192   control 6/8  baseline 8/8  treatment 8/8
+  f256   control 7/8  baseline 5/8  treatment 8/8
+  f384   control 6/8  baseline 5/8  treatment 8/8
+
+POOLED f>=192 (n=24):
+  control    19/24 = 79.2%
+  baseline   18/24 = 75.0%   (gopls+grep)
+  treatment  24/24 = 100.0%
+  treatment vs control: Fisher p = 0.0496 (as reported in THESIS.md)
+
+THE CONFOUND, stated plainly: this corpus varies file size, reachable-set size, AND
+depth TOGETHER. n_reachable runs 55 (f128) to 218 (f384). It shows both
+conventional arms degrading at scale while the tool holds; it CANNOT ATTRIBUTE THE
+CAUSE, and it supports no estimate of the per-step error rate. n=24, p~0.05:
+suggestive, not established.
+
+It is recorded because a notebook that reports only the f80 null while sitting on a
+contrary f384 observation is selecting its evidence.
+
+It also threatens the O(answer) cost conjecture: 218 of 384 functions were reachable,
+so the answer set may grow as fast as the source. See E14.

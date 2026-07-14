@@ -1,0 +1,126 @@
+E9 -- Provenance re-verification: every headline figure recomputed from raw JSONs.
+
+WHY. THESIS.md was revised 2026-07-13 after five claims were retired by auditing the
+harness and raw results against the prose. Not one was wrong about a NUMBER; they were
+wrong about WHICH RUN the number came from, WHAT it was a number of, or WHAT it was
+compared against. Failures of provenance, invisible to anyone reading the prose alone.
+A notebook that transcribes those figures inherits exactly that risk. So: recompute.
+
+METHOD. Read each results_*.json directly; tally {control,baseline,treatment}_correct;
+derive margins; reproduce the cost table with the project's OWN report_cost.py.
+
+=========================== ACCURACY / ADOPTION ===========================
+
+=== results_reach_final.json  [depth ladder]  (n=120) ===
+  fields: answer_type, baseline, baseline_correct, baseline_grep_truncations, baseline_tool_calls, category, control, control_correct, depth, difficulty, ground_truth, id, max_fanout, n_decoys, n_funcs, n_reachable, n_u_to_r_edges, total_edges, treatment, treatment_correct, treatment_tool_calls
+  [d4] control 59/60 =  98.3% | baseline 60/60 = 100.0% | treatment 60/60 = 100.0%
+  [d47] control 55/60 =  91.7% | baseline 60/60 = 100.0% | treatment 60/60 = 100.0%
+  [d4] margin vs control = +1.7 | vs baseline = +0.0
+  [d47] margin vs control = +8.3 | vs baseline = +0.0
+  n_funcs: mean=80.0 min=80 max=80
+  n_reachable: mean=48.0 min=48 max=48
+  depth: mean=25.5 min=4 max=47
+
+--- tokens: reach_final ---
+  adoption[reach_final/treatment]: 120/120 called a tool (mean 1.0 calls)
+  adoption[reach_final/baseline]: 120/120 called a tool (mean 3.0 calls)
+
+=== results_dispatch_subtle.json  [higher-order dispatch]  (n=60) ===
+  fields: answer_type, baseline, baseline_correct, baseline_grep_truncations, baseline_tool_calls, category, control, control_correct, difficulty, ground_truth, id, n_decoys, n_funcs, n_reachable, n_u_to_r_edges, spurious_fn, total_edges, treatment, treatment_correct, treatment_tool_calls
+  [ALL] control 39/60 =  65.0% | baseline 14/60 =  23.3% | treatment 60/60 = 100.0%
+  [ALL] margin vs control = +35.0 | vs baseline = +76.7
+  n_funcs: mean=50.0 min=50 max=50
+  n_reachable: mean=26.6 min=23 max=30
+
+--- tokens: dispatch_subtle ---
+  adoption[dispatch_subtle/treatment]: 60/60 called a tool (mean 1.0 calls)
+  adoption[dispatch_subtle/baseline]: 60/60 called a tool (mean 5.8 calls)
+
+=== results_reach_sub.json  ['vta bound, reported as-is]  (n=15) ===
+  fields: answer_type, category, control, control_correct, difficulty, ground_truth, id, n_decoys, n_funcs, n_reachable, n_u_to_r_edges, spurious_fn, total_edges, treatment, treatment_correct
+  [ALL] control 11/15 =  73.3% | treatment 6/15 =  40.0%
+  [ALL] margin vs control = -33.3
+
+=== results_reach_sub_verify.json  [+ re-derive-by-hand mandate]  (n=15) ===
+  fields: answer_type, category, control, control_correct, difficulty, ground_truth, id, n_decoys, n_funcs, n_reachable, n_u_to_r_edges, spurious_fn, total_edges, treatment, treatment_correct
+  [ALL] control 11/15 =  73.3% | treatment 15/15 = 100.0%
+  [ALL] margin vs control = +26.7
+
+  PAIRED (same 15 ids): mandate FIXED 9, BROKE 0
+  control identical across the two runs: True
+
+=== results_reach_breakzone_all3.json  [scale axis, confounded]  (n=32) ===
+  fields: answer_type, baseline, baseline_correct, baseline_grep_truncations, category, control, control_correct, difficulty, ground_truth, id, n_decoys, n_funcs, n_reachable, n_u_to_r_edges, total_edges, treatment, treatment_correct
+  [128] control 8/8 = 100.0% | baseline 8/8 = 100.0% | treatment 8/8 = 100.0%
+  [192] control 6/8 =  75.0% | baseline 8/8 = 100.0% | treatment 8/8 = 100.0%
+  [256] control 7/8 =  87.5% | baseline 5/8 =  62.5% | treatment 8/8 = 100.0%
+  [384] control 6/8 =  75.0% | baseline 5/8 =  62.5% | treatment 8/8 = 100.0%
+  [128] margin vs control = +0.0 | vs baseline = +0.0
+  [192] margin vs control = +25.0 | vs baseline = +0.0
+  [256] margin vs control = +12.5 | vs baseline = +37.5
+  [384] margin vs control = +25.0 | vs baseline = +37.5
+  n_reachable: mean=119.5 min=55 max=218
+
+=== results_iface_control_pilot.json  [interface may-union]  (n=12) ===
+  fields: answer_type, category, control, control_correct, difficulty, ground_truth, id, n_funcs, n_reachable
+  [ALL] control 12/12 = 100.0%
+  n_reachable: mean=11.5 min=8 max=16
+
+=== results_iface_nest_control_pilot.json  [interface may-union]  (n=12) ===
+  fields: answer_type, category, control, control_correct, difficulty, ground_truth, id, n_funcs, n_reachable
+  [ALL] control 12/12 = 100.0%
+  n_reachable: mean=18.6 min=13 max=25
+
+=== results_iface_scale_control.json  [interface may-union]  (n=9) ===
+  fields: answer_type, category, control, control_correct, difficulty, ground_truth, id, n_funcs, n_reachable
+  [ALL] control 9/9 = 100.0%
+  n_reachable: mean=102.0 min=62 max=152
+
+=== results_step0_opus48_b5000.json  [budget confound]  (n=90) ===
+  fields: answer_type, category, control, control_correct, difficulty, ground_truth, id, precision, treatment, treatment_correct
+  [ALL] control 67/90 =  74.4% | treatment 56/90 =  62.2%
+  [ALL] margin vs control = -12.2
+  stop reasons: {None: 90}
+
+=== results_step0_opus48_b10000.json  [budget confound]  (n=90) ===
+  fields: answer_type, category, difficulty, ground_truth, id, precision, treatment, treatment_correct
+  [ALL] treatment 65/90 =  72.2%
+  stop reasons: {None: 90}
+
+============================== COST (report_cost.py) ======================
+
+=== results_reach_final.json  (n=120) ===
+arm            input  cache_r  cache_w  output    TOTAL
+control         1243        0        0     985     2228
+baseline       10984        0        0    1485    12470
+treatment       2060        0        0     260     2320
+
+  ratio to treatment (>1 means that arm costs MORE):
+    control      1.0x   <- THE HONEST DENOMINATOR. An agent with a read-file tool.
+    baseline     5.4x   <- grep: a bad strategy at this scale.
+    treatment    1.0x
+
+=== results_dispatch_subtle.json  (n=60) ===
+arm            input  cache_r  cache_w  output    TOTAL
+control         1008        0        0     435     1443
+baseline       18269        0        0    1317    19586
+treatment       2630        0        0     237     2867
+
+  ratio to treatment (>1 means that arm costs MORE):
+    control      0.5x   <- THE HONEST DENOMINATOR. An agent with a read-file tool.
+    baseline     6.8x   <- grep: a bad strategy at this scale.
+    treatment    1.0x
+
+=========================== VERDICT ===========================
+ALL headline figures in THESIS.md 'What is measured' REPRODUCE EXACTLY:
+  depth ladder    d4  98.3/100/100   d47  91.7/100/100   margin vs baseline +0.0 both
+  dispatch        65.0 / 23.3 / 100.0    -> +35.0 over control
+  anchoring pair  -33.3 then +26.7; paired: 9 fixed, 0 broken; controls identical
+  scale f>=192    control 19/24, baseline 18/24, treatment 24/24
+  cost            2228/12470/2320 and 1443/19586/2867, caching off (verified 0)
+  budget confound control 74.4%, treatment 62.2% @5k -> 72.2% @10k
+
+ONE GAP FOUND, and it is a reporting gap, not an error: the per-arm token counts are
+NESTED inside the arm record, not flat fields. A naive extractor reports NO TOKEN
+FIELDS and would silently drop the entire cost axis. The figures are correct; the
+shape of the file invites exactly the provenance mistake the thesis was just fixing.

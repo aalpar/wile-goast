@@ -1,0 +1,29 @@
+E5 -- Depth ladder at f80: the tool buys NOTHING over conventional tooling.
+Recomputed from the raw result JSON named below, not transcribed from prose.
+
+Source : code-restructuring/results_reach_final.json  (LLMAccuracy 17a3e8d)
+Corpus : n=60 per rung. source-withheld, adoption-gated.
+Pinned : n_funcs = [80]   n_reachable = [48]
+         -- file size AND answer size are held constant, so DEPTH is the only variable.
+
+  d4    control 59/60= 98.3%   baseline 60/60=100.0%   treatment 60/60=100.0%   |   margin vs baseline  +0.0   vs control  +1.7
+  d47   control 55/60= 91.7%   baseline 60/60=100.0%   treatment 60/60=100.0%   |   margin vs baseline  +0.0   vs control  +8.3
+
+ADOPTION GATE: treatment called a tool on 120/120 problems. Not a control arm in a costume.
+
+TWO MARGINS, TWO DIFFERENT STATEMENTS:
+  vs BASELINE (gopls+grep):  +0.0 at BOTH rungs.  <-- THE NULL
+  vs CONTROL  (read-file) :  +1.7 (d4), +8.3 (d47, Fisher p=0.057, n.s.)
+
+The honest denominator is the STRONGEST alternative. At an 80-function file grep is
+at ceiling, so it IS the strongest alternative, and the null stands: on plain
+syntactic reachability the tool buys nothing over conventional tooling.
+
+WHY THIS SUPPORTS THE THESIS: the thesis claims the tool wins EXACTLY WHERE the
+agent's derivation is unreliable. Here syntax tells the truth and epsilon is tiny,
+so the criterion PREDICTS no gain -- and got it right. This is the negative half of
+a biconditional, confirmed.
+
+WHAT IT IS NOT: it is not a result about COMPOSITION. See E8 -- at epsilon=0.0019,
+N=47 can only produce ~8 points of decay, below the resolution of n=60. The
+composition question is underpowered here, not answered.

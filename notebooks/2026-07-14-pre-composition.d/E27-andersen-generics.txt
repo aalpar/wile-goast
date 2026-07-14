@@ -1,0 +1,56 @@
+E27 -- The Andersen oracle on generics: exact, but only with ssa.InstantiateGenerics.
+
+PRE-CLEAR CLAIM (verbal, never logged), NOW SHOWN WRONG:
+  'go/pointer predates generics, so the oracle is compromised for real code.
+   It survives only because corpora A and B are generics-free.'
+
+That is FALSE in its mechanism, and the truth is more actionable.
+
+=================== SETUP ===================
+Vendored go/pointer (x/tools v0.9.0, Apache-2.0) + the deleted typeparams pkg,
+lifted into a module on x/tools v0.46 / go1.25. Probe: print every IsInvoke() call
+site and the callees Andersen resolves, under two SSA builder modes.
+  harness: vend/genprobe/main.go ; subjects: vend/gen/{plain,generic,hard}
+
+=================== THE MEASUREMENT ===================
+
+  subject   SSA mode              interface-dispatch edges resolved
+  -------   -------------------   ---------------------------------
+  plain     default               TaA.M                       EXACT
+  plain     InstantiateGenerics   TaA.M                       EXACT
+  generic   default               (NONE AT ALL)               UNSOUND
+  generic   InstantiateGenerics   TaA.M                       EXACT
+  hard      default               (NONE AT ALL)               UNSOUND
+  hard      InstantiateGenerics   TaA.M, TaC.M                EXACT
+
+'hard' = generic container Box[T Ia] + generic function Each[T Ia] + nested
+Pair[A,B] instantiation. Truth: registry.Run -> TaA.M only; Each -> TaC.M.
+Decoy TaB{} is put in 'spare' and never dispatched.
+
+=================== THE TWO FINDINGS ===================
+
+(1) THE FAILURE IS SILENT, NOT A PANIC.
+    Without ssa.InstantiateGenerics, every dispatch site reached through generic
+    code contributes ZERO call-graph edges. pointer.Analyze returns success. No
+    error, no panic, no diagnostic. It is an UNDER-approximation that reports
+    itself as a clean result -- the one failure mode an oracle must not have,
+    because it would silently certify a broken points-to implementation as exact.
+
+(2) WITH THE FLAG, ANDERSEN IS EXACT ON GENERICS -- INCLUDING FIELD-SENSITIVELY.
+    In 'hard', registry and spare are two globals of the SAME instantiated type
+    Box[Ia]. Andersen keeps them apart and excludes the decoy TaB. That is
+    precisely the discrimination x/tools' field-BASED VTA cannot make (E24/E25),
+    and it survives monomorphization.
+
+=================== CONSEQUENCE ===================
+
+The oracle is NOT compromised for real code. It is compromised by one harness
+flag, and the flag is free. E24's 126/126 stands either way, because corpora A
+and B are generics-free -- but that was luck, not design, and the same probe run
+on generic code with the default builder mode would have reported a perfect score
+for an analysis that had silently stopped analysing.
+
+ADJACENT HAZARD, NOT THE SAME ONE: vend/main.go carries the comment that
+ssautil.AllFunctions 'trips a generics panic in RuntimeTypes on x/tools v0.46'.
+That is a DIFFERENT defect (an x/tools enumeration path), and it is why the
+harness roots via AllPackages + Mains instead. Not re-verified here.

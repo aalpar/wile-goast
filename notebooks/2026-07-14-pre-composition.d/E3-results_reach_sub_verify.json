@@ -1,0 +1,766 @@
+[
+  {
+    "id": "reach-f8-000",
+    "category": "reachability",
+    "difficulty": "f8",
+    "n_funcs": 8,
+    "n_reachable": 5,
+    "n_decoys": 0,
+    "n_u_to_r_edges": 0,
+    "total_edges": 5,
+    "spurious_fn": "f5",
+    "ground_truth": "{f0, f2, f4, f6, f7}",
+    "answer_type": "set",
+    "control": {
+      "raw_response": "f0 calls f7, f6, f4.\n- f7 calls f0 (cycle).\n- f6 calls f5, f2 (slice), but only invokes t[1] = f2. However f5 is in slice but not called. Since we trace calls, only f2 invoked.\n\nWait, careful: reachability via actual calls. f6 only invokes t[1]() = f2. f5 referenced but not called.\n\nSo reachable: f0, f7, f6, f4, f2.\n\nANSWER: {f0, f2, f4, f6, f7}",
+      "extracted_answer": "{f0, f2, f4, f6, f7}",
+      "input_tokens": 383,
+      "output_tokens": 176,
+      "stop_reason": "end_turn",
+      "completion": "end_turn",
+      "truncated": false,
+      "total_budget": 10000,
+      "elapsed_s": 11.3
+    },
+    "control_correct": true,
+    "treatment": {
+      "raw_response": "I'll start by getting vta's over-approximation, then verify by hand.Now let me verify by tracing invoked indexed call sites by hand.\n\n- **f0**: `t := []func(){f7, f6, f4}`; invokes `t[0]()`=f7, `t[1]()`=f6, `t[2]()`=f4. \u2192 f7, f6, f4 all invoked.\n- **f7**: `t := []func(){f0}`; invokes `t[0]()`=f0. \u2192 f0 (already have).\n- **f6**: `t := []func(){f5, f2}`; invokes only `t[1]()`=f2. **f5 is NOT invoked** (only index 1 called). \u2192 f2 invoked, f5 dropped.\n- **f4**: empty.\n- **f2**: empty.\n\nvta lists f5, but f6 only calls `t[1]()` which selects f2, not f5 (index 0). So f5 must be dropped.\n\nReachable: f0, f7, f6, f4, f2.\n\nANSWER: {f0, f2, f4, f6, f7}",
+      "extracted_answer": "{f0, f2, f4, f6, f7}",
+      "input_tokens": 815,
+      "output_tokens": 439,
+      "cache_creation_tokens": 1133,
+      "cache_read_tokens": 1133,
+      "stop_reason": "end_turn",
+      "completion": "end_turn",
+      "truncated": false,
+      "total_budget": 24000,
+      "elapsed_s": 6.817,
+      "rounds": 2,
+      "tool_calls": 1,
+      "tool_trace": [
+        {
+          "tool": "eval",
+          "arguments": {
+            "code": "(import (wile goast path-algebra))\n(go-callgraph-reachable (go-callgraph \".\" 'vta) \"p.f0\")"
+          },
+          "output": "(\"p.f0\" \"p.f2\" \"p.f4\" \"p.f5\" \"p.f6\" \"p.f7\")"
+        }
+      ]
+    },
+    "treatment_correct": true
+  },
+  {
+    "id": "reach-f8-001",
+    "category": "reachability",
+    "difficulty": "f8",
+    "n_funcs": 8,
+    "n_reachable": 4,
+    "n_decoys": 0,
+    "n_u_to_r_edges": 0,
+    "total_edges": 4,
+    "spurious_fn": "f6",
+    "ground_truth": "{f0, f1, f2, f5}",
+    "answer_type": "set",
+    "control": {
+      "raw_response": "f0 calls f5, f2.\nf5 calls f2, f6.\nf2 calls f1.\nf6, f1 call nothing.\n\nReachable: f0, f5, f2, f6, f1.\n\nANSWER: {f0, f1, f2, f5, f6}",
+      "extracted_answer": "{f0, f1, f2, f5, f6}",
+      "input_tokens": 375,
+      "output_tokens": 90,
+      "stop_reason": "end_turn",
+      "completion": "end_turn",
+      "truncated": false,
+      "total_budget": 10000,
+      "elapsed_s": 6.808
+    },
+    "control_correct": false,
+    "treatment": {
+      "raw_response": "I'll start by getting vta's over-approximation, then verify by hand.Now let me trace by hand, checking each invoked indexed call site.\n\n- **f0**: `t := []func(){f5, f2}; t[0](); t[1]();` \u2192 invokes t[0]=f5, t[1]=f2. Both selected. \u2713 f5, f2\n- **f5**: `t := []func(){f2, f6}; t[0]();` \u2192 invokes only t[0]=f2. f6 is at index 1, **never invoked**. So f6 is NOT selected. \u2717 f6\n- **f2**: `t := []func(){f1}; t[0]();` \u2192 invokes t[0]=f1. \u2713 f1\n- **f1**: empty.\n\nLet me verify with static/cha to confirm reasoning about the indexed calls.The vta output is over-approximated (it merges slice contents). My hand trace of the actual constant indices is authoritative:\n\n**Trace:**\n- **f0** runs: `t = [f5, f2]`, invokes `t[0]()`=**f5** and `t[1]()`=**f2**.\n- **f5** runs: `t = [f2, f6]`, invokes only `t[0]()`=**f2**. Index 1 (f6) is never invoked \u2192 **f6 excluded**.\n- **f2** runs: `t = [f1]`, invokes `t[0]()`=**f1**.\n- **f1** runs: empty.\n\nReachable: f0, f5, f2, f1. f6 is dropped (only reached via unselected index 1).\n\nANSWER: {f0, f1, f2, f5}",
+      "extracted_answer": "{f0, f1, f2, f5}",
+      "input_tokens": 2831,
+      "output_tokens": 761,
+      "cache_creation_tokens": 0,
+      "cache_read_tokens": 3399,
+      "stop_reason": "end_turn",
+      "completion": "end_turn",
+      "truncated": false,
+      "total_budget": 24000,
+      "elapsed_s": 12.094,
+      "rounds": 3,
+      "tool_calls": 2,
+      "tool_trace": [
+        {
+          "tool": "eval",
+          "arguments": {
+            "code": "(import (wile goast path-algebra))\n(display (go-callgraph-reachable (go-callgraph \".\" 'vta) \"p.f0\"))\n(newline)"
+          },
+          "output": "(p.f0 p.f1 p.f2 p.f5 p.f6)"
+        },
+        {
+          "tool": "eval",
+          "arguments": {
+            "code": "(import (wile goast path-algebra))\n(display (go-callgraph-callees (go-callgraph \".\" 'vta) \"p.f5\"))\n(newline)\n(display (go-callgraph-callees (go-callgraph \".\" 'vta) \"p.f0\"))\n(newline)"
+          },
+          "output": "((cg-edge (caller . p.f5) (callee . p.f6) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f8-001/main.go:16:6) (description . dynamic function call)) (cg-edge (caller . p.f5) (callee . p.f2) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f8-001/main.go:16:6) (description . dynamic function call)) (cg-edge (caller . p.f5) (callee . p.f5) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f8-001/main.go:16:6) (description . dynamic function call)) (cg-edge (caller . p.f5) (callee . p.f1) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f8-001/main.go:16:6) (description . dynamic function call)))\n((cg-edge (caller . p.f0) (callee . p.f1) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f8-001/main.go:5:6) (description . dynamic function call)) (cg-edge (caller . p.f0) (callee . p.f5) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f8-001/main.go:5:6) (description . dynamic function call)) (cg-edge (caller . p.f0) (callee . p.f2) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f8-001/main.go:5:6) (description . dynamic function call)) (cg-edge (caller . p.f0) (callee . p.f6) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f8-001/main.go:5:6) (description . dynamic function call)) (cg-edge (caller . p.f0) (callee . p.f1) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f8-001/main.go:5:14) (description . dynamic function call)) (cg-edge (caller . p.f0) (callee . p.f5) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f8-001/main.go:5:14) (description . dynamic function call)) (cg-edge (caller . p.f0) (callee . p.f2) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f8-001/main.go:5:14) (description . dynamic function call)) (cg-edge (caller . p.f0) (callee . p.f6) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f8-001/main.go:5:14) (description . dynamic function call)))"
+        }
+      ]
+    },
+    "treatment_correct": true
+  },
+  {
+    "id": "reach-f8-002",
+    "category": "reachability",
+    "difficulty": "f8",
+    "n_funcs": 8,
+    "n_reachable": 4,
+    "n_decoys": 0,
+    "n_u_to_r_edges": 0,
+    "total_edges": 4,
+    "spurious_fn": "f2",
+    "ground_truth": "{f0, f1, f4, f7}",
+    "answer_type": "set",
+    "control": {
+      "raw_response": "f0 \u2192 f4, f7\nf4 \u2192 f1, f2\nf1 \u2192 f0 (cycle)\nf7 \u2192 none\nf2 \u2192 none\n\nReachable: f0, f4, f7, f1, f2\n\nANSWER: {f0, f1, f2, f4, f7}",
+      "extracted_answer": "{f0, f1, f2, f4, f7}",
+      "input_tokens": 375,
+      "output_tokens": 89,
+      "stop_reason": "end_turn",
+      "completion": "end_turn",
+      "truncated": false,
+      "total_budget": 10000,
+      "elapsed_s": 3.884
+    },
+    "control_correct": false,
+    "treatment": {
+      "raw_response": "I'll analyze this using the call-graph tools, then apply the strict verification protocol.vta gives the over-approximation `{f0, f1, f2, f4, f7}`. Now I apply the strict verification protocol by tracing actual invoked constant indices.\n\n**Tracing by hand:**\n\n- **f0**: `t := []func(){f4, f7}; t[0](); t[1]();`\n  - `t[0]()` \u2192 **f4** (invoked \u2713)\n  - `t[1]()` \u2192 **f7** (invoked \u2713)\n\n- **f4** (reached): `t := []func(){f1, f2}; t[0]();`\n  - `t[0]()` \u2192 **f1** (invoked \u2713)\n  - f2 is at index 1, but `t[1]()` is **never invoked** \u2192 f2 NOT selected here.\n\n- **f7** (reached): empty body, no calls.\n\n- **f1** (reached): `t := []func(){f0}; t[0]();`\n  - `t[0]()` \u2192 **f0** (invoked \u2713, already in set)\n\n**Checking each vta member reached only via indexed calls:**\n- f4: selected by f0's `t[0]()` \u2713 keep\n- f7: selected by f0's `t[1]()` \u2713 keep\n- f1: selected by f4's `t[0]()` \u2713 keep\n- **f2**: vta includes it, but the only slice containing f2 is in f4 (`{f1, f2}` at index 1), and `t[1]()` is never invoked in f4. No invoked constant index selects f2. \u2192 **DROP f2**\n\nFiltered reachable set: {f0, f1, f4, f7}.\n\nANSWER: {f0, f1, f4, f7}",
+      "extracted_answer": "{f0, f1, f4, f7}",
+      "input_tokens": 2942,
+      "output_tokens": 804,
+      "cache_creation_tokens": 0,
+      "cache_read_tokens": 2266,
+      "stop_reason": "end_turn",
+      "completion": "end_turn",
+      "truncated": false,
+      "total_budget": 24000,
+      "elapsed_s": 11.035,
+      "rounds": 2,
+      "tool_calls": 1,
+      "tool_trace": [
+        {
+          "tool": "eval",
+          "arguments": {
+            "code": "(import (wile goast path-algebra))\n(define cg (go-callgraph \".\" 'vta))\n(display (go-callgraph-reachable cg \"p.f0\"))\n(newline)\n(display \"callees f0: \")(display (go-callgraph-callees cg \"p.f0\"))(newline)\n(display \"callees f4: \")(display (go-callgraph-callees cg \"p.f4\"))(newline)\n(display \"callees f7: \")(display (go-callgraph-callees cg \"p.f7\"))(newline)\n(display \"callees f1: \")(display (go-callgraph-callees cg \"p.f1\"))(newline)"
+          },
+          "output": "(p.f0 p.f1 p.f2 p.f4 p.f7)\ncallees f0: ((cg-edge (caller . p.f0) (callee . p.f1) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f8-002/main.go:5:6) (description . dynamic function call)) (cg-edge (caller . p.f0) (callee . p.f0) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f8-002/main.go:5:6) (description . dynamic function call)) (cg-edge (caller . p.f0) (callee . p.f4) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f8-002/main.go:5:6) (description . dynamic function call)) (cg-edge (caller . p.f0) (callee . p.f2) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f8-002/main.go:5:6) (description . dynamic function call)) (cg-edge (caller . p.f0) (callee . p.f7) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f8-002/main.go:5:6) (description . dynamic function call)) (cg-edge (caller . p.f0) (callee . p.f1) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f8-002/main.go:5:14) (description . dynamic function call)) (cg-edge (caller . p.f0) (callee . p.f0) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f8-002/main.go:5:14) (description . dynamic function call)) (cg-edge (caller . p.f0) (callee . p.f4) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f8-002/main.go:5:14) (description . dynamic function call)) (cg-edge (caller . p.f0) (callee . p.f2) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f8-002/main.go:5:14) (description . dynamic function call)) (cg-edge (caller . p.f0) (callee . p.f7) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f8-002/main.go:5:14) (description . dynamic function call)))\ncallees f4: ((cg-edge (caller . p.f4) (callee . p.f1) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f8-002/main.go:15:6) (description . dynamic function call)) (cg-edge (caller . p.f4) (callee . p.f0) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f8-002/main.go:15:6) (description . dynamic function call)) (cg-edge (caller . p.f4) (callee . p.f4) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f8-002/main.go:15:6) (description . dynamic function call)) (cg-edge (caller . p.f4) (callee . p.f2) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f8-002/main.go:15:6) (description . dynamic function call)) (cg-edge (caller . p.f4) (callee . p.f7) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f8-002/main.go:15:6) (description . dynamic function call)))\ncallees f7: ()\ncallees f1: ((cg-edge (caller . p.f1) (callee . p.f1) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f8-002/main.go:9:6) (description . dynamic function call)) (cg-edge (caller . p.f1) (callee . p.f0) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f8-002/main.go:9:6) (description . dynamic function call)) (cg-edge (caller . p.f1) (callee . p.f4) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f8-002/main.go:9:6) (description . dynamic function call)) (cg-edge (caller . p.f1) (callee . p.f2) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f8-002/main.go:9:6) (description . dynamic function call)) (cg-edge (caller . p.f1) (callee . p.f7) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f8-002/main.go:9:6) (description . dynamic function call)))"
+        }
+      ]
+    },
+    "treatment_correct": true
+  },
+  {
+    "id": "reach-f8-003",
+    "category": "reachability",
+    "difficulty": "f8",
+    "n_funcs": 8,
+    "n_reachable": 4,
+    "n_decoys": 0,
+    "n_u_to_r_edges": 0,
+    "total_edges": 4,
+    "spurious_fn": "f7",
+    "ground_truth": "{f0, f1, f2, f3}",
+    "answer_type": "set",
+    "control": {
+      "raw_response": "f0 calls t[1]=f3, t[2]=f1, t[3]=f2.\nf1 calls f3.\n\nSo: f0, f1, f2, f3.\n\nANSWER: {f0, f1, f2, f3}",
+      "extracted_answer": "{f0, f1, f2, f3}",
+      "input_tokens": 364,
+      "output_tokens": 75,
+      "stop_reason": "end_turn",
+      "completion": "end_turn",
+      "truncated": false,
+      "total_budget": 10000,
+      "elapsed_s": 1.504
+    },
+    "control_correct": true,
+    "treatment": {
+      "raw_response": "I'll analyze this using the call graph tools, starting with vta (tightest sound over-approximation), then manually verify.VTA gives the over-approximation `{f0, f1, f2, f3, f7}`. Now I'll manually verify each function reached through indexed `[]func()` calls.\n\n**f0's slice:** `t := []func(){f7, f3, f1, f2}` \u2014 indices: `t[0]=f7, t[1]=f3, t[2]=f1, t[3]=f2`\n\n**Invoked call sites in f0:** `t[1](); t[2](); t[3]();`\n- `t[1]()` \u2192 selects **f3** \u2713\n- `t[2]()` \u2192 selects **f1** \u2713\n- `t[3]()` \u2192 selects **f2** \u2713\n- `t[0]` (f7) is **never invoked** \u2014 index 0 is not called. So **f7 must be DROPPED.**\n\n**f1's slice:** `t := []func(){f3}` \u2014 `t[0]=f3`\n- `t[0]()` \u2192 selects **f3** \u2713\n\n**f2, f3:** empty bodies, no calls.\n\n**Filtering vta's set:**\n- f0: root \u2014 include \u2713\n- f1: selected by f0's `t[2]()` \u2014 include \u2713\n- f2: selected by f0's `t[3]()` \u2014 include \u2713\n- f3: selected by f0's `t[1]()` and f1's `t[0]()` \u2014 include \u2713\n- f7: only appears at f0 index 0, which is **never invoked** \u2014 **DROP** \u2717\n\nVTA included f7 because f7's address flows into the slice, but the constant index 0 is never called.\n\nANSWER: {f0, f1, f2, f3}",
+      "extracted_answer": "{f0, f1, f2, f3}",
+      "input_tokens": 2006,
+      "output_tokens": 686,
+      "cache_creation_tokens": 0,
+      "cache_read_tokens": 2266,
+      "stop_reason": "end_turn",
+      "completion": "end_turn",
+      "truncated": false,
+      "total_budget": 24000,
+      "elapsed_s": 10.787,
+      "rounds": 2,
+      "tool_calls": 1,
+      "tool_trace": [
+        {
+          "tool": "eval",
+          "arguments": {
+            "code": "(import (wile goast path-algebra))\n(display (go-callgraph-reachable (go-callgraph \".\" 'vta) \"p.f0\"))\n(newline)\n(display (go-callgraph-callees (go-callgraph \".\" 'vta) \"p.f0\"))\n(newline)"
+          },
+          "output": "(p.f0 p.f1 p.f2 p.f3 p.f7)\n((cg-edge (caller . p.f0) (callee . p.f2) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f8-003/main.go:5:6) (description . dynamic function call)) (cg-edge (caller . p.f0) (callee . p.f7) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f8-003/main.go:5:6) (description . dynamic function call)) (cg-edge (caller . p.f0) (callee . p.f3) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f8-003/main.go:5:6) (description . dynamic function call)) (cg-edge (caller . p.f0) (callee . p.f1) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f8-003/main.go:5:6) (description . dynamic function call)) (cg-edge (caller . p.f0) (callee . p.f2) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f8-003/main.go:5:14) (description . dynamic function call)) (cg-edge (caller . p.f0) (callee . p.f7) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f8-003/main.go:5:14) (description . dynamic function call)) (cg-edge (caller . p.f0) (callee . p.f3) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f8-003/main.go:5:14) (description . dynamic function call)) (cg-edge (caller . p.f0) (callee . p.f1) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f8-003/main.go:5:14) (description . dynamic function call)) (cg-edge (caller . p.f0) (callee . p.f2) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f8-003/main.go:5:22) (description . dynamic function call)) (cg-edge (caller . p.f0) (callee . p.f7) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f8-003/main.go:5:22) (description . dynamic function call)) (cg-edge (caller . p.f0) (callee . p.f3) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f8-003/main.go:5:22) (description . dynamic function call)) (cg-edge (caller . p.f0) (callee . p.f1) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f8-003/main.go:5:22) (description . dynamic function call)))"
+        }
+      ]
+    },
+    "treatment_correct": true
+  },
+  {
+    "id": "reach-f8-004",
+    "category": "reachability",
+    "difficulty": "f8",
+    "n_funcs": 8,
+    "n_reachable": 4,
+    "n_decoys": 0,
+    "n_u_to_r_edges": 0,
+    "total_edges": 4,
+    "spurious_fn": "f7",
+    "ground_truth": "{f0, f1, f2, f3}",
+    "answer_type": "set",
+    "control": {
+      "raw_response": "- f0 \u2192 f1 (t[1])\n- f1 \u2192 f2, f3\n- f3 \u2192 f1 (cycle)\n\nReachable: f0, f1, f2, f3\n\nANSWER: {f0, f1, f2, f3}",
+      "extracted_answer": "{f0, f1, f2, f3}",
+      "input_tokens": 375,
+      "output_tokens": 77,
+      "stop_reason": "end_turn",
+      "completion": "end_turn",
+      "truncated": false,
+      "total_budget": 10000,
+      "elapsed_s": 1.461
+    },
+    "control_correct": true,
+    "treatment": {
+      "raw_response": "I'll analyze this using the call-graph tool, then verify by hand tracing the indexed calls.Now let me verify by hand tracing the actually-invoked indexed call sites.\n\n- **f0**: `t := []func(){f7, f1}`, calls `t[1]()` \u2192 selects **f1** (not f7).\n- **f1**: `t := []func(){f2, f3}`, calls `t[0]()` \u2192 **f2**, and `t[1]()` \u2192 **f3**.\n- **f2**: empty.\n- **f3**: `t := []func(){f1}`, calls `t[0]()` \u2192 **f1** (already visited).\n\nSo reachable: f0 \u2192 f1 \u2192 {f2, f3} \u2192 f1 (cycle).\n\n**f7** appears in vta's set because `f7` is stored in f0's slice, but the only invoked index in f0 is `t[1]()`, which selects f1 \u2014 `f7` at index 0 is never called. Drop f7.\n\nReachable set: {f0, f1, f2, f3}.\n\nANSWER: {f0, f1, f2, f3}",
+      "extracted_answer": "{f0, f1, f2, f3}",
+      "input_tokens": 806,
+      "output_tokens": 445,
+      "cache_creation_tokens": 0,
+      "cache_read_tokens": 2266,
+      "stop_reason": "end_turn",
+      "completion": "end_turn",
+      "truncated": false,
+      "total_budget": 24000,
+      "elapsed_s": 16.417,
+      "rounds": 2,
+      "tool_calls": 1,
+      "tool_trace": [
+        {
+          "tool": "eval",
+          "arguments": {
+            "code": "(import (wile goast path-algebra))\n(display (go-callgraph-reachable (go-callgraph \".\" 'vta) \"p.f0\"))\n(newline)"
+          },
+          "output": "(p.f0 p.f1 p.f2 p.f3 p.f7)"
+        }
+      ]
+    },
+    "treatment_correct": true
+  },
+  {
+    "id": "reach-f16-000",
+    "category": "reachability",
+    "difficulty": "f16",
+    "n_funcs": 16,
+    "n_reachable": 9,
+    "n_decoys": 0,
+    "n_u_to_r_edges": 0,
+    "total_edges": 9,
+    "spurious_fn": "f11",
+    "ground_truth": "{f0, f1, f2, f4, f5, f7, f13, f14, f15}",
+    "answer_type": "set",
+    "control": {
+      "raw_response": "f0 \u2192 f1, f13\nf1 \u2192 f2, f7\nf2 \u2192 none\nf7 \u2192 f14, f5 (indices 0 and 2)\nf14 \u2192 none\nf5 \u2192 f4\nf4 \u2192 none\nf13 \u2192 f15\nf15 \u2192 f2\n\nReachable: f0, f1, f2, f7, f13, f14, f5, f4, f15\n\nANSWER: {f0, f1, f13, f14, f15, f2, f4, f5, f7}",
+      "extracted_answer": "{f0, f1, f13, f14, f15, f2, f4, f5, f7}",
+      "input_tokens": 504,
+      "output_tokens": 148,
+      "stop_reason": "end_turn",
+      "completion": "end_turn",
+      "truncated": false,
+      "total_budget": 10000,
+      "elapsed_s": 2.254
+    },
+    "control_correct": true,
+    "treatment": {
+      "raw_response": "Let me trace this by hand and verify with the tool.Let me trace by hand to verify each indexed call:\n\n- **f0**: `t=[f1,f13]`; calls `t[0]()`=f1, `t[1]()`=f13. \u2192 f1, f13\n- **f1**: `t=[f2,f7]`; calls `t[0]()`=f2, `t[1]()`=f7. \u2192 f2, f7\n- **f2**: empty.\n- **f13**: `t=[f15]`; calls `t[0]()`=f15. \u2192 f15\n- **f15**: `t=[f2]`; calls `t[0]()`=f2. \u2192 f2\n- **f7**: `t=[f14,f11,f5]`; calls `t[0]()`=f14, `t[2]()`=f5. (Note: f11 at index 1 is NOT called.) \u2192 f14, f5\n- **f14**: empty.\n- **f5**: `t=[f4]`; calls `t[0]()`=f4. \u2192 f4\n- **f4**: empty.\n\nReachable set: f0, f1, f2, f7, f13, f15, f14, f5, f4.\n\nvta lists **f11**, but f11 sits at index 1 in f7's slice, and f7 only invokes `t[0]()` and `t[2]()` \u2014 never `t[1]()`. So f11 must be dropped.\n\nFinal filtered set: {f0, f1, f2, f4, f5, f7, f13, f14, f15}\n\nANSWER: {f0, f1, f2, f4, f5, f7, f13, f14, f15}",
+      "extracted_answer": "{f0, f1, f2, f4, f5, f7, f13, f14, f15}",
+      "input_tokens": 1075,
+      "output_tokens": 598,
+      "cache_creation_tokens": 0,
+      "cache_read_tokens": 2266,
+      "stop_reason": "end_turn",
+      "completion": "end_turn",
+      "truncated": false,
+      "total_budget": 24000,
+      "elapsed_s": 8.638,
+      "rounds": 2,
+      "tool_calls": 1,
+      "tool_trace": [
+        {
+          "tool": "eval",
+          "arguments": {
+            "code": "(import (wile goast path-algebra))\n(go-callgraph-reachable (go-callgraph \".\" 'vta) \"p.f0\")"
+          },
+          "output": "(\"p.f0\" \"p.f1\" \"p.f11\" \"p.f13\" \"p.f14\" \"p.f15\" \"p.f2\" \"p.f4\" \"p.f5\" \"p.f7\")"
+        }
+      ]
+    },
+    "treatment_correct": true
+  },
+  {
+    "id": "reach-f16-001",
+    "category": "reachability",
+    "difficulty": "f16",
+    "n_funcs": 16,
+    "n_reachable": 8,
+    "n_decoys": 0,
+    "n_u_to_r_edges": 0,
+    "total_edges": 8,
+    "spurious_fn": "f12",
+    "ground_truth": "{f0, f5, f9, f10, f11, f13, f14, f15}",
+    "answer_type": "set",
+    "control": {
+      "raw_response": "f0 calls f14, f11.\n\nf14 \u2192 f5, f13.\nf5 \u2192 f10, f9, f15.\nf9 \u2192 f5 (cycle).\nf11, f13, f10, f15 leaf.\n\nReachable: f0, f14, f11, f5, f13, f10, f9, f15.\n\nANSWER: {f0, f10, f11, f13, f14, f15, f5, f9}",
+      "extracted_answer": "{f0, f10, f11, f13, f14, f15, f5, f9}",
+      "input_tokens": 474,
+      "output_tokens": 130,
+      "stop_reason": "end_turn",
+      "completion": "end_turn",
+      "truncated": false,
+      "total_budget": 10000,
+      "elapsed_s": 2.084
+    },
+    "control_correct": true,
+    "treatment": {
+      "raw_response": "I'll start by getting vta's over-approximation, then verify by hand.Now let me trace by hand which invoked indexed calls actually select each function.\n\n- **f0**: `t := []func(){f14, f12, f11}`; invokes `t[0]()` \u2192 f14, `t[2]()` \u2192 f11. (f12 at index 1 is NOT invoked.)\n  - So f14 \u2713, f11 \u2713, f12 \u2717 (dropped).\n\n- **f14**: `t := []func(){f5, f13}`; invokes `t[0]()` \u2192 f5, `t[1]()` \u2192 f13.\n  - f5 \u2713, f13 \u2713.\n\n- **f11**: empty body.\n\n- **f5**: `t := []func(){f10, f9, f15}`; invokes `t[0]()` \u2192 f10, `t[1]()` \u2192 f9, `t[2]()` \u2192 f15.\n  - f10 \u2713, f9 \u2713, f15 \u2713.\n\n- **f13**: empty body.\n\n- **f10**: empty body.\n\n- **f9**: `t := []func(){f5}`; invokes `t[0]()` \u2192 f5 (already reached).\n\n- **f15**: empty body.\n\nNow checking vta's list against my derivation:\n- f0 \u2713, f14 \u2713, f11 \u2713, f5 \u2713, f13 \u2713, f10 \u2713, f9 \u2713, f15 \u2713\n- **f12**: vta included it, but f0's only invoked calls are `t[0]()` (f14) and `t[2]()` (f11). Index 1 (f12) is never invoked. **Drop f12.**\n\nLet me confirm the callees at f0 to double-check.This confirms vta over-approximates each `t[c]()` call site to all slice members. Both call sites in f0 (`t[0]()` and `t[2]()`) get all three of {f14, f12, f11} attributed to them. But by hand, index 1 (f12) is never invoked, so f12 must be dropped.\n\nMy hand trace stands. Starting from f0:\n- f0 \u2192 f14, f11\n- f14 \u2192 f5, f13\n- f5 \u2192 f10, f9, f15\n- f9 \u2192 f5 (cycle, no new)\n\nReachable: f0, f5, f9, f10, f11, f13, f14, f15. **f12 dropped** (index 1 in f0 never invoked).\n\nANSWER: {f0, f5, f9, f10, f11, f13, f14, f15}",
+      "extracted_answer": "{f0, f5, f9, f10, f11, f13, f14, f15}",
+      "input_tokens": 3849,
+      "output_tokens": 974,
+      "cache_creation_tokens": 0,
+      "cache_read_tokens": 3399,
+      "stop_reason": "end_turn",
+      "completion": "end_turn",
+      "truncated": false,
+      "total_budget": 24000,
+      "elapsed_s": 14.277,
+      "rounds": 3,
+      "tool_calls": 2,
+      "tool_trace": [
+        {
+          "tool": "eval",
+          "arguments": {
+            "code": "(import (wile goast path-algebra))\n(go-callgraph-reachable (go-callgraph \".\" 'vta) \"p.f0\")"
+          },
+          "output": "(\"p.f0\" \"p.f10\" \"p.f11\" \"p.f12\" \"p.f13\" \"p.f14\" \"p.f15\" \"p.f5\" \"p.f9\")"
+        },
+        {
+          "tool": "eval",
+          "arguments": {
+            "code": "(import (wile goast path-algebra))\n(go-callgraph-callees (go-callgraph \".\" 'vta) \"p.f0\")"
+          },
+          "output": "((cg-edge (caller . \"p.f0\") (callee . \"p.f11\") (pos . \"/Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f16-001/main.go:5:6\") (description . \"dynamic function call\")) (cg-edge (caller . \"p.f0\") (callee . \"p.f14\") (pos . \"/Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f16-001/main.go:5:6\") (description . \"dynamic function call\")) (cg-edge (caller . \"p.f0\") (callee . \"p.f13\") (pos . \"/Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f16-001/main.go:5:6\") (description . \"dynamic function call\")) (cg-edge (caller . \"p.f0\") (callee . \"p.f15\") (pos . \"/Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f16-001/main.go:5:6\") (description . \"dynamic function call\")) (cg-edge (caller . \"p.f0\") (callee . \"p.f5\") (pos . \"/Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f16-001/main.go:5:6\") (description . \"dynamic function call\")) (cg-edge (caller . \"p.f0\") (callee . \"p.f9\") (pos . \"/Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f16-001/main.go:5:6\") (description . \"dynamic function call\")) (cg-edge (caller . \"p.f0\") (callee . \"p.f10\") (pos . \"/Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f16-001/main.go:5:6\") (description . \"dynamic function call\")) (cg-edge (caller . \"p.f0\") (callee . \"p.f12\") (pos . \"/Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f16-001/main.go:5:6\") (description . \"dynamic function call\")) (cg-edge (caller . \"p.f0\") (callee . \"p.f11\") (pos . \"/Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f16-001/main.go:5:14\") (description . \"dynamic function call\")) (cg-edge (caller . \"p.f0\") (callee . \"p.f14\") (pos . \"/Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f16-001/main.go:5:14\") (description . \"dynamic function call\")) (cg-edge (caller . \"p.f0\") (callee . \"p.f13\") (pos . \"/Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f16-001/main.go:5:14\") (description . \"dynamic function call\")) (cg-edge (caller . \"p.f0\") (callee . \"p.f15\") (pos . \"/Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f16-001/main.go:5:14\") (description . \"dynamic function call\")) (cg-edge (caller . \"p.f0\") (callee . \"p.f5\") (pos . \"/Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f16-001/main.go:5:14\") (description . \"dynamic function call\")) (cg-edge (caller . \"p.f0\") (callee . \"p.f9\") (pos . \"/Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f16-001/main.go:5:14\") (description . \"dynamic function call\")) (cg-edge (caller . \"p.f0\") (callee . \"p.f10\") (pos . \"/Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f16-001/main.go:5:14\") (description . \"dynamic function call\")) (cg-edge (caller . \"p.f0\") (callee . \"p.f12\") (pos . \"/Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f16-001/main.go:5:14\") (description . \"dynamic function call\")))"
+        }
+      ]
+    },
+    "treatment_correct": true
+  },
+  {
+    "id": "reach-f16-002",
+    "category": "reachability",
+    "difficulty": "f16",
+    "n_funcs": 16,
+    "n_reachable": 10,
+    "n_decoys": 0,
+    "n_u_to_r_edges": 0,
+    "total_edges": 11,
+    "spurious_fn": "f14",
+    "ground_truth": "{f0, f1, f2, f4, f6, f7, f8, f12, f13, f15}",
+    "answer_type": "set",
+    "control": {
+      "raw_response": "f0 calls: f2, f1, f4, f13, f8\n\nf2: {}\nf1: f15, f6\nf4: {}\nf13: {}\nf8: f12, f14\n\nf15: f13, f7\nf6: f8\nf12: {}\nf14: {}\nf7: {}\n\nCollecting: f0, f2, f1, f4, f13, f8, f15, f6, f12, f14, f7\n\nANSWER: {f0, f1, f2, f4, f6, f7, f8, f12, f13, f14, f15}",
+      "extracted_answer": "{f0, f1, f2, f4, f6, f7, f8, f12, f13, f14, f15}",
+      "input_tokens": 509,
+      "output_tokens": 170,
+      "stop_reason": "end_turn",
+      "completion": "end_turn",
+      "truncated": false,
+      "total_budget": 10000,
+      "elapsed_s": 2.857
+    },
+    "control_correct": false,
+    "treatment": {
+      "raw_response": "I'll start by getting vta's over-approximation, then filter by hand.Now let me trace by hand which invoked indexed calls actually select each function.\n\n- **f0**: root. \u2713\n- f0: `t=[f2,f1,f4,f13,f8]`, invokes t[0],t[1],t[2],t[3],t[4] \u2192 all: **f2, f1, f4, f13, f8** \u2713\n- **f1**: selected by f0. `t=[f15,f6]`, invokes t[0],t[1] \u2192 **f15, f6** \u2713\n- **f2**: selected. leaf. \u2713\n- **f4**: selected. leaf. \u2713\n- **f13**: selected. leaf. \u2713\n- **f8**: selected by f0 (and via f6). `t=[f12,f14]`, invokes only t[0] \u2192 **f12** only. f14 NOT selected (t[1] never invoked). \n- **f15**: selected by f1. `t=[f13,f7]`, invokes t[0],t[1] \u2192 **f13, f7** \u2713\n- **f6**: selected by f1. `t=[f8]`, invokes t[0] \u2192 **f8** \u2713\n- **f12**: selected by f8 (t[0]). leaf. \u2713\n- **f7**: selected by f15 (t[1]). leaf. \u2713\n- **f14**: only in f8's slice at index 1, which is never invoked. **DROP f14.**\n\nSo f14 is the only function vta lists that no invoked constant index selects.\n\nReachable set: f0, f1, f2, f4, f6, f7, f8, f12, f13, f15.\n\nANSWER: {f0, f1, f2, f4, f6, f7, f8, f12, f13, f15}",
+      "extracted_answer": "{f0, f1, f2, f4, f6, f7, f8, f12, f13, f15}",
+      "input_tokens": 1097,
+      "output_tokens": 655,
+      "cache_creation_tokens": 0,
+      "cache_read_tokens": 2266,
+      "stop_reason": "end_turn",
+      "completion": "end_turn",
+      "truncated": false,
+      "total_budget": 24000,
+      "elapsed_s": 9.812,
+      "rounds": 2,
+      "tool_calls": 1,
+      "tool_trace": [
+        {
+          "tool": "eval",
+          "arguments": {
+            "code": "(import (wile goast path-algebra))\n(go-callgraph-reachable (go-callgraph \".\" 'vta) \"p.f0\")"
+          },
+          "output": "(\"p.f0\" \"p.f1\" \"p.f12\" \"p.f13\" \"p.f14\" \"p.f15\" \"p.f2\" \"p.f4\" \"p.f6\" \"p.f7\" \"p.f8\")"
+        }
+      ]
+    },
+    "treatment_correct": true
+  },
+  {
+    "id": "reach-f16-003",
+    "category": "reachability",
+    "difficulty": "f16",
+    "n_funcs": 16,
+    "n_reachable": 8,
+    "n_decoys": 0,
+    "n_u_to_r_edges": 0,
+    "total_edges": 8,
+    "spurious_fn": "f10",
+    "ground_truth": "{f0, f3, f5, f6, f12, f13, f14, f15}",
+    "answer_type": "set",
+    "control": {
+      "raw_response": "f0 \u2192 f15, f5\nf15 \u2192 f12\nf5 \u2192 f14, f13\nf14 \u2192 f6\nf13 \u2192 f3, f10\nf3 \u2192 f13 (cycle)\n\nReachable: f0, f15, f5, f12, f14, f13, f6, f3, f10\n\nANSWER: {f0, f10, f12, f13, f14, f15, f3, f5, f6}",
+      "extracted_answer": "{f0, f10, f12, f13, f14, f15, f3, f5, f6}",
+      "input_tokens": 496,
+      "output_tokens": 125,
+      "stop_reason": "end_turn",
+      "completion": "end_turn",
+      "truncated": false,
+      "total_budget": 10000,
+      "elapsed_s": 2.742
+    },
+    "control_correct": false,
+    "treatment": {
+      "raw_response": "I'll analyze this by tracing the actual invoked call sites, and verify with the tool.Let me trace manually since vta is an over-approximation.\n\n- **f0**: `t=[f15,f5]`, calls `t[0]()`=f15, `t[1]()`=f5. \u2192 f15, f5\n- **f15**: `t=[f12]`, calls `t[0]()`=f12. \u2192 f12\n- **f12**: empty.\n- **f5**: `t=[f14,f13]`, calls `t[0]()`=f14, `t[1]()`=f13. \u2192 f14, f13\n- **f14**: `t=[f6]`, calls `t[0]()`=f6. \u2192 f6\n- **f6**: empty.\n- **f13**: `t=[f3,f10]`, calls `t[0]()`=f3 only. \u2192 f3 (NOT f10, index 1 never invoked)\n- **f3**: `t=[f13]`, calls `t[0]()`=f13. \u2192 f13 (already have)\n\nNow checking vta's extra: **f10** \u2014 it appears in f13's slice `[f3,f10]` but only `t[0]()` (=f3) is invoked, `t[1]()` is never called. So f10 must be **dropped**.\n\nReachable set: f0, f15, f12, f5, f14, f6, f13, f3.\n\nANSWER: {f0, f12, f13, f14, f15, f3, f5, f6}",
+      "extracted_answer": "{f0, f12, f13, f14, f15, f3, f5, f6}",
+      "input_tokens": 1065,
+      "output_tokens": 552,
+      "cache_creation_tokens": 0,
+      "cache_read_tokens": 2266,
+      "stop_reason": "end_turn",
+      "completion": "end_turn",
+      "truncated": false,
+      "total_budget": 24000,
+      "elapsed_s": 7.841,
+      "rounds": 2,
+      "tool_calls": 1,
+      "tool_trace": [
+        {
+          "tool": "eval",
+          "arguments": {
+            "code": "(import (wile goast path-algebra))\n(go-callgraph-reachable (go-callgraph \".\" 'vta) \"p.f0\")"
+          },
+          "output": "(\"p.f0\" \"p.f10\" \"p.f12\" \"p.f13\" \"p.f14\" \"p.f15\" \"p.f3\" \"p.f5\" \"p.f6\")"
+        }
+      ]
+    },
+    "treatment_correct": true
+  },
+  {
+    "id": "reach-f16-004",
+    "category": "reachability",
+    "difficulty": "f16",
+    "n_funcs": 16,
+    "n_reachable": 8,
+    "n_decoys": 0,
+    "n_u_to_r_edges": 0,
+    "total_edges": 7,
+    "spurious_fn": "f10",
+    "ground_truth": "{f0, f1, f4, f8, f11, f12, f13, f15}",
+    "answer_type": "set",
+    "control": {
+      "raw_response": "f0 \u2192 f1, f15, f13\nf1 \u2192 f12, f4, f8 (indices 0,2,3)\nf12 \u2192 f11\nf15, f13: nothing\nf4, f8: nothing\nf11: nothing\n\nReachable: f0, f1, f15, f13, f12, f4, f8, f11\n\nANSWER: {f0, f1, f4, f8, f11, f12, f13, f15}",
+      "extracted_answer": "{f0, f1, f4, f8, f11, f12, f13, f15}",
+      "input_tokens": 455,
+      "output_tokens": 133,
+      "stop_reason": "end_turn",
+      "completion": "end_turn",
+      "truncated": false,
+      "total_budget": 10000,
+      "elapsed_s": 3.134
+    },
+    "control_correct": true,
+    "treatment": {
+      "raw_response": "I'll analyze this using the call-graph tools, then verify by hand tracing the indexed calls.VTA gives an over-approximation. Let me trace by hand using the actual constant indices.\n\n**f0:** `t := []func(){f1, f15, f13}`, invokes `t[0](), t[1](), t[2]()` \u2192 all three: **f1, f15, f13**\n\n**f1:** `t := []func(){f12, f10, f4, f8}`, invokes `t[0](), t[2](), t[3]()` \u2192 indices 0,2,3 \u2192 **f12, f4, f8** (skips f10 at index 1)\n\n**f12:** `t := []func(){f11}`, invokes `t[0]()` \u2192 **f11**\n\n**f15, f13, f4, f8, f11:** empty bodies, no calls.\n\nReachable set:\n- f0 (root)\n- from f0: f1, f15, f13\n- from f1: f12, f4, f8\n- from f12: f11\n\nNote: **f10 is dropped** \u2014 VTA includes it because f10's address flows into f1's slice, but index 1 is never invoked (f1 calls t[0], t[2], t[3] only).\n\nANSWER: {f0, f1, f4, f8, f11, f12, f13, f15}",
+      "extracted_answer": "{f0, f1, f4, f8, f11, f12, f13, f15}",
+      "input_tokens": 6556,
+      "output_tokens": 586,
+      "cache_creation_tokens": 0,
+      "cache_read_tokens": 2266,
+      "stop_reason": "end_turn",
+      "completion": "end_turn",
+      "truncated": false,
+      "total_budget": 24000,
+      "elapsed_s": 8.621,
+      "rounds": 2,
+      "tool_calls": 1,
+      "tool_trace": [
+        {
+          "tool": "eval",
+          "arguments": {
+            "code": "(import (wile goast path-algebra))\n(define g (go-callgraph \".\" 'vta))\n(display (go-callgraph-reachable g \"p.f0\"))(newline)\n(display (go-callgraph-callees g \"p.f0\"))(newline)\n(display (go-callgraph-callees g \"p.f1\"))(newline)\n(display (go-callgraph-callees g \"p.f12\"))(newline)"
+          },
+          "output": "(p.f0 p.f1 p.f10 p.f11 p.f12 p.f13 p.f15 p.f4 p.f8)\n((cg-edge (caller . p.f0) (callee . p.f13) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f16-004/main.go:5:6) (description . dynamic function call)) (cg-edge (caller . p.f0) (callee . p.f1) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f16-004/main.go:5:6) (description . dynamic function call)) (cg-edge (caller . p.f0) (callee . p.f12) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f16-004/main.go:5:6) (description . dynamic function call)) (cg-edge (caller . p.f0) (callee . p.f15) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f16-004/main.go:5:6) (description . dynamic function call)) (cg-edge (caller . p.f0) (callee . p.f11) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f16-004/main.go:5:6) (description . dynamic function call)) (cg-edge (caller . p.f0) (callee . p.f10) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f16-004/main.go:5:6) (description . dynamic function call)) (cg-edge (caller . p.f0) (callee . p.f8) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f16-004/main.go:5:6) (description . dynamic function call)) (cg-edge (caller . p.f0) (callee . p.f4) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f16-004/main.go:5:6) (description . dynamic function call)) (cg-edge (caller . p.f0) (callee . p.f13) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f16-004/main.go:5:14) (description . dynamic function call)) (cg-edge (caller . p.f0) (callee . p.f1) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f16-004/main.go:5:14) (description . dynamic function call)) (cg-edge (caller . p.f0) (callee . p.f12) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f16-004/main.go:5:14) (description . dynamic function call)) (cg-edge (caller . p.f0) (callee . p.f15) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f16-004/main.go:5:14) (description . dynamic function call)) (cg-edge (caller . p.f0) (callee . p.f11) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f16-004/main.go:5:14) (description . dynamic function call)) (cg-edge (caller . p.f0) (callee . p.f10) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f16-004/main.go:5:14) (description . dynamic function call)) (cg-edge (caller . p.f0) (callee . p.f8) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f16-004/main.go:5:14) (description . dynamic function call)) (cg-edge (caller . p.f0) (callee . p.f4) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f16-004/main.go:5:14) (description . dynamic function call)) (cg-edge (caller . p.f0) (callee . p.f13) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f16-004/main.go:5:22) (description . dynamic function call)) (cg-edge (caller . p.f0) (callee . p.f1) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f16-004/main.go:5:22) (description . dynamic function call)) (cg-edge (caller . p.f0) (callee . p.f12) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f16-004/main.go:5:22) (description . dynamic function call)) (cg-edge (caller . p.f0) (callee . p.f15) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f16-004/main.go:5:22) (description . dynamic function call)) (cg-edge (caller . p.f0) (callee . p.f11) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f16-004/main.go:5:22) (description . dynamic function call)) (cg-edge (caller . p.f0) (callee . p.f10) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f16-004/main.go:5:22) (description . dynamic function call)) (cg-edge (caller . p.f0) (callee . p.f8) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f16-004/main.go:5:22) (description . dynamic function call)) (cg-edge (caller . p.f0) (callee . p.f4) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f16-004/main.go:5:22) (description . dynamic function call)))\n((cg-edge (caller . p.f1) (callee . p.f13) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f16-004/main.go:9:6) (description . dynamic function call)) (cg-edge (caller . p.f1) (callee . p.f1) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f16-004/main.go:9:6) (description . dynamic function call)) (cg-edge (caller . p.f1) (callee . p.f12) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f16-004/main.go:9:6) (description . dynamic function call)) (cg-edge (caller . p.f1) (callee . p.f15) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f16-004/main.go:9:6) (description . dynamic function call)) (cg-edge (caller . p.f1) (callee . p.f11) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f16-004/main.go:9:6) (description . dynamic function call)) (cg-edge (caller . p.f1) (callee . p.f10) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f16-004/main.go:9:6) (description . dynamic function call)) (cg-edge (caller . p.f1) (callee . p.f8) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f16-004/main.go:9:6) (description . dynamic function call)) (cg-edge (caller . p.f1) (callee . p.f4) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f16-004/main.go:9:6) (description . dynamic function call)) (cg-edge (caller . p.f1) (callee . p.f13) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f16-004/main.go:9:14) (description . dynamic function call)) (cg-edge (caller . p.f1) (callee . p.f1) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f16-004/main.go:9:14) (description . dynamic function call)) (cg-edge (caller . p.f1) (callee . p.f12) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f16-004/main.go:9:14) (description . dynamic function call)) (cg-edge (caller . p.f1) (callee . p.f15) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f16-004/main.go:9:14) (description . dynamic function call)) (cg-edge (caller . p.f1) (callee . p.f11) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f16-004/main.go:9:14) (description . dynamic function call)) (cg-edge (caller . p.f1) (callee . p.f10) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f16-004/main.go:9:14) (description . dynamic function call)) (cg-edge (caller . p.f1) (callee . p.f8) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f16-004/main.go:9:14) (description . dynamic function call)) (cg-edge (caller . p.f1) (callee . p.f4) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f16-004/main.go:9:14) (description . dynamic function call)) (cg-edge (caller . p.f1) (callee . p.f13) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f16-004/main.go:9:22) (description . dynamic function call)) (cg-edge (caller . p.f1) (callee . p.f1) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f16-004/main.go:9:22) (description . dynamic function call)) (cg-edge (caller . p.f1) (callee . p.f12) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f16-004/main.go:9:22) (description . dynamic function call)) (cg-edge (caller . p.f1) (callee . p.f15) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f16-004/main.go:9:22) (description . dynamic function call)) (cg-edge (caller . p.f1) (callee . p.f11) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f16-004/main.go:9:22) (description . dynamic function call)) (cg-edge (caller . p.f1) (callee . p.f10) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f16-004/main.go:9:22) (description . dynamic function call)) (cg-edge (caller . p.f1) (callee . p.f8) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f16-004/main.go:9:22) (description . dynamic function call)) (cg-edge (caller . p.f1) (callee . p.f4) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f16-004/main.go:9:22) (description . dynamic function call)))\n((cg-edge (caller . p.f12) (callee . p.f13) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f16-004/main.go:23:6) (description . dynamic function call)) (cg-edge (caller . p.f12) (callee . p.f1) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f16-004/main.go:23:6) (description . dynamic function call)) (cg-edge (caller . p.f12) (callee . p.f12) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f16-004/main.go:23:6) (description . dynamic function call)) (cg-edge (caller . p.f12) (callee . p.f15) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f16-004/main.go:23:6) (description . dynamic function call)) (cg-edge (caller . p.f12) (callee . p.f11) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f16-004/main.go:23:6) (description . dynamic function call)) (cg-edge (caller . p.f12) (callee . p.f10) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f16-004/main.go:23:6) (description . dynamic function call)) (cg-edge (caller . p.f12) (callee . p.f8) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f16-004/main.go:23:6) (description . dynamic function call)) (cg-edge (caller . p.f12) (callee . p.f4) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f16-004/main.go:23:6) (description . dynamic function call)))"
+        }
+      ]
+    },
+    "treatment_correct": true
+  },
+  {
+    "id": "reach-f24-000",
+    "category": "reachability",
+    "difficulty": "f24",
+    "n_funcs": 24,
+    "n_reachable": 13,
+    "n_decoys": 0,
+    "n_u_to_r_edges": 0,
+    "total_edges": 12,
+    "spurious_fn": "f9",
+    "ground_truth": "{f0, f1, f2, f3, f6, f8, f11, f13, f14, f16, f17, f20, f23}",
+    "answer_type": "set",
+    "control": {
+      "raw_response": "f0 calls f6, f20, f8 (indices 1,2,3; f9 at index 0 not called).\n\nf6: f13, f16, f23, f11\nf20: f3, f14, f1\nf8: f2\nf1: f17\n\nSo: f0, f6, f20, f8, f13, f16, f23, f11, f3, f14, f1, f2, f17\n\nANSWER: {f0, f1, f2, f3, f6, f8, f11, f13, f14, f16, f17, f20, f23}",
+      "extracted_answer": "{f0, f1, f2, f3, f6, f8, f11, f13, f14, f16, f17, f20, f23}",
+      "input_tokens": 573,
+      "output_tokens": 164,
+      "stop_reason": "end_turn",
+      "completion": "end_turn",
+      "truncated": false,
+      "total_budget": 10000,
+      "elapsed_s": 2.622
+    },
+    "control_correct": true,
+    "treatment": {
+      "raw_response": "I'll trace this by hand and verify with the tool.Let me trace by hand following the invoked indices.\n\n**f0**: `t = {f9, f6, f20, f8}`, invokes `t[1](), t[2](), t[3]()` \u2192 f6, f20, f8 (NOT f9, index 0 not called).\n\n**f6**: `t = {f13, f16, f23, f11}`, invokes all four \u2192 f13, f16, f23, f11.\n\n**f20**: `t = {f3, f14, f1}`, invokes all three \u2192 f3, f14, f1.\n\n**f8**: `t = {f2}`, invokes `t[0]()` \u2192 f2.\n\n**f1**: `t = {f17}`, invokes `t[0]()` \u2192 f17.\n\nNow f13, f16, f23, f11, f3, f14, f2, f17 are all leaf functions (empty bodies).\n\nSo reachable: f0, f6, f20, f8, f13, f16, f23, f11, f3, f14, f1, f2, f17.\n\nNote: f9 is in vta's set but is only at index 0 of f0's slice, which is never invoked (only t[1], t[2], t[3]). So **f9 must be dropped**.\n\nComparing to vta set: vta has {f0, f1, f11, f13, f14, f16, f17, f2, f20, f23, f3, f6, f8, f9}. My hand-trace matches exactly except f9, which I correctly drop.\n\nANSWER: {f0, f1, f11, f13, f14, f16, f17, f2, f20, f23, f3, f6, f8}",
+      "extracted_answer": "{f0, f1, f11, f13, f14, f16, f17, f2, f20, f23, f3, f6, f8}",
+      "input_tokens": 1242,
+      "output_tokens": 609,
+      "cache_creation_tokens": 0,
+      "cache_read_tokens": 2266,
+      "stop_reason": "end_turn",
+      "completion": "end_turn",
+      "truncated": false,
+      "total_budget": 24000,
+      "elapsed_s": 8.245,
+      "rounds": 2,
+      "tool_calls": 1,
+      "tool_trace": [
+        {
+          "tool": "eval",
+          "arguments": {
+            "code": "(import (wile goast path-algebra))\n(define g (go-callgraph \".\" 'vta))\n(go-callgraph-reachable g \"p.f0\")"
+          },
+          "output": "(\"p.f0\" \"p.f1\" \"p.f11\" \"p.f13\" \"p.f14\" \"p.f16\" \"p.f17\" \"p.f2\" \"p.f20\" \"p.f23\" \"p.f3\" \"p.f6\" \"p.f8\" \"p.f9\")"
+        }
+      ]
+    },
+    "treatment_correct": true
+  },
+  {
+    "id": "reach-f24-001",
+    "category": "reachability",
+    "difficulty": "f24",
+    "n_funcs": 24,
+    "n_reachable": 11,
+    "n_decoys": 0,
+    "n_u_to_r_edges": 0,
+    "total_edges": 12,
+    "spurious_fn": "f14",
+    "ground_truth": "{f0, f1, f3, f5, f7, f9, f16, f17, f20, f21, f23}",
+    "answer_type": "set",
+    "control": {
+      "raw_response": "f0 \u2192 f23, f1, f21 (t[0],t[2],t[3])\n\nf1 \u2192 f23, f9\nf21 \u2192 f16, f3\nf16 \u2192 f17\nf3 \u2192 f17, f5\nf5 \u2192 f20, f7\n\nCollected: f0, f23, f1, f21, f9, f16, f3, f17, f5, f20, f7\n\nANSWER: {f0, f1, f16, f17, f20, f21, f23, f3, f5, f7, f9}",
+      "extracted_answer": "{f0, f1, f16, f17, f20, f21, f23, f3, f5, f7, f9}",
+      "input_tokens": 584,
+      "output_tokens": 153,
+      "stop_reason": "end_turn",
+      "completion": "end_turn",
+      "truncated": false,
+      "total_budget": 10000,
+      "elapsed_s": 2.484
+    },
+    "control_correct": true,
+    "treatment": {
+      "raw_response": "Let me trace this by hand and verify with the tool.Now let me trace by hand, checking which indexed calls are actually invoked.\n\n**f0**: `t := [f23, f14, f1, f21]`; invokes `t[0](), t[2](), t[3]()` \u2192 f23, f1, f21.\n- **f23**: empty.\n- **f1**: `t := [f23, f9]`; invokes `t[0](), t[1]()` \u2192 f23, f9.\n  - **f9**: empty.\n- **f21**: `t := [f16, f3]`; invokes `t[0](), t[1]()` \u2192 f16, f3.\n  - **f16**: `t := [f17]`; invokes `t[0]()` \u2192 f17. (empty)\n  - **f3**: `t := [f17, f5]`; invokes `t[0](), t[1]()` \u2192 f17, f5.\n    - **f5**: `t := [f20, f7]`; invokes `t[0](), t[1]()` \u2192 f20, f7. (both empty)\n\nNote f0 does NOT invoke `t[1]()`, so **f14** is never selected by an invoked index \u2014 drop it (vta lists it because its address flows into the slice, but index 1 is never called).\n\nReachable set: f0, f23, f1, f9, f21, f16, f17, f3, f5, f20, f7.\n\nANSWER: {f0, f1, f16, f17, f20, f21, f23, f3, f5, f7, f9}",
+      "extracted_answer": "{f0, f1, f16, f17, f20, f21, f23, f3, f5, f7, f9}",
+      "input_tokens": 1251,
+      "output_tokens": 566,
+      "cache_creation_tokens": 0,
+      "cache_read_tokens": 2266,
+      "stop_reason": "end_turn",
+      "completion": "end_turn",
+      "truncated": false,
+      "total_budget": 24000,
+      "elapsed_s": 10.785,
+      "rounds": 2,
+      "tool_calls": 1,
+      "tool_trace": [
+        {
+          "tool": "eval",
+          "arguments": {
+            "code": "(begin (import (wile goast path-algebra)) (go-callgraph-reachable (go-callgraph \".\" 'vta) \"p.f0\"))"
+          },
+          "output": "(\"p.f0\" \"p.f1\" \"p.f14\" \"p.f16\" \"p.f17\" \"p.f20\" \"p.f21\" \"p.f23\" \"p.f3\" \"p.f5\" \"p.f7\" \"p.f9\")"
+        }
+      ]
+    },
+    "treatment_correct": true
+  },
+  {
+    "id": "reach-f24-002",
+    "category": "reachability",
+    "difficulty": "f24",
+    "n_funcs": 24,
+    "n_reachable": 12,
+    "n_decoys": 0,
+    "n_u_to_r_edges": 0,
+    "total_edges": 13,
+    "spurious_fn": "f7",
+    "ground_truth": "{f0, f2, f3, f6, f8, f9, f11, f13, f16, f19, f21, f23}",
+    "answer_type": "set",
+    "control": {
+      "raw_response": "f0 \u2192 f8, f16\nf8 \u2192 f3, f6\nf16 \u2192 {}\nf3 \u2192 {}\nf6 \u2192 f9, f19, f16, f23, f2\nf9 \u2192 f21, f13\nf19 \u2192 {}\nf23 \u2192 {}\nf2 \u2192 f11, f21\nf21 \u2192 {}\nf13 \u2192 {}\nf11 \u2192 {}\n\nCollected: f0, f8, f16, f3, f6, f9, f19, f23, f2, f21, f13, f11\n\nANSWER: {f0, f11, f13, f16, f19, f2, f21, f23, f3, f6, f8, f9}",
+      "extracted_answer": "{f0, f11, f13, f16, f19, f2, f21, f23, f3, f6, f8, f9}",
+      "input_tokens": 581,
+      "output_tokens": 193,
+      "stop_reason": "end_turn",
+      "completion": "end_turn",
+      "truncated": false,
+      "total_budget": 10000,
+      "elapsed_s": 3.031
+    },
+    "control_correct": true,
+    "treatment": {
+      "raw_response": "I'll trace this by hand and verify with the tool.Let me trace the actual invoked indexed calls by hand.\n\n**f0**: `t=[f8,f16]`, calls `t[0]()`=f8, `t[1]()`=f16.\n- **f8**: `t=[f3,f6]`, calls `t[0]()`=f3, `t[1]()`=f6.\n  - **f3**: empty.\n  - **f6**: `t=[f9,f19,f16,f23,f2]`, calls `t[0..4]()` = f9,f19,f16,f23,f2 (all invoked).\n    - **f9**: `t=[f7,f21,f13]`, calls `t[1]()`=f21, `t[2]()`=f13. (Note: `t[0]`=f7 is NOT invoked.)\n      - **f21**: empty.\n      - **f13**: empty.\n    - **f19**: empty.\n    - **f16**: empty.\n    - **f23**: empty.\n    - **f2**: `t=[f11,f21]`, calls `t[0]()`=f11, `t[1]()`=f21.\n      - **f11**: empty.\n      - **f21**: empty.\n- **f16**: empty.\n\nNow checking vta's set against the invoked-index filter: vta listed `f7`, but in f9 only `t[1]` and `t[2]` are invoked \u2014 `t[0]`=f7 is never called. So **f7 must be dropped**.\n\nEvery other vta function is selected by an actually-invoked constant index:\n- f8, f16 (from f0)\n- f3, f6 (from f8)\n- f9, f19, f16, f23, f2 (from f6)\n- f21, f13 (from f9)\n- f11, f21 (from f2)\n\nReachable set: {f0, f2, f3, f6, f8, f9, f11, f13, f16, f19, f21, f23}\n\nANSWER: {f0, f2, f3, f6, f8, f9, f11, f13, f16, f19, f21, f23}",
+      "extracted_answer": "{f0, f2, f3, f6, f8, f9, f11, f13, f16, f19, f21, f23}",
+      "input_tokens": 1243,
+      "output_tokens": 759,
+      "cache_creation_tokens": 0,
+      "cache_read_tokens": 2266,
+      "stop_reason": "end_turn",
+      "completion": "end_turn",
+      "truncated": false,
+      "total_budget": 24000,
+      "elapsed_s": 9.89,
+      "rounds": 2,
+      "tool_calls": 1,
+      "tool_trace": [
+        {
+          "tool": "eval",
+          "arguments": {
+            "code": "(import (wile goast path-algebra))\n(define g (go-callgraph \".\" 'vta))\n(display (go-callgraph-reachable g \"p.f0\"))"
+          },
+          "output": "(p.f0 p.f11 p.f13 p.f16 p.f19 p.f2 p.f21 p.f23 p.f3 p.f6 p.f7 p.f8 p.f9)"
+        }
+      ]
+    },
+    "treatment_correct": true
+  },
+  {
+    "id": "reach-f24-003",
+    "category": "reachability",
+    "difficulty": "f24",
+    "n_funcs": 24,
+    "n_reachable": 14,
+    "n_decoys": 0,
+    "n_u_to_r_edges": 0,
+    "total_edges": 14,
+    "spurious_fn": "f12",
+    "ground_truth": "{f0, f1, f2, f3, f4, f5, f10, f14, f15, f16, f17, f19, f20, f23}",
+    "answer_type": "set",
+    "control": {
+      "raw_response": "f0 calls: f3, f1, f19, f10 (indices 1,2,3,4; f12 not called)\n\nf3: f16, f17\nf17: f4\nf4: f14\nf1: f5, f2, f15, f23\nf23: f20\nf19: f5\nf10: none\n\nReachable: f0, f3, f1, f19, f10, f16, f17, f4, f14, f5, f2, f15, f23, f20\n\nANSWER: {f0, f1, f10, f14, f15, f16, f17, f19, f2, f20, f23, f3, f4, f5}",
+      "extracted_answer": "{f0, f1, f10, f14, f15, f16, f17, f19, f2, f20, f23, f3, f4, f5}",
+      "input_tokens": 611,
+      "output_tokens": 188,
+      "stop_reason": "end_turn",
+      "completion": "end_turn",
+      "truncated": false,
+      "total_budget": 10000,
+      "elapsed_s": 3.547
+    },
+    "control_correct": true,
+    "treatment": {
+      "raw_response": "Let me trace this by hand and verify with the tool.Let me trace by hand to filter, since all calls are indexed.\n\n**f0**: `t=[f12,f3,f1,f19,f10]`, invokes `t[1],t[2],t[3],t[4]` \u2192 f3, f1, f19, f10. (NOT t[0]=f12!)\n\nSo f12 is in vta's set but never selected. Let me check.\n\n- f0 \u2192 f3, f1, f19, f10\n- **f3**: `t=[f16,f17]`, invokes `t[0],t[1]` \u2192 f16, f17\n- **f1**: `t=[f5,f2,f15,f23]`, invokes `t[0..3]` \u2192 f5, f2, f15, f23\n- **f19**: `t=[f5]`, invokes `t[0]` \u2192 f5\n- **f10**: leaf\n- **f16**: leaf\n- **f17**: `t=[f4]`, invokes `t[0]` \u2192 f4\n- **f4**: `t=[f14]`, invokes `t[0]` \u2192 f14\n- **f14**: leaf\n- **f5**: leaf\n- **f2**: leaf\n- **f15**: leaf\n- **f23**: `t=[f20]`, invokes `t[0]` \u2192 f20\n- **f20**: leaf\n\nReachable set: f0, f3, f1, f19, f10, f16, f17, f4, f14, f5, f2, f15, f23, f20.\n\nvta listed f12 too \u2014 but f0 only invokes t[1],t[2],t[3],t[4], never t[0]=f12. So drop f12.\n\nEverything else in vta's list matches invoked indices. f12 is the only false positive.\n\nANSWER: {f0, f1, f10, f14, f15, f16, f17, f19, f2, f20, f23, f3, f4, f5}",
+      "extracted_answer": "{f0, f1, f10, f14, f15, f16, f17, f19, f2, f20, f23, f3, f4, f5}",
+      "input_tokens": 1319,
+      "output_tokens": 687,
+      "cache_creation_tokens": 0,
+      "cache_read_tokens": 2266,
+      "stop_reason": "end_turn",
+      "completion": "end_turn",
+      "truncated": false,
+      "total_budget": 24000,
+      "elapsed_s": 9.402,
+      "rounds": 2,
+      "tool_calls": 1,
+      "tool_trace": [
+        {
+          "tool": "eval",
+          "arguments": {
+            "code": "(import (wile goast path-algebra))\n(go-callgraph-reachable (go-callgraph \".\" 'vta) \"p.f0\")"
+          },
+          "output": "(\"p.f0\" \"p.f1\" \"p.f10\" \"p.f12\" \"p.f14\" \"p.f15\" \"p.f16\" \"p.f17\" \"p.f19\" \"p.f2\" \"p.f20\" \"p.f23\" \"p.f3\" \"p.f4\" \"p.f5\")"
+        }
+      ]
+    },
+    "treatment_correct": true
+  },
+  {
+    "id": "reach-f24-004",
+    "category": "reachability",
+    "difficulty": "f24",
+    "n_funcs": 24,
+    "n_reachable": 14,
+    "n_decoys": 0,
+    "n_u_to_r_edges": 0,
+    "total_edges": 15,
+    "spurious_fn": "f7",
+    "ground_truth": "{f0, f1, f4, f6, f8, f12, f14, f15, f16, f17, f19, f20, f21, f22}",
+    "answer_type": "set",
+    "control": {
+      "raw_response": "Starting from f0:\n\nf0 \u2192 f21, f16, f12, f8\n\nf21 \u2192 f17, f20, f7, f15 (indices 0,1,3 called: f17, f20, f15)\nf16 \u2192 f6\nf12 \u2192 f4\nf8 \u2192 (none)\n\nf17, f20, f15 \u2192 none\nf6 \u2192 f22, f14\nf4 \u2192 f1\nf22 \u2192 f19\nf14 \u2192 f1\nf1 \u2192 none\nf19 \u2192 f0 (cycle)\n\nCollected: f0, f21, f16, f12, f8, f17, f20, f15, f6, f4, f22, f14, f1, f19\n\nANSWER: {f0, f1, f4, f6, f8, f12, f14, f15, f16, f17, f19, f20, f21, f22}",
+      "extracted_answer": "{f0, f1, f4, f6, f8, f12, f14, f15, f16, f17, f19, f20, f21, f22}",
+      "input_tokens": 641,
+      "output_tokens": 243,
+      "stop_reason": "end_turn",
+      "completion": "end_turn",
+      "truncated": false,
+      "total_budget": 10000,
+      "elapsed_s": 8.634
+    },
+    "control_correct": true,
+    "treatment": {
+      "raw_response": "I'll trace this by hand, then verify with the tool.\n\nLet me trace manually first:\n\n- **f0**: t=[f21,f16,f12,f8], calls t[0],t[1],t[2],t[3] \u2192 f21, f16, f12, f8\n- **f21**: t=[f17,f20,f7,f15], calls t[0],t[1],t[3] \u2192 f17, f20, f15 (NOT f7, index 2 skipped)\n- **f16**: t=[f6], calls t[0] \u2192 f6\n- **f12**: t=[f4], calls t[0] \u2192 f4\n- **f8**: leaf\n- **f17,f20,f15**: leaves\n- **f6**: t=[f22,f14], calls t[0],t[1] \u2192 f22, f14\n- **f4**: t=[f1], calls t[0] \u2192 f1\n- **f22**: t=[f19], calls t[0] \u2192 f19\n- **f14**: t=[f1], calls t[0] \u2192 f1\n- **f1**: leaf\n- **f19**: t=[f0], calls t[0] \u2192 f0 (already visited)\n\nSo reachable: f0, f21, f16, f12, f8, f17, f20, f15, f6, f4, f22, f14, f1, f19\n\nNote f7 is NOT reachable (index 2 skipped in f21).\n\nLet me verify with the tool.The vta result includes `f7`, but as my manual trace shows, this is the over-approximation. Let me verify the filtering.\n\nvta reachable set: {f0, f1, f4, f6, f7, f8, f12, f14, f15, f16, f17, f19, f20, f21, f22}\n\nThe only function reachable ONLY via indexed slice calls that needs scrutiny is **f7**. In f21, `t := []func(){f17, f20, f7, f15}`, only t[0], t[1], t[3] are invoked \u2014 index 2 (f7) is NEVER called. So f7 must be dropped.\n\nVerifying every other function is genuinely selected by an invoked index:\n- f0\u2192f21(t[0]),f16(t[1]),f12(t[2]),f8(t[3]) \u2713 all invoked\n- f21\u2192f17(t[0]),f20(t[1]),f15(t[3]) \u2713 invoked; f7(t[2]) NOT invoked \u2192 **drop f7**\n- f16\u2192f6(t[0]) \u2713\n- f12\u2192f4(t[0]) \u2713\n- f6\u2192f22(t[0]),f14(t[1]) \u2713\n- f4\u2192f1(t[0]) \u2713\n- f22\u2192f19(t[0]) \u2713\n- f14\u2192f1(t[0]) \u2713\n- f19\u2192f0(t[0]) \u2713\n\nFiltered set (vta minus f7): {f0, f1, f4, f6, f8, f12, f14, f15, f16, f17, f19, f20, f21, f22}\n\nThis matches my manual trace exactly.\n\nANSWER: {f0, f1, f4, f6, f8, f12, f14, f15, f16, f17, f19, f20, f21, f22}",
+      "extracted_answer": "{f0, f1, f4, f6, f8, f12, f14, f15, f16, f17, f19, f20, f21, f22}",
+      "input_tokens": 6236,
+      "output_tokens": 1130,
+      "cache_creation_tokens": 0,
+      "cache_read_tokens": 2266,
+      "stop_reason": "end_turn",
+      "completion": "end_turn",
+      "truncated": false,
+      "total_budget": 24000,
+      "elapsed_s": 13.815,
+      "rounds": 2,
+      "tool_calls": 1,
+      "tool_trace": [
+        {
+          "tool": "eval",
+          "arguments": {
+            "code": "(import (wile goast path-algebra))\n(display (go-callgraph-reachable (go-callgraph \".\" 'vta) \"p.f0\"))\n(newline)\n(display (go-callgraph-callees (go-callgraph \".\" 'vta) \"p.f21\"))\n(newline)"
+          },
+          "output": "(p.f0 p.f1 p.f12 p.f14 p.f15 p.f16 p.f17 p.f19 p.f20 p.f21 p.f22 p.f4 p.f6 p.f7 p.f8)\n((cg-edge (caller . p.f21) (callee . p.f4) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f24-004/main.go:47:6) (description . dynamic function call)) (cg-edge (caller . p.f21) (callee . p.f14) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f24-004/main.go:47:6) (description . dynamic function call)) (cg-edge (caller . p.f21) (callee . p.f12) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f24-004/main.go:47:6) (description . dynamic function call)) (cg-edge (caller . p.f21) (callee . p.f1) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f24-004/main.go:47:6) (description . dynamic function call)) (cg-edge (caller . p.f21) (callee . p.f0) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f24-004/main.go:47:6) (description . dynamic function call)) (cg-edge (caller . p.f21) (callee . p.f17) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f24-004/main.go:47:6) (description . dynamic function call)) (cg-edge (caller . p.f21) (callee . p.f20) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f24-004/main.go:47:6) (description . dynamic function call)) (cg-edge (caller . p.f21) (callee . p.f8) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f24-004/main.go:47:6) (description . dynamic function call)) (cg-edge (caller . p.f21) (callee . p.f15) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f24-004/main.go:47:6) (description . dynamic function call)) (cg-edge (caller . p.f21) (callee . p.f6) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f24-004/main.go:47:6) (description . dynamic function call)) (cg-edge (caller . p.f21) (callee . p.f19) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f24-004/main.go:47:6) (description . dynamic function call)) (cg-edge (caller . p.f21) (callee . p.f21) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f24-004/main.go:47:6) (description . dynamic function call)) (cg-edge (caller . p.f21) (callee . p.f7) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f24-004/main.go:47:6) (description . dynamic function call)) (cg-edge (caller . p.f21) (callee . p.f16) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f24-004/main.go:47:6) (description . dynamic function call)) (cg-edge (caller . p.f21) (callee . p.f22) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f24-004/main.go:47:6) (description . dynamic function call)) (cg-edge (caller . p.f21) (callee . p.f4) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f24-004/main.go:47:14) (description . dynamic function call)) (cg-edge (caller . p.f21) (callee . p.f14) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f24-004/main.go:47:14) (description . dynamic function call)) (cg-edge (caller . p.f21) (callee . p.f12) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f24-004/main.go:47:14) (description . dynamic function call)) (cg-edge (caller . p.f21) (callee . p.f1) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f24-004/main.go:47:14) (description . dynamic function call)) (cg-edge (caller . p.f21) (callee . p.f0) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f24-004/main.go:47:14) (description . dynamic function call)) (cg-edge (caller . p.f21) (callee . p.f17) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f24-004/main.go:47:14) (description . dynamic function call)) (cg-edge (caller . p.f21) (callee . p.f20) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f24-004/main.go:47:14) (description . dynamic function call)) (cg-edge (caller . p.f21) (callee . p.f8) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f24-004/main.go:47:14) (description . dynamic function call)) (cg-edge (caller . p.f21) (callee . p.f15) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f24-004/main.go:47:14) (description . dynamic function call)) (cg-edge (caller . p.f21) (callee . p.f6) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f24-004/main.go:47:14) (description . dynamic function call)) (cg-edge (caller . p.f21) (callee . p.f19) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f24-004/main.go:47:14) (description . dynamic function call)) (cg-edge (caller . p.f21) (callee . p.f21) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f24-004/main.go:47:14) (description . dynamic function call)) (cg-edge (caller . p.f21) (callee . p.f7) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f24-004/main.go:47:14) (description . dynamic function call)) (cg-edge (caller . p.f21) (callee . p.f16) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f24-004/main.go:47:14) (description . dynamic function call)) (cg-edge (caller . p.f21) (callee . p.f22) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f24-004/main.go:47:14) (description . dynamic function call)) (cg-edge (caller . p.f21) (callee . p.f4) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f24-004/main.go:47:22) (description . dynamic function call)) (cg-edge (caller . p.f21) (callee . p.f14) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f24-004/main.go:47:22) (description . dynamic function call)) (cg-edge (caller . p.f21) (callee . p.f12) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f24-004/main.go:47:22) (description . dynamic function call)) (cg-edge (caller . p.f21) (callee . p.f1) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f24-004/main.go:47:22) (description . dynamic function call)) (cg-edge (caller . p.f21) (callee . p.f0) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f24-004/main.go:47:22) (description . dynamic function call)) (cg-edge (caller . p.f21) (callee . p.f17) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f24-004/main.go:47:22) (description . dynamic function call)) (cg-edge (caller . p.f21) (callee . p.f20) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f24-004/main.go:47:22) (description . dynamic function call)) (cg-edge (caller . p.f21) (callee . p.f8) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f24-004/main.go:47:22) (description . dynamic function call)) (cg-edge (caller . p.f21) (callee . p.f15) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f24-004/main.go:47:22) (description . dynamic function call)) (cg-edge (caller . p.f21) (callee . p.f6) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f24-004/main.go:47:22) (description . dynamic function call)) (cg-edge (caller . p.f21) (callee . p.f19) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f24-004/main.go:47:22) (description . dynamic function call)) (cg-edge (caller . p.f21) (callee . p.f21) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f24-004/main.go:47:22) (description . dynamic function call)) (cg-edge (caller . p.f21) (callee . p.f7) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f24-004/main.go:47:22) (description . dynamic function call)) (cg-edge (caller . p.f21) (callee . p.f16) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f24-004/main.go:47:22) (description . dynamic function call)) (cg-edge (caller . p.f21) (callee . p.f22) (pos . /Users/aalpar/ClaudeProjects/LLMAccuracy/code-restructuring/packages_reach_sub/reach-f24-004/main.go:47:22) (description . dynamic function call)))"
+        }
+      ]
+    },
+    "treatment_correct": true
+  }
+]

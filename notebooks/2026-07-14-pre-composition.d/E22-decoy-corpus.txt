@@ -1,0 +1,96 @@
+E22 -- The E11 decoy corpus: construction, CHA oracle, and the VTA diagnostic.
+
+Generator: generate_interface_dispatch.py --decoy  (LLMAccuracy, code-restructuring/)
+Invocation:
+  python generate_interface_dispatch.py --decoy --depths 3 6 9 --impls 2 4 6 \
+      --count 7 --seed 31337 --dead 8 \
+      --out-dir packages_iface_decoy --output problems_iface_decoy.json
+
+=================== THE CONSTRUCTION (a rendered problem) ===================
+
+package p
+
+type Ia interface { M() }
+
+type Ta0 struct{}
+func (Ta0) M() { m0(); }
+type Ta1 struct{}
+func (Ta1) M() { m1(); }
+type TaD struct{}
+func (TaD) M() { m2(); }
+
+func sink(v Ia) {}
+
+func makeIa(n int) Ia {
+	switch n % 2 {
+	case 0:
+		return Ta0{}
+	default:
+		return Ta1{}
+	}
+}
+
+func seed() int { return 0 }
+func g0() { g1(); }
+func g1() { g2(); sink(TaD{}); }
+func g2() { g3(); }
+func g3() { makeIa(seed()).M(); }
+func m0() {}
+func m1() {}
+func m2() {}
+func f0() { seed(); g0(); }
+func d0() { d1(); }
+func d1() { d2(); }
+func d2() { d3(); }
+func d3() { d0(); }
+
+TaD implements Ia. TaD{} is ALLOCATED IN REACHABLE CODE (g0) and converted to Ia
+by sink(). But makeIa can only ever return Ta0 or Ta1, and sink never invokes M.
+So m2 -- TaD's leaf -- is NOT reachable from f0, while every syntactic cue says it
+is. The syntactic rule that includes it ('TaD implements Ia, TaD is constructed,
+this is an Ia dispatch') is exactly Class Hierarchy Analysis.
+
+=================== THE THREE ALGORITHMS DISAGREE ===================
+
+  static  f0 g0 g1 g2 g3 makeIa seed sink                 <- UNDER (no dispatch edge)
+  cha     f0 g0 g1 g2 g3 m0 m1 m2 makeIa seed sink        <- OVER  (folds in m2)
+  vta     f0 g0 g1 g2 g3 m0 m1 makeIa seed sink           <- EXACT
+  TRUTH   f0 g0 g1 g2 g3 m0 m1 makeIa seed sink
+
+Verified by direct probe on packages_iface_decoy/ifdecoy-d4k2-000.
+
+=================== ORACLE (never vta) ===================
+
+Truth is CONSTRUCTIONAL: the generator decides which types the factory can return.
+CHA is therefore not the oracle here (it over-approximates); it is the CHECK:
+
+    cha(f0)  ==  truth  UNION  {decoy leaves}
+
+computed by the real Go toolchain from the rendered source, so it validates the
+generator's graph model against the compiler's view. A mismatch throws the problem
+away. VTA is PROBED and RECORDED, never trusted: whether vta is exact IS the
+experiment's question, and an oracle that assumed it would decide the result by
+construction.
+
+=================== RESULT ===================
+
+  63 problems (3 depths x 3 implementor widths x 7), mean n_funcs 22.0,
+  mean |answer| 14.0, exactly one decoy each, no decoy leaks into any answer.
+
+  cha oracle : 63/63 validated, 0 failed
+  vta        : EXACT on 63/63 -- every rung, up to k=6 implementors, depth 9
+
+  per rung:  d3k2 7/7   d3k4 7/7   d3k6 7/7
+             d6k2 7/7   d6k4 7/7   d6k6 7/7
+             d9k2 7/7   d9k4 7/7   d9k6 7/7
+
+READ: outcome (b) is DEAD on this corpus. The tool will hand the treatment arm an
+EXACT fact, not a bound, so the -33pt anchoring trap of E3 cannot reproduce here and
+must/may is not put on trial by this run. E11 therefore reduces to a clean two-way
+test: outcome (a), the tool wins and the criterion generalizes, or outcome (c),
+control is at ceiling unaided and THE CRITERION IS FALSIFIED.
+
+This is a fact about the corpus, not about the thesis. It is recorded because it
+narrows the pre-registration BEFORE any API budget is spent, and because a later
+reader who finds no anchoring trap in the E11 results must be able to see that the
+trap was ruled out by construction rather than by luck.
