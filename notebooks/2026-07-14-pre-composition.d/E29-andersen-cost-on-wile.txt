@@ -1,0 +1,114 @@
+E29 -- Andersen on wile: extraction is cheap, the SOLVE does not converge.
+       Result is CONFOUNDED by my own extractor's precision. Read to the end.
+
+=================== HARNESS ===================
+scratchpad/csize: a Go probe. Extracts the six constraint forms of
+plans/2026-07-14-andersen-pointsto-design.md from SSA (InstantiateGenerics),
+then solves lfp(F) with two schedules. Both schedules are PERMITTED by the
+design (chaotic iteration; difference propagation). Neither uses cycle
+elimination or HVN, which the design bars.
+
+VALIDATION FIRST. Both solvers were run against the vendored go/pointer oracle
+on all 126 corpus packages BEFORE being trusted on wile:
+
+  naive-schedule solver   vs oracle:  126 agree, 0 differ
+  difference-propagation  vs oracle:  126 agree, 0 differ
+
+Getting there took three bugs, and they are worth recording because each one
+silently produced a plausible answer:
+  1. NO OBJECTS FOR GLOBALS. Corpus B is entirely about two globals
+     (registry/spare), so nothing flowed and dispatch resolved to ZERO.
+  2. LOAD/STORE ARE DYNAMIC. A first solver copied pts(o) into p when o
+     entered pts(q), but never recorded the EDGE o->p, so later growth of
+     pts(o) never reached p. It UNDER-approximated -- and converged in 3.3s,
+     which is how it flattered itself. A fast wrong answer.
+  3. APPEND IS VARIADIC AND ALLOCATES. 'registry = append(registry, v)'
+     compiles to pack-v-into-a-temp-array, slice it, append(s, slice...).,
+     The second arg is a SLICE, not an element, so its CONTENTS must flow
+     (a load then a store). And since 'var registry []Ia' starts nil with no
+     MakeSlice anywhere, the backing array is BORN AT THE APPEND.
+
+=================== EXTRACTION: CHEAP ===================
+
+Target: wile (29,130 functions).
+
+  load+ssa            670 ms
+  EXTRACT             146 ms      <- the Go half of the seam is free
+
+  nodes            737,842
+  objects           47,809
+  constraints      755,947
+    addr            47,809
+    copy           208,596
+    gep            390,586   (52%)
+    load            57,295
+    store           46,518
+    invoke           5,143
+
+=================== THE SOLVE: DOES NOT CONVERGE ===================
+
+  schedule                    status               membership tests   mean |pts|
+  -------------------------   ------------------   ----------------   ----------
+  chaotic iteration (naive)   TIMED OUT   5 min      25,562,014,778        78.3
+  difference propagation      TIMED OUT  10 min      31,400,022,122       526.9
+
+IN GO. Difference propagation, the permitted optimization, does not rescue it;
+it goes FURTHER into the blowup in the same wall time (135M propagations,
+7.65M copy edges, 102,750 dispatch pairs) and mean |pts| is still CLIMBING at
+the cutoff. The fixpoint was nowhere near closed.
+
+=================== WILE THROUGHPUT ===================
+
+  1,000,000 membership tests against a 5-element list set: 1.194 sec
+  => ~838,000 tests/sec.  Go managed ~52,000,000/sec.  Wile is ~62x slower.
+
+  PROJECTION: 31.4e9 tests / 838e3 per sec = ~10.4 HOURS -- for a run that
+  did not finish. For the Scheme solver to be viable the work must fall by
+  three to four orders of magnitude.
+
+=================== THE CONFOUND. DO NOT SKIP THIS ===================
+
+mean |pts| = 527 on wile, against ~5 on the corpora. That is a hundredfold
+gap and it smells like MY imprecision, not Andersen's intrinsic price:
+
+  * *ssa.Extract copies the WHOLE TUPLE, merging every return value of every
+    multi-return call. Go code is saturated with (v, err).
+  * Indirect calls through func values emit a bogus load and never wire
+    params to args.
+  * Closures are barely modelled.
+
+The 126/126 validation does NOT cover these. The corpora contain no closures,
+no tuples, and no indirect calls -- exactly the constructs the model is
+crudest at. Solve cost is superlinear in |pts|, so precision loss compounds
+into cost. THE BLOWUP MAY BE MY BUG.
+
+So this entry does NOT establish that Andersen is too slow for wile, and it
+does not establish that the algebra fails as an implementation substrate.
+It establishes that MY analysis, at MY current precision, does not converge.
+
+=================== WHAT go/pointer DOES INSTEAD ===================
+
+pointer/doc.go: 'does not perform online cycle detection.' Its tractability
+comes from HVN (pointer/hvn.go; Hardekopf & Lin, SAS'07), a PRE-SOLVER pass
+that finds POINTER-EQUIVALENT variables and collapses them before the
+fixpoint runs.
+
+So the optimization the design bars is exactly the one the only working
+reference implementation depends on.
+
+AND THIS IS THE OPEN QUESTION WORTH ASKING: HVN quotients the constraint
+graph by an equivalence relation. IF that relation is a CONGRUENCE with
+respect to the transfer functions, then solving on the quotient and lifting
+back is a standard algebraic construction -- quotient by a congruence -- and
+therefore operator-instantiation at a coarser carrier, NOT a hand-written
+trick. It would buy tractability WITHOUT forfeiting the bet.
+
+Whether pointer-equivalence is a lattice congruence is checkable, and nobody
+in this project has asked.
+
+=================== OWED, IN ORDER ===================
+  1. Fix extractor precision (Extract, closures, indirect calls). Re-measure.
+     Until this is done no cost conclusion is attributable to the algebra.
+  2. Control: run go/pointer (HVN on) against a comparable generics-free
+     program; compare its mean |pts| and wall time to ours at equal scale.
+  3. Ask whether HVN's pointer-equivalence is a lattice congruence.
