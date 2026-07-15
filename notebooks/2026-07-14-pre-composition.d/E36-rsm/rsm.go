@@ -120,6 +120,21 @@ type rsm struct {
 	refine    bool
 	objsForFn map[*ssa.Function][]int
 
+	// PRUNE (E39, REFINE=prune, default OFF): resolve-then-prune. E38 (refine)
+	// forward-tracked each dispatch token with the CONTENTS machinery
+	// (demandContents + fwdDone), demanding what the token POINTS TO (the
+	// god-graph) -- flood. Prune instead forward-propagates the token's VALUE FLOW
+	// (where the token value goes: copy/gep, and store->load carrying it as a
+	// value) WITHOUT demanding its contents. A token is seeded at its birth (&o),
+	// relayed forward marking each landing node relay-active; wherever it reaches a
+	// dispatch-site receiver, fireCall wires that one site's args into fn's params.
+	// The load-out arm is NOT flow-gated: a token used as a load pointer must not
+	// demand its own contents (that was E38's exact mistake).
+	prune     bool
+	pruneHeap bool   // PRUNE_NOHEAP unset (default true): also carry tokens through store->load
+	flow      []bool // per-BASE: object is a flow-tracked dispatch token
+	flowBases []int  // bases set flow this query; for reset
+
 	// instrumentation
 	nActivated int
 }
@@ -173,6 +188,7 @@ func newRSM(b *builder, prog *ssa.Program) *rsm {
 		active:           make([]bool, n),
 		ptDone:           make([]bool, n),
 		fwdDone:          make([]bool, n),
+		flow:             make([]bool, n),
 		storesWhereValue: make([][]int, n),
 		onWL:             make([]bool, n),
 		methodCache:      map[[2]interface{}]*ssa.Function{},
@@ -309,8 +325,16 @@ func newRSM(b *builder, prog *ssa.Program) *rsm {
 		d.fnMethod[fn] = fn.Name()
 	}
 
-	d.refine = os.Getenv("REFINE") != ""
-	if d.refine {
+	switch os.Getenv("REFINE") {
+	case "":
+		// shipped: both refinement paths off (default, byte-identical to E36 v2)
+	case "prune":
+		d.prune = true                              // E39 flow-track
+		d.pruneHeap = os.Getenv("PRUNE_NOHEAP") == "" // default: include heap store->load flow
+	default:
+		d.refine = true // E38 forward-track (contents machinery; refuted, kept as variant)
+	}
+	if d.refine || d.prune {
 		d.buildObjsForFn()
 	}
 	return d
@@ -362,6 +386,25 @@ func (d *rsm) buildObjsForFn() {
 				add(d.methodOf(t, name), ob)
 			}
 		}
+	}
+}
+
+// flowSeed marks a dispatch-token object as flow-tracked and injects it at its
+// birth nodes (&o). flow[base] makes relay() carry the token forward (markActive
+// the landing node) and makes containment-tracking follow it into containers,
+// WITHOUT setting fwdDone[base] -- so the token's own contents are never demanded
+// (the E38 flood). The token then propagates through the value-flow graph in run()
+// and fires the dispatch arm wherever it reaches a receiver.
+func (d *rsm) flowSeed(ob int) {
+	b := d.baseOf(ob)
+	if b < 0 || d.flow[b] {
+		return
+	}
+	d.flow[b] = true
+	d.flowBases = append(d.flowBases, b)
+	for _, a := range d.objAddr[b] {
+		d.markActive(a)
+		d.emit(a, b)
 	}
 }
 
@@ -480,6 +523,18 @@ func (d *rsm) activate(v int) {
 	// if v is a param, its values arrive via wire() when a call targeting its
 	// function fires. Backward from v we must reach those calls' receivers.
 	if fn, ok := d.paramOwner[v]; ok {
+		if d.prune {
+			// PRUNE: forward-track fn's dispatch tokens by VALUE FLOW (not contents).
+			// Each token is seeded at its birth and relayed forward; where it lands on
+			// a dispatch receiver, fireCall wires that site's args into v. No token's
+			// contents are demanded, so the runtime god-graph is never pulled through
+			// the token itself. Sound over-approximation of "token reaches receiver".
+			for _, ob := range d.objsForFn[fn] {
+				d.flowSeed(ob)
+			}
+			d.push(v)
+			return
+		}
 		if d.refine {
 			// REFINE: forward-track fn's dispatch objects instead of eagerly
 			// activating every type-compatible caller. demandContents seeds each
@@ -579,7 +634,7 @@ func (d *rsm) subscribe(src, dst int) {
 // cone is not multiplied by each node's backward cone. Only a node holding a
 // TRACKED object escalates.
 func (d *rsm) relay(src, dst, o int) {
-	if d.fwdDone[d.baseOf(o)] {
+	if b := d.baseOf(o); d.fwdDone[b] || d.flow[b] {
 		d.markActive(dst)
 	}
 	d.emit(dst, o)
@@ -720,6 +775,11 @@ func (d *rsm) wire(fn *ssa.Function, c constraint, recvObj int) {
 func (d *rsm) fireGatedArms(v, o int) {
 	ob := d.baseOf(o)
 	for _, dst := range d.loads[v] { // p = *v : LOAD-OUT GATE (§5.3)
+		// NOT flow-gated: a flow-tracked token used as a load pointer must NOT
+		// demand its own contents (loadPop -> demandContents(o)). That is exactly
+		// what E38 did (the god-graph flood). A token's forward flow needs its
+		// CONTAINERS' load-out, which fires via fwdDone[container] set by
+		// containment-tracking, not via fwdDone/flow on the token itself.
 		if d.active[dst] || d.fwdDone[ob] {
 			d.markActive(dst)
 			d.loadPop(o, dst)
@@ -727,13 +787,13 @@ func (d *rsm) fireGatedArms(v, o int) {
 	}
 	for _, g := range d.gepFwd[v] { // p = &v.off
 		if ob >= 0 && g[1] < d.b.objSize[ob] {
-			if d.active[g[0]] || d.fwdDone[ob] {
+			if d.active[g[0]] || d.fwdDone[ob] || d.flow[ob] {
 				d.markActive(g[0])
 				d.emit(g[0], ob+g[1])
 			}
 		}
 	}
-	if d.fwdDone[ob] { // FIELD-PUSH (§5.1): tracked o at a store VALUE
+	if d.fwdDone[ob] || (d.flow[ob] && d.pruneHeap) { // FIELD-PUSH (§5.1): tracked o at a store VALUE
 		for _, p := range d.storesWhereValue[v] {
 			d.activate(p)
 		}
@@ -757,10 +817,14 @@ func (d *rsm) run() {
 		}
 		d.delta[v] = map[int]bool{} // consume delta -> never rescan pts[v]
 
-		// containment-tracking (§5.2): a tracked object landing in a cell tracks the cell
+		// containment-tracking (§5.2): a tracked object landing in a cell tracks the
+		// cell. A flow-tracked token counts too: to carry it through a store->load, the
+		// CONTAINER it lands in must be contents-tracked (this is where the token's heap
+		// flow needs container points-to; demandContents(container) pulls the
+		// container's writers -- the store->load flood the E39 spec measures).
 		if d.base[v] >= 0 {
 			for o := range dl {
-				if d.fwdDone[d.baseOf(o)] {
+				if b := d.baseOf(o); d.fwdDone[b] || (d.flow[b] && d.pruneHeap) {
 					d.demandContents(v)
 					break
 				}
@@ -837,8 +901,12 @@ func (d *rsm) reset() {
 	for _, b := range d.fwdBases { // per-base fwdDone: a base may not be in touched
 		d.fwdDone[b] = false
 	}
+	for _, b := range d.flowBases { // per-base flow: a token base may not be in touched
+		d.flow[b] = false
+	}
 	d.holdersOfBase = map[int][]int{} // dynamic holder index: rebuilt per query
 	d.fwdBases = d.fwdBases[:0]
+	d.flowBases = d.flowBases[:0]
 	d.touched = d.touched[:0]
 	d.wl = d.wl[:0]
 	d.nActivated = 0

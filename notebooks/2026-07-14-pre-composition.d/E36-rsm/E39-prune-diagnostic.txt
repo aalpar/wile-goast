@@ -1,0 +1,40 @@
+E39 resolve-then-prune diagnostic — generated 2026-07-15 PDT
+REFINE=prune : forward-track the dispatch token's VALUE FLOW (copy/gep + heap
+store->load carrying it as a value), NOT its CONTENTS. Fixes E38's precise
+mistake (E38 demandContents'd the token = demanded what it POINTS TO = god-graph).
+Flag-gated, default OFF. PRUNE_NOHEAP=1 = direct copy/gep flow only (no container).
+
+Footprint = engine |touched| per single-seed receiver query (median/p90/max).
+
+corpus            OFF footprint      PRUNE footprint    PRUNE_NOHEAP   PROBE off  PROBE prune  DISPATCH
+clean ifdecoy     6 / 6 / 6          8 / 8 / 8          8 / 8 / 8      0          0 (126/126)  PASS
+invokestress      13 / 13 / 13       19 / 19 / 19       (n/a)          0/6        0/6          PASS 6
+soundfix (god)    22790/23310/24636  26538/26696/28858  26509/../28545 4/263      5/263        PASS 513
+fmtonly (god)     22711/23200/24470  26422/26591/28768  --             4/258      5/258        PASS 509
+deepchain (god)   22736/23226/24495  26426/26461/28774  --             4/259      5/259        PASS 510
+
+126-corpus clean gate (REFINE=prune): EQUIV 126/126, DISPATCH 126/126, PROBE 126/126.
+
+Dropped caller (soundfix, prune vs shipped): recv n54567 io/fs.dirInfo batch|2| demand|1| (missing 1).
+  A heap-carried dispatch token whose store->load flow the forward tracking does not
+  fully reconstruct EVEN with heap on. The other 4 PROBE fails are the shipped
+  fmt/runtime baggage residuals (unchanged). PRUNE_NOHEAP drops one MORE (PROBE 6/263);
+  heap flow recovers it but not dirInfo, and does not reduce the footprint.
+
+READING — VERDICT: FLOODS-ANYWAY (lever refuted; the correct refinement still floods).
+1. Prune INFLATES the footprint on EVERY corpus, god-object or not (clean 6->8,
+   stress 13->19, god 22790->26538). It never collapses toward optimal 6.
+2. The flood is NOT the heap god-graph the spec anticipated. PRUNE_NOHEAP (pure
+   copy/gep forward flow, no store->load container tracking) gives the SAME footprint
+   (soundfix 26509 vs 26538; clean 8 vs 8). Container tracking is not the cost.
+   The cost is the forward COPY-FLOW BREADTH: a shared dispatch token (a runtime
+   func-value / interface object) copy-flows to many dispatch sites program-wide;
+   forward-tracking markActivates every node on those paths and wire()s every site it
+   reaches, cascading into other functions' param/token discovery. This forward
+   closure is LARGER than the eager backward cone it was meant to prune. invokestress
+   (+6, no god-object at all) confirms the surcharge is intrinsic to token flow.
+3. On god-object corpora prune is NOT sound either: it over-activates in the copy
+   dimension while UNDER-approximating the heap store->load of one token (dirInfo),
+   dropping a caller (PROBE 4->5). Making the heap flow complete would inflate further.
+There is no version that is both exact and collapsing. The god-graph floor is
+intrinsic even to the correctly-corrected refinement. Closes the refinement line.
