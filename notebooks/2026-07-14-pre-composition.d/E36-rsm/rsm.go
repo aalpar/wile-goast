@@ -32,6 +32,14 @@ type rsm struct {
 	pts  []map[int]bool
 	base []int
 
+	// SEMI-NAIVE tabling (mirrors solve.go:27,47 exactly)
+	delta       []map[int]bool // node -> unpropagated additions
+	doneComplex []map[int]bool // node -> objects whose complex edges fired
+
+	// termination tripwire (§7/§9)
+	pushes   int64 // total worklist pushes this query
+	nDemands int64 // activate() calls this query (the "#demands" term)
+
 	// backward indices: constraints keyed by DESTINATION node
 	addrOf   [][]int          // dst -> objects (cAddr)
 	copyBack [][]int          // dst -> srcs (cCopy)
@@ -79,6 +87,8 @@ func newRSM(b *builder, prog *ssa.Program) *rsm {
 		b: b, prog: prog, n: n,
 		pts:         make([]map[int]bool, n),
 		base:        make([]int, n),
+		delta:       make([]map[int]bool, n),
+		doneComplex: make([]map[int]bool, n),
 		addrOf:      make([][]int, n),
 		copyBack:    make([][]int, n),
 		gepBack:     make([][][2]int, n),
@@ -208,20 +218,23 @@ func (d *rsm) push(p int) {
 	if !d.onWL[p] {
 		d.onWL[p] = true
 		d.wl = append(d.wl, p)
+		d.pushes++
 	}
 }
 
-func (d *rsm) add(p, o int) {
-	if p < 0 || o < 0 || !d.active[p] {
+func (d *rsm) emit(p, o int) { // == solve.go add() :59, demand-gated
+	if p < 0 || o < 0 || !d.active[p] { // THE DEMAND GATE (only diff from batch)
 		return
 	}
 	if d.pts[p] == nil {
 		d.pts[p] = map[int]bool{}
+		d.delta[p] = map[int]bool{}
 	}
 	if d.pts[p][o] {
 		return
 	}
 	d.pts[p][o] = true
+	d.delta[p][o] = true
 	d.push(p)
 }
 
@@ -250,13 +263,14 @@ func (d *rsm) activate(v int) {
 		return
 	}
 	d.bwDone[v] = true
+	d.nDemands++
 
 	for _, o := range d.addrOf[v] {
-		d.add(v, o)
+		d.emit(v, o)
 	}
 	for _, q := range d.copyBack[v] {
 		d.activate(q)
-		d.replay(q, v, func(dst, o int) { d.add(dst, o) }) // pts(v) ⊇ pts(q)
+		d.replay(q, v, func(dst, o int) { d.emit(dst, o) }) // pts(v) ⊇ pts(q)
 	}
 	for _, g := range d.gepBack[v] {
 		d.activate(g[0])
@@ -303,7 +317,7 @@ func (d *rsm) replay(src, dst int, f func(dst, o int)) {
 func (d *rsm) replayGep(src, dst, off int) {
 	for o := range d.pts[src] {
 		if ob := d.base[o]; ob >= 0 && off < d.b.objSize[ob] {
-			d.add(dst, ob+off)
+			d.emit(dst, ob+off)
 		}
 	}
 }
@@ -333,7 +347,7 @@ func (d *rsm) loadObject(o, dst int) {
 	// dst ⊇ pts(o): install edge o->dst and replay
 	d.dynFwd[o] = append(d.dynFwd[o], dst) // dynamic copy edge, like batch's addEdge(o,dst)
 	d.activate(o)
-	d.replay(o, dst, func(dst, oo int) { d.add(dst, oo) })
+	d.replay(o, dst, func(dst, oo int) { d.emit(dst, oo) })
 }
 
 // forwardActivateObject activates the forward flow of an object's BASE: &base
@@ -386,14 +400,14 @@ func (d *rsm) fireAssert(c constraint, o int) {
 	switch c.f {
 	case cTFilter:
 		if types.AssignableTo(t, c.typ) {
-			d.add(c.p, o)
+			d.emit(c.p, o)
 		}
 	case cUntag:
 		if types.Identical(t, c.typ) {
 			d.dynFwd[o] = append(d.dynFwd[o], c.p)
 			d.forwardActivateObject(o)
 			d.activate(o)
-			d.replay(o, c.p, func(dst, oo int) { d.add(dst, oo) })
+			d.replay(o, c.p, func(dst, oo int) { d.emit(dst, oo) })
 		}
 	}
 }
@@ -450,7 +464,7 @@ func (d *rsm) wire(fn *ssa.Function, c constraint, recvObj int) {
 	off := 0
 	if recvObj >= 0 && len(ps) > 0 {
 		d.activate(ps[0])
-		d.add(ps[0], recvObj)
+		d.emit(ps[0], recvObj)
 		off = 1
 	}
 	for i, a := range c.args {
@@ -459,57 +473,80 @@ func (d *rsm) wire(fn *ssa.Function, c constraint, recvObj int) {
 			d.activate(p)
 			d.activate(a)
 			d.dynFwd[a] = append(d.dynFwd[a], p)
-			d.replay(a, p, func(dst, o int) { d.add(dst, o) })
+			d.replay(a, p, func(dst, o int) { d.emit(dst, o) })
 		}
 	}
 	for i, r := range c.rets {
 		if i < len(rr) && r >= 0 {
 			d.activate(rr[i])
 			d.dynFwd[rr[i]] = append(d.dynFwd[rr[i]], r)
-			d.replay(rr[i], r, func(dst, o int) { d.add(dst, o) })
+			d.replay(rr[i], r, func(dst, o int) { d.emit(dst, o) })
 		}
 	}
 }
 
-// run drives the demand fixpoint over the activated frontier.
+// run drives the demand fixpoint over the activated frontier, SEMI-NAIVE: the
+// worklist carries only the delta since a node was last processed, and each
+// complex (v,o) pair fires its loads/stores/gep/calls/asserts exactly once via
+// doneComplex (mirrors solve.go's difference-propagation loop).
 func (d *rsm) run() {
 	for len(d.wl) > 0 {
 		v := d.wl[len(d.wl)-1]
 		d.wl = d.wl[:len(d.wl)-1]
 		d.onWL[v] = false
 
-		for o := range d.pts[v] {
-			// forward copy edges (static + dynamic load/untag/wire edges)
-			for _, w := range d.copyFwd[v] {
-				d.add(w, o)
+		dl := d.delta[v]
+		if len(dl) == 0 {
+			continue
+		}
+		d.delta[v] = map[int]bool{} // consume delta -> never rescan pts[v]
+
+		if len(d.loads[v]) > 0 || len(d.stores[v]) > 0 || len(d.gepFwd[v]) > 0 ||
+			len(d.calls[v]) > 0 || len(d.asserts[v]) > 0 {
+			dc := d.doneComplex[v]
+			if dc == nil {
+				dc = map[int]bool{}
+				d.doneComplex[v] = dc
 			}
-			for _, w := range d.dynFwd[v] {
-				d.add(w, o)
-			}
-			for _, g := range d.gepFwd[v] {
-				if ob := d.base[o]; ob >= 0 && g[1] < d.b.objSize[ob] {
-					d.add(g[0], ob+g[1])
+			for o := range dl {
+				if dc[o] {
+					continue
+				}
+				dc[o] = true // fire each (v,o) once (== solve.go:195)
+				for _, dst := range d.loads[v] {
+					if d.active[dst] {
+						d.loadObject(o, dst) // v1 writer-finding; Task 2 replaces
+					}
+				}
+				for _, val := range d.stores[v] {
+					d.activate(val)
+					d.dynFwd[val] = append(d.dynFwd[val], o)
+					d.activate(o)
+					d.replay(val, o, func(dst, oo int) { d.emit(dst, oo) })
+				}
+				for _, g := range d.gepFwd[v] {
+					if ob := d.base[o]; ob >= 0 && g[1] < d.b.objSize[ob] {
+						d.emit(g[0], ob+g[1])
+					}
+				}
+				for _, ci := range d.calls[v] {
+					d.fireCall(d.b.cs[ci], o)
+				}
+				for _, ci := range d.asserts[v] {
+					if d.active[d.b.cs[ci].p] || d.b.cs[ci].f == cTFilter {
+						d.fireAssert(d.b.cs[ci], o)
+					}
 				}
 			}
-			for _, dst := range d.loads[v] {
-				if d.active[dst] {
-					d.loadObject(o, dst)
-				}
+		}
+		for _, w := range d.copyFwd[v] {
+			for o := range dl {
+				d.emit(w, o)
 			}
-			for _, val := range d.stores[v] {
-				// *v = val, and o ∈ pts(v): pts(o) ⊇ pts(val)
-				d.activate(val)
-				d.dynFwd[val] = append(d.dynFwd[val], o)
-				d.activate(o)
-				d.replay(val, o, func(dst, oo int) { d.add(dst, oo) })
-			}
-			for _, ci := range d.calls[v] {
-				d.fireCall(d.b.cs[ci], o)
-			}
-			for _, ci := range d.asserts[v] {
-				if d.active[d.b.cs[ci].p] || d.b.cs[ci].f == cTFilter {
-					d.fireAssert(d.b.cs[ci], o)
-				}
+		}
+		for _, w := range d.dynFwd[v] {
+			for o := range dl {
+				d.emit(w, o)
 			}
 		}
 	}
@@ -530,6 +567,8 @@ func (d *rsm) query(seeds []int) {
 func (d *rsm) reset() {
 	for _, i := range d.touched {
 		d.pts[i] = nil
+		d.delta[i] = nil
+		d.doneComplex[i] = nil
 		d.active[i] = false
 		d.bwDone[i] = false
 		d.fwdVisited[i] = false
@@ -539,4 +578,6 @@ func (d *rsm) reset() {
 	d.touched = d.touched[:0]
 	d.wl = d.wl[:0]
 	d.nActivated = 0
+	d.pushes = 0
+	d.nDemands = 0
 }
