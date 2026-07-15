@@ -1,0 +1,257 @@
+E37 evidence: DUMPPROBE/DUMPBASE detail backing the E36 single-seed residual
+generated 2026-07-15 09:55 PDT, HEAD 7384fde066ad891387f0fce06d0e9a5d4ce4db88
+GOWORK=off throughout. Backs two claims in the E36 lab-notebook entry:
+
+  Claim 1: the fixtures' clean PROBE 4/259 is fmt/runtime baggage riding in
+           via `import "fmt"`, NOT the fixtures' own S/Impl/A/B/Node/Box
+           receivers.
+  Claim 2: the merged-object mechanism -- why those 4 single-seed misses on
+           soundfix can't be reconstructed by demand's forward-tracking.
+
+All commands below run the clean-HEAD binary (`GOWORK=off go build -o rsm .`
+at 7384fde) EXCEPT the Claim-2 numbers, which required THROWAWAY instrumentation
+in main.go (a new DUMPBASE env-gated block, reading only existing rsm/builder
+fields; rsm.go itself was never touched). That instrumentation was reverted
+before the final commit -- see the end of this file for the revert/rebuild
+confirmation.
+
+================================================================================
+CLAIM 1 -- fixtures' 4/259 is fmt/runtime baggage, not their own receivers
+================================================================================
+
+--- soundfix (converged 153k-node stdlib target), 3 independent runs ---
+Receiver node ids and missing/extra counts are IDENTICAL across runs (the
+mismatch itself is deterministic). The printed "sample-type" is NOT: it is
+picked by `for o := range ptsBatch[r]` in main.go's DUMPPROBE code, an
+unordered Go map range over the (many, merged) objects still present in
+batch's pts for that receiver -- so it samples a different member of the same
+merged bucket on each run. Below, 3 runs back to back:
+
+run A:
+  PROBE-DIFF recv n49048 batch|81| demand|1| (missing 80, extra 0) sample-type runtime.mstats
+  PROBE-DIFF recv n49074 batch|6| demand|0| (missing 6, extra 0) sample-type runtime.mheap
+  PROBE-DIFF recv n81355 batch|80| demand|0| (missing 80, extra 0) sample-type uintptr
+  PROBE-DIFF recv n81362 batch|80| demand|0| (missing 80, extra 0) sample-type func(fn *runtime.funcval, arg unsafe.Pointer)
+  PROBE: 4 / 263 isolated single-seed queries MISMATCH batch  (missing 246, extra 0)
+
+run B:
+  PROBE-DIFF recv n49048 batch|81| demand|1| (missing 80, extra 0) sample-type func(a *runtime.userArena)
+  PROBE-DIFF recv n49074 batch|6| demand|0| (missing 6, extra 0) sample-type runtime.workType
+  PROBE-DIFF recv n81355 batch|80| demand|0| (missing 80, extra 0) sample-type runtime.wakeableSleep
+  PROBE-DIFF recv n81362 batch|80| demand|0| (missing 80, extra 0) sample-type os.file
+  PROBE: 4 / 263 isolated single-seed queries MISMATCH batch  (missing 246, extra 0)
+
+run C:
+  PROBE-DIFF recv n49048 batch|81| demand|1| (missing 80, extra 0) sample-type func(file *os.file) error
+  PROBE-DIFF recv n49074 batch|6| demand|0| (missing 6, extra 0) sample-type struct{lock runtime.mutex; free [35]runtime.mSpanList}
+  PROBE-DIFF recv n81355 batch|80| demand|0| (missing 80, extra 0) sample-type uintptr
+  PROBE-DIFF recv n81362 batch|80| demand|0| (missing 80, extra 0) sample-type chan struct{}
+  PROBE: 4 / 263 isolated single-seed queries MISMATCH batch  (missing 246, extra 0)
+
+Deterministic across all 3 runs: receivers n49048/n49074/n81355/n81362,
+missing 80/6/80/80 (=246 total), extra 0. Every sampled type across all 3 runs
+is a runtime/os/unsafe type -- never a soundfix-specific type.
+
+--- clean fixtures: cyclic/selffield, cyclic/twonode, cyclic/mutual, deepchain ---
+(`go-cfg`-shaped programs whose OWN types are Node/S/B/A/Impl/L1/L2/L3/Stringer)
+
+cyclic/selffield:
+  PROBE-DIFF recv n49029 batch|81| demand|1| (missing 80, extra 0) sample-type *runtime.scavengerState
+  PROBE-DIFF recv n49055 batch|6| demand|0| (missing 6, extra 0) sample-type runtime.mheap
+  PROBE-DIFF recv n81358 batch|80| demand|0| (missing 80, extra 0) sample-type func(fn *runtime.funcval, arg unsafe.Pointer)
+  PROBE-DIFF recv n81365 batch|80| demand|0| (missing 80, extra 0) sample-type *runtime.wakeableSleep
+  PROBE: 4 / 259 isolated single-seed queries MISMATCH batch  (missing 246, extra 0)
+  DISPATCH: PASS  (all 510 receivers match batch)
+
+cyclic/twonode:
+  PROBE-DIFF recv n49029 batch|81| demand|1| (missing 80, extra 0) sample-type []uint32
+  PROBE-DIFF recv n49055 batch|6| demand|0| (missing 6, extra 0) sample-type runtime.mheap
+  PROBE-DIFF recv n81368 batch|80| demand|0| (missing 80, extra 0) sample-type runtime.mspan
+  PROBE-DIFF recv n81375 batch|80| demand|0| (missing 80, extra 0) sample-type func(arg any, _ uintptr, _ int64)
+  PROBE: 4 / 259 isolated single-seed queries MISMATCH batch  (missing 246, extra 0)
+  DISPATCH: PASS  (all 510 receivers match batch)
+
+cyclic/mutual:
+  PROBE-DIFF recv n49029 batch|81| demand|1| (missing 80, extra 0) sample-type *runtime.g
+  PROBE-DIFF recv n49055 batch|6| demand|0| (missing 6, extra 0) sample-type runtime.mspan
+  PROBE-DIFF recv n81373 batch|80| demand|0| (missing 80, extra 0) sample-type runtime.mspan
+  PROBE-DIFF recv n81380 batch|80| demand|0| (missing 80, extra 0) sample-type runtime.uint64InterfacePtr
+  PROBE: 4 / 259 isolated single-seed queries MISMATCH batch  (missing 246, extra 0)
+  DISPATCH: PASS  (all 510 receivers match batch)
+
+deepchain (3-hop L3->L2->L1->Stringer container chain):
+  PROBE-DIFF recv n49029 batch|81| demand|1| (missing 80, extra 0) sample-type struct{lock runtime.mutex; free [35]runtime.mSpanList}
+  PROBE-DIFF recv n49055 batch|6| demand|0| (missing 6, extra 0) sample-type [4]struct{item runtime.stackpoolItem; _ [104]byte}
+  PROBE-DIFF recv n81363 batch|80| demand|0| (missing 80, extra 0) sample-type runtime.scavengerState
+  PROBE-DIFF recv n81370 batch|80| demand|0| (missing 80, extra 0) sample-type *runtime.wakeableSleep
+  PROBE: 4 / 259 isolated single-seed queries MISMATCH batch  (missing 246, extra 0)
+  DISPATCH: PASS  (all 510 receivers match batch)
+
+All 4 fixtures: receivers n49029/n49055/n8136x deterministic, missing 80/6/80/80
+(=246), extra 0 -- the SAME shape as soundfix, at the SAME receiver-id offset
+(the fixture programs are smaller, so soundfix's ~49048/81355/81362 shift down
+to ~49029/81358/81365 -- a constant offset from fewer preceding stdlib nodes,
+not a different phenomenon). Every sampled type across all 4 fixtures x their
+4 mismatches is a runtime/os/unsafe/uintptr type. NONE is Node, S, B, A, Impl,
+L1, L2, L3, or Stringer -- the fixtures' own declared types never appear as a
+PROBE-DIFF sample-type in any run observed.
+
+--- control: testdata/fmtonly (bare `package main; import "fmt"; func main(){ fmt.Println("hello") }`) ---
+
+run 1:
+  PROBE-DIFF recv n49017 batch|81| demand|1| (missing 80, extra 0) sample-type internal/runtime/maps.table
+  PROBE-DIFF recv n49043 batch|6| demand|0| (missing 6, extra 0) sample-type runtime.workType
+  PROBE-DIFF recv n81330 batch|80| demand|0| (missing 80, extra 0) sample-type struct{lock runtime.mutex; free [35]runtime.mSpanList}
+  PROBE-DIFF recv n81337 batch|80| demand|0| (missing 80, extra 0) sample-type struct{lock runtime.mutex; free [35]runtime.mSpanList}
+  PROBE: 4 / 258 isolated single-seed queries MISMATCH batch  (missing 246, extra 0)
+  DISPATCH: PASS  (all 509 receivers match batch)
+
+run 2:
+  PROBE-DIFF recv n49017 batch|81| demand|1| (missing 80, extra 0) sample-type func(r *os.root) error
+  PROBE-DIFF recv n49043 batch|6| demand|0| (missing 6, extra 0) sample-type runtime.workType
+  PROBE-DIFF recv n81330 batch|80| demand|0| (missing 80, extra 0) sample-type runtime.mspan
+  PROBE-DIFF recv n81337 batch|80| demand|0| (missing 80, extra 0) sample-type []uint32
+  PROBE: 4 / 258 isolated single-seed queries MISMATCH batch  (missing 246, extra 0)
+  DISPATCH: PASS  (all 509 receivers match batch)
+
+fmtonly (a program with NO struct/interface/dispatch of its own beyond
+fmt.Println's own machinery) reproduces the identical 4-mismatch,
+missing-80/6/80/80(=246)/extra-0 shape, at node ids ~49017/49043/8133x -- again
+the same constant-offset shift, this time even smaller (fewer preceding nodes
+than the fixtures, which each also import fmt but declare extra types). This
+is direct evidence the residual is intrinsic to `import "fmt"` pulling in the
+runtime/os graph, independent of the structure under test: a program with zero
+domain types still exhibits the exact same 4/N single-seed floor.
+
+CLAIM 1 CONCLUSION: confirmed. Across soundfix, 4 clean fixtures, and a bare
+fmtonly control -- 6 distinct programs, several sampled 2-3x each -- the
+receiver count, missing/extra counts, and PASS/PASS shape are structurally
+identical, and every single sampled mismatching type (dozens of samples) is a
+runtime/os/unsafe/internal type. The fixtures' own types never appear.
+
+================================================================================
+CLAIM 2 -- the merged-object mechanism: why those 4 can't be single-seed sound
+================================================================================
+
+Instrumentation (THROWAWAY, reverted -- see below): main.go's ENGINE FOOTPRINT
+loop already computes, per mismatching receiver r, the MISSING objects
+(batch[r] minus demand[r].pts). A new DUMPBASE-gated block groups those missing
+objects by their own base id (`de.base[o]`, a static array independent of
+query state) and, for the top-3 bases by missing-object count per receiver,
+measures two things:
+
+  (a) |storesWhereValue[base]| taken LITERALLY, i.e. store-pointer nodes p
+      with cStore(p, base) -- the object's own base id used as a store's VALUE
+      operand. This is ALWAYS 0 for every object base, by construction: in
+      extract.go, cStore's value operand always comes from `b.node(ssaValue)`,
+      while object base ids only ever come from `b.obj(key, t)`; both draw
+      from the same monotonic `b.nNodes` counter but never collide, so no
+      cStore constraint's value operand can ever equal an object base id. This
+      is a structural fact of the id scheme, not a soundfix-specific one. It
+      means the entry's remembered "storesWhereValue[base]" framing cannot
+      have meant the field applied directly to a base id -- confirmed, not
+      merely suspected, by re-reading extract.go's node()/obj() allocators.
+
+  (b) the mechanistically real writer-candidate set: every node v (0..N) that
+      ground truth (ptsBatch, the batch/Andersen oracle) says can alias &base
+      (base ∈ ptsBatch[v]), unioned with storesWhereValue[v] for each such v
+      -- i.e. store-pointers that write a REFERENCE to some v that itself
+      points to the merged base. |union| = U. How many of U's members end up
+      `active` after an ISOLATED forward-track of &base (demandContents(base)
+      + run() on a scratch rsm instance, no other seed) is "reached". This is
+      the (N-store-pointers vs. M-reached)-shaped pair the entry described
+      from memory as "91 across 32 functions, reaches 5" -- measured directly
+      here instead.
+
+  Distinct-SSA-function span: for each p in the union, p's originating
+  ssa.Value is recovered by inverting builder.nodeOf (node id -> ssa.Value,
+  built once from `b.nodeOf`), then resolved to its enclosing function via a
+  `Parent() *ssa.Function` type assertion (covers ssa.Instruction values and
+  ssa.Parameter). Some store-pointer nodes have no resolvable ssa.Value
+  (synthesized/tuple/global nodes) or a nil Parent (package-level); those are
+  reported as "unresolved", not silently dropped.
+
+--- measured, soundfix, all 4 mismatching receivers, top 3 bases each ---
+
+  BASE-DETAIL recv n49048 missing-objects=80 distinct-bases=66 (showing top 3 by missing-objs-here)
+    base n17643 type=runtime.workType      missing-objs-here=3 storesWhereValue[base]literal=0 aliasNodes=4386 storePtrUnion=192 fns=108(unresolved 7) fwd-reached=126/192
+    base n17725 type=runtime.mheap         missing-objs-here=3 storesWhereValue[base]literal=0 aliasNodes=4781 storePtrUnion=196 fns=112(unresolved 7) fwd-reached=128/196
+    base n17876 type=runtime.scavengerState missing-objs-here=2 storesWhereValue[base]literal=0 aliasNodes=4282 storePtrUnion=192 fns=110(unresolved 7) fwd-reached=1/192
+  BASE-DETAIL recv n49074 missing-objects=6 distinct-bases=4 (showing top 3 by missing-objs-here)
+    base n17725 type=runtime.mheap         missing-objs-here=2 storesWhereValue[base]literal=0 aliasNodes=4781 storePtrUnion=196 fns=112(unresolved 7) fwd-reached=128/196
+    base n17643 type=runtime.workType      missing-objs-here=2 storesWhereValue[base]literal=0 aliasNodes=4386 storePtrUnion=192 fns=108(unresolved 7) fwd-reached=126/192
+    base n17680 type=[4]struct{item runtime.stackpoolItem; _ [104]byte} missing-objs-here=1 storesWhereValue[base]literal=0 aliasNodes=4282 storePtrUnion=192 fns=108(unresolved 7) fwd-reached=126/192
+  BASE-DETAIL recv n81355 missing-objects=80 distinct-bases=66 (showing top 3 by missing-objs-here)
+    base n17725 type=runtime.mheap         missing-objs-here=3 storesWhereValue[base]literal=0 aliasNodes=4781 storePtrUnion=196 fns=112(unresolved 7) fwd-reached=128/196
+    base n17643 type=runtime.workType      missing-objs-here=3 storesWhereValue[base]literal=0 aliasNodes=4386 storePtrUnion=192 fns=108(unresolved 7) fwd-reached=126/192
+    base n17608 type=struct{lock runtime.mutex; free [35]runtime.mSpanList} missing-objs-here=2 storesWhereValue[base]literal=0 aliasNodes=4253 storePtrUnion=192 fns=108(unresolved 7) fwd-reached=126/192
+  BASE-DETAIL recv n81362 missing-objects=80 distinct-bases=66 (showing top 3 by missing-objs-here)
+    base n17643 type=runtime.workType      missing-objs-here=3 storesWhereValue[base]literal=0 aliasNodes=4386 storePtrUnion=192 fns=108(unresolved 7) fwd-reached=126/192
+    base n17725 type=runtime.mheap         missing-objs-here=3 storesWhereValue[base]literal=0 aliasNodes=4781 storePtrUnion=196 fns=112(unresolved 7) fwd-reached=128/196
+    base n17608 type=struct{lock runtime.mutex; free [35]runtime.mSpanList} missing-objs-here=2 storesWhereValue[base]literal=0 aliasNodes=4253 storePtrUnion=192 fns=108(unresolved 7) fwd-reached=126/192
+
+Node ids for the base objects drift a few units run-to-run (go/packages
+loading order), but the per-type numbers are stable: re-run 3x, runtime.mheap
+was always aliasNodes=4781 storePtrUnion=196 fns=112(unresolved 7)
+fwd-reached=128/196; runtime.workType always aliasNodes=4386 storePtrUnion=192
+fns=108(unresolved 7) fwd-reached=126/192. The THIRD-ranked base per receiver
+varies in identity (tie-break among missing-objs-here==2), but every third
+base observed across repeated runs (runtime.scavengerState, runtime.mspan,
+runtime.timer, [4]struct{...stackpoolItem...}) showed fwd-reached in {0, 1}
+out of ~191-192 -- i.e. isolated forward-tracking from these smaller merged
+bases reaches essentially NONE of their store-pointer candidates, while the
+two large "hub" bases (mheap, workType) reach roughly two-thirds (126-128 of
+~192-196).
+
+WHAT THIS MEASURES, HONESTLY:
+  - This is NOT literally "storesWhereValue[base]" in the sense the field name
+    reads (that quantity is always 0, see (a) above, a structural fact of the
+    id scheme rather than a discovery about soundfix).
+  - This IS the mechanistically-relevant analog: for the missing objects'
+    bases, the honest measured pair is (store-pointer candidate count U,
+    forward-reached count) = (192-196, 126-128) for the two large hub bases
+    that dominate the missing-object count, and (~191-192, 0-1) for the
+    smaller merged bases in third place. Neither pair is "91 vs 5" -- the
+    entry's remembered numbers do not match what is measured here, on either
+    axis (universe size ~2x larger; reached fraction for the DOMINANT bases is
+    ~65%, not ~5%; only the THIRD-ranked, smaller bases show the near-total
+    failure the remembered "5 of 91" shape suggests).
+  - The function-span figure (108-112 distinct functions per base, 7
+    unresolved each) IS newly and directly measured here (not re-derived from
+    memory); it was NOT measured in the original E36 session and the "32
+    functions" figure in the entry is unverified against this instrumentation.
+  - Reconciling exactly what quantity produced "91 store-pointers across 32
+    functions, reaches 5" in the original E36 session was not attempted
+    further -- the id-scheme fact in (a) rules out the literal reading, and
+    (b) is the closest well-defined analog this session could construct and
+    verify by direct measurement. The entry's qualitative claim ("forward-
+    tracking a single &base reaches only a small fraction of its writers, for
+    at least some of the merged objects behind these misses") IS supported:
+    the third-ranked, smaller merged bases show fwd-reached 0-1 out of ~192.
+    The claim that the DOMINANT bases (mheap, workType) are similarly
+    unreachable is NOT supported -- they are ~65% reached, not ~5%.
+
+================================================================================
+REVERT / REBUILD CONFIRMATION
+================================================================================
+
+The DUMPBASE instrumentation (a new env-gated block in main.go's ENGINE
+FOOTPRINT loop, plus a `nodeVal` inverse-map build and a "golang.org/x/tools/go/ssa"
+import; rsm.go, extract.go, solve.go, slice.go were never touched) was reverted
+with `git checkout -- main.go` after the Claim-2 numbers above were captured.
+
+  $ git diff --stat -- '*.go'
+  (empty -- no .go files differ from HEAD)
+
+  $ git diff HEAD -- main.go rsm.go slice.go extract.go solve.go | wc -l
+  0
+
+Rebuilt clean (`GOWORK=off go build -o rsm .` at HEAD 7384fde) and re-ran
+soundfix on the clean binary:
+
+  PROBE: 4 / 263 isolated single-seed queries MISMATCH batch  (missing 246, extra 0)
+  DISPATCH: PASS  (all 513 receivers match batch)
+
+Confirms the clean-HEAD binary reproduces the same 4/263 gate this artifact's
+Claim-1 section is built on; only the Claim-2 numbers above required (now-
+reverted) instrumentation to measure.
