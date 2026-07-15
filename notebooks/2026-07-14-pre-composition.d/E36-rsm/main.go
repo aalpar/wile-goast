@@ -3,12 +3,13 @@
 //
 // Pipeline: extract (frozen E31) -> batch solve (frozen; the equivalence oracle)
 // -> demand engine. Two checks:
-//   EQUIV (converged targets): query ALL nodes; demand pts must equal batch pts
-//     node-for-node. The equivalence theorem (context-insensitive field-sensitive
-//     CFL-reachability == Andersen) makes any mismatch a bug.
-//   DISPATCH (all targets): query only the invoke/icall receiver nodes; report how
-//     many nodes the demand engine activates (its footprint) and whether the god
-//     object was pulled in.
+//
+//	EQUIV (converged targets): query ALL nodes; demand pts must equal batch pts
+//	  node-for-node. The equivalence theorem (context-insensitive field-sensitive
+//	  CFL-reachability == Andersen) makes any mismatch a bug.
+//	DISPATCH (all targets): query only the invoke/icall receiver nodes; report how
+//	  many nodes the demand engine activates (its footprint) and whether the god
+//	  object was pulled in.
 package main
 
 import (
@@ -159,6 +160,26 @@ func main() {
 	if godObj >= 0 {
 		fmt.Printf("reach the flood   %d / %d receivers' slices contain god object n%d\n", pullGod, len(foots), godObj)
 	}
+
+	// ---- ENGINE FOOTPRINT: the engine's actual per-receiver activation ----
+	fmt.Printf("\n─── ENGINE FOOTPRINT (rsm |touched| per receiver) ───\n")
+	de := newRSM(b, prog)
+	var efoots []int
+	for _, r := range recvs {
+		if len(ptsBatch[r]) == 0 {
+			continue
+		}
+		de.query([]int{r})
+		efoots = append(efoots, len(de.touched))
+		de.reset()
+	}
+	sort.Ints(efoots)
+	emx := 0
+	if len(efoots) > 0 {
+		emx = efoots[len(efoots)-1]
+	}
+	fmt.Printf("engine footprint  median %d  p90 %d  max %d   (of %d)\n",
+		pctile(efoots, 50), pctile(efoots, 90), emx, N)
 
 	// ---- corpora correctness gate (converged only): full receiver equivalence ----
 	if converged {
