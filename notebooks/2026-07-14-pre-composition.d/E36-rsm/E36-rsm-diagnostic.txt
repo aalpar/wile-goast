@@ -1,0 +1,57 @@
+E36 RSM v2 diagnostic — generated 2026-07-15 09:11 PDT
+commit: b2a982e
+
+==================== soundfix (converged 153k-node stdlib target) ====================
+nodes             153502
+nodes w/ pts      89303
+GOD OBJECT        node 19207, in pts of 4781 nodes, type runtime.mheap
+  <=2^0      74183 nodes
+  <=2^1       3091 nodes
+  <=2^2       2649 nodes
+  <=2^3       1171 nodes
+  <=2^4       1448 nodes
+  <=2^5       1085 nodes
+  <=2^6        522 nodes
+  <=2^7       4926 nodes
+  <=2^8        228 nodes
+─── EQUIV (demand queries all nodes == batch) ───
+TERMINATION: OK  pushes 225275 <= bound 2189245524
+EQUIV: PASS  (demand == batch on all 89303 non-empty nodes)
+slice (nodes)     median 6  p90 66  max 2490   (of 153502)
+engine footprint  median 22790  p90 23309  max 24647   (of 153502)
+PROBE: 4 / 263 isolated single-seed queries MISMATCH batch  (missing 246, extra 0)
+DISPATCH: PASS  (all 513 receivers match batch)
+
+==================== clean fixtures (own receivers single-seed sound) ====================
+-- cyclic/selffield --
+TERMINATION: OK  pushes 226813 <= bound 2184384267
+EQUIV: PASS  (demand == batch on all 89209 non-empty nodes)
+PROBE: 4 / 259 isolated single-seed queries MISMATCH batch  (missing 246, extra 0)
+DISPATCH: PASS  (all 510 receivers match batch)
+-- cyclic/twonode --
+TERMINATION: OK  pushes 231544 <= bound 2184986868
+EQUIV: PASS  (demand == batch on all 89218 non-empty nodes)
+PROBE: 4 / 259 isolated single-seed queries MISMATCH batch  (missing 246, extra 0)
+DISPATCH: PASS  (all 510 receivers match batch)
+-- cyclic/mutual --
+TERMINATION: OK  pushes 226213 <= bound 2185058088
+EQUIV: PASS  (demand == batch on all 89223 non-empty nodes)
+PROBE: 4 / 259 isolated single-seed queries MISMATCH batch  (missing 246, extra 0)
+DISPATCH: PASS  (all 510 receivers match batch)
+-- deepchain --
+TERMINATION: OK  pushes 227297 <= bound 2184762256
+EQUIV: PASS  (demand == batch on all 89214 non-empty nodes)
+PROBE: 4 / 259 isolated single-seed queries MISMATCH batch  (missing 246, extra 0)
+DISPATCH: PASS  (all 510 receivers match batch)
+
+==================== stress corpus (receiver-type invoke narrowing) ====================
+EQUIV: PASS  (demand == batch on all 70 non-empty nodes)
+engine footprint  median 13  p90 13  max 13   (of 119)
+PROBE: 0 / 6 isolated single-seed queries MISMATCH batch  (missing 0, extra 0)
+DISPATCH: PASS  (all 6 receivers match batch)
+
+==================== demand-leak corpus (signature-filtered icall) ====================
+EQUIV: PASS  (demand == batch on all 89252 non-empty nodes)
+engine footprint  median 22757  p90 23275  max 24602   (of 153407)
+PROBE: 4 / 263 isolated single-seed queries MISMATCH batch  (missing 246, extra 0)
+DISPATCH: PASS  (all 513 receivers match batch)
