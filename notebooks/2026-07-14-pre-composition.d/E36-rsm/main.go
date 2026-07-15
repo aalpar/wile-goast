@@ -63,6 +63,13 @@ func main() {
 		}
 		t0 := time.Now()
 		d.query(all)
+		bound := int64(b.nNodes)*int64(b.nObjs) + d.nDemands
+		if d.pushes > bound {
+			fmt.Printf("TERMINATION: TRIPWIRE FIRED  pushes %d > bound %d (n*nObjs %d + demands %d)\n",
+				d.pushes, bound, int64(b.nNodes)*int64(b.nObjs), d.nDemands)
+		} else {
+			fmt.Printf("TERMINATION: OK  pushes %d <= bound %d\n", d.pushes, bound)
+		}
 		agree, differ, missing, extra := 0, 0, 0, 0
 		var firstDiffs []string
 		for v := 0; v < N; v++ {
