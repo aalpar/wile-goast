@@ -20,6 +20,7 @@ package main
 
 import (
 	"go/types"
+	"os"
 	"strconv"
 
 	"golang.org/x/tools/go/ssa"
@@ -105,6 +106,19 @@ type rsm struct {
 	touched []int // nodes activated this query, for cheap reset() between queries
 
 	methodCache map[[2]interface{}]*ssa.Function
+
+	// REFINE (E36 v2 experiment, flag-gated, default OFF): goal-directed,
+	// context-INsensitive caller discovery. Instead of eagerly activating every
+	// type-compatible dispatch site (rsm.go activate()'s invoke/icall branches),
+	// forward-track fn's own dispatch objects to the sites they actually reach.
+	// objsForFn[fn] = object bases that dispatch to fn:
+	//   - invoke: bases whose concrete type resolves a demanded method name to fn
+	//     (methodOf(objType, m) == fn, mirroring fireCall's own resolution);
+	//   - icall:  bases o with objFunc[o] == fn (the func-value objects).
+	// demandContents forward-tracks each; a cInvoke/cICall arm fires only where a
+	// dispatching object arrives, so wire() feeds v from exactly the real callers.
+	refine    bool
+	objsForFn map[*ssa.Function][]int
 
 	// instrumentation
 	nActivated int
@@ -294,7 +308,61 @@ func newRSM(b *builder, prog *ssa.Program) *rsm {
 	for fn := range d.fnMethod {
 		d.fnMethod[fn] = fn.Name()
 	}
+
+	d.refine = os.Getenv("REFINE") != ""
+	if d.refine {
+		d.buildObjsForFn()
+	}
 	return d
+}
+
+// buildObjsForFn indexes, per function, the object bases whose arrival at a
+// dispatch-site receiver would cause that site to call fn. This is the forward
+// dual of the eager caller enumeration: instead of asking "which sites could
+// call fn by static type", it precomputes "which objects ARE fn's dispatch
+// tokens" so the demand engine can forward-track them. Built once, only when
+// REFINE is on. Resolution mirrors fireCall exactly (objFunc for icall,
+// methodOf(objType, name) for invoke), so no reachable caller is a false one.
+func (d *rsm) buildObjsForFn() {
+	d.objsForFn = map[*ssa.Function][]int{}
+	added := map[*ssa.Function]map[int]bool{}
+	add := func(fn *ssa.Function, ob int) {
+		if fn == nil {
+			return
+		}
+		m := added[fn]
+		if m == nil {
+			m = map[int]bool{}
+			added[fn] = m
+		}
+		if m[ob] {
+			return
+		}
+		m[ob] = true
+		d.objsForFn[fn] = append(d.objsForFn[fn], ob)
+	}
+	// icall: an object that IS a function value dispatches to that function.
+	for ob, fn := range d.b.objFunc {
+		add(fn, ob)
+	}
+	// invoke: an object whose concrete type resolves a DEMANDED method name to fn
+	// dispatches that method to fn. Only method names that actually appear at an
+	// invoke site are relevant, so iterate the object's method set and keep the hits.
+	for ob, t := range d.b.objType {
+		if t == nil {
+			continue
+		}
+		for _, tt := range []types.Type{t, types.NewPointer(t)} {
+			ms := d.prog.MethodSets.MethodSet(tt)
+			for i := 0; i < ms.Len(); i++ {
+				name := ms.At(i).Obj().Name()
+				if _, demanded := d.invokesByMethod[name]; !demanded {
+					continue
+				}
+				add(d.methodOf(t, name), ob)
+			}
+		}
+	}
 }
 
 func (d *rsm) push(p int) {
@@ -410,8 +478,21 @@ func (d *rsm) activate(v int) {
 		d.replayCall(ci)
 	}
 	// if v is a param, its values arrive via wire() when a call targeting its
-	// function fires. Backward from v we must activate those calls' receivers.
+	// function fires. Backward from v we must reach those calls' receivers.
 	if fn, ok := d.paramOwner[v]; ok {
+		if d.refine {
+			// REFINE: forward-track fn's dispatch objects instead of eagerly
+			// activating every type-compatible caller. demandContents seeds each
+			// object at its birth and relay() carries it forward; a cInvoke/cICall
+			// arm fires only where a dispatching object arrives, wiring that site's
+			// args into v. Context-insensitive; the answer is unchanged, the
+			// footprint is only what the forward flow touches.
+			for _, ob := range d.objsForFn[fn] {
+				d.demandContents(ob)
+			}
+			d.push(v)
+			return
+		}
 		if m, isMethod := d.fnMethod[fn]; isMethod {
 			// receiver-TYPE narrowing: an invoke site iface.M() can dispatch to fn
 			// only if fn's receiver type implements the site's interface. Sound --
