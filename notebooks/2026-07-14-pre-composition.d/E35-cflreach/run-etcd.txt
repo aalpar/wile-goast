@@ -1,0 +1,60 @@
+TARGET            /Users/aalpar/projects/etcd
+load+ssa          935ms
+extract           368ms
+
+functions         52905
+nodes             1248065
+objects           127403
+constraints       1188306
+  addr              127403
+  copy              387942
+  gep               482809
+  load              100422
+  store              68669
+  invoke             14181
+  icall               3354
+  tfilter              988
+  untag               2538
+
+─── SOLVE (difference propagation; no HVN, no cycle elimination) ───
+status            TIMED OUT after 1m0s
+wall              1m0.02s
+propagations      51697809
+MEMBERSHIP TESTS  4339805915
+worklist pops     2512896
+copy edges        2541938
+nodes w/ pts      454766
+total pts size    51697809
+MEAN |pts|        113.68
+dispatch resolved 62843
+MAX |pts|         4068  (at node 128957)
+GOD OBJECT        node 788664, in pts of 42443 nodes, type *errors.errorString
+|pts| histogram (log2 buckets):
+  <=2^0     358988 nodes
+  <=2^1      21439 nodes
+  <=2^2      19348 nodes
+  <=2^3      10327 nodes
+  <=2^4       7914 nodes
+  <=2^5       4020 nodes
+  <=2^6       2639 nodes
+  <=2^7       2342 nodes
+  <=2^8       1971 nodes
+  <=2^9       1382 nodes
+  <=2^11      6575 nodes
+  <=2^12     17821 nodes
+
+─── EQUIV (demand queries all nodes == batch) ───
+solve TIMED OUT — skipping full equivalence (batch pts is partial).
+EQUIV: skipped
+
+─── FLOOD ON DISPATCH SITES (batch ground truth — PARTIAL solve, indicative) ───
+receivers         14555 total, 4469 resolved
+flooded receivers 532 / 4469  (god object n788664 in their pts)
+receiver |pts|    mean 226.3  max 2323
+
+─── OPTIMAL DEMAND FOOTPRINT (resolved-graph backward slice — PARTIAL solve, indicative) ───
+wall              1.014s
+resolved recvs    4469
+slice (nodes)     median 12  p90 39958  max 68616   (of 1248065)
+slice (% of N)    median 0.001  p90 3.202  max 5.498
+reach the flood   683 / 4469 receivers' slices contain god object n788664

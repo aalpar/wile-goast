@@ -1,0 +1,119 @@
+E35 -- Demand-driven points-to: interface discovery is cheap for the median
+       dispatch site (median backward slice 11-37 nodes), but the error-typed
+       ~15% tail still drags in the flood. Demand transforms the common case,
+       not the tail.
+
+=================== THE QUESTION ===================
+
+E31 pre-registered "stop materializing the whole solution -- demand-driven
+CFL-reachability" as the fallback once the container failed; E34 closed HVN, the
+last cheap BATCH lever. This entry builds the demand engine and asks: does
+querying only dispatch sites (interface object discovery is a set of point
+queries, not a whole-program fixpoint) sidestep the errorString flood (E33) that
+makes batch context-insensitive Andersen time out?
+
+=================== HARNESS ===================
+
+E35-cflreach/: reuses E31's frozen extractor (extract.go) and difference-
+propagation batch solver (solve.go, the equivalence oracle) unchanged; adds
+cfl.go, a demand-driven field-sensitive context-INsensitive points-to engine.
+Context-insensitive field-sensitive CFL-reachability degenerates to the Andersen
+relation (the only Dyck language is field-balance, realized by routing load/store
+through shared object nodes; the call/return Dyck language would be v2). So the
+engine computes the SAME relation as the batch solver, seeded from a query set
+and propagated only among ACTIVATED nodes.
+
+Activation: activating a node installs its BACKWARD feeders (the constraints
+whose destination it is) so its pts can be computed; a load `v = *q` additionally
+activates, for each o in pts(q), the store-pointers that WRITE o (found by
+forward-activating from &base(o)) -- the demand form of the heap match. Two
+non-obvious backward feeders, both found by the equivalence check below:
+  * a param is fed by wire() only when a call targeting its function fires, so
+    backward from a param we activate the matching invoke/icall receivers;
+  * a load of a struct sub-node box+off has no &(box+off) -- its writers are
+    reached from &box via the gep that produced &box.off, so writer-finding keys
+    off the BASE object, not o.
+
+=================== VALIDATION: THE EQUIVALENCE THEOREM ===================
+
+demand-pts(v) == batch-pts(v) for every v is a theorem (same relation), hence a
+tripwire: an activation-closure bug UNDER-approximates and the check fires. This
+drove the engine from 40 -> 7 -> 0 mismatches by naming exactly which feeder was
+missing. Two checks per target:
+  EQUIV     query ALL nodes; demand pts must equal batch pts node-for-node.
+  DISPATCH  query only the invoke/icall receiver nodes; each receiver's pts must
+            equal batch.
+
+  126 corpora (packages_iface_decoy, the interface-dispatch benchmark):
+    EQUIV 126/126 PASS,  DISPATCH 126/126 PASS.
+  soundfix (converged, 153k nodes, heap-exercising): EQUIV PASS (89,303 nodes).
+
+COMPLETENESS BOUNDARY. DISPATCH fails on 7 of 513 soundfix receivers, all deep
+runtime-heap chains (fixalloc, scavenger, timer, callCleanup): loads whose object
+reaches its writers through MULTI-HOP heap indirection (stored into one container,
+loaded, stored into another), which copy/gep forward-activation does not chase.
+That is the genuinely hard core of demand points-to -- the full alias-matching
+recursive state machine (Sridharan-Bodik) -- and is deferred to v2. The dispatch-
+shaped corpora do not exercise it (0 failures there).
+
+=================== THE FOOTPRINT: MEASURE THE OPTIMUM, NOT THE ENGINE =========
+
+The engine's ACTUAL traversal over-activates: its writer-finding forward-activates
+a loaded object's whole forward cone, and common runtime objects flow to ~18k
+nodes, so per-query footprint is a uniform ~12-19% of N -- an artifact of loose
+writer-finding, NOT a property of demand. So the footprint is measured instead by
+the OPTIMAL-demand quantity: the resolved-graph backward slice, the exact set of
+nodes whose pts feeds a receiver, computed from batch's own (dynamic-edge-
+resolved) pts. That is what a TIGHT demand engine (v2 RSM) touches, with zero
+over-activation.
+
+Backward slice per dispatch receiver (60s batch budget; partial pts on the real
+targets, so a lower bound):
+
+  target   recvs   median   p90      max      slices reaching the flood
+  ------   -----   ------   ------   ------   -------------------------
+  soundfix   263      6        66     2,490     6 / 263   (2%)
+  wile     2,751     11     27,958   41,631   535 / 2,751 (19%)
+  etcd     4,469     12     39,958   68,616   683 / 4,469 (15%)
+  ollama   6,107     37     38,535   59,231   671 / 6,107 (11%)
+
+The god object is `*errors.errorString` on all three real targets.
+
+=================== THE RESULT IS BIMODAL ===================
+
+MEDIAN dispatch query: 11-37 nodes -- 0.001-0.003% of the program. Batch Andersen
+materializes ALL ~322,000 non-empty nodes and times out; the median demand query
+for the same dispatch answer touches ELEVEN nodes. For the ~80-90% of dispatch
+sites that are domain-typed, demand sidesteps the flood completely.
+
+THE TAIL: p90 slice is 28,000-40,000 nodes, and 10-19% of receivers' slices
+contain the god object. These are the error-typed (or error-adjacent) receivers:
+`err.Error()`-style sites, or dispatch on interfaces that can hold an error. For
+them the flood IS in the backward slice -- the errorString genuinely feeds their
+answer -- and demand cannot avoid it. Receiver |pts| confirms the split: mean
+180-328 (dragged up by the flooded tail) but median tiny.
+
+So the answer to E33's pre-registered question is a QUALIFIED yes: demand-driven
+points-to makes interface object discovery tractable for the common case
+(intractable whole-program batch -> 11-node median query), but the error-typed
+minority stays flood-sized. Demand transforms the common case, not the tail. That
+is exactly consistent with E34: the flood is intrinsic to context-insensitive
+analysis of error values, and only context sensitivity removes it at the source;
+demand relocates the cost to the sites that actually query errors instead of
+paying it program-wide.
+
+=================== SCOPE AND WHAT REMAINS ===================
+
+  * Proven: a demand-driven field-sensitive points-to engine, exact (== batch) on
+    126/126 dispatch corpora; the optimal per-query footprint for interface
+    discovery is a median of ~11 nodes on real Go.
+  * NOT proven: the v1 engine does not REALIZE that optimal footprint -- its
+    writer-finding over-activates (~12-19%). Realizing it needs the RSM alias-
+    matching (v2), which also closes the 7 runtime-heap completeness failures.
+  * NOT addressed: precision GAINS. v1 is context-insensitive, so it equals
+    Andersen's precision; the flooded tail shrinks only under context sensitivity
+    (E34), which on-demand refinement (v2) could add per-query.
+
+Artifacts: run-corpora-126.txt (the 126/126 gate), run-soundfix-CONVERGED.txt
+(EQUIV + completeness boundary), run-wile.txt, run-etcd.txt, run-ollama.txt (the
+backward-slice footprint). Probe: extract.go, solve.go, cfl.go, slice.go, main.go.

@@ -1,0 +1,61 @@
+TARGET            /Users/aalpar/projects/wile-workspace/wile
+load+ssa          779ms
+extract           223ms
+
+functions         29120
+nodes             849567
+objects           76876
+constraints       831546
+  addr               76876
+  copy              251437
+  gep               390571
+  load               57480
+  store              43669
+  invoke              5115
+  icall               2449
+  tfilter              630
+  untag               3319
+
+─── SOLVE (difference propagation; no HVN, no cycle elimination) ───
+status            TIMED OUT after 1m0s
+wall              1m1.418s
+propagations      45917181
+MEMBERSHIP TESTS  3950071412
+worklist pops     3237888
+copy edges        2627091
+nodes w/ pts      319608
+total pts size    45917181
+MEAN |pts|        143.67
+dispatch resolved 53759
+MAX |pts|         4039  (at node 61632)
+GOD OBJECT        node 492634, in pts of 28210 nodes, type *errors.errorString
+|pts| histogram (log2 buckets):
+  <=2^0     236597 nodes
+  <=2^1      18257 nodes
+  <=2^2      15577 nodes
+  <=2^3       7849 nodes
+  <=2^4       8388 nodes
+  <=2^5       4151 nodes
+  <=2^6       3832 nodes
+  <=2^7       2989 nodes
+  <=2^8       1611 nodes
+  <=2^9         71 nodes
+  <=2^10        14 nodes
+  <=2^11      2656 nodes
+  <=2^12     17616 nodes
+
+─── EQUIV (demand queries all nodes == batch) ───
+solve TIMED OUT — skipping full equivalence (batch pts is partial).
+EQUIV: skipped
+
+─── FLOOD ON DISPATCH SITES (batch ground truth — PARTIAL solve, indicative) ───
+receivers         5671 total, 2751 resolved
+flooded receivers 422 / 2751  (god object n492634 in their pts)
+receiver |pts|    mean 327.8  max 2481
+
+─── OPTIMAL DEMAND FOOTPRINT (resolved-graph backward slice — PARTIAL solve, indicative) ───
+wall              748ms
+resolved recvs    2751
+slice (nodes)     median 11  p90 27958  max 41631   (of 849567)
+slice (% of N)    median 0.001  p90 3.291  max 4.900
+reach the flood   535 / 2751 receivers' slices contain god object n492634

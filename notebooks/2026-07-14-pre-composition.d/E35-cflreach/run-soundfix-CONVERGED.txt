@@ -1,0 +1,60 @@
+TARGET            /private/tmp/claude-501/-Users-aalpar-projects-wile-workspace-wile-goast/83c4587d-97da-4fe1-9d07-be39f684dd07/scratchpad/soundfix
+load+ssa          521ms
+extract           28ms
+
+functions         6868
+nodes             153502
+objects           14261
+constraints       146604
+  addr               14261
+  copy               47345
+  gep                67406
+  load                9831
+  store               6945
+  invoke               319
+  icall                277
+  tfilter               54
+  untag                166
+
+─── SOLVE (difference propagation; no HVN, no cycle elimination) ───
+status            CONVERGED
+wall              93ms
+propagations      598711
+MEMBERSHIP TESTS  2641869
+worklist pops     162333
+copy edges        87998
+nodes w/ pts      89303
+total pts size    598711
+MEAN |pts|        6.70
+dispatch resolved 804
+MAX |pts|         228  (at node 709)
+GOD OBJECT        node 18813, in pts of 4781 nodes, type runtime.mheap
+|pts| histogram (log2 buckets):
+  <=2^0      74183 nodes
+  <=2^1       3091 nodes
+  <=2^2       2649 nodes
+  <=2^3       1171 nodes
+  <=2^4       1448 nodes
+  <=2^5       1085 nodes
+  <=2^6        522 nodes
+  <=2^7       4926 nodes
+  <=2^8        228 nodes
+
+─── EQUIV (demand queries all nodes == batch) ───
+wall              251ms
+non-empty agree   89303
+differ            0  (demand-missing 0 obj, demand-extra 0 obj)
+EQUIV: PASS  (demand == batch on all 89303 non-empty nodes)
+
+─── FLOOD ON DISPATCH SITES (batch ground truth) ───
+receivers         513 total, 263 resolved
+flooded receivers 5 / 263  (god object n18813 in their pts)
+receiver |pts|    mean 4.1  max 81
+
+─── OPTIMAL DEMAND FOOTPRINT (resolved-graph backward slice) ───
+wall              5ms
+resolved recvs    263
+slice (nodes)     median 6  p90 66  max 2490   (of 153502)
+slice (% of N)    median 0.004  p90 0.043  max 1.622
+reach the flood   6 / 263 receivers' slices contain god object n18813
+DISPATCH: FAIL  (7 receivers differ)
