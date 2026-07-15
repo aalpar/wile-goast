@@ -75,6 +75,7 @@ type rsm struct {
 	fnAddrTaken     map[*ssa.Function]bool   // fn can be an icall target
 	invokesByMethod map[string][]int         // method name -> cInvoke ptr nodes
 	icallRecvs      []int                    // all cICall ptr nodes
+	icallRecvsBySig map[string][]int         // canonical func signature -> cICall ptr nodes
 
 	active  []bool // node may hold+relay pts (emit gate)
 	ptDone  []bool // backward feeders installed (was bwDone)
@@ -98,6 +99,8 @@ type rsm struct {
 	// instrumentation
 	nActivated int
 }
+
+func sigKey(sig *types.Signature) string { return types.TypeString(sig, nil) }
 
 func newRSM(b *builder, prog *ssa.Program) *rsm {
 	n := b.nNodes
@@ -135,6 +138,7 @@ func newRSM(b *builder, prog *ssa.Program) *rsm {
 		fnMethod:         map[*ssa.Function]string{},
 		fnAddrTaken:      map[*ssa.Function]bool{},
 		invokesByMethod:  map[string][]int{},
+		icallRecvsBySig:  map[string][]int{},
 	}
 	for i := range d.base {
 		d.base[i] = -1
@@ -200,6 +204,22 @@ func newRSM(b *builder, prog *ssa.Program) *rsm {
 		}
 	}
 
+	// invert nodeOf so we can recover an icall func-value's static signature
+	valOf := make(map[int]ssa.Value, len(b.nodeOf))
+	for v, id := range b.nodeOf {
+		valOf[id] = v
+	}
+	for _, c := range b.cs {
+		if c.f == cICall && c.p >= 0 {
+			if fv, ok := valOf[c.p]; ok {
+				if sig, ok := fv.Type().Underlying().(*types.Signature); ok {
+					k := sigKey(sig)
+					d.icallRecvsBySig[k] = append(d.icallRecvsBySig[k], c.p)
+				}
+			}
+		}
+	}
+
 	// caller-discovery: params -> owning function; per function, its method name
 	// (invoke targets) and whether it is address-taken (icall targets). Mirrors
 	// hvn.go's address-taken test: a func is icall-reachable if it is a closure,
@@ -227,9 +247,9 @@ func newRSM(b *builder, prog *ssa.Program) *rsm {
 		if recv := fn.Signature.Recv(); recv != nil {
 			d.fnMethod[fn] = "" // filled from the SSA method name below
 		}
-		at := fn.Parent() != nil || fn.Synthetic != ""
+		at := fn.Synthetic != "" // synthetic thunks stay address-taken
 		if id, ok := b.nodeOf[fn]; ok && valueUsed[id] {
-			at = true
+			at = true // the closure's value node escapes -> genuine icall target
 		}
 		d.fnAddrTaken[fn] = at
 	}
@@ -361,7 +381,7 @@ func (d *rsm) activate(v int) {
 			}
 		}
 		if d.fnAddrTaken[fn] {
-			for _, recv := range d.icallRecvs {
+			for _, recv := range d.icallRecvsBySig[sigKey(fn.Signature)] {
 				d.activate(recv)
 			}
 		}
