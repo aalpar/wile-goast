@@ -19,6 +19,7 @@
 package main
 
 import (
+	"go/token"
 	"go/types"
 
 	"golang.org/x/tools/go/ssa"
@@ -100,7 +101,28 @@ type rsm struct {
 	nActivated int
 }
 
-func sigKey(sig *types.Signature) string { return types.TypeString(sig, nil) }
+// sigKey canonicalizes a func-value signature so that any two signatures Go
+// considers identical (ignoring param/result NAMES) map to the same key.
+// types.TypeString(sig, nil) strips only PACKAGE qualification, not variable
+// names: a callee declared `func(w Widget) int` stringifies with the `w`,
+// while a call-site func-value typed `func(Widget) int` does not, so the bucket
+// key and the lookup key diverge and real callers are dropped. Rebuilding the
+// param/result tuples with anonymous vars (empty name, same type) removes names
+// before stringifying. Property: types.Identical(A, B) => sigKey(A) == sigKey(B).
+func sigKey(sig *types.Signature) string {
+	strip := func(t *types.Tuple) *types.Tuple {
+		if t == nil || t.Len() == 0 {
+			return t
+		}
+		vs := make([]*types.Var, t.Len())
+		for i := 0; i < t.Len(); i++ {
+			vs[i] = types.NewVar(token.NoPos, nil, "", t.At(i).Type()) // anonymous, same type
+		}
+		return types.NewTuple(vs...)
+	}
+	canon := types.NewSignatureType(nil, nil, nil, strip(sig.Params()), strip(sig.Results()), sig.Variadic())
+	return types.TypeString(canon, nil)
+}
 
 func newRSM(b *builder, prog *ssa.Program) *rsm {
 	n := b.nNodes

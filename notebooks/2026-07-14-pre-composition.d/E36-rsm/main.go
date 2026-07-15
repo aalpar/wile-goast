@@ -162,15 +162,42 @@ func main() {
 	}
 
 	// ---- ENGINE FOOTPRINT: the engine's actual per-receiver activation ----
+	// PROBE (single-seed correctness gate): each receiver is queried ALONE, which
+	// IS the demand engine's real use case. Compare de.pts[r] to batch pts[r]; a
+	// mismatch means backward caller-discovery under- (missing) or over-approx
+	// (extra) on a single seed. EQUIV/DISPATCH co-seed every node and cannot see
+	// this. Gated on converged: a partial batch makes the comparison meaningless.
 	fmt.Printf("\n─── ENGINE FOOTPRINT (rsm |touched| per receiver) ───\n")
 	de := newRSM(b, prog)
 	var efoots []int
+	probeN, probeMiss, probeMissing, probeExtra := 0, 0, 0, 0
+	var probeFails []string
 	for _, r := range recvs {
 		if len(ptsBatch[r]) == 0 {
 			continue
 		}
 		de.query([]int{r})
 		efoots = append(efoots, len(de.touched))
+		if converged {
+			probeN++
+			if !sameSet(ptsBatch[r], de.pts[r]) {
+				probeMiss++
+				m, e := diffCount(ptsBatch[r], de.pts[r])
+				probeMissing += m
+				probeExtra += e
+				if os.Getenv("DUMPPROBE") != "" && len(probeFails) < 16 {
+					var ty string
+					for o := range ptsBatch[r] {
+						if ob := de.base[o]; ob >= 0 && de.b.objType[ob] != nil {
+							ty = de.b.objType[ob].String()
+							break
+						}
+					}
+					probeFails = append(probeFails, fmt.Sprintf("recv n%d batch|%d| demand|%d| (missing %d, extra %d) sample-type %s",
+						r, len(ptsBatch[r]), len(de.pts[r]), m, e, ty))
+				}
+			}
+		}
 		de.reset()
 	}
 	sort.Ints(efoots)
@@ -180,6 +207,13 @@ func main() {
 	}
 	fmt.Printf("engine footprint  median %d  p90 %d  max %d   (of %d)\n",
 		pctile(efoots, 50), pctile(efoots, 90), emx, N)
+	if converged {
+		for _, s := range probeFails {
+			fmt.Printf("  PROBE-DIFF %s\n", s)
+		}
+		fmt.Printf("PROBE: %d / %d isolated single-seed queries MISMATCH batch  (missing %d, extra %d)\n",
+			probeMiss, probeN, probeMissing, probeExtra)
+	}
 
 	// ---- corpora correctness gate (converged only): full receiver equivalence ----
 	if converged {
