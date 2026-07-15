@@ -1,0 +1,36 @@
+E38 refinement-prototype diagnostic — generated 2026-07-15 10:54 PDT
+commit: 0acdade
+REFINE=goal-directed forward-tracked caller-discovery (flag-gated, default OFF).
+
+==== CLEAN CORPUS ifdecoy-d15k2-000: backward engine is already near-optimal ====
+slice (nodes)     median 4  p90 4  max 4   (of 123)
+engine footprint  median 6  p90 6  max 6   (of 123)
+PROBE: 0 / 1 isolated single-seed queries MISMATCH batch  (missing 0, extra 0)
+DISPATCH: PASS  (all 1 receivers match batch)
+
+==== SOUNDFIX, REFINE OFF (shipped) ====
+slice (nodes)     median 6  p90 66  max 2490   (of 153502)
+engine footprint  median 22791  p90 23309  max 24636   (of 153502)
+PROBE: 4 / 263 isolated single-seed queries MISMATCH batch  (missing 246, extra 0)
+DISPATCH: PASS  (all 513 receivers match batch)
+
+==== SOUNDFIX, REFINE ON (forward-tracking: floods worse + drops a caller) ====
+engine footprint  median 28027  p90 28185  max 30418   (of 153502)
+PROBE: 5 / 263 isolated single-seed queries MISMATCH batch  (missing 247, extra 0)
+DISPATCH: PASS  (all 513 receivers match batch)
+
+==== stress corpus, REFINE OFF vs ON (clean small: refinement also inflates) ====
+-- off --
+engine footprint  median 13  p90 13  max 13   (of 119)
+PROBE: 0 / 6 isolated single-seed queries MISMATCH batch  (missing 0, extra 0)
+DISPATCH: PASS  (all 6 receivers match batch)
+-- on  --
+engine footprint  median 21  p90 21  max 21   (of 119)
+PROBE: 0 / 6 isolated single-seed queries MISMATCH batch  (missing 0, extra 0)
+DISPATCH: PASS  (all 6 receivers match batch)
+
+READING: backward engine footprint tracks the optimal slice on clean code (small relay surcharge);
+the soundfix ~22.8k is the runtime god-graph reached via UNRESOLVED type-compatible dispatch
+candidates (the optimal slice uses batch's RESOLVED edges). Forward-tracking refinement is a
+strict superset (sets fwdDone -> all uses + demandContents), so it inflates the footprint and
+drops a merged-object caller (PROBE 4->5). E35's forward-tracking v2 tightening hypothesis is refuted.
