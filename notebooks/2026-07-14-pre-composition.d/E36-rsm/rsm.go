@@ -19,11 +19,20 @@
 package main
 
 import (
-	"go/token"
 	"go/types"
+	"strconv"
 
 	"golang.org/x/tools/go/ssa"
+	"golang.org/x/tools/go/types/typeutil"
 )
+
+// invSite is one cInvoke dispatch site: its receiver pointer node and the static
+// interface type of the receiver value. The iface type drives receiver-type
+// narrowing in caller discovery.
+type invSite struct {
+	recv  int
+	iface types.Type
+}
 
 type rsm struct {
 	b    *builder
@@ -74,7 +83,7 @@ type rsm struct {
 	paramOwner      map[int]*ssa.Function
 	fnMethod        map[*ssa.Function]string // method name, if fn is a method
 	fnAddrTaken     map[*ssa.Function]bool   // fn can be an icall target
-	invokesByMethod map[string][]int         // method name -> cInvoke ptr nodes
+	invokesByMethod map[string][]invSite     // method name -> cInvoke sites (recv + static iface type)
 	icallRecvs      []int                    // all cICall ptr nodes
 	icallRecvsBySig map[string][]int         // canonical func signature -> cICall ptr nodes
 
@@ -101,27 +110,24 @@ type rsm struct {
 	nActivated int
 }
 
+// sigHasher maps types up to types.Identical to a hash. Stateless; one instance
+// suffices (all Hashers are equivalent).
+var sigHasher = typeutil.MakeHasher()
+
 // sigKey canonicalizes a func-value signature so that any two signatures Go
-// considers identical (ignoring param/result NAMES) map to the same key.
-// types.TypeString(sig, nil) strips only PACKAGE qualification, not variable
-// names: a callee declared `func(w Widget) int` stringifies with the `w`,
-// while a call-site func-value typed `func(Widget) int` does not, so the bucket
-// key and the lookup key diverge and real callers are dropped. Rebuilding the
-// param/result tuples with anonymous vars (empty name, same type) removes names
-// before stringifying. Property: types.Identical(A, B) => sigKey(A) == sigKey(B).
+// considers identical map to the same key. typeutil.Hasher is consistent with
+// types.Identical, which ignores BOTH param/result NAMES and type ALIASES. The
+// prior TypeString-based key handled names but NOT aliases: `os.DirEntry` is an
+// alias for `io/fs.DirEntry`, so a closure declared `func(a, b os.DirEntry) int`
+// and the `slices.SortFunc` icall recv it flows into, typed
+// `func(io/fs.DirEntry, io/fs.DirEntry) int`, stringified to different keys and
+// the caller was dropped on a single seed (R3's Class-A residual). Hashing up to
+// Identical closes that. Property: types.Identical(A, B) => sigKey(A) == sigKey(B).
+// Hash collisions between non-identical signatures only over-activate icall
+// callers, which is sound (the design's caller discovery is a sound
+// over-approximation; wire() re-checks the concrete callee).
 func sigKey(sig *types.Signature) string {
-	strip := func(t *types.Tuple) *types.Tuple {
-		if t == nil || t.Len() == 0 {
-			return t
-		}
-		vs := make([]*types.Var, t.Len())
-		for i := 0; i < t.Len(); i++ {
-			vs[i] = types.NewVar(token.NoPos, nil, "", t.At(i).Type()) // anonymous, same type
-		}
-		return types.NewTuple(vs...)
-	}
-	canon := types.NewSignatureType(nil, nil, nil, strip(sig.Params()), strip(sig.Results()), sig.Variadic())
-	return types.TypeString(canon, nil)
+	return strconv.FormatUint(uint64(sigHasher.Hash(sig)), 10)
 }
 
 func newRSM(b *builder, prog *ssa.Program) *rsm {
@@ -159,7 +165,7 @@ func newRSM(b *builder, prog *ssa.Program) *rsm {
 		paramOwner:       map[int]*ssa.Function{},
 		fnMethod:         map[*ssa.Function]string{},
 		fnAddrTaken:      map[*ssa.Function]bool{},
-		invokesByMethod:  map[string][]int{},
+		invokesByMethod:  map[string][]invSite{},
 		icallRecvsBySig:  map[string][]int{},
 	}
 	for i := range d.base {
@@ -218,26 +224,35 @@ func newRSM(b *builder, prog *ssa.Program) *rsm {
 				d.asrtBack[c.p] = append(d.asrtBack[c.p], i)
 			}
 		}
-		if c.f == cInvoke && c.p >= 0 {
-			d.invokesByMethod[c.method] = append(d.invokesByMethod[c.method], c.p)
-		}
 		if c.f == cICall && c.p >= 0 {
 			d.icallRecvs = append(d.icallRecvs, c.p)
 		}
 	}
 
-	// invert nodeOf so we can recover an icall func-value's static signature
+	// invert nodeOf so we can recover an icall func-value's static signature and
+	// an invoke receiver's static interface type.
 	valOf := make(map[int]ssa.Value, len(b.nodeOf))
 	for v, id := range b.nodeOf {
 		valOf[id] = v
 	}
 	for _, c := range b.cs {
-		if c.f == cICall && c.p >= 0 {
-			if fv, ok := valOf[c.p]; ok {
-				if sig, ok := fv.Type().Underlying().(*types.Signature); ok {
-					k := sigKey(sig)
-					d.icallRecvsBySig[k] = append(d.icallRecvsBySig[k], c.p)
+		switch c.f {
+		case cICall:
+			if c.p >= 0 {
+				if fv, ok := valOf[c.p]; ok {
+					if sig, ok := fv.Type().Underlying().(*types.Signature); ok {
+						k := sigKey(sig)
+						d.icallRecvsBySig[k] = append(d.icallRecvsBySig[k], c.p)
+					}
 				}
+			}
+		case cInvoke:
+			if c.p >= 0 {
+				var iface types.Type
+				if rv, ok := valOf[c.p]; ok {
+					iface = rv.Type()
+				}
+				d.invokesByMethod[c.method] = append(d.invokesByMethod[c.method], invSite{recv: c.p, iface: iface})
 			}
 		}
 	}
@@ -398,8 +413,20 @@ func (d *rsm) activate(v int) {
 	// function fires. Backward from v we must activate those calls' receivers.
 	if fn, ok := d.paramOwner[v]; ok {
 		if m, isMethod := d.fnMethod[fn]; isMethod {
-			for _, recv := range d.invokesByMethod[m] {
-				d.activate(recv)
+			// receiver-TYPE narrowing: an invoke site iface.M() can dispatch to fn
+			// only if fn's receiver type implements the site's interface. Sound --
+			// dynamic dispatch requires implementation, so this drops no real caller
+			// -- while collapsing the method-name flood (String/Error/Len/... are
+			// shared across many unrelated interfaces program-wide). A site whose
+			// iface type is unknown or non-interface is kept (over-approx, sound).
+			var rt types.Type
+			if recv := fn.Signature.Recv(); recv != nil {
+				rt = recv.Type()
+			}
+			for _, s := range d.invokesByMethod[m] {
+				if rt == nil || s.iface == nil || !types.IsInterface(s.iface) || types.AssignableTo(rt, s.iface) {
+					d.activate(s.recv)
+				}
 			}
 		}
 		if d.fnAddrTaken[fn] {
