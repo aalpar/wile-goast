@@ -269,7 +269,7 @@ func newRSM(b *builder, prog *ssa.Program) *rsm {
 		if recv := fn.Signature.Recv(); recv != nil {
 			d.fnMethod[fn] = "" // filled from the SSA method name below
 		}
-		at := fn.Synthetic != "" // synthetic thunks stay address-taken
+		at := fn.Parent() != nil || fn.Synthetic != "" // v1 broad test: closures + synthetic thunks are address-taken (R2: reverts unsound Step-5 narrowing that under-approximated icall func-value callers on single seeds)
 		if id, ok := b.nodeOf[fn]; ok && valueUsed[id] {
 			at = true // the closure's value node escapes -> genuine icall target
 		}
