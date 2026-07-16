@@ -265,9 +265,9 @@
 
 (define (pipeline-scheme-defs symbol roots-string)
   (let ((roots (scmnav-split-roots roots-string)))
-    (let ((missing (filter (lambda (r) (not (file-exists? r))) roots)))
-      (if (not (null? missing))
-          (error "scheme_defs: root path does not exist" (string-join missing " "))
+    (let ((unreadable (filter (lambda (r) (not (try-directory-files r))) roots)))
+      (if (not (null? unreadable))
+          (error "scheme_defs: root is not a readable directory" (string-join unreadable " "))
           (let ((files (scm-source-files roots)))
             (let ((idx (build-index files)))
               (pipeline-envelope 1

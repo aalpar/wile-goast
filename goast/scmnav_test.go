@@ -15,6 +15,7 @@
 package goast_test
 
 import (
+	"os"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -464,4 +465,25 @@ func TestScmnavBadRootHardError(t *testing.T) {
 	// unmodified pre-Task-9 pipelines.scm (no root validation at all).
 	eval(t, engine, `(import (wile goast pipelines))`)
 	evalExpectError(t, engine, `(pipeline-scheme-defs "x" "examples/goast-query/testdata/scmnav/DOES-NOT-EXIST")`)
+}
+
+func TestScmnavUnreadableRootHardError(t *testing.T) {
+	engine := newBeliefEngine(t)
+	// An unreadable root (permissions denied) is a caller error: pipeline-scheme-defs
+	// must raise, just like a missing root. This ensures silent failure is prevented.
+	//
+	// Create a temporary directory and make it unreadable with chmod 000.
+	tmpDir := t.TempDir()
+	if err := os.Chmod(tmpDir, 0o000); err != nil {
+		t.Skipf("cannot chmod 000 on temp dir (running as root?): %v", err)
+	}
+	// Restore permissions for cleanup (TempDir cleanup requires readable dirs).
+	t.Cleanup(func() {
+		os.Chmod(tmpDir, 0o755)
+	})
+
+	// Import first, then call pipeline with the unreadable directory.
+	// Same two-step pattern as TestScmnavBadRootHardError.
+	eval(t, engine, `(import (wile goast pipelines))`)
+	evalExpectError(t, engine, `(pipeline-scheme-defs "x" "`+tmpDir+`")`)
 }

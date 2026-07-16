@@ -20,6 +20,7 @@
 (define-library (wile goast scmnav)
   (export
     scm-source-files
+    try-directory-files
     read-file-forms
     classify-def-form
     classify-library
