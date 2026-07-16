@@ -862,3 +862,12 @@ vs 137 / 96). These are the residuals the build surfaced.
       that yields `narrow`. It passes only because of enumeration order, which is unstable. Same
       bug class as the site-ordering defect fixed in `14b2388`. **Fix:** tighten the type
       predicate to an exact match. **[S]**
+
+## Scheme Source Navigation — MCP (design 2026-07-15)
+
+Design complete: [`plans/2026-07-15-scheme-source-navigation-design.md`](plans/2026-07-15-scheme-source-navigation-design.md).
+Pure-Scheme `(wile goast scmnav)` — jump-to-def over caller-supplied roots via
+`read-syntax` (file/line/col preserved); classifier explodes `define-record-type`
+and resolves the `.sld` export→define map (local / re-export / unresolved
+trichotomy). v1 tools: `scheme_defs`, `scheme_symbols`. References/caller-finding
+and macro-hygiene deferred to v2 (design §8). Impl plan pending.
