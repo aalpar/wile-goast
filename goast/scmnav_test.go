@@ -91,3 +91,47 @@ func TestScmnavClassifyPositions(t *testing.T) {
 	// f is on line 2. (Column asserted separately once behavior is confirmed.)
 	c.Assert(result.SchemeString(), qt.Equals, `("f" 2)`)
 }
+
+func TestScmnavClassifyColumn(t *testing.T) {
+	engine := newBeliefEngine(t)
+	c := qt.New(t)
+
+	// Test simple definition: (define (f a) a)
+	// The identifier 'f' sits at column 9 (0-based)
+	result := eval(t, engine, `
+		(import (wile goast scmnav))
+		(define p1 (open-input-string "(define (f a) a)"))
+		(let ((d (car (classify-def-form (read-syntax p1)))))
+		  (list (cdr (assq 'name d)) (cdr (assq 'col d))))
+	`)
+	c.Assert(result.SchemeString(), qt.Equals, `("f" 9)`)
+
+	// Test curried definition: (define ((curry a) b) b)
+	// The identifier 'curry' sits at column 10 (0-based)
+	result = eval(t, engine, `
+		(import (wile goast scmnav))
+		(define p2 (open-input-string "(define ((curry a) b) b)"))
+		(let ((d (car (classify-def-form (read-syntax p2)))))
+		  (list (cdr (assq 'name d)) (cdr (assq 'col d))))
+	`)
+	c.Assert(result.SchemeString(), qt.Equals, `("curry" 10)`)
+}
+
+func TestScmnavClassifyNonDefinition(t *testing.T) {
+	engine := newBeliefEngine(t)
+	c := qt.New(t)
+
+	// Test non-pair form (a number): should return empty list
+	result := eval(t, engine, `
+		(import (wile goast scmnav))
+		(classify-def-form (read-syntax (open-input-string "42")))
+	`)
+	c.Assert(result.SchemeString(), qt.Equals, `()`)
+
+	// Test unknown head form: should return empty list
+	result = eval(t, engine, `
+		(import (wile goast scmnav))
+		(classify-def-form (read-syntax (open-input-string "(foo 1 2)")))
+	`)
+	c.Assert(result.SchemeString(), qt.Equals, `()`)
+}
