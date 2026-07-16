@@ -319,3 +319,83 @@ func TestScmnavDefsQueryUnresolvedDeterministic(t *testing.T) {
 	c.Assert(result.SchemeString(), qt.Equals,
 		`(2 ("(test orphan)" "(test orphan2)"))`)
 }
+
+func TestScmnavPipelineDefs(t *testing.T) {
+	engine := newBeliefEngine(t)
+	// Real target: cfl-solve is defined in the wile stdlib, not in wile-goast
+	// lib. Point at wile-goast's own lib and resolve a locally-defined symbol
+	// instead: nf lives in utils.scm.
+	result := eval(t, engine, `
+		(import (wile goast pipelines))
+		(let* ((env (pipeline-scheme-defs "nf" "../lib"))
+		       (result (cdr (assq 'result env)))
+		       (d (car result)))
+		  (list (cdr (assq 'name d))
+		        (cdr (assq 'kind d))
+		        (cdr (assq 'library d))))
+	`)
+	c := qt.New(t)
+	c.Assert(result.SchemeString(), qt.Matches, `\(nf (procedure|variable) \(wile goast utils\)\)`)
+}
+
+func TestScmnavPipelineSymbols(t *testing.T) {
+	engine := newBeliefEngine(t)
+	// Overview of one .sld: it yields a library record with an export list.
+	result := eval(t, engine, `
+		(import (wile goast pipelines))
+		(let* ((env (pipeline-scheme-symbols "../lib/wile/goast/utils.sld"))
+		       (result (cdr (assq 'result env)))
+		       (lib (cdr (assq 'library result))))
+		  (if (member "nf" (cdr (assq 'exports lib))) "has-nf" "missing"))
+	`)
+	c := qt.New(t)
+	// SchemeString() renders strings quoted (consistent with every other
+	// string-valued assertion in this file, e.g. TestScmnavClassifyLibraryNonLibrary).
+	c.Assert(result.SchemeString(), qt.Equals, `"has-nf"`)
+}
+
+func TestScmnavClassifyRestArgDefine(t *testing.T) {
+	engine := newBeliefEngine(t)
+	c := qt.New(t)
+
+	// Rest-arg define: (define (f . args) args). The target `(f . args)` is
+	// an IMPROPER list; syntax->list returns #f for improper lists, so the
+	// old def-head-identifier (recursing via `(car (syntax->list stx))`)
+	// crashed with `car` on #f. This is the ordinary Scheme rest-arg form,
+	// not an exotic case -- it's what first crashed build-index over the
+	// real ../lib tree, in belief-checkers.scm.
+	result := eval(t, engine, `
+		(import (wile goast scmnav))
+		(let ((d (car (classify-def-form (read-syntax (open-input-string "(define (f . args) args)"))))))
+		  (list (cdr (assq 'name d)) (cdr (assq 'kind d)) (cdr (assq 'col d))))
+	`)
+	c.Assert(result.SchemeString(), qt.Equals, `("f" "procedure" 9)`)
+
+	// Dotted tail after a fixed arg: (define (g a . rest) a).
+	result = eval(t, engine, `
+		(import (wile goast scmnav))
+		(let ((d (car (classify-def-form (read-syntax (open-input-string "(define (g a . rest) a)"))))))
+		  (list (cdr (assq 'name d)) (cdr (assq 'kind d)) (cdr (assq 'col d))))
+	`)
+	c.Assert(result.SchemeString(), qt.Equals, `("g" "procedure" 9)`)
+
+	// Curried define must still resolve through the proper-list path:
+	// syntax-case's (head . rest) pattern must not regress it. Same case as
+	// TestScmnavClassifyColumn; re-asserted here as the specific regression
+	// guard for this fix.
+	result = eval(t, engine, `
+		(import (wile goast scmnav))
+		(let ((d (car (classify-def-form (read-syntax (open-input-string "(define ((curry a) b) b)"))))))
+		  (list (cdr (assq 'name d)) (cdr (assq 'col d))))
+	`)
+	c.Assert(result.SchemeString(), qt.Equals, `("curry" 10)`)
+
+	// define-values with an IMPROPER (rest-arg) formals list must not crash.
+	// Rest-arg formals in define-values are out of scope for v1, but out of
+	// scope must mean "skip", never "crash" (map over #f).
+	result = eval(t, engine, `
+		(import (wile goast scmnav))
+		(classify-def-form (read-syntax (open-input-string "(define-values (a . rest) (values 1 2))")))
+	`)
+	c.Assert(result.SchemeString(), qt.Equals, `()`)
+}

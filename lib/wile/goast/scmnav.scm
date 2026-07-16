@@ -76,9 +76,14 @@
         (cons 'col  (syntax-column id-stx))))
 
 (define (def-head-identifier stx)
-  ;; innermost head id of a (possibly curried) define target
+  ;; Innermost head identifier's syntax object, for a (possibly curried)
+  ;; define target. syntax->list returns #f for an IMPROPER list (a
+  ;; rest-arg define target like `(f . args)`), so destructure with
+  ;; syntax-case instead: its (head . rest) pattern matches proper and
+  ;; improper pairs alike, and preserves each child's own position.
   (if (pair? (syntax->datum stx))
-      (def-head-identifier (car (syntax->list stx)))
+      (syntax-case stx ()
+        ((head . rest) (def-head-identifier (syntax head))))
       stx))
 
 (define (classify-define children)
@@ -94,9 +99,16 @@
     (list (make-scm-def (symbol->string (syntax->datum name)) "syntax" name))))
 
 (define (classify-define-values children)
-  ;; formals assumed a proper identifier list (rest-args out of scope, v1)
-  (map (lambda (id) (make-scm-def (symbol->string (syntax->datum id)) "variable" id))
-       (syntax->list (cadr children))))
+  ;; formals assumed a proper identifier list (rest-args out of scope, v1).
+  ;; syntax->list returns #f on an IMPROPER formals list (a rest-arg
+  ;; define-values target like `(a . rest)`) rather than erroring, so guard
+  ;; against #f and emit no identifiers for that out-of-scope shape instead
+  ;; of crashing (map over #f).
+  (let ((ids (syntax->list (cadr children))))
+    (if ids
+        (map (lambda (id) (make-scm-def (symbol->string (syntax->datum id)) "variable" id))
+             ids)
+        '())))
 
 (define (classify-record-field spec)
   ;; spec = (field-name accessor) or (field-name accessor mutator)
