@@ -23,6 +23,7 @@
     read-file-forms
     classify-def-form
     classify-library
+    with-source-file
     build-index)
   (import
     (srfi 13)              ; string-suffix?, string-trim

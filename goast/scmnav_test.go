@@ -213,3 +213,33 @@ func TestScmnavBuildIndex(t *testing.T) {
 	c.Assert(result.SchemeString(), qt.Equals,
 		`(2 ("make-widget:(test local)" "widget:(test local)") 1)`)
 }
+
+func TestScmnavIndexFileSingleFileKey(t *testing.T) {
+	engine := newBeliefEngine(t)
+	// index-file (invoked here via build-index, since index-file itself
+	// isn't exported) must REPLACE the stale 'file entry left by
+	// classify-def-form/classify-library, not prepend a second one: alists
+	// shadow on assq (first wins), but the JSON marshaller (marshalPair)
+	// assigns obj[key]=val front-to-back, so a duplicate key resolves to
+	// the LAST entry at the JSON boundary — the opposite of assq. A test
+	// using assq alone cannot catch a duplicate key; assert on key count.
+	result := eval(t, engine, `
+		(import (wile goast scmnav))
+		(import (wile goast utils))
+		(let* ((files (scm-source-files (list "../examples/goast-query/testdata/scmnav/exports")))
+		       (idx (build-index files))
+		       (defs (cdr (assq 'defs idx)))
+		       (libs (cdr (assq 'libraries idx)))
+		       (file-key-count (lambda (alist) (length (filter (lambda (kv) (eq? (car kv) 'file)) alist)))))
+		  (list (map file-key-count defs)
+		        (map file-key-count libs)
+		        (map (lambda (d) (cdr (assq 'file d))) defs)
+		        (map (lambda (l) (cdr (assq 'file l))) libs)))
+	`)
+	c := qt.New(t)
+	// Two defs (from local.scm) and one library record (from local.sld),
+	// each with exactly one 'file key, and its value is the real path
+	// (not the stale "").
+	c.Assert(result.SchemeString(), qt.Equals,
+		`((1 1) (1) ("../examples/goast-query/testdata/scmnav/exports/local.scm" "../examples/goast-query/testdata/scmnav/exports/local.scm") ("../examples/goast-query/testdata/scmnav/exports/local.sld"))`)
+}

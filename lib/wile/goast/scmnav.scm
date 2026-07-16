@@ -182,18 +182,25 @@
           ((char=? (string-ref path i) #\/) (substring path (+ i 1) (string-length path)))
           (else (loop (- i 1))))))
 
+(define (with-source-file path alist)
+  ;; read-syntax never populates syntax-source over a file port (wile's
+  ;; PrimReadSyntax parses with an empty filename), so 'file arrives "".
+  ;; PATH is known by the caller. REPLACE the stale entry rather than
+  ;; prepending a second one: the JSON marshaller (cmd/wile-goast/marshal.go
+  ;; marshalPair) assigns obj[key]=val front-to-back, so a duplicate key
+  ;; resolves to the LAST (stale "") at the JSON boundary even though assq
+  ;; picks the first.
+  (cons (cons 'file path)
+        (filter (lambda (kv) (not (eq? (car kv) 'file))) alist)))
+
 (define (index-file path)
-  ;; (cons defs libs) for one file. syntax-source is never populated by
-  ;; read-syntax over a file port (wile's parser always opens with an
-  ;; empty filename — see PrimReadSyntax), so classify-def-form's and
-  ;; classify-library's 'file entries come back "" rather than PATH.
-  ;; PATH is already known here (it's what read-file-forms just opened),
-  ;; so prepend the real 'file over the stale one; assq finds the first
-  ;; match and shadows it, same pattern annotate-def uses for 'library.
+  ;; (cons defs libs) for one file. See with-source-file for why the
+  ;; stale 'file entry left by classify-def-form / classify-library must
+  ;; be replaced, not shadowed by prepending a second one.
   (let ((forms (read-file-forms path)))
-    (cons (map (lambda (d) (cons (cons 'file path) d))
+    (cons (map (lambda (d) (with-source-file path d))
                (flat-map classify-def-form forms))
-          (map (lambda (lib) (cons (cons 'file path) lib))
+          (map (lambda (lib) (with-source-file path lib))
                (filter-map classify-library forms)))))
 
 (define (def-library file libraries)
