@@ -128,3 +128,46 @@
             ((define-record-type) (classify-record-type children))
             ((begin)         (flat-map classify-def-form (cdr children)))
             (else '()))))))
+
+
+;; ── Library records ──────────────────────────────────────
+
+(define (paren-list->string syms)
+  (string-append "(" (string-join (map (lambda (s)
+                                         (if (symbol? s) (symbol->string s) (number->string s)))
+                                       syms)
+                                  " ")
+                 ")"))
+
+(define (library-clause clauses tag)
+  ;; datum of the first clause whose head = TAG, or #f
+  (let loop ((cs clauses))
+    (if (null? cs)
+        #f
+        (let ((cd (syntax->datum (car cs))))
+          (if (and (pair? cd) (eq? (car cd) tag)) cd (loop (cdr cs)))))))
+
+(define (import-spec->name spec)
+  ;; spec is a datum: (lib ...) or (only (lib) ...) / (except (lib) ...) /
+  ;; (prefix (lib) p) / (rename (lib) ...). Dig to the (lib ...) part.
+  (cond
+    ((not (pair? spec)) spec)
+    ((memq (car spec) '(only except prefix rename)) (import-spec->name (cadr spec)))
+    (else spec)))
+
+(define (classify-library form)
+  (let ((d (syntax->datum form)))
+    (if (and (pair? d) (eq? (car d) 'define-library))
+        (let* ((children (syntax->list form))
+               (name-stx (cadr children))
+               (clauses  (cddr children))
+               (exp (or (library-clause clauses 'export) '(export)))
+               (imp (or (library-clause clauses 'import) '(import)))
+               (inc (or (library-clause clauses 'include) '(include))))
+          (list (cons 'name (syntax->datum name-stx))
+                (cons 'file (or (syntax-source form) ""))
+                (cons 'line (syntax-line name-stx))
+                (cons 'exports  (filter symbol? (cdr exp)))
+                (cons 'imports  (map import-spec->name (cdr imp)))
+                (cons 'includes (cdr inc))))
+        #f)))

@@ -166,3 +166,29 @@ func TestScmnavClassifyRecordType(t *testing.T) {
 	`)
 	c.Assert(cols.SchemeString(), qt.Equals, `(53 65)`)
 }
+
+func TestScmnavClassifyLibrary(t *testing.T) {
+	engine := newBeliefEngine(t)
+	result := eval(t, engine, `
+		(import (wile goast scmnav))
+		(define src "(define-library (test lib) (export a b) (import (srfi 13) (only (test dep) c)) (include \"lib.scm\"))")
+		(let ((r (classify-library (read-syntax (open-input-string src)))))
+		  (list (cdr (assq 'name r))
+		        (cdr (assq 'exports r))
+		        (cdr (assq 'imports r))
+		        (cdr (assq 'includes r))))
+	`)
+	c := qt.New(t)
+	c.Assert(result.SchemeString(), qt.Equals,
+		`((test lib) (a b) ((srfi 13) (test dep)) ("lib.scm"))`)
+}
+
+func TestScmnavClassifyLibraryNonLibrary(t *testing.T) {
+	engine := newBeliefEngine(t)
+	result := eval(t, engine, `
+		(import (wile goast scmnav))
+		(if (classify-library (read-syntax (open-input-string "(define x 1)"))) "yes" "no")
+	`)
+	c := qt.New(t)
+	c.Assert(result.SchemeString(), qt.Equals, `"no"`)
+}

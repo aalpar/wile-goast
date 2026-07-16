@@ -21,7 +21,8 @@
   (export
     scm-source-files
     read-file-forms
-    classify-def-form)
+    classify-def-form
+    classify-library)
   (import
     (srfi 13)              ; string-suffix?, string-trim
     (wile goast utils))    ; filter, filter-map, flat-map
