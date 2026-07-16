@@ -1003,8 +1003,44 @@ git commit -m "scmnav: pipeline-scheme-defs + pipeline-scheme-symbols (envelope 
 - Create: `examples/goast-query/testdata/scmnav/malformed/good.scm`, `malformed/bad.scm`
 
 **Interfaces:**
+- `read-file-forms` becomes **port-safe** (Step 0) — it must close its port when `read-syntax` raises, not only at eof.
 - `build-index` now threads per-file parse failures into `(parse-errors . <list of ((file . F) (message . M))>)` instead of aborting.
 - `pipeline-scheme-defs` raises (via `error`) when any root does not exist — `invokePipeline` converts the raised condition into an MCP error result.
+
+- [ ] **Step 0: Make `read-file-forms` port-safe (prerequisite — do this FIRST)**
+
+As shipped in Task 2, `read-file-forms` calls `close-input-port` only on the normal eof path:
+
+```scheme
+(let* ((port (open-input-file path))
+       (forms (let loop ((acc '())) …)))   ; <- read-syntax RAISES here on malformed source
+  (close-input-port port)                  ; <- never reached
+  forms)
+```
+
+Task 9's whole point is the malformed-file path, where `read-syntax` **raises** — so `safe-index-file`'s
+`guard` catches it at the caller and the port is **leaked, one per malformed file**. Restructure with
+`dynamic-wind` so the close runs on both the normal exit and the escape (R7RS runs the after-thunk when
+a continuation escapes, which is how `guard` unwinds):
+
+```scheme
+(define (read-file-forms path)
+  ;; Port-safe: read-syntax raises on malformed source and the caller's guard
+  ;; (safe-index-file) escapes past us, so close via dynamic-wind's after-thunk
+  ;; rather than after the loop — otherwise every malformed file leaks a port.
+  (let ((port (open-input-file path)))
+    (dynamic-wind
+      (lambda () #f)
+      (lambda ()
+        (let loop ((acc '()))
+          (let ((form (read-syntax port)))
+            (if (eof-object? form)
+                (reverse acc)
+                (loop (cons form acc))))))
+      (lambda () (close-input-port port)))))
+```
+
+Behavior on well-formed input is unchanged — the existing `TestScmnavReadFileForms` must still pass.
 
 - [ ] **Step 1: Add fixtures**
 
