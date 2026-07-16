@@ -54,3 +54,40 @@ func TestScmnavReadFileForms(t *testing.T) {
 	c := qt.New(t)
 	c.Assert(result.SchemeString(), qt.Equals, `(1 1)`)
 }
+
+func TestScmnavClassifyCore(t *testing.T) {
+	engine := newBeliefEngine(t)
+	// Parse a string of several definition forms and project (name . kind)
+	// pairs, in order. read-syntax over a string port keeps line numbers.
+	result := eval(t, engine, `
+		(import (wile goast scmnav))
+		(define src "(define x 1)\n(define (f a) a)\n(define-syntax m (syntax-rules () ((_) 1)))\n(define-values (p q) (values 1 2))\n(begin (define ((curry a) b) b))")
+		(define port (open-input-string src))
+		(let loop ((acc '()))
+		  (let ((form (read-syntax port)))
+		    (if (eof-object? form)
+		        (reverse acc)
+		        (loop (append (reverse (map (lambda (d)
+		                                      (cons (cdr (assq 'name d)) (cdr (assq 'kind d))))
+		                                    (classify-def-form form)))
+		                      acc)))))
+	`)
+	c := qt.New(t)
+	c.Assert(result.SchemeString(), qt.Equals,
+		`(("x" . "variable") ("f" . "procedure") ("m" . "syntax") ("p" . "variable") ("q" . "variable") ("curry" . "procedure"))`)
+}
+
+func TestScmnavClassifyPositions(t *testing.T) {
+	engine := newBeliefEngine(t)
+	// The procedure name f sits on line 2; assert its recorded line/col.
+	result := eval(t, engine, `
+		(import (wile goast scmnav))
+		(define port (open-input-string "(define x 1)\n(define (f a) a)"))
+		(read-syntax port)                       ; skip form 1
+		(let ((d (car (classify-def-form (read-syntax port)))))
+		  (list (cdr (assq 'name d)) (cdr (assq 'line d))))
+	`)
+	c := qt.New(t)
+	// f is on line 2. (Column asserted separately once behavior is confirmed.)
+	c.Assert(result.SchemeString(), qt.Equals, `("f" 2)`)
+}

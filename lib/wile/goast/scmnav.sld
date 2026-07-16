@@ -20,7 +20,8 @@
 (define-library (wile goast scmnav)
   (export
     scm-source-files
-    read-file-forms)
+    read-file-forms
+    classify-def-form)
   (import
     (srfi 13)              ; string-suffix?, string-trim
     (wile goast utils))    ; filter, filter-map, flat-map
