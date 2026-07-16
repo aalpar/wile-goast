@@ -22,6 +22,8 @@
 - **Test package:** `goast/scmnav_test.go` is `package goast_test`; reuse the existing `newBeliefEngine(t)` (loads all extensions + `lib/`) and `eval(t, engine, code)` helpers — do not add a new engine constructor. Assert on `result.SchemeString()` with `quicktest` (`qt.Matches` / `qt.Equals`).
 - **Filesystem-path test arguments are relative to the `goast/` package dir, NOT the repo root** — `go test ./goast/` runs with cwd = `goast/`. Prefix repo-root paths with `../` in test eval strings (`../lib`, `../examples/…`). `directory-files` is confirmed NOT confined (a repo-root-cwd probe returned `(2 48)`), so an empty enumeration result is always a path/logic bug, never a sandbox — do not re-diagnose it as confined mode.
 - **Sorting:** use the global `(sort predicate list)` — the form used by `dispatch.scm:313` and `path-algebra.scm:77`. Confirmed available in the engine (`(sort < (list 3 1 2))` → `(1 2 3)`). `list-sort` / SRFI-132 are NOT in the default env; do NOT use `list-sort` and do NOT hand-roll a merge sort.
+- **`syntax-source` is NEVER populated over a file port** — wile's `PrimReadSyntax` builds the parser via `NewParser(…)`, which hardcodes the filename `""` (`wile/pkg/parser/parser.go:66`). Verified: `(syntax-source (read-syntax (open-input-file "…")))` → `#f`. Line and column ARE correct; only the file is missing. The reading code knows the path, so it must inject it via `with-source-file` (exported from `(wile goast scmnav)`), which **REPLACES** the stale `(file . "")` entry.
+- **Never leave a duplicate key in an alist that gets marshalled.** `cmd/wile-goast/marshal.go`'s `marshalPair` builds the JSON object with `obj[key] = val` iterating front-to-back — **last write wins**. Scheme's `assq` returns the **first** match. So a shadowing prepend (idiomatic in Scheme) INVERTS at the JSON boundary and ships the stale value. Replace entries; don't shadow them. A Scheme-side `assq` test cannot catch this — assert the key COUNT is 1.
 
 ---
 
@@ -954,12 +956,22 @@ and add to the `(import …)` list:
           (defs-query symbol idx))))))
 
 (define (pipeline-scheme-symbols file)
+  ;; NOTE: `read-syntax` never populates `syntax-source` over a file port
+  ;; (wile's PrimReadSyntax parses with an empty filename), so every def's
+  ;; 'file arrives as "". This pipeline calls classify-def-form DIRECTLY,
+  ;; bypassing index-file, so it MUST apply `with-source-file` itself —
+  ;; otherwise scheme_symbols ships every row with an empty filename.
+  ;; `with-source-file` REPLACES the stale entry (never prepends a second
+  ;; one: marshal.go assigns obj[key]=val front-to-back, so a duplicate key
+  ;; resolves to the LAST/stale value at the JSON boundary).
   (let* ((forms (read-file-forms file))
          (defs (sort (lambda (a b) (< (cdr (assq 'line a)) (cdr (assq 'line b))))
-                          (flat-map classify-def-form forms)))
+                          (map (lambda (d) (with-source-file file d))
+                               (flat-map classify-def-form forms))))
          (lib (let loop ((fs forms))
                 (if (null? fs) #f
-                    (or (classify-library (car fs)) (loop (cdr fs)))))))
+                    (let ((l (classify-library (car fs))))
+                      (if l (with-source-file file l) (loop (cdr fs))))))))
     (pipeline-envelope 1
       (list (cons 'method "lexical read-syntax scan (pre-macro-expansion)")
             (cons 'file file)
