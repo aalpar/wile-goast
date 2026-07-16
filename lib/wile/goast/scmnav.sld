@@ -29,6 +29,6 @@
     defs-query
     basename)
   (import
-    (srfi 13)              ; string-suffix?, string-trim
+    (srfi 13)              ; string-suffix?, string-join
     (wile goast utils))    ; filter, filter-map, flat-map
   (include "scmnav.scm"))

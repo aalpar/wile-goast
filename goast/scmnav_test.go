@@ -339,6 +339,25 @@ func TestScmnavPipelineDefs(t *testing.T) {
 	c.Assert(result.SchemeString(), qt.Equals, `("nf" "procedure" "(wile goast utils)")`)
 }
 
+func TestScmnavPipelineDefsMultiRootCommaSplit(t *testing.T) {
+	engine := newBeliefEngine(t)
+	// M2: scmnav-split-roots's comma path (and its string-trim-both fix --
+	// SRFI-13's string-trim is LEFT-only, which left-only-trim would leave
+	// a trailing space on the first root) has no direct coverage: every
+	// other pipeline test above passes a single root. Assert
+	// provenance.roots for a multi-root, space-padded roots string: both
+	// roots present and trimmed clean of surrounding whitespace.
+	result := eval(t, engine, `
+		(import (wile goast pipelines))
+		(let* ((env (pipeline-scheme-defs "nf" "../lib , ../examples/goast-query/testdata/scmnav/exports"))
+		       (provenance (cdr (assq 'provenance env))))
+		  (cdr (assq 'roots provenance)))
+	`)
+	c := qt.New(t)
+	c.Assert(result.SchemeString(), qt.Equals,
+		`("../lib" "../examples/goast-query/testdata/scmnav/exports")`)
+}
+
 func TestScmnavPipelineSymbols(t *testing.T) {
 	engine := newBeliefEngine(t)
 	// Overview of one .sld: it yields a library record with an export list.
@@ -434,6 +453,53 @@ func TestScmnavClassifyRestArgDefine(t *testing.T) {
 	c.Assert(result.SchemeString(), qt.Equals, `()`)
 }
 
+func TestScmnavDefLibraryFullPathCrossRootCollision(t *testing.T) {
+	engine := newBeliefEngine(t)
+	// C1 regression: multilib/liba and multilib/libb each `(include
+	// "shared.scm")` from their OWN directory -- the same basename, two
+	// different files. def-library must resolve each by the include's full
+	// path (dirname of the library's own file + the include string), not
+	// by basename: basename-only matching would attribute BOTH foo and bar
+	// to whichever library's record happens to come first in the internal
+	// libraries list, so at least one of these two assertions fails
+	// pre-fix regardless of file-enumeration order.
+	result := eval(t, engine, `
+		(import (wile goast scmnav))
+		(import (wile goast utils))
+		(let* ((root "../examples/goast-query/testdata/scmnav/multilib")
+		       (idx (build-index (scm-source-files (list root))))
+		       (defs (cdr (assq 'defs idx)))
+		       (lib-of (lambda (name)
+		                 (let ((d (car (filter (lambda (d) (equal? (cdr (assq 'name d)) name)) defs))))
+		                   (and (assq 'library d) (cdr (assq 'library d)))))))
+		  (list (lib-of "foo") (lib-of "bar")))
+	`)
+	c := qt.New(t)
+	c.Assert(result.SchemeString(), qt.Equals, `("(test multilib a)" "(test multilib b)")`)
+}
+
+func TestScmnavClassifyLibraryRepeatedIncludeClauses(t *testing.T) {
+	engine := newBeliefEngine(t)
+	// I1 regression: multilib/twoinc/c.sld has TWO (include ...) clauses.
+	// classify-library must collect includes from BOTH, so defs from both
+	// part1.scm (baz) and part2.scm (qux) get annotated with the owning
+	// library. Taking only the first clause (the pre-fix behavior) leaves
+	// qux with no 'library entry at all.
+	result := eval(t, engine, `
+		(import (wile goast scmnav))
+		(import (wile goast utils))
+		(let* ((root "../examples/goast-query/testdata/scmnav/multilib")
+		       (idx (build-index (scm-source-files (list root))))
+		       (defs (cdr (assq 'defs idx)))
+		       (lib-of (lambda (name)
+		                 (let ((d (car (filter (lambda (d) (equal? (cdr (assq 'name d)) name)) defs))))
+		                   (and (assq 'library d) (cdr (assq 'library d)))))))
+		  (list (lib-of "baz") (lib-of "qux")))
+	`)
+	c := qt.New(t)
+	c.Assert(result.SchemeString(), qt.Equals, `("(test multilib c)" "(test multilib c)")`)
+}
+
 func TestScmnavParseErrorSoft(t *testing.T) {
 	engine := newBeliefEngine(t)
 	// bad.scm is malformed; good.scm still indexes. One parse-error recorded,
@@ -474,7 +540,8 @@ func TestScmnavUnreadableRootHardError(t *testing.T) {
 	//
 	// Create a temporary directory and make it unreadable with chmod 000.
 	tmpDir := t.TempDir()
-	if err := os.Chmod(tmpDir, 0o000); err != nil {
+	err := os.Chmod(tmpDir, 0o000)
+	if err != nil {
 		t.Skipf("cannot chmod 000 on temp dir (running as root?): %v", err)
 	}
 	// Restore permissions for cleanup (TempDir cleanup requires readable dirs).

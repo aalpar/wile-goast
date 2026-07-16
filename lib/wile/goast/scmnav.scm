@@ -162,13 +162,18 @@
                                   " ")
                  ")"))
 
-(define (library-clause clauses tag)
-  ;; datum of the first clause whose head = TAG, or #f
-  (let loop ((cs clauses))
+(define (library-clause-items clauses tag)
+  ;; Appended payloads of EVERY clause whose head is TAG. R7RS permits
+  ;; repeated export/import/include (belief.sld has two includes; srfi/14.sld
+  ;; has six) -- taking only the first silently drops the rest.
+  (let loop ((cs clauses) (acc '()))
     (if (null? cs)
-        #f
+        acc
         (let ((cd (syntax->datum (car cs))))
-          (if (and (pair? cd) (eq? (car cd) tag)) cd (loop (cdr cs)))))))
+          (loop (cdr cs)
+                (if (and (pair? cd) (eq? (car cd) tag))
+                    (append acc (cdr cd))
+                    acc))))))
 
 (define (import-spec->name spec)
   ;; spec is a datum: (lib ...) or (only (lib) ...) / (except (lib) ...) /
@@ -184,16 +189,16 @@
         (let* ((children (syntax->list form))
                (name-stx (cadr children))
                (clauses  (cddr children))
-               (exp (or (library-clause clauses 'export) '(export)))
-               (imp (or (library-clause clauses 'import) '(import)))
-               (inc (or (library-clause clauses 'include) '(include))))
+               (exp (library-clause-items clauses 'export))
+               (imp (library-clause-items clauses 'import))
+               (inc (library-clause-items clauses 'include)))
           (list (cons 'name (paren-list->string (syntax->datum name-stx)))
                 (cons 'file (or (syntax-source form) ""))
                 (cons 'line (syntax-line name-stx))
-                (cons 'exports  (map symbol->string (filter symbol? (cdr exp))))
+                (cons 'exports  (map symbol->string (filter symbol? exp)))
                 (cons 'imports  (map (lambda (spec) (paren-list->string (import-spec->name spec)))
-                                      (cdr imp)))
-                (cons 'includes (cdr inc))))
+                                      imp))
+                (cons 'includes inc)))
         #f)))
 
 
@@ -203,6 +208,16 @@
   (let loop ((i (- (string-length path) 1)))
     (cond ((< i 0) path)
           ((char=? (string-ref path i) #\/) (substring path (+ i 1) (string-length path)))
+          (else (loop (- i 1))))))
+
+(define (dirname path)
+  ;; Everything before the last "/", or "." if PATH has none. Every path
+  ;; scmnav actually sees is root-prefixed (scm-source-files always joins
+  ;; DIR "/" NAME), so the "." case does not arise on real input; it exists
+  ;; only so this stays a total function.
+  (let loop ((i (- (string-length path) 1)))
+    (cond ((< i 0) ".")
+          ((char=? (string-ref path i) #\/) (substring path 0 i))
           (else (loop (- i 1))))))
 
 (define (with-source-file path alist)
@@ -226,13 +241,22 @@
           (map (lambda (lib) (with-source-file path lib))
                (filter-map classify-library forms)))))
 
+(define (library-include-paths lib)
+  ;; Each of LIB's includes, resolved against LIB's OWN directory (the
+  ;; directory of the .sld that declared it) into a full path comparable
+  ;; against a def's 'file field. Comparing basenames alone conflates
+  ;; colliding filenames across roots -- e.g. both (wile goast fca) and
+  ;; (wile algebra fca) `(include "fca.scm")` from different directories.
+  (let ((dir (dirname (cdr (assq 'file lib)))))
+    (map (lambda (inc) (string-append dir "/" inc))
+         (cdr (assq 'includes lib)))))
+
 (define (def-library file libraries)
-  ;; library-name string whose includes contain (basename file), or #f
-  (let ((bn (basename file)))
-    (let loop ((ls libraries))
-      (cond ((null? ls) #f)
-            ((member bn (cdr (assq 'includes (car ls)))) (cdr (assq 'name (car ls))))
-            (else (loop (cdr ls)))))))
+  ;; library-name string whose full include paths contain FILE, or #f
+  (let loop ((ls libraries))
+    (cond ((null? ls) #f)
+          ((member file (library-include-paths (car ls))) (cdr (assq 'name (car ls))))
+          (else (loop (cdr ls))))))
 
 (define (annotate-def def libraries)
   (let ((lib (def-library (cdr (assq 'file def)) libraries)))
