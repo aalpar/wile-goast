@@ -1,0 +1,1 @@
+(define (alpha x) x)
