@@ -20,6 +20,8 @@
 - **Verify Scheme changes with `go test`, not `mcp__wile-goast__eval`** — the MCP binary serves a stale embed until rebuilt (`go build -a`).
 - **Security-hook note:** the security hook has false-positived on Write/Edit of test files that contain the `eval` helper. If Write is blocked, create the `.go` test file via a quoted Bash heredoc (`cat > path <<'EOF' … EOF`).
 - **Test package:** `goast/scmnav_test.go` is `package goast_test`; reuse the existing `newBeliefEngine(t)` (loads all extensions + `lib/`) and `eval(t, engine, code)` helpers — do not add a new engine constructor. Assert on `result.SchemeString()` with `quicktest` (`qt.Matches` / `qt.Equals`).
+- **Filesystem-path test arguments are relative to the `goast/` package dir, NOT the repo root** — `go test ./goast/` runs with cwd = `goast/`. Prefix repo-root paths with `../` in test eval strings (`../lib`, `../examples/…`). `directory-files` is confirmed NOT confined (a repo-root-cwd probe returned `(2 48)`), so an empty enumeration result is always a path/logic bug, never a sandbox — do not re-diagnose it as confined mode.
+- **Sorting:** use the global `(sort predicate list)` — the form used by `dispatch.scm:313` and `path-algebra.scm:77`. Confirmed available in the engine (`(sort < (list 3 1 2))` → `(1 2 3)`). `list-sort` / SRFI-132 are NOT in the default env; do NOT use `list-sort` and do NOT hand-roll a merge sort.
 
 ---
 
@@ -109,9 +111,9 @@ func TestScmnavSourceFiles(t *testing.T) {
 	// stable assertion.
 	result := eval(t, engine, `
 		(import (wile goast scmnav))
-		(let ((fs (scm-source-files (list "examples/goast-query/testdata/scmnav/enumtree"))))
+		(let ((fs (scm-source-files (list "../examples/goast-query/testdata/scmnav/enumtree"))))
 		  (list (length fs)
-		        (list-sort string<? (map (lambda (p)
+		        (sort string<? (map (lambda (p)
 		                                    ;; basename for a path-independent check
 		                                    (let loop ((i (- (string-length p) 1)))
 		                                      (cond ((< i 0) p)
@@ -187,7 +189,7 @@ Expected: FAIL — `(wile goast scmnav)` cannot be imported (library does not ex
 - [ ] **Step 6: Run test to verify it passes**
 
 Run: `go test ./goast/ -run TestScmnavSourceFiles -v`
-Expected: PASS. (If it fails with an empty list, the confined mode is blocking directory reads — surface this immediately; it is the design's flagged risk and changes the approach.)
+Expected: PASS → `(2 (a.scm b.sld))`. (`directory-files` is confirmed working — an empty `(0 ())` result means the path is wrong relative to the `goast/` test cwd, NOT confined mode; the `../` prefix is what makes the repo-root fixture resolve.)
 
 - [ ] **Step 7: Commit**
 
@@ -638,11 +640,11 @@ func TestScmnavBuildIndex(t *testing.T) {
 	// Index the exports fixture: two defs, both annotated with their library.
 	result := eval(t, engine, `
 		(import (wile goast scmnav))
-		(let* ((files (scm-source-files (list "examples/goast-query/testdata/scmnav/exports")))
+		(let* ((files (scm-source-files (list "../examples/goast-query/testdata/scmnav/exports")))
 		       (idx (build-index files))
 		       (defs (cdr (assq 'defs idx))))
 		  (list (length defs)
-		        (list-sort string<?
+		        (sort string<?
 		          (map (lambda (d)
 		                 (string-append (cdr (assq 'name d)) ":"
 		                                (or (and (assq 'library d) (cdr (assq 'library d))) "-")))
@@ -748,7 +750,7 @@ git commit -m "scmnav: build-index with per-file classification + library annota
 ```go
 func TestScmnavDefsQuery(t *testing.T) {
 	engine := newBeliefEngine(t)
-	root := `"examples/goast-query/testdata/scmnav/exports"`
+	root := `"../examples/goast-query/testdata/scmnav/exports"`
 	// widget: defined in local.scm, also re-exported by (test reexport) ->
 	// returns the real define (resolved), no unresolved row.
 	widget := eval(t, engine, `
@@ -801,7 +803,7 @@ Note: `basename` must be exported for the test — add it to the export list in 
 ;; ── Query ────────────────────────────────────────────────
 
 (define (sort-defs defs)
-  (list-sort
+  (sort
     (lambda (a b)
       (let ((fa (cdr (assq 'file a))) (fb (cdr (assq 'file b))))
         (if (string=? fa fb)
@@ -865,7 +867,7 @@ func TestScmnavPipelineDefs(t *testing.T) {
 	// instead: nf lives in utils.scm.
 	result := eval(t, engine, `
 		(import (wile goast pipelines))
-		(let* ((env (pipeline-scheme-defs "nf" "lib"))
+		(let* ((env (pipeline-scheme-defs "nf" "../lib"))
 		       (result (cdr (assq 'result env)))
 		       (d (car result)))
 		  (list (cdr (assq 'name d))
@@ -881,7 +883,7 @@ func TestScmnavPipelineSymbols(t *testing.T) {
 	// Overview of one .sld: it yields a library record with an export list.
 	result := eval(t, engine, `
 		(import (wile goast pipelines))
-		(let* ((env (pipeline-scheme-symbols "lib/wile/goast/utils.sld"))
+		(let* ((env (pipeline-scheme-symbols "../lib/wile/goast/utils.sld"))
 		       (result (cdr (assq 'result env)))
 		       (lib (cdr (assq 'library result))))
 		  (if (member "nf" (cdr (assq 'exports lib))) "has-nf" "missing"))
@@ -946,7 +948,7 @@ and add to the `(import …)` list:
 
 (define (pipeline-scheme-symbols file)
   (let* ((forms (read-file-forms file))
-         (defs (list-sort (lambda (a b) (< (cdr (assq 'line a)) (cdr (assq 'line b))))
+         (defs (sort (lambda (a b) (< (cdr (assq 'line a)) (cdr (assq 'line b))))
                           (flat-map classify-def-form forms)))
          (lib (let loop ((fs forms))
                 (if (null? fs) #f
@@ -1005,7 +1007,7 @@ func TestScmnavParseErrorSoft(t *testing.T) {
 	// the good define still found.
 	result := eval(t, engine, `
 		(import (wile goast scmnav))
-		(let* ((files (scm-source-files (list "examples/goast-query/testdata/scmnav/malformed")))
+		(let* ((files (scm-source-files (list "../examples/goast-query/testdata/scmnav/malformed")))
 		       (idx (build-index files)))
 		  (list (length (cdr (assq 'parse-errors idx)))
 		        (length (filter (lambda (d) (equal? (cdr (assq 'name d)) "ok"))
