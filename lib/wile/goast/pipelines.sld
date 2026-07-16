@@ -44,7 +44,7 @@
     (wile goast fca-algebra)
     (wile goast fca-recommend)
     (wile goast scmnav)
-    (srfi 13)               ; string-trim (pipeline-scheme-defs root splitting)
+    (srfi 13)               ; string-trim-both (pipeline-scheme-defs root splitting)
     (only (wile goast dup-detect) find-scored-candidates candidate->verdict)
     (only (wile goast provenance) finding-value finding-where finding-score))
   (include "pipelines.scm"))

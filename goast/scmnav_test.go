@@ -354,6 +354,39 @@ func TestScmnavPipelineSymbols(t *testing.T) {
 	c.Assert(result.SchemeString(), qt.Equals, `"has-nf"`)
 }
 
+func TestScmnavPipelineSymbolsFileField(t *testing.T) {
+	engine := newBeliefEngine(t)
+	c := qt.New(t)
+
+	// Test 1: .sld file yields library record with populated 'file field.
+	// utils.sld defines a library, so pipeline-scheme-symbols returns a library
+	// record. with-source-file must populate the 'file field with the real path.
+	sldResult := eval(t, engine, `
+		(import (wile goast pipelines))
+		(let* ((env (pipeline-scheme-symbols "../lib/wile/goast/utils.sld"))
+		       (result (cdr (assq 'result env)))
+		       (lib (cdr (assq 'library result))))
+		  (cdr (assq 'file lib)))
+	`)
+	// The file field must be the real path, not "".
+	c.Assert(sldResult.SchemeString(), qt.Equals, `"../lib/wile/goast/utils.sld"`)
+
+	// Test 2: .scm file yields defs with populated 'file field.
+	// utils.scm defines procedures and variables, so pipeline-scheme-symbols
+	// returns a defs list. Each def row must have a 'file field populated via
+	// with-source-file, not "".
+	scmResult := eval(t, engine, `
+		(import (wile goast pipelines))
+		(let* ((env (pipeline-scheme-symbols "../lib/wile/goast/utils.scm"))
+		       (result (cdr (assq 'result env)))
+		       (defs (cdr (assq 'defs result))))
+		  (if (null? defs)
+		      (list "error" "no-defs")
+		      (cdr (assq 'file (car defs)))))
+	`)
+	c.Assert(scmResult.SchemeString(), qt.Equals, `"../lib/wile/goast/utils.scm"`)
+}
+
 func TestScmnavClassifyRestArgDefine(t *testing.T) {
 	engine := newBeliefEngine(t)
 	c := qt.New(t)
