@@ -108,15 +108,41 @@ Query and projection are pure map/filter.
 
 ### Grounding (verified against source, 2026-07-15)
 
-- **Reader preserves positions, via `read-syntax` (not `read`).** `read`
+- **Reader preserves LINE and COLUMN, via `read-syntax` (not `read`).** `read`
   (`wile/pkg/extensions/io/register.go:57`) returns bare datums with no location.
   `read-syntax` (`register.go:64`, impl `prim_read_write.go:269`) returns *syntax objects*
   carrying `SourceContext{File, Start/End SourceIndexes{Index,Column,Line}}`
-  (`wile/pkg/values/source_context.go:48`). Scheme accessors `syntax-source` /
-  `syntax-line` (1-based) / `syntax-column` (0-based) / `syntax->list`
-  (`wile/pkg/registry/core/syntax_loc.go:26`). **`syntax->datum` strips location** — the
-  classifier must navigate with `syntax->list` and call `syntax->datum` only on leaf
-  identifiers to get the name symbol.
+  (`wile/pkg/values/source_context.go:48`). Scheme accessors `syntax-line` (1-based) /
+  `syntax-column` (0-based) / `syntax->list` (`wile/pkg/registry/core/syntax_loc.go:26`).
+  **`syntax->datum` strips location** — the classifier must navigate with `syntax->list`
+  and call `syntax->datum` only on leaf identifiers to get the name symbol.
+- **CORRECTION (found during implementation): `syntax-source` is a DEAD FIELD over file
+  ports — the `file` does NOT come from the reader.** The accessor exists and the Go
+  `SourceContext` has a `File`, but `PrimReadSyntax` constructs the parser with
+  `NewParser(…)`, which hardcodes the filename to `""` (`wile/pkg/parser/parser.go:66`; a
+  `NewParserWithFile` exists and is unused). Verified:
+  `(syntax-source (read-syntax (open-input-file "…")))` → `#f`. Line and column are
+  unaffected. **The reading code must inject the path it already knows**, via
+  `with-source-file` (exported from `(wile goast scmnav)`), which REPLACES the stale
+  `(file . "")` entry. `build-index` does this; `pipeline-scheme-symbols` bypasses
+  `build-index` and does it itself.
+  *This design's original §4 claimed `syntax-source` supplied the file, citing real source
+  lines. The grounding verified the accessor EXISTED, never that it was POPULATED from a
+  file port. A citation that disarms the next reader's skepticism is worse than an
+  unsourced guess — recorded here rather than quietly patched.*
+- **Never leave a duplicate key in an alist that gets marshalled.**
+  `cmd/wile-goast/marshal.go`'s `marshalPair` builds the JSON object with `obj[key] = val`
+  iterating front-to-back (**last write wins**), while Scheme's `assq` returns the **first**
+  match. A shadowing prepend — idiomatic in Scheme — therefore INVERTS at the JSON boundary
+  and ships the stale value. Replace entries; don't shadow them. A Scheme-side `assq` test
+  cannot catch this; assert the key count is 1.
+- **`directory-files` is UNSORTED.** wile's confined path uses `(*os.File).ReadDir(-1)`
+  (`wile/extensions/files/confined.go:154-168`), which — unlike package-level `os.ReadDir` —
+  Go's stdlib does not sort. `scm-source-files` sorts its final path list so every
+  downstream consumer inherits a stable order (§3 determinism).
+- **UPSTREAM OPPORTUNITY (wile repo, out of scope here):** wiring `PrimReadSyntax` to
+  `NewParserWithFile` with the port's filename would make `syntax-source` real and let
+  wile-goast drop the `with-source-file` injection entirely.
 - **Reachable from goast.** goast builds with `wile.WithProfile(wile.KitchenSink)`
   (`cmd/wile-goast/main.go:221`); `allExtensions` includes `ioext.Extension` and
   `files.Extension` (`wile/pkg/internal/bootstrap/bootstrap.go:69–70`). So
@@ -127,9 +153,9 @@ Query and projection are pure map/filter.
   Output-shape analog `go-func-refs` (`goast/prim_funcrefs.go:151`) emits
   `(func-ref (name)(pkg)(refs)(pos))` via `Node`/`Field`/`Str`/`ValueList`
   (`goast/helpers.go:38`).
-- **Impl-time risk to verify:** the `files` extension has a "confined" mode
-  (`wile/extensions/files/confined.go`); confirm directory reads are not sandboxed for the
-  MCP engine before relying on `directory-files`.
+- **Impl-time risk — RESOLVED:** the `files` extension has a "confined" mode
+  (`wile/extensions/files/confined.go`), but directory reads are NOT sandboxed for this
+  engine. Verified: a repo-root-cwd probe returned `(2 48)`. `directory-files` works.
 
 ## 5. The definition classifier
 
@@ -181,22 +207,48 @@ from `(wile algebra fca)` in the *wile* repo. One root → legible partial
 
 ### Def record (Scheme alist → JSON via the pipeline marshaller)
 
+**AS SHIPPED** (corrected against the implementation; the original draft of this section
+overclaimed in four ways, all noted inline):
+
 ```scheme
+;; A resolved definition row:
 (scm-def
-  (name       . "cfl-solve")
-  (kind       . "procedure")            ; §5 taxonomy
-  (file       . "/abs/path/cfl.scm")    ; syntax-source
-  (line       . 42)                     ; syntax-line   (1-based)
-  (col        . 5)                      ; syntax-column (0-based)
-  (library    . "(wile goast cfl)")     ; present when exported / local-resolved
-  (via-import . "(srfi 13)")            ; re-export case only
-  (resolved   . #t))                    ; #f on unresolved re-export (no file/line then)
+  (name    . "nf")                          ; STRING
+  (kind    . "procedure")                   ; STRING, §5 taxonomy
+  (file    . "lib/wile/goast/utils.scm")    ; injected by with-source-file, NOT syntax-source
+                                            ;   (§4 correction). Caller-relative pass-through
+                                            ;   — paths are NOT absolutized.
+  (line    . 22)                            ; syntax-line   (1-based)
+  (col     . 9)                             ; syntax-column (0-based)
+  (library . "(wile goast utils)"))         ; present only when the file resolves to a library
+
+;; An UNRESOLVED-EXPORT row (positionless — no file/line/col keys at all):
+(scm-def
+  (name       . "ghost")
+  (kind       . "unresolved-export")
+  (library    . "(test orphan)")
+  (via-import . "(test elsewhere)")         ; ALL of that library's imports, space-joined —
+                                            ;   NOT the single import supplying the symbol
+  (resolved   . #f))
 ```
 
-Result is a list sorted by `(file, line)`. An **unresolved re-export** still emits a row
-(name + `via-import` + `resolved:#f`, no position), so "define isn't in these roots" is a
-legible partial, never a silent miss. `[]` is a valid answer ("no binding form named X in
-these roots"), distinct from an error.
+Corrections vs. the original draft:
+1. `file` does **not** come from `syntax-source` (see the §4 correction) and is **not**
+   absolute — it is the caller-relative path passed in.
+2. `resolved` is **absent** on normal rows, not `#t`. It appears only on unresolved-export
+   rows, always `#f`. A JSON consumer testing `resolved` gets `undefined` on every real hit
+   — test for `kind == "unresolved-export"` instead.
+3. `via-import` is the **space-joined list of all** the library's imports, not the one that
+   supplies the symbol (resolving *which* import would need the full import graph — out of
+   scope for v1).
+4. Unresolved rows carry **no `file`/`line`/`col` keys at all** — they are omitted, not
+   empty.
+
+Result is a list sorted by `(file, line)` for resolved rows, followed by unresolved rows
+sorted by `library` name (positionless rows cannot use the `(file, line)` key). An
+**unresolved re-export** still emits a row, so "define isn't in these roots" is a legible
+partial, never a silent miss. `[]` is a valid answer ("no binding form named X in these
+roots"), distinct from an error.
 
 Fields are structured (separate `file`/`line`/`col`), a deliberate divergence from
 `go-func-refs`' combined `"file:line:col"` string — JSON consumers prefer structured over
@@ -206,12 +258,21 @@ re-splitting a string.
 
 ```scheme
 (scm-library
-  (name     . "(wile goast utils)")
-  (file     . "/abs/utils.sld")
+  (name     . "(wile goast utils)")           ; paren-wrapped STRING
+  (file     . "lib/wile/goast/utils.sld")     ; caller-relative, injected (not absolutized)
   (line     . 15)
-  (exports  . ("nf" "tag?" …))
-  (includes . ("utils.scm")))
+  (exports  . ("nf" "tag?" …))                ; STRINGS; `(rename …)` sublists skipped (v1)
+  (imports  . ("(srfi 13)" …))                ; STRINGS, base library names
+  (includes . ("utils.scm")))                 ; STRINGS, as written in the clause
 ```
+
+`includes` are resolved against **the library's own directory** and compared as full paths,
+never by basename: `(wile goast fca)` and `(wile algebra fca)` both `(include "fca.scm")`,
+so basename matching attributes `(wile algebra fca)`'s definitions to `(wile goast fca)` —
+a confident wrong answer on exactly the cross-repo case §2 exists to serve.
+Repeated clauses are honored: R7RS permits multiple `export`/`import`/`include`, and this
+repo uses them (`belief.sld` has two `include`s; `srfi/14.sld` has six). Taking only the
+first silently drops the rest.
 
 ### Tools (flat envelope `{version, provenance, result}`)
 
@@ -225,14 +286,19 @@ existing string-typed pipeline surface rather than introducing the first array-t
 
 ### Provenance carries the soundness boundary
 
+**AS SHIPPED** (`scheme_defs`):
 ```
 provenance: { method: "lexical read-syntax scan (pre-macro-expansion)",
               roots: [...], files_scanned: N,
-              parse_errors: [{file,line,col,message} …],   // §7, soft failures
+              parse_errors: [{file, message} …],   // §7 soft failures — message ONLY;
+                                                   //   line/col extraction from a parse
+                                                   //   condition is out of scope for v1
               limits: ["cond-expand not evaluated",
                        "macro-generated bindings invisible",
                        "references/callers out of scope (v1)"] }
 ```
+`scheme_symbols`' provenance carries `method`, `file`, `limits` — and **no `parse_errors`
+key**, because it hard-errors on a malformed file rather than soft-collecting (see §7).
 
 ## 7. Error handling & testing
 
@@ -241,13 +307,23 @@ provenance: { method: "lexical read-syntax scan (pre-macro-expansion)",
 Takes its cue from two open TODO bugs (`check_beliefs` silently loading 0 beliefs; a belief
 file silently dropped on failure). The lesson both encode: never let a failed input vanish.
 
+**AS SHIPPED:**
+
 | Condition | Handling |
 |-----------|----------|
-| Root path doesn't exist / unreadable | **hard error** naming the path (required arg pointing nowhere = caller mistake) |
-| Malformed `.scm`/`.sld` (read-syntax parse error) | **soft**: record `{file,line,col,message}` in `provenance.parse_errors`, keep indexing the rest, return partial |
-| `.sld` names a missing `include` file | soft diagnostic, continue |
+| Root path doesn't exist **or is unreadable** | **hard error** naming the path. Validated with `try-directory-files`, which subsumes both — `file-exists?` alone would let an unreadable root pass, and the walk's guard would then silently yield zero files |
+| Malformed `.scm`/`.sld` in `scheme_defs` (read-syntax raises) | **soft**: record `{file, message}` in `provenance.parse_errors`, keep indexing the rest, return partial |
+| Malformed / nonexistent file in `scheme_symbols` | **hard error** (deviation from the original draft, deliberate: for a one-file tool the single input being bad IS a caller error; loud beats a useless empty envelope) |
 | Symbol not found | valid `[]` (not an error) |
-| Directory read denied (confined mode) | hard error (query can't be honestly fulfilled) |
+| Unreadable **sub**directory during the walk | skipped silently — v1 scope; only ROOTS hard-fail |
+
+One broken file in a multi-root scan degrades to a named diagnostic + partial answer; a bad
+*root*, or a bad single-file argument, fails loudly.
+
+**Port safety:** `read-file-forms` closes its port via `dynamic-wind`, not after the read
+loop. `read-syntax` *raises* on malformed source and the caller's `guard` escapes past the
+close — so the naive form leaks one port per malformed file, on precisely the path the soft
+handling exists to serve.
 
 One broken file degrades to a named diagnostic + partial answer; a bad *root* fails loudly.
 The split mirrors `make ci` (fail loud on structural breakage, diagnose-and-continue on

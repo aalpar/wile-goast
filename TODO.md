@@ -863,11 +863,50 @@ vs 137 / 96). These are the residuals the build surfaced.
       bug class as the site-ordering defect fixed in `14b2388`. **Fix:** tighten the type
       predicate to an exact match. **[S]**
 
-## Scheme Source Navigation — MCP (design 2026-07-15)
+## Scheme Source Navigation — MCP (SHIPPED 2026-07-16)
 
-Design complete: [`plans/2026-07-15-scheme-source-navigation-design.md`](plans/2026-07-15-scheme-source-navigation-design.md).
-Pure-Scheme `(wile goast scmnav)` — jump-to-def over caller-supplied roots via
-`read-syntax` (file/line/col preserved); classifier explodes `define-record-type`
-and resolves the `.sld` export→define map (local / re-export / unresolved
-trichotomy). v1 tools: `scheme_defs`, `scheme_symbols`. References/caller-finding
-and macro-hygiene deferred to v2 (design §8). Impl plan pending.
+Pure-Scheme `(wile goast scmnav)` — lexical jump-to-def over caller-supplied roots.
+Design: [`plans/2026-07-15-scheme-source-navigation-design.md`](plans/2026-07-15-scheme-source-navigation-design.md).
+Impl plan: [`plans/2026-07-15-scheme-source-navigation-impl.md`](plans/2026-07-15-scheme-source-navigation-impl.md).
+Classifier explodes `define-record-type` (each name at its own line/col) and resolves the
+`.sld` export→define map (local / re-export / unresolved trichotomy). Tools: `scheme_defs`,
+`scheme_symbols`. **v1 is lexical (pre-macro-expansion)**: macro-generated bindings are
+invisible, `cond-expand` is not evaluated, references/caller-finding are deferred to v2
+(design §8) — all three surfaced in every result's `provenance.limits`.
+
+### Follow-ups surfaced by the scmnav build
+
+- [ ] **[bug, repo-wide] `evalExpectError` silently passes on ANY multi-form body — it never
+      runs the code under test.** The helper calls `engine.Parse`, which handles exactly ONE
+      expression (`wile/pkg/wile/expression.go:51-53`: "returns a CompilationError if the
+      input is empty, malformed, **or contains more than one expression**"), and then treats
+      any parse error as the expected error (`if err != nil { return }`). So a two-form body
+      is a vacuous green. Meanwhile `eval` uses `EvalMultiple`, so multi-form bodies work
+      fine there — **the asymmetry is invisible at the call site**, which is exactly how the
+      bad tests get written (by copying the shape of the passing ones).
+      **Confirmed vacuous site:** `goast/belief_integration_test.go:1352` ("check-monotone
+      catches violation") passes a `(vector-set! …)` setup form + the `run-analysis` call →
+      never runs `run-analysis`, never checks that `'check-monotone` catches anything. A real
+      safety feature is currently untested while showing green. (All other 18 call sites
+      audited single-form and OK.)
+      **Fix:** make the helper use `EvalMultiple` (`_, err := engine.EvalMultiple(ctx, code)`
+      then assert `err != nil`) — or, stricter, parse-check first and `t.Fatalf` on a parse
+      error so a malformed test string can never masquerade as success. Then split the
+      belief site's setup into its own preceding `eval`.
+      **Note it is duplicated verbatim in 5 packages** (`goast/prim_goast_test.go:51`,
+      `goastcg/:47`, `goastcfg/:47`, `goastlint/:47`, `goastssa/:48`) — fixing one copy fixes
+      nothing. This is the same duplication already tracked above under *"Test helper
+      duplication across all packages"*; consolidating into `testutil` (coverage-excluded)
+      would fix the footgun and the duplication together. **[S]**
+
+- [ ] **[upstream, wile] `syntax-source` is a dead field over file ports.**
+      `PrimReadSyntax` builds its parser with `NewParser(…)`, which hardcodes the filename to
+      `""` (`wile/pkg/parser/parser.go:66`), so `(syntax-source (read-syntax (open-input-file
+      …)))` → `#f`. Line and column are fine. A `NewParserWithFile` already exists and is
+      unused. Wiring it to the port's filename would make `syntax-source` real and let
+      wile-goast drop its `with-source-file` path-injection workaround entirely. **[S, wile-side]**
+
+- [ ] **[v2] `scheme_refs` — reference / caller finding.** The natural next track; v1's
+      def-index + library-index is the substrate it extends. Open gate (decide before
+      building): stay lexical, or reuse Wile's expander for hygiene-accurate resolution
+      (shadowing, macro-introduced references). See design §8. **[M]**
