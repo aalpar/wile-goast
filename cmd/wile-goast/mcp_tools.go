@@ -121,6 +121,32 @@ func (ms *mcpServer) registerPhase1Tools(s *server.MCPServer) {
 		),
 		ms.handleFindFalseBoundaries,
 	)
+	s.AddTool(
+		mcp.NewTool("scheme_defs",
+			mcp.WithDescription("Jump-to-definition for Scheme source. Given a "+
+				"symbol, returns every definition site (define/define-syntax/"+
+				"define-values, exploded define-record-type names, and library "+
+				"exports) across the given roots, with file/line/col. Lexical "+
+				"(pre-macro-expansion); an unresolved re-export is reported, not "+
+				"silently missed."),
+			mcp.WithString("symbol", mcp.Required(),
+				mcp.Description("The identifier to locate (e.g., 'cfl-solve')")),
+			mcp.WithString("roots", mcp.Required(),
+				mcp.Description("Comma-separated directory roots to scan for "+
+					".scm/.sld (e.g., 'lib,../wile/pkg/stdlib')")),
+		),
+		ms.handleSchemeDefs,
+	)
+	s.AddTool(
+		mcp.NewTool("scheme_symbols",
+			mcp.WithDescription("Structure overview of one Scheme file: every "+
+				"top-level definition (ordered by line) and, for a .sld, its "+
+				"library export list. Orientation before diving into a file."),
+			mcp.WithString("file", mcp.Required(),
+				mcp.Description("Path to a single .scm or .sld file")),
+		),
+		ms.handleSchemeSymbols,
+	)
 }
 
 // boundaryMode validates a field-access mode parameter and returns the
@@ -309,5 +335,29 @@ func (ms *mcpServer) handleFindDuplicates(ctx context.Context, req mcp.CallToolR
 	code := `(import (wile goast pipelines))
 (pipeline-find-duplicates ` + schemeStringLiteral(target) +
 		` (list ` + strings.Join(optsParts, " ") + `))`
+	return ms.invokePipeline(ctx, code)
+}
+
+func (ms *mcpServer) handleSchemeDefs(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	symbol := req.GetString("symbol", "")
+	roots := req.GetString("roots", "")
+	if symbol == "" {
+		return mcp.NewToolResultError("symbol parameter is required"), nil
+	}
+	if roots == "" {
+		return mcp.NewToolResultError("roots parameter is required"), nil
+	}
+	code := `(import (wile goast pipelines))
+(pipeline-scheme-defs ` + schemeStringLiteral(symbol) + ` ` + schemeStringLiteral(roots) + `)`
+	return ms.invokePipeline(ctx, code)
+}
+
+func (ms *mcpServer) handleSchemeSymbols(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	file := req.GetString("file", "")
+	if file == "" {
+		return mcp.NewToolResultError("file parameter is required"), nil
+	}
+	code := `(import (wile goast pipelines))
+(pipeline-scheme-symbols ` + schemeStringLiteral(file) + `)`
 	return ms.invokePipeline(ctx, code)
 }

@@ -1,7 +1,7 @@
 # MCP Server
 
 `wile-goast` exposes its analysis surface over the Model Context Protocol. Two
-transports share the same eight tools and five prompts.
+transports share the same ten tools and five prompts.
 
 - `wile-goast --mcp` — stdio MCP server (JSON-RPC). One session keyed `"stdio"`.
 - `wile-goast --http[=ADDR]` — Streamable HTTP MCP server. `--http` alone binds
@@ -32,7 +32,7 @@ per-engine mutex. stdio is the degenerate one-session case. See
 
 ## Pipeline Tools (Phase 1)
 
-Six coarse-grained tools wrap already-implemented analyses, returning a
+Eight coarse-grained tools wrap already-implemented analyses, returning a
 `{version, provenance, result}` JSON envelope (via `NewToolResultJSON`,
 both text + `structuredContent`) instead of requiring `eval`-driven
 orchestration. Registered in `newServer` (`registerPhase1Tools`), so they
@@ -47,6 +47,8 @@ appear on both stdio and HTTP. Implemented in `lib/wile/goast/pipelines.scm`
 | `recommend_boundaries` | `target`, `mode?` | `{splits, merges, extracts}` Pareto frontiers |
 | `find_false_boundaries` | `target`, `mode?`, `min_extent?`, `min_intent?`, `min_types?` | cross-boundary report |
 | `find_duplicates` | `target`, `threshold?`, `verdict?` | scored, located duplicate-pair candidates with `equiv_tier`; opt-in `verdict` |
+| `scheme_defs` | `symbol`, `roots` | definition sites (file/line/col) for `symbol` across comma-separated `roots`; exploded `define-record-type` names, resolved `.sld` exports; lexical, pre-macro-expansion |
+| `scheme_symbols` | `file` | one `.scm`/`.sld`'s top-level definitions ordered by line, plus its library export list if a `.sld` |
 
 - Envelope `version` is a per-tool integer (bumped only on breaking
   `result`-shape changes); errors surface via MCP's `isError`, not the

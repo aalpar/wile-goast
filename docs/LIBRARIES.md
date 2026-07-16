@@ -485,6 +485,7 @@ not echo the call name in responses. See [MCP.md](MCP.md) for the tool-level con
 | `lib/wile/goast/boolean-simplify.scm` | Boolean normalization for Go AST conditions and belief selectors via `(wile algebra symbolic)` (embedded in binary) |
 | `lib/wile/goast/path-algebra.scm` | Semiring path algebra: Bellman-Ford over call graphs (embedded in binary) |
 | `lib/wile/goast/domains.scm` | Pre-built abstract domains: reaching defs, liveness, constant prop, sign, interval (embedded in binary) |
+| `lib/wile/goast/scmnav.scm` | Lexical Scheme source navigation: enumerate `.scm`/`.sld` files, `read-syntax`-based definition classifier (incl. `define-record-type` explosion into constructor/predicate/accessor/mutator, `.sld` export→define resolution with local/re-export/unresolved trichotomy), jump-to-def query. Backs the `scheme_defs`/`scheme_symbols` MCP tools. v1 is lexical/pre-macro-expansion: macro-generated bindings are invisible, `cond-expand` is not evaluated, and references/caller-finding are not implemented (embedded in binary) |
 | `lib/wile/goast/provenance.scm` | Provenance: resolve SSA instructions to source positions (`ssa-instr-pos`, `ssa-call-position`); first primitive of the auditable-finding facility (embedded in binary) |
 | `lib/wile/goast/dispatch.scm` | Interface dispatch as located, justified findings: site-unit grouping over VTA/CHA/SSA (embedded in binary) |
 | `lib/wile/goast/dup-detect.scm` | Deduplication: FCA reference clustering + AST/SSA measure surface + cost half (embedded in binary) |
