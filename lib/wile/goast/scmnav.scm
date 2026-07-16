@@ -53,14 +53,19 @@
 ;; position). Loop to eof, then close the port.
 
 (define (read-file-forms path)
-  (let* ((port (open-input-file path))
-         (forms (let loop ((acc '()))
-                  (let ((form (read-syntax port)))
-                    (if (eof-object? form)
-                        (reverse acc)
-                        (loop (cons form acc)))))))
-    (close-input-port port)
-    forms))
+  ;; Port-safe: read-syntax raises on malformed source and the caller's guard
+  ;; (safe-index-file) escapes past us, so close via dynamic-wind's after-thunk
+  ;; rather than after the loop — otherwise every malformed file leaks a port.
+  (let ((port (open-input-file path)))
+    (dynamic-wind
+      (lambda () #f)
+      (lambda ()
+        (let loop ((acc '()))
+          (let ((form (read-syntax port)))
+            (if (eof-object? form)
+                (reverse acc)
+                (loop (cons form acc))))))
+      (lambda () (close-input-port port)))))
 
 ;; ── Definition classifier ────────────────────────────────
 ;;
@@ -233,14 +238,26 @@
   (let ((lib (def-library (cdr (assq 'file def)) libraries)))
     (if lib (cons (cons 'library lib) def) def)))
 
+(define (safe-index-file path)
+  ;; (list 'ok defs libs) | (list 'error ((file . P) (message . M)))
+  (guard (e (#t (list 'error (list (cons 'file path)
+                                   (cons 'message
+                                         (if (error-object? e)
+                                             (error-object-message e)
+                                             "read error"))))))
+    (let ((r (index-file path)))
+      (list 'ok (car r) (cdr r)))))
+
 (define (build-index files)
-  (let loop ((fs files) (defs '()) (libs '()))
+  (let loop ((fs files) (defs '()) (libs '()) (perrs '()))
     (if (null? fs)
         (list (cons 'defs (map (lambda (d) (annotate-def d libs)) defs))
               (cons 'libraries libs)
-              (cons 'parse-errors '()))
-        (let ((r (index-file (car fs))))
-          (loop (cdr fs) (append (car r) defs) (append (cdr r) libs))))))
+              (cons 'parse-errors (reverse perrs)))
+        (let ((r (safe-index-file (car fs))))
+          (if (eq? (car r) 'ok)
+              (loop (cdr fs) (append (cadr r) defs) (append (caddr r) libs) perrs)
+              (loop (cdr fs) defs libs (cons (cadr r) perrs)))))))
 
 
 ;; ── Query ────────────────────────────────────────────────

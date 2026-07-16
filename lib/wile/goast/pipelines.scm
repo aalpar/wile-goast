@@ -265,15 +265,18 @@
 
 (define (pipeline-scheme-defs symbol roots-string)
   (let ((roots (scmnav-split-roots roots-string)))
-    (let ((files (scm-source-files roots)))
-      (let ((idx (build-index files)))
-        (pipeline-envelope 1
-          (list (cons 'method "lexical read-syntax scan (pre-macro-expansion)")
-                (cons 'roots roots)
-                (cons 'files-scanned (length files))
-                (cons 'parse-errors (cdr (assq 'parse-errors idx)))
-                (cons 'limits scmnav-limits))
-          (defs-query symbol idx))))))
+    (let ((missing (filter (lambda (r) (not (file-exists? r))) roots)))
+      (if (not (null? missing))
+          (error "scheme_defs: root path does not exist" (string-join missing " "))
+          (let ((files (scm-source-files roots)))
+            (let ((idx (build-index files)))
+              (pipeline-envelope 1
+                (list (cons 'method "lexical read-syntax scan (pre-macro-expansion)")
+                      (cons 'roots roots)
+                      (cons 'files-scanned (length files))
+                      (cons 'parse-errors (cdr (assq 'parse-errors idx)))
+                      (cons 'limits scmnav-limits))
+                (defs-query symbol idx))))))))
 
 (define (pipeline-scheme-symbols file)
   ;; NOTE: `read-syntax` never populates `syntax-source` over a file port

@@ -432,3 +432,36 @@ func TestScmnavClassifyRestArgDefine(t *testing.T) {
 	`)
 	c.Assert(result.SchemeString(), qt.Equals, `()`)
 }
+
+func TestScmnavParseErrorSoft(t *testing.T) {
+	engine := newBeliefEngine(t)
+	// bad.scm is malformed; good.scm still indexes. One parse-error recorded,
+	// the good define still found.
+	result := eval(t, engine, `
+		(import (wile goast scmnav))
+		(import (wile goast utils))
+		(let* ((files (scm-source-files (list "../examples/goast-query/testdata/scmnav/malformed")))
+		       (idx (build-index files)))
+		  (list (length (cdr (assq 'parse-errors idx)))
+		        (length (filter (lambda (d) (equal? (cdr (assq 'name d)) "ok"))
+		                        (cdr (assq 'defs idx))))))
+	`)
+	c := qt.New(t)
+	c.Assert(result.SchemeString(), qt.Equals, `(1 1)`)
+}
+
+func TestScmnavBadRootHardError(t *testing.T) {
+	engine := newBeliefEngine(t)
+	// A non-existent root is a caller error: pipeline-scheme-defs must raise.
+	//
+	// The import and the call are split into two eval steps (rather than one
+	// evalExpectError with both forms, as in the brief) because
+	// evalExpectError uses engine.Parse, which errors on ANY multi-form input
+	// with "trailing input after expression" -- and evalExpectError treats a
+	// parse error as an expected error too, so a two-form body would report
+	// PASS without ever calling pipeline-scheme-defs. Verified empirically: a
+	// probe with the brief's literal two-form body passed even against the
+	// unmodified pre-Task-9 pipelines.scm (no root validation at all).
+	eval(t, engine, `(import (wile goast pipelines))`)
+	evalExpectError(t, engine, `(pipeline-scheme-defs "x" "examples/goast-query/testdata/scmnav/DOES-NOT-EXIST")`)
+}
