@@ -876,28 +876,35 @@ invisible, `cond-expand` is not evaluated, references/caller-finding are deferre
 
 ### Follow-ups surfaced by the scmnav build
 
-- [ ] **[bug, repo-wide] `evalExpectError` silently passes on ANY multi-form body — it never
-      runs the code under test.** The helper calls `engine.Parse`, which handles exactly ONE
-      expression (`wile/pkg/wile/expression.go:51-53`: "returns a CompilationError if the
-      input is empty, malformed, **or contains more than one expression**"), and then treats
-      any parse error as the expected error (`if err != nil { return }`). So a two-form body
-      is a vacuous green. Meanwhile `eval` uses `EvalMultiple`, so multi-form bodies work
-      fine there — **the asymmetry is invisible at the call site**, which is exactly how the
-      bad tests get written (by copying the shape of the passing ones).
-      **Confirmed vacuous site:** `goast/belief_integration_test.go:1352` ("check-monotone
-      catches violation") passes a `(vector-set! …)` setup form + the `run-analysis` call →
-      never runs `run-analysis`, never checks that `'check-monotone` catches anything. A real
-      safety feature is currently untested while showing green. (All other 18 call sites
-      audited single-form and OK.)
-      **Fix:** make the helper use `EvalMultiple` (`_, err := engine.EvalMultiple(ctx, code)`
-      then assert `err != nil`) — or, stricter, parse-check first and `t.Fatalf` on a parse
-      error so a malformed test string can never masquerade as success. Then split the
-      belief site's setup into its own preceding `eval`.
-      **Note it is duplicated verbatim in 5 packages** (`goast/prim_goast_test.go:51`,
-      `goastcg/:47`, `goastcfg/:47`, `goastlint/:47`, `goastssa/:48`) — fixing one copy fixes
-      nothing. This is the same duplication already tracked above under *"Test helper
-      duplication across all packages"*; consolidating into `testutil` (coverage-excluded)
-      would fix the footgun and the duplication together. **[S]**
+- [x] **[bug, repo-wide] `evalExpectError` silently passed on ANY multi-form body — FIXED
+      2026-07-16 (`8771b08`).** The helper called `engine.Parse`, which accepts exactly ONE
+      expression (`wile/pkg/wile/expression.go:51-53`), then treated any parse error as the
+      expected error (`if err != nil { return }`) — so a two-form body was a vacuous green
+      that never ran the code under test. `eval`/`RunScheme` used `EvalMultiple` and were
+      fine, so **the asymmetry was invisible at the call site** — which is exactly how the
+      bad tests got written (by copying the shape of the passing ones).
+      **All SIX copies fixed** to `_, err := engine.EvalMultiple(ctx, code)` + assert
+      non-nil, each with a doc comment naming the trap: `testutil/testutil.go:36`
+      (`RunSchemeExpectError` — note the bug was in the *consolidation target* itself, so the
+      "just use testutil everywhere" refactor tracked above would have propagated it),
+      `goast/prim_goast_test.go:51`, `goastcg/:47`, `goastcfg/:47`, `goastlint/:47`,
+      `goastssa/:48`. Full audit: exactly ONE multi-form call site existed across both
+      helpers (18 sites); the other 17 are single-form (some multi-line, which is fine).
+      **The one site was doubly broken.** `goast/belief_integration_test.go` /
+      `TestDataflowMonotonicityViolation/check-monotone catches violation` was (a) vacuous via
+      the helper AND (b) its setup could not have triggered the violation even if it ran:
+      it seeded `(init-state (lattice-bottom lat))`, and the predecessor-less entry block's
+      only transfer call maps bottom→bottom, never differing from `old-out`, so nothing
+      re-enqueues and `bad-transfer`'s designed second-call misbehavior is never reached.
+      The two defects masked each other perfectly — fixing either alone makes the test fail,
+      so any partial investigation would have "proven" the fix was at fault.
+      **`'check-monotone` itself is CORRECT** (`lib/wile/goast/dataflow.scm:493-497`,
+      verified independently); it was simply never guarded. Test repaired with a synthetic
+      single-block self-loop `make-cfg-protocol` + `(init-state universe)` to force a genuine
+      revisit, and **verified non-vacuous**: removing `'check-monotone` makes it FAIL.
+      Consolidating the 6 copies into `testutil` remains open above under *"Test helper
+      duplication across all packages"* — but fix the semantics first (done), since
+      consolidating onto a broken canonical is worse than the duplication it cures.
 
 - [ ] **[upstream, wile] `syntax-source` is a dead field over file ports.**
       `PrimReadSyntax` builds its parser with `NewParser(…)`, which hardcodes the filename to
