@@ -490,9 +490,16 @@ Expected: PASS.
 		     (filter (lambda (d) (equal? (cdr (assq 'kind d)) "record-accessor"))
 		             (classify-def-form (read-syntax (open-input-string src)))))
 	`)
-	// Two accessors, strictly increasing columns (exact values confirmed at
-	// run time; assert the ordering invariant that proves per-token positions).
-	c.Assert(cols.SchemeString(), qt.Matches, `\(\d+ \d+\)`)
+	// Assert the EXACT observed columns — not a loose regex. Determine them
+	// empirically first (run the eval, observe, then pin the values), exactly
+	// as Task 3's TestScmnavClassifyColumn did: syntax-column is 0-based and
+	// verified stable there ((define (f a) a) -> f at col 9; curried
+	// (define ((curry a) b) b) -> curry at col 10). Two accessors on one line
+	// must land at two distinct, increasing, exactly-known columns — that is
+	// what proves each name carries its OWN token position rather than the
+	// enclosing form's. A `qt.Matches` on `\(\d+ \d+\)` would pass even if
+	// both accessors wrongly reported the form's column, so it must NOT be used.
+	c.Assert(cols.SchemeString(), qt.Equals, `(<observed-col-1> <observed-col-2>)`)
 ```
 
 - [ ] **Step 7: Commit**
