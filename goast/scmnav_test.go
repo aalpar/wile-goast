@@ -335,7 +335,7 @@ func TestScmnavPipelineDefs(t *testing.T) {
 		        (cdr (assq 'library d))))
 	`)
 	c := qt.New(t)
-	c.Assert(result.SchemeString(), qt.Matches, `\(nf (procedure|variable) \(wile goast utils\)\)`)
+	c.Assert(result.SchemeString(), qt.Equals, `("nf" "procedure" "(wile goast utils)")`)
 }
 
 func TestScmnavPipelineSymbols(t *testing.T) {

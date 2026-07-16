@@ -238,3 +238,63 @@
             (cons 'candidate-count (length cands))
             (cons 'verdict-included verdict?))
       clean)))
+
+;; ── scheme_defs / scheme_symbols ─────────────────────────
+;;
+;; Lexical jump-to-def over caller-supplied roots (comma-separated). See
+;; (wile goast scmnav). Result is the defs-query list; provenance carries
+;; the pre-macro-expansion soundness boundary.
+
+(define (scmnav-split-roots s)
+  ;; string-trim (SRFI 13) trims only the LEFT side, so a root written
+  ;; "../lib , ../examples" would leave a trailing space on "../lib" while
+  ;; correctly stripping the leading space off "../examples" -- an
+  ;; asymmetric bug that only shows up with space-after-comma input.
+  ;; string-trim-both trims both ends.
+  (let loop ((i 0) (start 0) (acc '()))
+    (cond ((= i (string-length s))
+           (reverse (cons (string-trim-both (substring s start i)) acc)))
+          ((char=? (string-ref s i) #\,)
+           (loop (+ i 1) (+ i 1) (cons (string-trim-both (substring s start i)) acc)))
+          (else (loop (+ i 1) start acc)))))
+
+(define scmnav-limits
+  (list "cond-expand not evaluated"
+        "macro-generated bindings invisible"
+        "references/callers out of scope (v1)"))
+
+(define (pipeline-scheme-defs symbol roots-string)
+  (let ((roots (scmnav-split-roots roots-string)))
+    (let ((files (scm-source-files roots)))
+      (let ((idx (build-index files)))
+        (pipeline-envelope 1
+          (list (cons 'method "lexical read-syntax scan (pre-macro-expansion)")
+                (cons 'roots roots)
+                (cons 'files-scanned (length files))
+                (cons 'parse-errors (cdr (assq 'parse-errors idx)))
+                (cons 'limits scmnav-limits))
+          (defs-query symbol idx))))))
+
+(define (pipeline-scheme-symbols file)
+  ;; NOTE: `read-syntax` never populates `syntax-source` over a file port
+  ;; (wile's PrimReadSyntax parses with an empty filename), so every def's
+  ;; 'file arrives as "". This pipeline calls classify-def-form DIRECTLY,
+  ;; bypassing index-file, so it MUST apply `with-source-file` itself —
+  ;; otherwise scheme_symbols ships every row with an empty filename.
+  ;; `with-source-file` REPLACES the stale entry (never prepends a second
+  ;; one: marshal.go assigns obj[key]=val front-to-back, so a duplicate key
+  ;; resolves to the LAST/stale value at the JSON boundary).
+  (let* ((forms (read-file-forms file))
+         (defs (sort (lambda (a b) (< (cdr (assq 'line a)) (cdr (assq 'line b))))
+                          (map (lambda (d) (with-source-file file d))
+                               (flat-map classify-def-form forms))))
+         (lib (let loop ((fs forms))
+                (if (null? fs) #f
+                    (let ((l (classify-library (car fs))))
+                      (if l (with-source-file file l) (loop (cdr fs))))))))
+    (pipeline-envelope 1
+      (list (cons 'method "lexical read-syntax scan (pre-macro-expansion)")
+            (cons 'file file)
+            (cons 'limits scmnav-limits))
+      (list (cons 'defs defs)
+            (cons 'library lib)))))
