@@ -172,3 +172,47 @@
                                       (cdr imp)))
                 (cons 'includes (cdr inc))))
         #f)))
+
+
+;; ── Index ────────────────────────────────────────────────
+
+(define (basename path)
+  (let loop ((i (- (string-length path) 1)))
+    (cond ((< i 0) path)
+          ((char=? (string-ref path i) #\/) (substring path (+ i 1) (string-length path)))
+          (else (loop (- i 1))))))
+
+(define (index-file path)
+  ;; (cons defs libs) for one file. syntax-source is never populated by
+  ;; read-syntax over a file port (wile's parser always opens with an
+  ;; empty filename — see PrimReadSyntax), so classify-def-form's and
+  ;; classify-library's 'file entries come back "" rather than PATH.
+  ;; PATH is already known here (it's what read-file-forms just opened),
+  ;; so prepend the real 'file over the stale one; assq finds the first
+  ;; match and shadows it, same pattern annotate-def uses for 'library.
+  (let ((forms (read-file-forms path)))
+    (cons (map (lambda (d) (cons (cons 'file path) d))
+               (flat-map classify-def-form forms))
+          (map (lambda (lib) (cons (cons 'file path) lib))
+               (filter-map classify-library forms)))))
+
+(define (def-library file libraries)
+  ;; library-name string whose includes contain (basename file), or #f
+  (let ((bn (basename file)))
+    (let loop ((ls libraries))
+      (cond ((null? ls) #f)
+            ((member bn (cdr (assq 'includes (car ls)))) (cdr (assq 'name (car ls))))
+            (else (loop (cdr ls)))))))
+
+(define (annotate-def def libraries)
+  (let ((lib (def-library (cdr (assq 'file def)) libraries)))
+    (if lib (cons (cons 'library lib) def) def)))
+
+(define (build-index files)
+  (let loop ((fs files) (defs '()) (libs '()))
+    (if (null? fs)
+        (list (cons 'defs (map (lambda (d) (annotate-def d libs)) defs))
+              (cons 'libraries libs)
+              (cons 'parse-errors '()))
+        (let ((r (index-file (car fs))))
+          (loop (cdr fs) (append (car r) defs) (append (cdr r) libs))))))

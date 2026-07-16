@@ -192,3 +192,24 @@ func TestScmnavClassifyLibraryNonLibrary(t *testing.T) {
 	c := qt.New(t)
 	c.Assert(result.SchemeString(), qt.Equals, `"no"`)
 }
+
+func TestScmnavBuildIndex(t *testing.T) {
+	engine := newBeliefEngine(t)
+	// Index the exports fixture: two defs, both annotated with their library.
+	result := eval(t, engine, `
+		(import (wile goast scmnav))
+		(let* ((files (scm-source-files (list "../examples/goast-query/testdata/scmnav/exports")))
+		       (idx (build-index files))
+		       (defs (cdr (assq 'defs idx))))
+		  (list (length defs)
+		        (sort string<?
+		          (map (lambda (d)
+		                 (string-append (cdr (assq 'name d)) ":"
+		                                (or (and (assq 'library d) (cdr (assq 'library d))) "-")))
+		               defs))
+		        (length (cdr (assq 'libraries idx)))))
+	`)
+	c := qt.New(t)
+	c.Assert(result.SchemeString(), qt.Equals,
+		`(2 ("make-widget:(test local)" "widget:(test local)") 1)`)
+}
