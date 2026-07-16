@@ -180,7 +180,7 @@ func TestScmnavClassifyLibrary(t *testing.T) {
 	`)
 	c := qt.New(t)
 	c.Assert(result.SchemeString(), qt.Equals,
-		`((test lib) (a b) ((srfi 13) (test dep)) ("lib.scm"))`)
+		`("(test lib)" ("a" "b") ("(srfi 13)" "(test dep)") ("lib.scm"))`)
 }
 
 func TestScmnavClassifyLibraryNonLibrary(t *testing.T) {
