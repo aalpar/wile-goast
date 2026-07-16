@@ -135,3 +135,34 @@ func TestScmnavClassifyNonDefinition(t *testing.T) {
 	`)
 	c.Assert(result.SchemeString(), qt.Equals, `()`)
 }
+
+func TestScmnavClassifyRecordType(t *testing.T) {
+	engine := newBeliefEngine(t)
+	// One record form -> type, constructor, predicate, one accessor-only
+	// field, one accessor+mutator field. Project (name . kind) in order.
+	result := eval(t, engine, `
+		(import (wile goast scmnav))
+		(define src "(define-record-type point (make-point x y) point? (x point-x) (y point-y set-point-y!))")
+		(map (lambda (d) (cons (cdr (assq 'name d)) (cdr (assq 'kind d))))
+		     (classify-def-form (read-syntax (open-input-string src))))
+	`)
+	c := qt.New(t)
+	c.Assert(result.SchemeString(), qt.Equals,
+		`(("point" . "record-type") ("make-point" . "record-constructor") ("point?" . "record-predicate") ("point-x" . "record-accessor") ("point-y" . "record-accessor") ("set-point-y!" . "record-mutator"))`)
+
+	// Position tripwire: every accessor identifier on line 1, at distinct
+	// increasing columns (they are laid out left-to-right on one line).
+	cols := eval(t, engine, `
+		(import (wile goast scmnav))
+		(define src2 "(define-record-type point (make-point x y) point? (x point-x) (y point-y set-point-y!))")
+		(let ((defs (classify-def-form (read-syntax (open-input-string src2)))))
+		  (map (lambda (d) (cdr (assq 'col d)))
+		       (let loop ((ds defs) (acc '()))
+		         (cond
+		           ((null? ds) (reverse acc))
+		           ((equal? (cdr (assq 'kind (car ds))) "record-accessor")
+		            (loop (cdr ds) (cons (car ds) acc)))
+		           (else (loop (cdr ds) acc))))))
+	`)
+	c.Assert(cols.SchemeString(), qt.Equals, `(53 65)`)
+}

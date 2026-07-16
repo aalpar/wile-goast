@@ -92,6 +92,29 @@
   (map (lambda (id) (make-scm-def (symbol->string (syntax->datum id)) "variable" id))
        (syntax->list (cadr children))))
 
+(define (classify-record-field spec)
+  ;; spec = (field-name accessor) or (field-name accessor mutator)
+  (let* ((parts (syntax->list spec))
+         (acc (cadr parts))
+         (base (list (make-scm-def (symbol->string (syntax->datum acc)) "record-accessor" acc))))
+    (if (>= (length parts) 3)
+        (let ((mut (caddr parts)))
+          (append base
+                  (list (make-scm-def (symbol->string (syntax->datum mut)) "record-mutator" mut))))
+        base)))
+
+(define (classify-record-type children)
+  ;; children = (drt-kw type-name ctor-spec pred . field-specs)
+  (let* ((type-id  (cadr children))
+         (ctor-id  (car (syntax->list (caddr children))))
+         (pred-id  (cadddr children))
+         (fields   (cddddr children)))
+    (append
+      (list (make-scm-def (symbol->string (syntax->datum type-id)) "record-type" type-id)
+            (make-scm-def (symbol->string (syntax->datum ctor-id)) "record-constructor" ctor-id)
+            (make-scm-def (symbol->string (syntax->datum pred-id)) "record-predicate" pred-id))
+      (flat-map classify-record-field fields))))
+
 (define (classify-def-form form)
   (let ((d (syntax->datum form)))
     (if (not (pair? d))
@@ -102,5 +125,6 @@
             ((define)        (classify-define children))
             ((define-syntax) (classify-define-syntax children))
             ((define-values) (classify-define-values children))
+            ((define-record-type) (classify-record-type children))
             ((begin)         (flat-map classify-def-form (cdr children)))
             (else '()))))))
