@@ -42,3 +42,15 @@ func TestScmnavSourceFiles(t *testing.T) {
 	c := qt.New(t)
 	c.Assert(result.SchemeString(), qt.Equals, `(2 (a.scm b.sld))`)
 }
+
+func TestScmnavReadFileForms(t *testing.T) {
+	engine := newBeliefEngine(t)
+	// a.scm holds exactly one top-level form, on line 1.
+	result := eval(t, engine, `
+		(import (wile goast scmnav))
+		(let ((forms (read-file-forms "../examples/goast-query/testdata/scmnav/enumtree/a.scm")))
+		  (list (length forms) (syntax-line (car forms))))
+	`)
+	c := qt.New(t)
+	c.Assert(result.SchemeString(), qt.Equals, `(1 1)`)
+}

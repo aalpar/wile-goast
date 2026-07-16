@@ -40,3 +40,18 @@
 
 (define (scm-source-files roots)
   (flat-map scm-source-files-1 roots))
+
+;; ── Reader ───────────────────────────────────────────────
+;;
+;; read-syntax returns located syntax objects (read would discard the
+;; position). Loop to eof, then close the port.
+
+(define (read-file-forms path)
+  (let* ((port (open-input-file path))
+         (forms (let loop ((acc '()))
+                  (let ((form (read-syntax port)))
+                    (if (eof-object? form)
+                        (reverse acc)
+                        (loop (cons form acc)))))))
+    (close-input-port port)
+    forms))

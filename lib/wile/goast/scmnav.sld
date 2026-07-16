@@ -19,7 +19,8 @@
 ;; task-by-task alongside their definitions.
 (define-library (wile goast scmnav)
   (export
-    scm-source-files)
+    scm-source-files
+    read-file-forms)
   (import
     (srfi 13)              ; string-suffix?, string-trim
     (wile goast utils))    ; filter, filter-map, flat-map
