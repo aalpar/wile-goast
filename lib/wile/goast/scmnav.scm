@@ -223,3 +223,33 @@
               (cons 'parse-errors '()))
         (let ((r (index-file (car fs))))
           (loop (cdr fs) (append (car r) defs) (append (cdr r) libs))))))
+
+
+;; ── Query ────────────────────────────────────────────────
+
+(define (sort-defs defs)
+  (sort
+    (lambda (a b)
+      (let ((fa (cdr (assq 'file a))) (fb (cdr (assq 'file b))))
+        (if (string=? fa fb)
+            (< (cdr (assq 'line a)) (cdr (assq 'line b)))
+            (string<? fa fb))))
+    defs))
+
+(define (defs-query symbol index)
+  (let* ((defs (cdr (assq 'defs index)))
+         (libraries (cdr (assq 'libraries index)))
+         (direct (filter (lambda (d) (equal? (cdr (assq 'name d)) symbol)) defs))
+         (defined-anywhere? (not (null? direct)))
+         (exporting (filter (lambda (l) (member symbol (cdr (assq 'exports l)))) libraries))
+         (unresolved
+           (if defined-anywhere?
+               '()
+               (map (lambda (l)
+                      (list (cons 'name symbol)
+                            (cons 'kind "unresolved-export")
+                            (cons 'library (cdr (assq 'name l)))
+                            (cons 'via-import (string-join (cdr (assq 'imports l)) " "))
+                            (cons 'resolved #f)))
+                    exporting))))
+    (append (sort-defs direct) unresolved)))

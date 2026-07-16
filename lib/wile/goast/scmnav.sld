@@ -24,7 +24,9 @@
     classify-def-form
     classify-library
     with-source-file
-    build-index)
+    build-index
+    defs-query
+    basename)
   (import
     (srfi 13)              ; string-suffix?, string-trim
     (wile goast utils))    ; filter, filter-map, flat-map

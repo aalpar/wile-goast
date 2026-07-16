@@ -196,6 +196,10 @@ func TestScmnavClassifyLibraryNonLibrary(t *testing.T) {
 func TestScmnavBuildIndex(t *testing.T) {
 	engine := newBeliefEngine(t)
 	// Index the exports fixture: two defs, both annotated with their library.
+	// The fixture root also carries reexport.sld and orphan.sld (Task 7,
+	// for the defs-query export trichotomy) -> 3 library records total,
+	// but they define no top-level forms of their own, so the def count
+	// and their library annotations are unaffected.
 	result := eval(t, engine, `
 		(import (wile goast scmnav))
 		(let* ((files (scm-source-files (list "../examples/goast-query/testdata/scmnav/exports")))
@@ -211,7 +215,7 @@ func TestScmnavBuildIndex(t *testing.T) {
 	`)
 	c := qt.New(t)
 	c.Assert(result.SchemeString(), qt.Equals,
-		`(2 ("make-widget:(test local)" "widget:(test local)") 1)`)
+		`(2 ("make-widget:(test local)" "widget:(test local)") 3)`)
 }
 
 func TestScmnavIndexFileSingleFileKey(t *testing.T) {
@@ -223,6 +227,12 @@ func TestScmnavIndexFileSingleFileKey(t *testing.T) {
 	// assigns obj[key]=val front-to-back, so a duplicate key resolves to
 	// the LAST entry at the JSON boundary — the opposite of assq. A test
 	// using assq alone cannot catch a duplicate key; assert on key count.
+	//
+	// The fixture root also carries reexport.sld and orphan.sld (Task 7),
+	// so there are 3 library records now, not 1. The library file-path
+	// list is sorted before asserting: directory-files enumeration order
+	// is not contractually specified, and this repo has a documented
+	// history of enumeration-order bugs (CLAUDE.local.md).
 	result := eval(t, engine, `
 		(import (wile goast scmnav))
 		(import (wile goast utils))
@@ -234,12 +244,50 @@ func TestScmnavIndexFileSingleFileKey(t *testing.T) {
 		  (list (map file-key-count defs)
 		        (map file-key-count libs)
 		        (map (lambda (d) (cdr (assq 'file d))) defs)
-		        (map (lambda (l) (cdr (assq 'file l))) libs)))
+		        (sort string<? (map (lambda (l) (cdr (assq 'file l))) libs))))
 	`)
 	c := qt.New(t)
-	// Two defs (from local.scm) and one library record (from local.sld),
-	// each with exactly one 'file key, and its value is the real path
-	// (not the stale "").
+	// Two defs (from local.scm) and three library records (local.sld,
+	// reexport.sld, orphan.sld), each with exactly one 'file key, and its
+	// value is the real path (not the stale "").
 	c.Assert(result.SchemeString(), qt.Equals,
-		`((1 1) (1) ("../examples/goast-query/testdata/scmnav/exports/local.scm" "../examples/goast-query/testdata/scmnav/exports/local.scm") ("../examples/goast-query/testdata/scmnav/exports/local.sld"))`)
+		`((1 1) (1 1 1) ("../examples/goast-query/testdata/scmnav/exports/local.scm" "../examples/goast-query/testdata/scmnav/exports/local.scm") ("../examples/goast-query/testdata/scmnav/exports/local.sld" "../examples/goast-query/testdata/scmnav/exports/orphan.sld" "../examples/goast-query/testdata/scmnav/exports/reexport.sld"))`)
+}
+
+func TestScmnavDefsQuery(t *testing.T) {
+	engine := newBeliefEngine(t)
+	root := `"../examples/goast-query/testdata/scmnav/exports"`
+	// widget: defined in local.scm, also re-exported by (test reexport) ->
+	// returns the real define (resolved), no unresolved row.
+	widget := eval(t, engine, `
+		(import (wile goast scmnav))
+		(let* ((idx (build-index (scm-source-files (list `+root+`))))
+		       (rs (defs-query "widget" idx)))
+		  (list (length rs)
+		        (cdr (assq 'kind (car rs)))
+		        (basename (cdr (assq 'file (car rs))))))
+	`)
+	c := qt.New(t)
+	c.Assert(widget.SchemeString(), qt.Equals, `(1 "procedure" "local.scm")`)
+
+	// ghost: exported by (test orphan), defined nowhere -> one unresolved row.
+	ghost := eval(t, engine, `
+		(import (wile goast scmnav))
+		(let* ((idx (build-index (scm-source-files (list `+root+`))))
+		       (rs (defs-query "ghost" idx))
+		       (r (car rs)))
+		  (list (length rs)
+		        (cdr (assq 'kind r))
+		        (cdr (assq 'resolved r))
+		        (cdr (assq 'library r))))
+	`)
+	c.Assert(ghost.SchemeString(), qt.Equals, `(1 "unresolved-export" #f "(test orphan)")`)
+
+	// missing: not defined, not exported -> empty (a valid answer).
+	missing := eval(t, engine, `
+		(import (wile goast scmnav))
+		(let ((idx (build-index (scm-source-files (list `+root+`)))))
+		  (length (defs-query "nonexistent" idx)))
+	`)
+	c.Assert(missing.SchemeString(), qt.Equals, `0`)
 }
