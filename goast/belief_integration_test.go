@@ -1339,6 +1339,23 @@ func TestDataflowMonotonicityViolation(t *testing.T) {
 		(define (bad-transfer block state)
 		  (vector-set! call-count 0 (+ (vector-ref call-count 0) 1))
 		  (if (> (vector-ref call-count 0) 1) '() state))
+
+		;; A single-block CFG that is its own predecessor and successor.
+		;; run-analysis's only initial worklist entry is the entry block, so
+		;; this is the only shape that revisits the FIRST block ever
+		;; transferred: entry's non-bottom out (call #1) propagates back to
+		;; itself (call #2), where bad-transfer unconditionally collapses to
+		;; '() -- a genuine shrink versus the prior out, i.e. the violation.
+		;; A predecessor-less entry (the real HandleSafeA CFG used above) or
+		;; a bottom initial state each independently prevent this: the former
+		;; never re-enqueues anything, the latter never produces a non-bottom
+		;; out to shrink away from.
+		(define self-loop-proto
+		  (make-cfg-protocol
+		    (lambda (ignored-fn) (list 0))
+		    (lambda (b) b)
+		    (lambda (b) (list b))
+		    (lambda (b) (list b))))
 	`)
 
 	t.Run("no flag means no check", func(t *testing.T) {
@@ -1351,8 +1368,8 @@ func TestDataflowMonotonicityViolation(t *testing.T) {
 	t.Run("check-monotone catches violation", func(t *testing.T) {
 		evalExpectError(t, engine, `
 			(vector-set! call-count 0 0)
-			(run-analysis 'forward lat bad-transfer fn (ssa-cfg-protocol)
-			  (init-state (lattice-bottom lat)) 'check-monotone)`)
+			(run-analysis 'forward lat bad-transfer fn self-loop-proto
+			  (init-state universe) 'check-monotone)`)
 	})
 }
 

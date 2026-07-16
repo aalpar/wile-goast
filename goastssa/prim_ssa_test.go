@@ -45,13 +45,14 @@ func eval(t *testing.T, engine *wile.Engine, code string) wile.Value {
 	return result
 }
 
+// evalExpectError runs Scheme code and asserts that it produces an error.
+//
+// Uses EvalMultiple, NOT Parse+Eval: Parse accepts only ONE expression, and an
+// earlier version treated any parse error as the expected error -- so any
+// multi-form body silently passed WITHOUT running the code under test.
 func evalExpectError(t *testing.T, engine *wile.Engine, code string) {
 	t.Helper()
-	expr, err := engine.Parse(context.Background(), code)
-	if err != nil {
-		return
-	}
-	_, err = engine.Eval(context.Background(), expr)
+	_, err := engine.EvalMultiple(context.Background(), code)
 	qt.New(t).Assert(err, qt.IsNotNil)
 }
 
