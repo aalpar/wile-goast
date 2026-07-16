@@ -196,10 +196,11 @@ func TestScmnavClassifyLibraryNonLibrary(t *testing.T) {
 func TestScmnavBuildIndex(t *testing.T) {
 	engine := newBeliefEngine(t)
 	// Index the exports fixture: two defs, both annotated with their library.
-	// The fixture root also carries reexport.sld and orphan.sld (Task 7,
-	// for the defs-query export trichotomy) -> 3 library records total,
-	// but they define no top-level forms of their own, so the def count
-	// and their library annotations are unaffected.
+	// The fixture root also carries reexport.sld, orphan.sld, and orphan2.sld
+	// (Task 7, for the defs-query export trichotomy and its determinism
+	// regression test) -> 4 library records total, but they define no
+	// top-level forms of their own, so the def count and their library
+	// annotations are unaffected.
 	result := eval(t, engine, `
 		(import (wile goast scmnav))
 		(let* ((files (scm-source-files (list "../examples/goast-query/testdata/scmnav/exports")))
@@ -215,7 +216,7 @@ func TestScmnavBuildIndex(t *testing.T) {
 	`)
 	c := qt.New(t)
 	c.Assert(result.SchemeString(), qt.Equals,
-		`(2 ("make-widget:(test local)" "widget:(test local)") 3)`)
+		`(2 ("make-widget:(test local)" "widget:(test local)") 4)`)
 }
 
 func TestScmnavIndexFileSingleFileKey(t *testing.T) {
@@ -228,11 +229,13 @@ func TestScmnavIndexFileSingleFileKey(t *testing.T) {
 	// the LAST entry at the JSON boundary — the opposite of assq. A test
 	// using assq alone cannot catch a duplicate key; assert on key count.
 	//
-	// The fixture root also carries reexport.sld and orphan.sld (Task 7),
-	// so there are 3 library records now, not 1. The library file-path
-	// list is sorted before asserting: directory-files enumeration order
-	// is not contractually specified, and this repo has a documented
-	// history of enumeration-order bugs (CLAUDE.local.md).
+	// The fixture root also carries reexport.sld, orphan.sld, and
+	// orphan2.sld (Task 7), so there are 4 library records now, not 1. The
+	// library file-path list is sorted before asserting: directory-files
+	// enumeration order is not contractually specified, and this repo has
+	// a documented history of enumeration-order bugs (CLAUDE.local.md).
+	// (scm-source-files itself now sorts its result too, so this test-level
+	// sort is belt-and-braces, not load-bearing.)
 	result := eval(t, engine, `
 		(import (wile goast scmnav))
 		(import (wile goast utils))
@@ -247,11 +250,11 @@ func TestScmnavIndexFileSingleFileKey(t *testing.T) {
 		        (sort string<? (map (lambda (l) (cdr (assq 'file l))) libs))))
 	`)
 	c := qt.New(t)
-	// Two defs (from local.scm) and three library records (local.sld,
-	// reexport.sld, orphan.sld), each with exactly one 'file key, and its
-	// value is the real path (not the stale "").
+	// Two defs (from local.scm) and four library records (local.sld,
+	// reexport.sld, orphan.sld, orphan2.sld), each with exactly one 'file
+	// key, and its value is the real path (not the stale "").
 	c.Assert(result.SchemeString(), qt.Equals,
-		`((1 1) (1 1 1) ("../examples/goast-query/testdata/scmnav/exports/local.scm" "../examples/goast-query/testdata/scmnav/exports/local.scm") ("../examples/goast-query/testdata/scmnav/exports/local.sld" "../examples/goast-query/testdata/scmnav/exports/orphan.sld" "../examples/goast-query/testdata/scmnav/exports/reexport.sld"))`)
+		`((1 1) (1 1 1 1) ("../examples/goast-query/testdata/scmnav/exports/local.scm" "../examples/goast-query/testdata/scmnav/exports/local.scm") ("../examples/goast-query/testdata/scmnav/exports/local.sld" "../examples/goast-query/testdata/scmnav/exports/orphan.sld" "../examples/goast-query/testdata/scmnav/exports/orphan2.sld" "../examples/goast-query/testdata/scmnav/exports/reexport.sld"))`)
 }
 
 func TestScmnavDefsQuery(t *testing.T) {
@@ -270,7 +273,9 @@ func TestScmnavDefsQuery(t *testing.T) {
 	c := qt.New(t)
 	c.Assert(widget.SchemeString(), qt.Equals, `(1 "procedure" "local.scm")`)
 
-	// ghost: exported by (test orphan), defined nowhere -> one unresolved row.
+	// ghost: exported by (test orphan) AND (test orphan2), defined nowhere
+	// -> two unresolved rows. See TestScmnavDefsQueryUnresolvedDeterministic
+	// for the ordering guarantee across the two exporting libraries.
 	ghost := eval(t, engine, `
 		(import (wile goast scmnav))
 		(let* ((idx (build-index (scm-source-files (list `+root+`))))
@@ -281,7 +286,7 @@ func TestScmnavDefsQuery(t *testing.T) {
 		        (cdr (assq 'resolved r))
 		        (cdr (assq 'library r))))
 	`)
-	c.Assert(ghost.SchemeString(), qt.Equals, `(1 "unresolved-export" #f "(test orphan)")`)
+	c.Assert(ghost.SchemeString(), qt.Equals, `(2 "unresolved-export" #f "(test orphan)")`)
 
 	// missing: not defined, not exported -> empty (a valid answer).
 	missing := eval(t, engine, `
@@ -290,4 +295,27 @@ func TestScmnavDefsQuery(t *testing.T) {
 		  (length (defs-query "nonexistent" idx)))
 	`)
 	c.Assert(missing.SchemeString(), qt.Equals, `0`)
+}
+
+func TestScmnavDefsQueryUnresolvedDeterministic(t *testing.T) {
+	engine := newBeliefEngine(t)
+	root := `"../examples/goast-query/testdata/scmnav/exports"`
+	// ghost is exported by two libraries (test orphan) and (test orphan2),
+	// defined nowhere. build-index's file list traces back through
+	// scm-source-files to the confined directory-files, which (unlike
+	// package-level os.ReadDir) does not sort — so without an explicit
+	// order the two unresolved-export rows could come back in either
+	// order. defs-query now sorts the unresolved branch by library name,
+	// so the order must be stable and alphabetical regardless of
+	// enumeration order.
+	result := eval(t, engine, `
+		(import (wile goast scmnav))
+		(let* ((idx (build-index (scm-source-files (list `+root+`))))
+		       (rs (defs-query "ghost" idx)))
+		  (list (length rs)
+		        (map (lambda (r) (cdr (assq 'library r))) rs)))
+	`)
+	c := qt.New(t)
+	c.Assert(result.SchemeString(), qt.Equals,
+		`(2 ("(test orphan)" "(test orphan2)"))`)
 }

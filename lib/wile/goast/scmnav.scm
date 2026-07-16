@@ -39,7 +39,13 @@
     (or (try-directory-files dir) '())))
 
 (define (scm-source-files roots)
-  (flat-map scm-source-files-1 roots))
+  ;; Sort the final flattened list of full paths: the confined
+  ;; directory-files (wile/extensions/files/confined.go) uses
+  ;; (*os.File).ReadDir(-1), which — unlike package-level os.ReadDir —
+  ;; Go's stdlib does NOT sort, so raw enumeration order is nondeterministic.
+  ;; Every downstream consumer (build-index's defs/libraries, provenance,
+  ;; Task 8's pipelines) inherits this stable order.
+  (sort string<? (flat-map scm-source-files-1 roots)))
 
 ;; ── Reader ───────────────────────────────────────────────
 ;;
@@ -252,4 +258,10 @@
                             (cons 'via-import (string-join (cdr (assq 'imports l)) " "))
                             (cons 'resolved #f)))
                     exporting))))
-    (append (sort-defs direct) unresolved)))
+    ;; unresolved rows are positionless (no file/line), so they cannot use
+    ;; sort-defs' (file, line) key; sort by library name instead — belt and
+    ;; braces with scm-source-files' now-sorted enumeration, and meaningful
+    ;; independent of file-enumeration order.
+    (append (sort-defs direct)
+            (sort (lambda (a b) (string<? (cdr (assq 'library a)) (cdr (assq 'library b))))
+                  unresolved))))
