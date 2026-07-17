@@ -1,0 +1,350 @@
+E40 — flood taxonomy + PROBEDIAG origin classification (E36 Phase 2, Task 0 gate)
+Generated: 2026-07-16 18:23  engine HEAD: 510c46d
+Build: GOWORK=off go build -o rsm .   Run: TAXONOMY=1 PROBEDIAG=1 ./rsm testdata/soundfix
+==================================================================================
+
+########## soundfix: TAXONOMY=1 PROBEDIAG=1 ##########
+TARGET            testdata/soundfix
+load+ssa          294ms
+extract           31ms
+
+functions         6868
+nodes             153502
+objects           14261
+constraints       146604
+  addr               14261
+  copy               47345
+  gep                67406
+  load                9831
+  store               6945
+  invoke               319
+  icall                277
+  tfilter               54
+  untag                166
+
+─── SOLVE (difference propagation; no HVN, no cycle elimination) ───
+status            CONVERGED
+wall              93ms
+propagations      598711
+MEMBERSHIP TESTS  2615335
+worklist pops     161618
+copy edges        87998
+nodes w/ pts      89303
+total pts size    598711
+MEAN |pts|        6.70
+dispatch resolved 804
+MAX |pts|         228  (at node 709)
+GOD OBJECT        node 17662, in pts of 4781 nodes, type runtime.mheap
+|pts| histogram (log2 buckets):
+  <=2^0      74183 nodes
+  <=2^1       3091 nodes
+  <=2^2       2649 nodes
+  <=2^3       1171 nodes
+  <=2^4       1448 nodes
+  <=2^5       1085 nodes
+  <=2^6        522 nodes
+  <=2^7       4926 nodes
+  <=2^8        228 nodes
+
+─── FLOOD TAXONOMY (top 15 god objects by holder count) ───
+  #1  base=n17662    holders=12599    kind=GLOBAL         type=runtime.mheap                            global=runtime.mheap_ (UNCLONEABLE singleton)
+  #2  base=n17285    holders=11097    kind=GLOBAL         type=runtime.workType                         global=runtime.work (UNCLONEABLE singleton)
+  #3  base=n17864    holders=8923     kind=GLOBAL         type=runtime.mspan                            global=runtime.emptymspan (UNCLONEABLE singleton)
+  #4  base=n17975    holders=8353     kind=GLOBAL         type=runtime.scavengerState                   global=runtime.scavenger (UNCLONEABLE singleton)
+  #5  base=n73727    holders=7389     kind=ALLOC          type=os.file                                  enclosing-func=os.newFile
+  #6  base=n100305   holders=7253     kind=ALLOC          type=runtime.userArena                        enclosing-func=runtime.newUserArena
+  #7  base=n48991    holders=7241     kind=ALLOC          type=runtime.timer                            enclosing-func=(*runtime.scavengerState).init
+  #8  base=n100382   holders=7241     kind=ALLOC          type=runtime.timer                            enclosing-func=runtime.newWakeableSleep
+  #9  base=n17499    holders=7146     kind=GLOBAL         type=[4]struct{item runtime.stackpoolItem; _ [104]byte} global=runtime.stackpool (UNCLONEABLE singleton)
+  #10 base=n18024    holders=7117     kind=GLOBAL         type=struct{lock runtime.mutex; free [35]runtime.mSpanList} global=runtime.stackLarge (UNCLONEABLE singleton)
+  #11 base=n100375   holders=7101     kind=ALLOC          type=runtime.wakeableSleep                    enclosing-func=runtime.newWakeableSleep
+  #12 base=n42883    holders=7066     kind=ALLOC          type=runtime.pinner                           enclosing-func=(*runtime.Pinner).Pin
+  #13 base=n17840    holders=4470     kind=GLOBAL         type=uintptr                                  global=runtime.zerobase (UNCLONEABLE singleton)
+  #14 base=n17778    holders=4428     kind=GLOBAL         type=runtime.mstats                           global=runtime.memstats (UNCLONEABLE singleton)
+  #15 base=n37455    holders=4240     kind=ALLOC          type=internal/runtime/maps.Map                enclosing-func=(*internal/runtime/maps.Map).Clone
+
+─── EQUIV (demand queries all nodes == batch) ───
+TERMINATION: OK  pushes 225323 <= bound 2189245524
+wall              139ms
+non-empty agree   89303
+differ            0  (demand-missing 0 obj, demand-extra 0 obj)
+EQUIV: PASS  (demand == batch on all 89303 non-empty nodes)
+
+─── FLOOD ON DISPATCH SITES (batch ground truth) ───
+receivers         513 total, 263 resolved
+flooded receivers 5 / 263  (god object n17662 in their pts)
+receiver |pts|    mean 4.1  max 81
+
+─── OPTIMAL DEMAND FOOTPRINT (resolved-graph backward slice) ───
+wall              4ms
+resolved recvs    263
+slice (nodes)     median 6  p90 66  max 2490   (of 153502)
+slice (% of N)    median 0.004  p90 0.043  max 1.622
+reach the flood   6 / 263 receivers' slices contain god object n17662
+
+─── ENGINE FOOTPRINT (rsm |touched| per receiver) ───
+  PROBEDIAG n49048    80 missing nodes -> 66 distinct missed objects
+    base=n17285    kind=GLOBAL         type=runtime.workType                         global=runtime.work (UNCLONEABLE singleton)
+    base=n17499    kind=GLOBAL         type=[4]struct{item runtime.stackpoolItem; _ [104]byte} global=runtime.stackpool (UNCLONEABLE singleton)
+    base=n17662    kind=GLOBAL         type=runtime.mheap                            global=runtime.mheap_ (UNCLONEABLE singleton)
+    base=n17778    kind=GLOBAL         type=runtime.mstats                           global=runtime.memstats (UNCLONEABLE singleton)
+    base=n17840    kind=GLOBAL         type=uintptr                                  global=runtime.zerobase (UNCLONEABLE singleton)
+    base=n17864    kind=GLOBAL         type=runtime.mspan                            global=runtime.emptymspan (UNCLONEABLE singleton)
+    base=n17975    kind=GLOBAL         type=runtime.scavengerState                   global=runtime.scavenger (UNCLONEABLE singleton)
+    base=n18024    kind=GLOBAL         type=struct{lock runtime.mutex; free [35]runtime.mSpanList} global=runtime.stackLarge (UNCLONEABLE singleton)
+    base=n21375    kind=FUNC           type=func(file *os.file) error                func=(*os.file).close$thunk
+    base=n21573    kind=FUNC           type=func(r *os.root) error                   func=(*os.root).Close$thunk
+    base=n22111    kind=FUNC           type=func(i *runtime.pinner)                  func=(*runtime.Pinner).Pin$1
+    base=n23209    kind=FUNC           type=func(s any, _ uintptr, _ int64)          func=(*runtime.scavengerState).init$1
+    base=n23213    kind=FUNC           type=func() bool                              func=(*runtime.scavengerState).init$3
+    base=n28321    kind=FUNC           type=func(fn *runtime.funcval, arg unsafe.Pointer) func=runtime.callCleanup[*os.processHandle]
+    base=n28323    kind=FUNC           type=func(fn *runtime.funcval, arg unsafe.Pointer) func=runtime.callCleanup[S]
+    base=n29405    kind=FUNC           type=func(arg any, _ uintptr, _ int64)        func=runtime.goroutineReady
+    base=n30249    kind=FUNC           type=func(arg any, seq uintptr, delta int64)  func=runtime.netpollDeadline
+    base=n30255    kind=FUNC           type=func(arg any, seq uintptr, delta int64)  func=runtime.netpollReadDeadline
+    base=n30257    kind=FUNC           type=func(arg any, seq uintptr, delta int64)  func=runtime.netpollWriteDeadline
+    base=n30305    kind=FUNC           type=func(a *runtime.userArena)               func=runtime.newUserArena$1
+    base=n30313    kind=FUNC           type=func(s any, _ uintptr, _ int64)          func=runtime.newWakeableSleep$1
+    base=n30879    kind=FUNC           type=func(vh unsafe.Pointer, p unsafe.Pointer) func=runtime.recordspan
+    base=n37455    kind=ALLOC          type=internal/runtime/maps.Map                enclosing-func=(*internal/runtime/maps.Map).Clone
+    base=n37481    kind=OTHER          type=[]*internal/runtime/maps.table           go-type=*ssa.MakeSlice enclosing-func=(*internal/runtime/maps.Map).Clone
+    base=n38217    kind=ALLOC          type=internal/runtime/maps.table              enclosing-func=(*internal/runtime/maps.table).clone
+    base=n40508    kind=MAKEINTERFACE  type=*os.file                                 enclosing-func=(*os.file).close
+    base=n40966    kind=MAKEINTERFACE  type=*os.root                                 enclosing-func=(*os.root).Close
+    base=n42883    kind=ALLOC          type=runtime.pinner                           enclosing-func=(*runtime.Pinner).Pin
+    base=n42895    kind=MAKEINTERFACE  type=*runtime.pinner                          enclosing-func=(*runtime.Pinner).Pin
+    base=n42897    kind=MAKEINTERFACE  type=func(i *runtime.pinner)                  enclosing-func=(*runtime.Pinner).Pin
+    base=n42909    kind=OTHER          type=[]unsafe.Pointer                         go-type=*ssa.Call enclosing-func=(*runtime.Pinner).Pin
+    base=n48991    kind=ALLOC          type=runtime.timer                            enclosing-func=(*runtime.scavengerState).init
+    base=n48997    kind=MAKEINTERFACE  type=*runtime.scavengerState                  enclosing-func=(*runtime.scavengerState).init
+    base=n51987    kind=MAKEINTERFACE  type=*runtime.userArena                       enclosing-func=(*runtime.userArena).free
+    base=n52103    kind=OTHER          type=[]unsafe.Pointer                         go-type=*ssa.Call enclosing-func=(*runtime.userArena).refill
+    base=n58538    kind=OTHER          type=[]uint32                                 go-type=*ssa.MakeSlice enclosing-func=(runtime.pMask).resize
+    base=n73727    kind=ALLOC          type=os.file                                  enclosing-func=os.newFile
+    base=n73758    kind=MAKEINTERFACE  type=*os.file                                 enclosing-func=os.newFile
+    base=n73760    kind=MAKEINTERFACE  type=func(file *os.file) error                enclosing-func=os.newFile
+    base=n73816    kind=ALLOC          type=os.root                                  enclosing-func=os.newRoot
+    base=n73821    kind=MAKEINTERFACE  type=*os.root                                 enclosing-func=os.newRoot
+    base=n73823    kind=MAKEINTERFACE  type=func(r *os.root) error                   enclosing-func=os.newRoot
+    base=n80803    kind=MAKEINTERFACE  type=string                                   enclosing-func=runtime.arena_heapify
+    base=n80814    kind=ALLOC          type=runtime.slice                            enclosing-func=runtime.arena_heapify
+    base=n83330    kind=ALLOC          type=runtime.Pinner                           enclosing-func=runtime.debugPinnerV1
+    base=n83332    kind=MAKEINTERFACE  type=unsafe.Pointer                           enclosing-func=runtime.debugPinnerV1
+    base=n87666    kind=ALLOC          type=runtime.weakHandleBox                    enclosing-func=runtime.getOrAddWeakHandle
+    base=n88302    kind=ALLOC          type=runtime.PanicNilError                    enclosing-func=runtime.gopanic
+    base=n88303    kind=MAKEINTERFACE  type=*runtime.PanicNilError                   enclosing-func=runtime.gopanic
+    base=n89128    kind=MAKEINTERFACE  type=runtime.uint16InterfacePtr               enclosing-func=runtime.init
+    base=n89130    kind=MAKEINTERFACE  type=runtime.uint32InterfacePtr               enclosing-func=runtime.init
+    base=n89132    kind=MAKEINTERFACE  type=runtime.uint64InterfacePtr               enclosing-func=runtime.init
+    base=n89134    kind=MAKEINTERFACE  type=runtime.stringInterfacePtr               enclosing-func=runtime.init
+    base=n89136    kind=MAKEINTERFACE  type=runtime.sliceInterfacePtr                enclosing-func=runtime.init
+    base=n90544    kind=MAKEINTERFACE  type=*runtime.pollDesc                        enclosing-func=runtime.init
+    base=n100305   kind=ALLOC          type=runtime.userArena                        enclosing-func=runtime.newUserArena
+    base=n100308   kind=MAKEINTERFACE  type=*runtime.userArena                       enclosing-func=runtime.newUserArena
+    base=n100310   kind=MAKEINTERFACE  type=func(a *runtime.userArena)               enclosing-func=runtime.newUserArena
+    base=n100375   kind=ALLOC          type=runtime.wakeableSleep                    enclosing-func=runtime.newWakeableSleep
+    base=n100379   kind=OTHER          type=chan struct{}                            go-type=*ssa.MakeChan enclosing-func=runtime.newWakeableSleep
+    base=n100382   kind=ALLOC          type=runtime.timer                            enclosing-func=runtime.newWakeableSleep
+    base=n100388   kind=MAKEINTERFACE  type=*runtime.wakeableSleep                   enclosing-func=runtime.newWakeableSleep
+    base=n102473   kind=MAKEINTERFACE  type=string                                   enclosing-func=runtime.preprintpanics
+    base=n102480   kind=MAKEINTERFACE  type=string                                   enclosing-func=runtime.preprintpanics
+    base=n108086   kind=MAKEINTERFACE  type=internal/abi.RegArgs                     enclosing-func=runtime.stkobjinit
+    base=n109076   kind=MAKEINTERFACE  type=*runtime.g                               enclosing-func=runtime.timeSleep
+  PROBEDIAG n49074    6 missing nodes -> 4 distinct missed objects
+    base=n17285    kind=GLOBAL         type=runtime.workType                         global=runtime.work (UNCLONEABLE singleton)
+    base=n17499    kind=GLOBAL         type=[4]struct{item runtime.stackpoolItem; _ [104]byte} global=runtime.stackpool (UNCLONEABLE singleton)
+    base=n17662    kind=GLOBAL         type=runtime.mheap                            global=runtime.mheap_ (UNCLONEABLE singleton)
+    base=n18024    kind=GLOBAL         type=struct{lock runtime.mutex; free [35]runtime.mSpanList} global=runtime.stackLarge (UNCLONEABLE singleton)
+  PROBEDIAG n81355    80 missing nodes -> 66 distinct missed objects
+    base=n17285    kind=GLOBAL         type=runtime.workType                         global=runtime.work (UNCLONEABLE singleton)
+    base=n17499    kind=GLOBAL         type=[4]struct{item runtime.stackpoolItem; _ [104]byte} global=runtime.stackpool (UNCLONEABLE singleton)
+    base=n17662    kind=GLOBAL         type=runtime.mheap                            global=runtime.mheap_ (UNCLONEABLE singleton)
+    base=n17778    kind=GLOBAL         type=runtime.mstats                           global=runtime.memstats (UNCLONEABLE singleton)
+    base=n17840    kind=GLOBAL         type=uintptr                                  global=runtime.zerobase (UNCLONEABLE singleton)
+    base=n17864    kind=GLOBAL         type=runtime.mspan                            global=runtime.emptymspan (UNCLONEABLE singleton)
+    base=n17975    kind=GLOBAL         type=runtime.scavengerState                   global=runtime.scavenger (UNCLONEABLE singleton)
+    base=n18024    kind=GLOBAL         type=struct{lock runtime.mutex; free [35]runtime.mSpanList} global=runtime.stackLarge (UNCLONEABLE singleton)
+    base=n21375    kind=FUNC           type=func(file *os.file) error                func=(*os.file).close$thunk
+    base=n21573    kind=FUNC           type=func(r *os.root) error                   func=(*os.root).Close$thunk
+    base=n22111    kind=FUNC           type=func(i *runtime.pinner)                  func=(*runtime.Pinner).Pin$1
+    base=n23209    kind=FUNC           type=func(s any, _ uintptr, _ int64)          func=(*runtime.scavengerState).init$1
+    base=n23213    kind=FUNC           type=func() bool                              func=(*runtime.scavengerState).init$3
+    base=n28321    kind=FUNC           type=func(fn *runtime.funcval, arg unsafe.Pointer) func=runtime.callCleanup[*os.processHandle]
+    base=n28323    kind=FUNC           type=func(fn *runtime.funcval, arg unsafe.Pointer) func=runtime.callCleanup[S]
+    base=n29405    kind=FUNC           type=func(arg any, _ uintptr, _ int64)        func=runtime.goroutineReady
+    base=n30249    kind=FUNC           type=func(arg any, seq uintptr, delta int64)  func=runtime.netpollDeadline
+    base=n30255    kind=FUNC           type=func(arg any, seq uintptr, delta int64)  func=runtime.netpollReadDeadline
+    base=n30257    kind=FUNC           type=func(arg any, seq uintptr, delta int64)  func=runtime.netpollWriteDeadline
+    base=n30305    kind=FUNC           type=func(a *runtime.userArena)               func=runtime.newUserArena$1
+    base=n30313    kind=FUNC           type=func(s any, _ uintptr, _ int64)          func=runtime.newWakeableSleep$1
+    base=n30879    kind=FUNC           type=func(vh unsafe.Pointer, p unsafe.Pointer) func=runtime.recordspan
+    base=n37455    kind=ALLOC          type=internal/runtime/maps.Map                enclosing-func=(*internal/runtime/maps.Map).Clone
+    base=n37481    kind=OTHER          type=[]*internal/runtime/maps.table           go-type=*ssa.MakeSlice enclosing-func=(*internal/runtime/maps.Map).Clone
+    base=n38217    kind=ALLOC          type=internal/runtime/maps.table              enclosing-func=(*internal/runtime/maps.table).clone
+    base=n40508    kind=MAKEINTERFACE  type=*os.file                                 enclosing-func=(*os.file).close
+    base=n40966    kind=MAKEINTERFACE  type=*os.root                                 enclosing-func=(*os.root).Close
+    base=n42883    kind=ALLOC          type=runtime.pinner                           enclosing-func=(*runtime.Pinner).Pin
+    base=n42895    kind=MAKEINTERFACE  type=*runtime.pinner                          enclosing-func=(*runtime.Pinner).Pin
+    base=n42897    kind=MAKEINTERFACE  type=func(i *runtime.pinner)                  enclosing-func=(*runtime.Pinner).Pin
+    base=n42909    kind=OTHER          type=[]unsafe.Pointer                         go-type=*ssa.Call enclosing-func=(*runtime.Pinner).Pin
+    base=n48991    kind=ALLOC          type=runtime.timer                            enclosing-func=(*runtime.scavengerState).init
+    base=n48997    kind=MAKEINTERFACE  type=*runtime.scavengerState                  enclosing-func=(*runtime.scavengerState).init
+    base=n51987    kind=MAKEINTERFACE  type=*runtime.userArena                       enclosing-func=(*runtime.userArena).free
+    base=n52103    kind=OTHER          type=[]unsafe.Pointer                         go-type=*ssa.Call enclosing-func=(*runtime.userArena).refill
+    base=n58538    kind=OTHER          type=[]uint32                                 go-type=*ssa.MakeSlice enclosing-func=(runtime.pMask).resize
+    base=n73727    kind=ALLOC          type=os.file                                  enclosing-func=os.newFile
+    base=n73758    kind=MAKEINTERFACE  type=*os.file                                 enclosing-func=os.newFile
+    base=n73760    kind=MAKEINTERFACE  type=func(file *os.file) error                enclosing-func=os.newFile
+    base=n73816    kind=ALLOC          type=os.root                                  enclosing-func=os.newRoot
+    base=n73821    kind=MAKEINTERFACE  type=*os.root                                 enclosing-func=os.newRoot
+    base=n73823    kind=MAKEINTERFACE  type=func(r *os.root) error                   enclosing-func=os.newRoot
+    base=n80803    kind=MAKEINTERFACE  type=string                                   enclosing-func=runtime.arena_heapify
+    base=n80814    kind=ALLOC          type=runtime.slice                            enclosing-func=runtime.arena_heapify
+    base=n83330    kind=ALLOC          type=runtime.Pinner                           enclosing-func=runtime.debugPinnerV1
+    base=n83332    kind=MAKEINTERFACE  type=unsafe.Pointer                           enclosing-func=runtime.debugPinnerV1
+    base=n87666    kind=ALLOC          type=runtime.weakHandleBox                    enclosing-func=runtime.getOrAddWeakHandle
+    base=n88302    kind=ALLOC          type=runtime.PanicNilError                    enclosing-func=runtime.gopanic
+    base=n88303    kind=MAKEINTERFACE  type=*runtime.PanicNilError                   enclosing-func=runtime.gopanic
+    base=n89128    kind=MAKEINTERFACE  type=runtime.uint16InterfacePtr               enclosing-func=runtime.init
+    base=n89130    kind=MAKEINTERFACE  type=runtime.uint32InterfacePtr               enclosing-func=runtime.init
+    base=n89132    kind=MAKEINTERFACE  type=runtime.uint64InterfacePtr               enclosing-func=runtime.init
+    base=n89134    kind=MAKEINTERFACE  type=runtime.stringInterfacePtr               enclosing-func=runtime.init
+    base=n89136    kind=MAKEINTERFACE  type=runtime.sliceInterfacePtr                enclosing-func=runtime.init
+    base=n90544    kind=MAKEINTERFACE  type=*runtime.pollDesc                        enclosing-func=runtime.init
+    base=n100305   kind=ALLOC          type=runtime.userArena                        enclosing-func=runtime.newUserArena
+    base=n100308   kind=MAKEINTERFACE  type=*runtime.userArena                       enclosing-func=runtime.newUserArena
+    base=n100310   kind=MAKEINTERFACE  type=func(a *runtime.userArena)               enclosing-func=runtime.newUserArena
+    base=n100375   kind=ALLOC          type=runtime.wakeableSleep                    enclosing-func=runtime.newWakeableSleep
+    base=n100379   kind=OTHER          type=chan struct{}                            go-type=*ssa.MakeChan enclosing-func=runtime.newWakeableSleep
+    base=n100382   kind=ALLOC          type=runtime.timer                            enclosing-func=runtime.newWakeableSleep
+    base=n100388   kind=MAKEINTERFACE  type=*runtime.wakeableSleep                   enclosing-func=runtime.newWakeableSleep
+    base=n102473   kind=MAKEINTERFACE  type=string                                   enclosing-func=runtime.preprintpanics
+    base=n102480   kind=MAKEINTERFACE  type=string                                   enclosing-func=runtime.preprintpanics
+    base=n108086   kind=MAKEINTERFACE  type=internal/abi.RegArgs                     enclosing-func=runtime.stkobjinit
+    base=n109076   kind=MAKEINTERFACE  type=*runtime.g                               enclosing-func=runtime.timeSleep
+  PROBEDIAG n81362    80 missing nodes -> 66 distinct missed objects
+    base=n17285    kind=GLOBAL         type=runtime.workType                         global=runtime.work (UNCLONEABLE singleton)
+    base=n17499    kind=GLOBAL         type=[4]struct{item runtime.stackpoolItem; _ [104]byte} global=runtime.stackpool (UNCLONEABLE singleton)
+    base=n17662    kind=GLOBAL         type=runtime.mheap                            global=runtime.mheap_ (UNCLONEABLE singleton)
+    base=n17778    kind=GLOBAL         type=runtime.mstats                           global=runtime.memstats (UNCLONEABLE singleton)
+    base=n17840    kind=GLOBAL         type=uintptr                                  global=runtime.zerobase (UNCLONEABLE singleton)
+    base=n17864    kind=GLOBAL         type=runtime.mspan                            global=runtime.emptymspan (UNCLONEABLE singleton)
+    base=n17975    kind=GLOBAL         type=runtime.scavengerState                   global=runtime.scavenger (UNCLONEABLE singleton)
+    base=n18024    kind=GLOBAL         type=struct{lock runtime.mutex; free [35]runtime.mSpanList} global=runtime.stackLarge (UNCLONEABLE singleton)
+    base=n21375    kind=FUNC           type=func(file *os.file) error                func=(*os.file).close$thunk
+    base=n21573    kind=FUNC           type=func(r *os.root) error                   func=(*os.root).Close$thunk
+    base=n22111    kind=FUNC           type=func(i *runtime.pinner)                  func=(*runtime.Pinner).Pin$1
+    base=n23209    kind=FUNC           type=func(s any, _ uintptr, _ int64)          func=(*runtime.scavengerState).init$1
+    base=n23213    kind=FUNC           type=func() bool                              func=(*runtime.scavengerState).init$3
+    base=n28321    kind=FUNC           type=func(fn *runtime.funcval, arg unsafe.Pointer) func=runtime.callCleanup[*os.processHandle]
+    base=n28323    kind=FUNC           type=func(fn *runtime.funcval, arg unsafe.Pointer) func=runtime.callCleanup[S]
+    base=n29405    kind=FUNC           type=func(arg any, _ uintptr, _ int64)        func=runtime.goroutineReady
+    base=n30249    kind=FUNC           type=func(arg any, seq uintptr, delta int64)  func=runtime.netpollDeadline
+    base=n30255    kind=FUNC           type=func(arg any, seq uintptr, delta int64)  func=runtime.netpollReadDeadline
+    base=n30257    kind=FUNC           type=func(arg any, seq uintptr, delta int64)  func=runtime.netpollWriteDeadline
+    base=n30305    kind=FUNC           type=func(a *runtime.userArena)               func=runtime.newUserArena$1
+    base=n30313    kind=FUNC           type=func(s any, _ uintptr, _ int64)          func=runtime.newWakeableSleep$1
+    base=n30879    kind=FUNC           type=func(vh unsafe.Pointer, p unsafe.Pointer) func=runtime.recordspan
+    base=n37455    kind=ALLOC          type=internal/runtime/maps.Map                enclosing-func=(*internal/runtime/maps.Map).Clone
+    base=n37481    kind=OTHER          type=[]*internal/runtime/maps.table           go-type=*ssa.MakeSlice enclosing-func=(*internal/runtime/maps.Map).Clone
+    base=n38217    kind=ALLOC          type=internal/runtime/maps.table              enclosing-func=(*internal/runtime/maps.table).clone
+    base=n40508    kind=MAKEINTERFACE  type=*os.file                                 enclosing-func=(*os.file).close
+    base=n40966    kind=MAKEINTERFACE  type=*os.root                                 enclosing-func=(*os.root).Close
+    base=n42883    kind=ALLOC          type=runtime.pinner                           enclosing-func=(*runtime.Pinner).Pin
+    base=n42895    kind=MAKEINTERFACE  type=*runtime.pinner                          enclosing-func=(*runtime.Pinner).Pin
+    base=n42897    kind=MAKEINTERFACE  type=func(i *runtime.pinner)                  enclosing-func=(*runtime.Pinner).Pin
+    base=n42909    kind=OTHER          type=[]unsafe.Pointer                         go-type=*ssa.Call enclosing-func=(*runtime.Pinner).Pin
+    base=n48991    kind=ALLOC          type=runtime.timer                            enclosing-func=(*runtime.scavengerState).init
+    base=n48997    kind=MAKEINTERFACE  type=*runtime.scavengerState                  enclosing-func=(*runtime.scavengerState).init
+    base=n51987    kind=MAKEINTERFACE  type=*runtime.userArena                       enclosing-func=(*runtime.userArena).free
+    base=n52103    kind=OTHER          type=[]unsafe.Pointer                         go-type=*ssa.Call enclosing-func=(*runtime.userArena).refill
+    base=n58538    kind=OTHER          type=[]uint32                                 go-type=*ssa.MakeSlice enclosing-func=(runtime.pMask).resize
+    base=n73727    kind=ALLOC          type=os.file                                  enclosing-func=os.newFile
+    base=n73758    kind=MAKEINTERFACE  type=*os.file                                 enclosing-func=os.newFile
+    base=n73760    kind=MAKEINTERFACE  type=func(file *os.file) error                enclosing-func=os.newFile
+    base=n73816    kind=ALLOC          type=os.root                                  enclosing-func=os.newRoot
+    base=n73821    kind=MAKEINTERFACE  type=*os.root                                 enclosing-func=os.newRoot
+    base=n73823    kind=MAKEINTERFACE  type=func(r *os.root) error                   enclosing-func=os.newRoot
+    base=n80803    kind=MAKEINTERFACE  type=string                                   enclosing-func=runtime.arena_heapify
+    base=n80814    kind=ALLOC          type=runtime.slice                            enclosing-func=runtime.arena_heapify
+    base=n83330    kind=ALLOC          type=runtime.Pinner                           enclosing-func=runtime.debugPinnerV1
+    base=n83332    kind=MAKEINTERFACE  type=unsafe.Pointer                           enclosing-func=runtime.debugPinnerV1
+    base=n87666    kind=ALLOC          type=runtime.weakHandleBox                    enclosing-func=runtime.getOrAddWeakHandle
+    base=n88302    kind=ALLOC          type=runtime.PanicNilError                    enclosing-func=runtime.gopanic
+    base=n88303    kind=MAKEINTERFACE  type=*runtime.PanicNilError                   enclosing-func=runtime.gopanic
+    base=n89128    kind=MAKEINTERFACE  type=runtime.uint16InterfacePtr               enclosing-func=runtime.init
+    base=n89130    kind=MAKEINTERFACE  type=runtime.uint32InterfacePtr               enclosing-func=runtime.init
+    base=n89132    kind=MAKEINTERFACE  type=runtime.uint64InterfacePtr               enclosing-func=runtime.init
+    base=n89134    kind=MAKEINTERFACE  type=runtime.stringInterfacePtr               enclosing-func=runtime.init
+    base=n89136    kind=MAKEINTERFACE  type=runtime.sliceInterfacePtr                enclosing-func=runtime.init
+    base=n90544    kind=MAKEINTERFACE  type=*runtime.pollDesc                        enclosing-func=runtime.init
+    base=n100305   kind=ALLOC          type=runtime.userArena                        enclosing-func=runtime.newUserArena
+    base=n100308   kind=MAKEINTERFACE  type=*runtime.userArena                       enclosing-func=runtime.newUserArena
+    base=n100310   kind=MAKEINTERFACE  type=func(a *runtime.userArena)               enclosing-func=runtime.newUserArena
+    base=n100375   kind=ALLOC          type=runtime.wakeableSleep                    enclosing-func=runtime.newWakeableSleep
+    base=n100379   kind=OTHER          type=chan struct{}                            go-type=*ssa.MakeChan enclosing-func=runtime.newWakeableSleep
+    base=n100382   kind=ALLOC          type=runtime.timer                            enclosing-func=runtime.newWakeableSleep
+    base=n100388   kind=MAKEINTERFACE  type=*runtime.wakeableSleep                   enclosing-func=runtime.newWakeableSleep
+    base=n102473   kind=MAKEINTERFACE  type=string                                   enclosing-func=runtime.preprintpanics
+    base=n102480   kind=MAKEINTERFACE  type=string                                   enclosing-func=runtime.preprintpanics
+    base=n108086   kind=MAKEINTERFACE  type=internal/abi.RegArgs                     enclosing-func=runtime.stkobjinit
+    base=n109076   kind=MAKEINTERFACE  type=*runtime.g                               enclosing-func=runtime.timeSleep
+engine footprint  median 22789  p90 23309  max 24636   (of 153502)
+PROBE: 4 / 263 isolated single-seed queries MISMATCH batch  (missing 246, extra 0)
+
+─── PROBEDIAG TOTAL (missed-object origin kinds, all mismatching receivers) ───
+  ALLOC          39
+  FUNC           42
+  GLOBAL         28
+  MAKEINTERFACE  78
+  OTHER          15
+  TOTAL          202
+DISPATCH: PASS  (all 513 receivers match batch)
+
+########## synth-errmerge fixture: TAXONOMY=1 (the cloneable-merge control) ##########
+TARGET            testdata/synth-errmerge
+load+ssa          190ms
+extract           16ms
+
+functions         3942
+nodes             71557
+objects           6932
+constraints       70097
+  addr                6932
+  copy               26406
+  gep                27357
+  load                5783
+  store               3430
+  invoke                28
+  icall                119
+  tfilter               13
+  untag                 29
+
+─── SOLVE (difference propagation; no HVN, no cycle elimination) ───
+status            CONVERGED
+wall              52ms
+propagations      306860
+MEMBERSHIP TESTS  1504339
+worklist pops     85040
+copy edges        49977
+nodes w/ pts      31819
+total pts size    306860
+MEAN |pts|        9.64
+dispatch resolved 236
+MAX |pts|         148  (at node 7012)
+GOD OBJECT        node 8911, in pts of 4687 nodes, type runtime.mheap
+|pts| histogram (log2 buckets):
+  <=2^0      23989 nodes
+  <=2^1       1599 nodes
+  <=2^2       1136 nodes
+  <=2^3        338 nodes
+  <=2^4        414 nodes
+  <=2^5         64 nodes
+  <=2^6       1756 nodes
+  <=2^7       2521 nodes
+
+########## regression: corpora gate ##########
+-----------------------------------------
+EQUIV    126 pass / 0 fail
+DISPATCH 126 pass / 0 fail
+PROBE    126 pass / 0 fail
