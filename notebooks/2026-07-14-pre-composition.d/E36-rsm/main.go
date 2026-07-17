@@ -17,6 +17,8 @@ import (
 	"os"
 	"sort"
 	"time"
+
+	"golang.org/x/tools/go/ssa"
 )
 
 func main() {
@@ -36,6 +38,14 @@ func main() {
 	b, prog := extract(dir)
 	ptsBatch, godObj, converged := solveDiff(b, prog, budget)
 	N := b.nNodes
+
+	// ---- Task 0 flood-taxonomy dump (E36 Phase 2 gate; env-gated, additive) ----
+	// Classifies the top-K god objects by holder count as GLOBAL (uncloneable
+	// singleton) vs an allocation-site object (cloneable per calling context by
+	// Phase 2's heap-cloning design). Does NOT touch extract.go/solve.go/slice.go.
+	if os.Getenv("TAXONOMY") != "" {
+		taxonomyDump(b, ptsBatch, 15)
+	}
 
 	// dispatch receiver nodes: the pointer of every invoke/icall constraint
 	recvSet := map[int]bool{}
@@ -298,4 +308,125 @@ func sameSet(a, b map[int]bool) bool {
 		}
 	}
 	return true
+}
+
+// taxonomyDump is Task 0 of the E36 Phase 2 flood-taxonomy gate. It reports
+// the top-K god objects by holder count and classifies each by ORIGIN KIND,
+// derived from the dynamic type of the ssa.Value that keyed its allocation in
+// b.objBase (extract.go's obj(key, t)):
+//
+//	GLOBAL        *ssa.Global        — one object, no allocation context, UNCLONEABLE
+//	ALLOC         *ssa.Alloc         — allocation site, cloneable per calling context
+//	MAKEINTERFACE *ssa.MakeInterface — allocation site, cloneable per calling context
+//	FUNC          *ssa.Function      — a function/closure object
+//	<other>       anything else      — printed by concrete Go type, not silently bucketed
+//
+// This is the cloneability signal Phase 2's heap-cloning needs: an ALLOC or
+// MAKEINTERFACE inside errors.New/fmt.Errorf, shared by many callers, is
+// exactly the merge Phase 2 splits. A GLOBAL has no allocation context and
+// cannot be split by per-context cloning.
+//
+// Reads only b.objBase/objType (already retained by the frozen extractor) and
+// the ptsBatch returned by solveDiff; does not edit or reach into
+// extract.go/solve.go internals. Sorted for PRESENTATION only — the analysis
+// itself (holder-count accumulation) iterates ptsBatch/objBase in whatever
+// order Go gives, same as the rest of the (unsorted-by-design) engine.
+func taxonomyDump(b *builder, ptsBatch []map[int]bool, k int) {
+	// Reverse b.objBase (ssa.Value -> base) into (base -> ssa.Value). Injective:
+	// obj(key, t) allocates a fresh base the first time a given key is seen.
+	keyOf := make(map[int]ssa.Value, len(b.objBase))
+	for key, base := range b.objBase {
+		keyOf[base] = key
+	}
+
+	// Recompute the object-id -> base map the same way solve.go/rsm.go do, from
+	// b.objSize (already retained by the frozen extractor). Any node inside an
+	// object's flat [base, base+size) range collapses to that object's base.
+	n := b.nNodes
+	base := make([]int, n)
+	for i := range base {
+		base[i] = -1
+	}
+	for bs, size := range b.objSize {
+		for off := 0; off < size; off++ {
+			if bs+off < n {
+				base[bs+off] = bs
+			}
+		}
+	}
+
+	// Holder counts, aggregated to object base: how many pts sets (of ALL N
+	// nodes, batch ground truth) contain some node of this object.
+	holders := map[int]int{}
+	for _, s := range ptsBatch {
+		for o := range s {
+			ob := base[o]
+			if ob < 0 {
+				ob = o
+			}
+			holders[ob]++
+		}
+	}
+
+	type row struct {
+		base  int
+		count int
+	}
+	rows := make([]row, 0, len(holders))
+	for ob, c := range holders {
+		rows = append(rows, row{ob, c})
+	}
+	sort.Slice(rows, func(i, j int) bool {
+		if rows[i].count != rows[j].count {
+			return rows[i].count > rows[j].count
+		}
+		return rows[i].base < rows[j].base // deterministic tie-break, presentation only
+	})
+	if k > len(rows) {
+		k = len(rows)
+	}
+
+	fmt.Printf("\n─── FLOOD TAXONOMY (top %d god objects by holder count) ───\n", k)
+	for i := 0; i < k; i++ {
+		ob, cnt := rows[i].base, rows[i].count
+		t := b.objType[ob]
+		kind, detail := classifyOrigin(keyOf[ob])
+		fmt.Printf("  #%-2d base=n%-8d holders=%-8d kind=%-14s type=%-40v %s\n", i+1, ob, cnt, kind, t, detail)
+	}
+}
+
+// classifyOrigin reports the ORIGIN KIND of an object's key and a detail
+// string: for GLOBAL, the global's full (package-qualified) name; for
+// ALLOC/MAKEINTERFACE, the enclosing function (the cloneability signal — an
+// alloc inside errors.New/fmt.Errorf shared by many callers is exactly the
+// multi-allocation merge Phase 2 splits); for FUNC, the function's full name.
+// Anything unexpected is reported by its concrete Go type, never silently
+// bucketed, plus its enclosing function if it has one.
+func classifyOrigin(key ssa.Value) (kind, detail string) {
+	switch v := key.(type) {
+	case *ssa.Global:
+		return "GLOBAL", fmt.Sprintf("global=%s (UNCLONEABLE singleton)", v.String())
+	case *ssa.Alloc:
+		return "ALLOC", fmt.Sprintf("enclosing-func=%s", parentName(v))
+	case *ssa.MakeInterface:
+		return "MAKEINTERFACE", fmt.Sprintf("enclosing-func=%s", parentName(v))
+	case *ssa.Function:
+		return "FUNC", fmt.Sprintf("func=%s", v.String())
+	case nil:
+		return "UNKNOWN", "no key found in objBase (unexpected)"
+	default:
+		detail := fmt.Sprintf("go-type=%T", key)
+		if p, ok := key.(interface{ Parent() *ssa.Function }); ok {
+			detail += fmt.Sprintf(" enclosing-func=%s", parentName(p))
+		}
+		return "OTHER", detail
+	}
+}
+
+func parentName(v interface{ Parent() *ssa.Function }) string {
+	fn := v.Parent()
+	if fn == nil {
+		return "<nil>"
+	}
+	return fn.String()
 }
