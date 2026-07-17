@@ -354,12 +354,76 @@ All tests, including the `define-record-type` explosion test, are written as par
 
 ## 8. Deferred / open questions
 
+### 8.1 The hygiene gate is NOT open — Wile's expander is Scheme-visible (verified 2026-07-16)
+
+**This section originally framed "stay lexical vs. reuse Wile's expander" as an open
+decision to be made later. That framing is wrong: the expander is already exposed, and it
+consumes exactly the artifact this design's v1 produces.** Recorded here for the v2 track;
+not built (v1 shipped lexical, and its `provenance.limits` accurately describe v1).
+
+**The primitives** (`wile/extensions/eval/register.go:72`, extension `eval`, live in goast's
+KitchenSink engine — `(procedure? expand)` → `#t`):
+
+| Primitive | Arity | Contract |
+|---|---|---|
+| `expand` | 1 | *"Fully macro-expands a syntax object or datum. Returns the expanded syntax."* Impl `PrimExpand` (`wile/extensions/eval/prim_eval.go:400`). **Requires a `syntax.SyntaxValue`** — passing a plain quoted datum raises `expand: expected syntax object` (`prim_eval.go:407-410`). |
+| `expand-once` | 1 | `PrimExpandOnce` (`prim_eval.go:439`). Returns MULTIPLE values; the registration notes `ReturnType` annotates only the primary. |
+
+**Verified behavior** (probes run against the built `cmd/wile-goast`):
+
+```scheme
+;; 1. Full expansion works on read-syntax output — the exact artifact scmnav produces.
+(define-syntax swap! (syntax-rules () ((_ a b) (let ((tmp a)) (set! a b) (set! b tmp)))))
+(syntax->datum (expand (read-syntax (open-input-string "(swap! p q)"))))
+  ;=> (let ((tmp p)) (set! p q) (set! q tmp))
+
+;; 2. *** Expansion PRESERVES the user-written source position of a macro-generated name. ***
+(define-syntax mydef (syntax-rules () ((_ n v) (define n v))))
+;; source "(mydef foo 42)" — `foo` sits at 0-based col 7
+(let* ((x     (expand (read-syntax (open-input-string "(mydef foo 42)"))))
+       (name  (cadr (syntax->list x))))
+  (list (syntax->datum name) (syntax-line name) (syntax-column name)))
+  ;=> (foo 1 7)      <- the ORIGINAL col 7, NOT a synthetic position
+;; control: plain "(define foo 42)" -> foo at col 8. Both correct, so positions are real.
+```
+
+**Why this matters.** The expanded value is the same syntax-object shape `classify-def-form`
+already consumes, so the pipeline is `read-syntax → expand → <existing classifier>`. That
+would:
+- **delete `"macro-generated bindings invisible"` from `scmnav-limits`** — probe 2 IS that
+  case: a macro-generated `define` becomes visible AND points at the source the user wrote;
+- likely delete `"cond-expand not evaluated"` (the compiler has
+  `wile/pkg/machine/compilation/compile_cond_expand.go`; expansion should resolve it) —
+  **unverified, check before claiming**;
+- make `scheme_refs` **hygiene-accurate by construction** rather than a lexical
+  approximation, because it would walk expanded code. This is the whole reason the gate
+  existed, and it is answerable in the affirmative today.
+
+**The real cost — expansion is ENVIRONMENT-SENSITIVE.** The probes worked because the macro
+was defined first. Expanding `belief-checkers.scm`'s forms requires `(wile goast belief)`'s
+macros in scope. The `.sld`'s `import` clause names what to load (v1 already parses it into
+the library-record's `imports`), so this is tractable — but it is the actual build:
+1. per-library environment setup (load its imports before expanding its forms);
+2. soft-error discipline for expansion failures (unbound macro / missing import), mirroring
+   §7's `parse-errors` — a failed expansion must not vanish silently;
+3. filtering hygienic macro-INTERNAL bindings (`swap!`'s `tmp`) so they don't pollute the
+   index — user-written names keep real positions, introduced ones presumably do not, which
+   may itself be the filter;
+4. `PrimExpand` branches on `mc.ExpanderContext()` (`prim_eval.go:413`) — non-nil uses the
+   current expansion context, else a fallback path. **Not fully read; verify which branch a
+   goast query takes and whether it matters.**
+
+**Method note.** This design's §4 originally asserted `syntax-source` supplied the file
+(false — see the §4 correction), and this §8 asserted the expander was an open question
+(false — it is exposed). Both errors have the same shape: *verifying that a capability
+exists in Go, without verifying it is reachable and populated from Scheme.* The reader was
+checked that way and the expander was not checked at all.
+
+### 8.2 Still genuinely deferred
+
 - **`scheme_refs` (references / callers).** The natural v2. v1's def-index + library-index
-  is the substrate it extends, not replaces. First cut would be lexical (application-site
-  collection by name); the open gate is whether to stay lexical or reuse Wile's expander
-  for hygiene-accurate resolution (shadowing, macro-introduced references). Decide before
-  building refs, not now.
-- **Hygiene-accurate resolution.** Larger track; overlaps Wile's expander. Out of v1.
+  is the substrate it extends, not replaces. Per §8.1 it should be built on expanded syntax
+  (hygiene-accurate by construction), not as a lexical approximation.
 - **ctags/etags stopgap** (considered, rejected as the target): cheap external index, no
   export-map, dead-end for later structure queries. Only if something is needed sooner than
   this can ship.

@@ -913,7 +913,36 @@ invisible, `cond-expand` is not evaluated, references/caller-finding are deferre
       unused. Wiring it to the port's filename would make `syntax-source` real and let
       wile-goast drop its `with-source-file` path-injection workaround entirely. **[S, wile-side]**
 
+- [ ] **[v2, GATE RESOLVED] Expansion-backed Scheme analysis — Wile's expander is
+      Scheme-visible and position-preserving.** Full write-up + probes:
+      **design §8.1** (`plans/2026-07-15-scheme-source-navigation-design.md`). Summary:
+      * `expand` (arity 1) and `expand-once` are registered in the `eval` extension
+        (`wile/extensions/eval/register.go:72`; impls `wile/extensions/eval/prim_eval.go:400,439`)
+        and are LIVE in goast's KitchenSink engine. `expand` REQUIRES a syntax object —
+        a plain quoted datum raises `expand: expected syntax object`.
+      * **Verified:** `(expand (read-syntax …))` fully expands, and the expansion keeps the
+        USER-WRITTEN source position: `(mydef foo 42)` with `foo` at col 7 expands to
+        `(define foo 42)` reporting `foo` at line 1 col 7 (control: plain `(define foo 42)`
+        → col 8). Positions are real, not synthetic.
+      * Expanded output is the SAME syntax-object shape `classify-def-form` already eats, so
+        the pipeline is `read-syntax → expand → <existing classifier>`.
+      **Payoff:** removes `"macro-generated bindings invisible"` from the shipped
+      `scmnav-limits` (that probe IS the case), likely removes `"cond-expand not evaluated"`
+      (unverified — check first), and makes `scheme_refs` hygiene-accurate BY CONSTRUCTION
+      instead of a lexical approximation.
+      **Cost — expansion is ENVIRONMENT-SENSITIVE:** a library's macros must be in scope to
+      expand its forms. The `.sld`'s `import` clause names what to load, and v1 already
+      parses it into the library-record's `imports`, so it's tractable — but the build is:
+      per-library env setup; soft-error discipline for expansion failures (mirroring §7's
+      `parse-errors` — a failed expansion must not vanish silently); filtering hygienic
+      macro-internal bindings (`swap!`'s `tmp`); and confirming which `mc.ExpanderContext()`
+      branch (`prim_eval.go:413`) a goast query takes.
+      **Not scheduled** — recorded while precise. Weigh against the differentiation criterion
+      before building: Scheme *navigation* cleared the bar on a total-coverage argument (no
+      Scheme LSP exists, grep is bad, ε obviously high); deeper Scheme analysis is UNMEASURED,
+      whereas dispatch remains the one clean measured win and it is Go-side. **[M–L]**
+
 - [ ] **[v2] `scheme_refs` — reference / caller finding.** The natural next track; v1's
-      def-index + library-index is the substrate it extends. Open gate (decide before
-      building): stay lexical, or reuse Wile's expander for hygiene-accurate resolution
-      (shadowing, macro-introduced references). See design §8. **[M]**
+      def-index + library-index is the substrate it extends. Per the item above, build it on
+      EXPANDED syntax (hygiene-accurate by construction), not as a lexical approximation.
+      See design §8.2. **[M]**
