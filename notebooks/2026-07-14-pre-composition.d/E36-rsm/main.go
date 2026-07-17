@@ -189,6 +189,18 @@ func main() {
 	var efoots []int
 	probeN, probeMiss, probeMissing, probeExtra := 0, 0, 0, 0
 	var probeFails []string
+	// ---- Task 0 follow-up: PROBEDIAG (E36 Phase 2 gate; env-gated, additive) ----
+	// For every PROBE-mismatching receiver, classify EVERY missed object
+	// (batch_pts(r) \ demand_pts(r), collapsed node->object) by ORIGIN KIND, to
+	// settle whether the plan's §2.2 "context-collapsed, cloneable via per-
+	// context heap cloning" claim actually holds for soundfix's 4/263 residual.
+	probeDiag := os.Getenv("PROBEDIAG") != ""
+	var diagBase []int
+	var diagKeyOf map[int]ssa.Value
+	diagTotals := map[string]int{}
+	if probeDiag {
+		diagBase, diagKeyOf = objectBaseMaps(b)
+	}
 	for _, r := range recvs {
 		if len(ptsBatch[r]) == 0 {
 			continue
@@ -213,6 +225,9 @@ func main() {
 					probeFails = append(probeFails, fmt.Sprintf("recv n%d batch|%d| demand|%d| (missing %d, extra %d) sample-type %s",
 						r, len(ptsBatch[r]), len(de.pts[r]), m, e, ty))
 				}
+				if probeDiag {
+					dumpProbeDiag(b, r, ptsBatch[r], de.pts[r], diagBase, diagKeyOf, diagTotals)
+				}
 			}
 		}
 		de.reset()
@@ -230,6 +245,20 @@ func main() {
 		}
 		fmt.Printf("PROBE: %d / %d isolated single-seed queries MISMATCH batch  (missing %d, extra %d)\n",
 			probeMiss, probeN, probeMissing, probeExtra)
+		if probeDiag {
+			fmt.Printf("\n─── PROBEDIAG TOTAL (missed-object origin kinds, all mismatching receivers) ───\n")
+			var kinds []string
+			for k := range diagTotals {
+				kinds = append(kinds, k)
+			}
+			sort.Strings(kinds)
+			total := 0
+			for _, k := range kinds {
+				fmt.Printf("  %-14s %d\n", k, diagTotals[k])
+				total += diagTotals[k]
+			}
+			fmt.Printf("  %-14s %d\n", "TOTAL", total)
+		}
 	}
 
 	// ---- corpora correctness gate (converged only): full receiver equivalence ----
@@ -332,28 +361,7 @@ func sameSet(a, b map[int]bool) bool {
 // itself (holder-count accumulation) iterates ptsBatch/objBase in whatever
 // order Go gives, same as the rest of the (unsorted-by-design) engine.
 func taxonomyDump(b *builder, ptsBatch []map[int]bool, k int) {
-	// Reverse b.objBase (ssa.Value -> base) into (base -> ssa.Value). Injective:
-	// obj(key, t) allocates a fresh base the first time a given key is seen.
-	keyOf := make(map[int]ssa.Value, len(b.objBase))
-	for key, base := range b.objBase {
-		keyOf[base] = key
-	}
-
-	// Recompute the object-id -> base map the same way solve.go/rsm.go do, from
-	// b.objSize (already retained by the frozen extractor). Any node inside an
-	// object's flat [base, base+size) range collapses to that object's base.
-	n := b.nNodes
-	base := make([]int, n)
-	for i := range base {
-		base[i] = -1
-	}
-	for bs, size := range b.objSize {
-		for off := 0; off < size; off++ {
-			if bs+off < n {
-				base[bs+off] = bs
-			}
-		}
-	}
+	base, keyOf := objectBaseMaps(b)
 
 	// Holder counts, aggregated to object base: how many pts sets (of ALL N
 	// nodes, batch ground truth) contain some node of this object.
@@ -429,4 +437,79 @@ func parentName(v interface{ Parent() *ssa.Function }) string {
 		return "<nil>"
 	}
 	return fn.String()
+}
+
+// objectBaseMaps recomputes, from the frozen extractor's retained
+// b.objBase/b.objSize, (1) node -> owning-object-base (any node inside an
+// object's flat [base, base+size) range collapses to that object's base,
+// same as solve.go/rsm.go/taxonomyDump) and (2) object-base -> the ssa.Value
+// key that allocated it (the inverse of b.objBase; injective, since
+// obj(key, t) allocates a fresh base the first time a given key is seen).
+// Shared by taxonomyDump and dumpProbeDiag so the base/keyOf derivation is
+// defined exactly once.
+func objectBaseMaps(b *builder) (base []int, keyOf map[int]ssa.Value) {
+	n := b.nNodes
+	base = make([]int, n)
+	for i := range base {
+		base[i] = -1
+	}
+	for bs, size := range b.objSize {
+		for off := 0; off < size; off++ {
+			if bs+off < n {
+				base[bs+off] = bs
+			}
+		}
+	}
+	keyOf = make(map[int]ssa.Value, len(b.objBase))
+	for key, bse := range b.objBase {
+		keyOf[bse] = key
+	}
+	return base, keyOf
+}
+
+// dumpProbeDiag is the PROBEDIAG=1 follow-up to Task 0: for ONE PROBE-
+// mismatching receiver r, it computes the set difference batch_pts(r) \
+// demand_pts(r) — the objects an isolated single-seed query MISSES relative
+// to the batch oracle — collapses each missing NODE to its owning OBJECT
+// base (a struct object may contribute several tracked field nodes; the
+// cloneability question in plan §2.2/§6.3 is per-OBJECT, not per-node), and
+// classifies every distinct missed object by ORIGIN KIND via classifyOrigin.
+//
+// This is the data Task 0's follow-up needs: plan §2.2 claims the residual
+// is "context-collapsed merged runtime objects" fixable by per-context heap
+// cloning. Per Task 0's own taxonomy, heap cloning can only split an ALLOC /
+// MAKEINTERFACE (an allocation site, cloneable per calling context) — never
+// a GLOBAL (one object, no allocation context to clone). If the missed set
+// here is GLOBAL-dominated, that mechanism claim is false for this residual.
+//
+// diagTotals accumulates GLOBAL/ALLOC/MAKEINTERFACE/FUNC/OTHER/UNKNOWN
+// counts across all mismatching receivers in the caller's loop, so the
+// caller can print one TOTAL summary after processing every receiver.
+func dumpProbeDiag(b *builder, r int, batchSet, demandSet map[int]bool, base []int, keyOf map[int]ssa.Value, diagTotals map[string]int) {
+	missingObjs := map[int]bool{}
+	missingNodes := 0
+	for o := range batchSet {
+		if demandSet[o] {
+			continue
+		}
+		missingNodes++
+		ob := base[o]
+		if ob < 0 {
+			ob = o
+		}
+		missingObjs[ob] = true
+	}
+	var bases []int
+	for ob := range missingObjs {
+		bases = append(bases, ob)
+	}
+	sort.Ints(bases) // presentation only; classification itself is order-independent
+
+	fmt.Printf("  PROBEDIAG n%-8d %d missing nodes -> %d distinct missed objects\n", r, missingNodes, len(bases))
+	for _, ob := range bases {
+		t := b.objType[ob]
+		kind, detail := classifyOrigin(keyOf[ob])
+		diagTotals[kind]++
+		fmt.Printf("    base=n%-8d kind=%-14s type=%-40v %s\n", ob, kind, t, detail)
+	}
 }
