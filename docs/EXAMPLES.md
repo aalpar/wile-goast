@@ -67,8 +67,10 @@ diff, classifies each difference, and scores the pair for unification fitness.
 
 ### Key Techniques
 
-**Recursive s-expression diff.** The core `ast-diff` function handles four
-shapes:
+Both this script and `unify-detect-pkg.scm` import the engine from
+`(wile goast unify)`; neither carries its own copy.
+
+**Recursive s-expression diff.** `ast-diff` handles four shapes:
 
 1. Two tagged nodes with the same tag: compare fields pairwise
 2. Two tagged nodes with different tags: structural divergence
@@ -83,6 +85,7 @@ The result is `(shared-count diff-count diffs)` where each diff is
 | Category | Weight | What it means |
 |----------|--------|---------------|
 | `identifier` | 0 | Free rename, no parameter needed |
+| `derived-type` | 0 | Implied by a root substitution (see §3) |
 | `type-name` | 1 | One type parameter covers all |
 | `literal-value` | 1 | One value parameter per distinct literal |
 | `operator` | 2 | Callback or flag parameter |

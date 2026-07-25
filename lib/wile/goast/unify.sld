@@ -17,7 +17,7 @@
     tree-diff ast-diff ssa-diff
     classify-ast-diff classify-ssa-diff
     diff-result-similarity diff-result-diffs diff-result-shared diff-result-diff-count
-    score-diffs find-root-substitutions collapse-diffs
+    score-diffs find-root-substitutions collapse-diffs derivable?
     unifiable?
     ;; v2: algebraic equivalence
     ssa-equivalent?)

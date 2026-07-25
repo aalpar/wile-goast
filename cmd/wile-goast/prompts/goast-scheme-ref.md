@@ -136,7 +136,7 @@ Also re-exports from utils: `nf`, `tag?`, `walk`, `filter-map`, `flat-map`, `mem
 `tree-diff`, `ast-diff`, `ssa-diff`,
 `classify-ast-diff`, `classify-ssa-diff`,
 `diff-result-similarity`, `diff-result-diffs`, `diff-result-shared`, `diff-result-diff-count`,
-`score-diffs`, `find-root-substitutions`, `collapse-diffs`, `unifiable?`, `ssa-equivalent?`
+`score-diffs`, `find-root-substitutions`, `collapse-diffs`, `derivable?`, `unifiable?`, `ssa-equivalent?`
 
 ### (wile goast ssa-normalize)
 `ssa-normalize`, `ssa-rule-set`, `ssa-rule-identity`, `ssa-rule-commutative`,

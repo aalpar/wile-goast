@@ -251,6 +251,7 @@
             (cdr rs)))))
 
 (define (derivable? val-a val-b roots)
+  "Is the substitution VAL-A -> VAL-B implied by the root substitutions?\nTrue when applying ROOTS to VAL-A yields VAL-B, i.e. the pair carries no\ninformation beyond the roots already found.\n\nParameters:\n  val-a : string\n  val-b : string\n  roots : list\nReturns: boolean\nCategory: goast-unify\n\nSee also: `find-root-substitutions', `collapse-diffs'."
   (equal? (apply-substitutions val-a roots) val-b))
 
 (define (sort-by-length pairs)

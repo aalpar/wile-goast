@@ -1128,6 +1128,7 @@ Shared diff/scoring library for AST and SSA structural comparison. Pluggable cla
 | `(diff-result-diff-count r)` | Differing node count |
 | `(diff-result-diffs r)` | List of `(category path val-a val-b)` entries |
 | `(find-root-substitutions pairs)` | Minimal substitution set from `(val-a . val-b)` diff pairs |
+| `(derivable? val-a val-b roots)` | Is `val-a -> val-b` already implied by the root substitutions? |
 | `(collapse-diffs diffs roots)` | Drop diffs derivable from the root substitutions |
 | `(score-diffs shared diff-count diffs)` | Compute effective similarity with substitution collapsing |
 | `(unifiable? result threshold)` | Verdict: `#t` when effective similarity >= threshold and all remaining diffs are type/register |
