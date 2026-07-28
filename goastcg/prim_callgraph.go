@@ -51,16 +51,11 @@ var (
 // table. See PrimGoCallgraph for validation and dispatchCallgraph for lookup.
 // The user-facing "valid algorithms" message derives from these keys too
 // (validAlgorithmNames), so no copy of the name list survives to drift.
-// The error result is forced by the shared value type: only "rta" can fail, but
-// every entry must satisfy the same signature to stay in one table.
+// Only "rta" can fail; the infallible algorithms reach the shared signature
+// through lift, which keeps that fact in their types.
 var callgraphBuilders = map[string]func(*ssa.Program) (*callgraph.Graph, error){
-	"static": func(prog *ssa.Program) (*callgraph.Graph, error) { //nolint:unparam // uniform table signature; see above
-		return static.CallGraph(prog), nil
-	},
-
-	"cha": func(prog *ssa.Program) (*callgraph.Graph, error) { //nolint:unparam // uniform table signature; see above
-		return cha.CallGraph(prog), nil
-	},
+	"static": lift(static.CallGraph),
+	"cha":    lift(cha.CallGraph),
 
 	"rta": func(prog *ssa.Program) (*callgraph.Graph, error) {
 		mains := ssautil.MainPackages(prog.AllPackages())
@@ -79,15 +74,26 @@ var callgraphBuilders = map[string]func(*ssa.Program) (*callgraph.Graph, error){
 		return result.CallGraph, nil
 	},
 
-	"vta": func(prog *ssa.Program) (*callgraph.Graph, error) { //nolint:unparam // uniform table signature; see above
-		initial := cha.CallGraph(prog)
-		allFuncs := ssautil.AllFunctions(prog)
-		return vta.CallGraph(allFuncs, initial), nil
-	},
+	"vta":     lift(vtaCallGraph),
+	"precise": lift(preciseCallGraph),
+}
 
-	"precise": func(prog *ssa.Program) (*callgraph.Graph, error) { //nolint:unparam // uniform table signature; see above
-		return preciseCallGraph(prog), nil
-	},
+// lift adapts a constructor that cannot fail to the callgraphBuilders signature,
+// so an infallible algorithm says so in its own type instead of threading a nil
+// error through the table.
+func lift(build func(*ssa.Program) *callgraph.Graph) func(*ssa.Program) (*callgraph.Graph, error) {
+	return func(prog *ssa.Program) (*callgraph.Graph, error) {
+		return build(prog), nil
+	}
+}
+
+// vtaCallGraph seeds VTA with a CHA graph over every function in the program.
+// Named rather than inlined because vta.CallGraph takes (funcs, initial), so it
+// does not match lift's argument shape directly.
+func vtaCallGraph(prog *ssa.Program) *callgraph.Graph {
+	initial := cha.CallGraph(prog)
+	allFuncs := ssautil.AllFunctions(prog)
+	return vta.CallGraph(allFuncs, initial)
 }
 
 // validAlgorithmNames is the sorted key set of callgraphBuilders, used to build
