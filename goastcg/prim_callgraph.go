@@ -51,12 +51,14 @@ var (
 // table. See PrimGoCallgraph for validation and dispatchCallgraph for lookup.
 // The user-facing "valid algorithms" message derives from these keys too
 // (validAlgorithmNames), so no copy of the name list survives to drift.
+// The error result is forced by the shared value type: only "rta" can fail, but
+// every entry must satisfy the same signature to stay in one table.
 var callgraphBuilders = map[string]func(*ssa.Program) (*callgraph.Graph, error){
-	"static": func(prog *ssa.Program) (*callgraph.Graph, error) {
+	"static": func(prog *ssa.Program) (*callgraph.Graph, error) { //nolint:unparam // uniform table signature; see above
 		return static.CallGraph(prog), nil
 	},
 
-	"cha": func(prog *ssa.Program) (*callgraph.Graph, error) {
+	"cha": func(prog *ssa.Program) (*callgraph.Graph, error) { //nolint:unparam // uniform table signature; see above
 		return cha.CallGraph(prog), nil
 	},
 
@@ -77,13 +79,13 @@ var callgraphBuilders = map[string]func(*ssa.Program) (*callgraph.Graph, error){
 		return result.CallGraph, nil
 	},
 
-	"vta": func(prog *ssa.Program) (*callgraph.Graph, error) {
+	"vta": func(prog *ssa.Program) (*callgraph.Graph, error) { //nolint:unparam // uniform table signature; see above
 		initial := cha.CallGraph(prog)
 		allFuncs := ssautil.AllFunctions(prog)
 		return vta.CallGraph(allFuncs, initial), nil
 	},
 
-	"precise": func(prog *ssa.Program) (*callgraph.Graph, error) {
+	"precise": func(prog *ssa.Program) (*callgraph.Graph, error) { //nolint:unparam // uniform table signature; see above
 		return preciseCallGraph(prog), nil
 	},
 }
@@ -109,7 +111,8 @@ func PrimGoCallgraph(mc machine.CallContext) error {
 			"go-callgraph: argument 2: expected an algorithm string but got %T", mc.Arg(1))
 	}
 
-	if _, ok := callgraphBuilders[algorithm]; !ok {
+	_, ok := callgraphBuilders[algorithm]
+	if !ok {
 		return werr.WrapForeignErrorf(errCGInvalidAlgorithm,
 			"go-callgraph: algorithm must be one of %s; got %s",
 			strings.Join(validAlgorithmNames, ", "), algorithm)

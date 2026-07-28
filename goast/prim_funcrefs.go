@@ -71,7 +71,7 @@ func funcRefsFromPattern(mc machine.CallContext, pattern *values.String) error {
 type funcRefEntry struct {
 	name    string
 	pkg     string
-	pos     string                     // "file:line:col", or "" when the position is invalid
+	pos     string                 // "file:line:col", or "" when the position is invalid
 	extRefs map[string]Set[string] // ext-pkg-path -> set of object names
 }
 

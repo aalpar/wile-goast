@@ -273,9 +273,9 @@ type fieldInfo struct {
 // buildFuncSummary does one pass over a function's instructions to
 // collect field accesses. Returns nil if the function accesses no fields.
 func buildFuncSummary(fn *ssa.Function, pkgPath string) values.Value {
-	fieldAddrs := map[string]fieldInfo{} // register name -> info
+	fieldAddrs := map[string]fieldInfo{}    // register name -> info
 	storeTargets := make(goast.Set[string]) // addr register names that are stored to
-	var directReads []fieldInfo          // Field (not FieldAddr) instructions
+	var directReads []fieldInfo             // Field (not FieldAddr) instructions
 
 	for _, block := range fn.Blocks {
 		for _, instr := range block.Instrs {
