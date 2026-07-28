@@ -20,6 +20,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -464,4 +465,81 @@ func TestPhase1ToolsRegistered(t *testing.T) {
 	} {
 		qt.Assert(t, names[want], qt.IsTrue, qt.Commentf("missing tool: %s", want))
 	}
+}
+
+// goastssaPkg yields 13941 candidate pairs, comfortably over the projection
+// ceiling, so it exercises the guard on real (not fixture) input.
+const goastssaPkg = "github.com/aalpar/wile-goast/goastssa/..."
+
+// find_duplicates must refuse a target wider than the projection ceiling
+// before paying the scoring cost, and say so in terms the caller can act on.
+// Without the guard this target scores for ~64s and then dies on a bare
+// "call depth 10001 exceeds limit 10000" with no target, count, or remedy.
+func TestFindDuplicates_PairCountGuard(t *testing.T) {
+	mc := inProcessClient(t)
+
+	ctx := context.Background()
+	req := mcp.CallToolRequest{}
+	req.Params.Name = "find_duplicates"
+	req.Params.Arguments = map[string]any{"target": goastssaPkg}
+	res, err := mc.CallTool(ctx, req)
+	qt.Assert(t, err, qt.IsNil)
+	qt.Assert(t, res.IsError, qt.IsTrue)
+
+	tc, ok := mcp.AsTextContent(res.Content[0])
+	qt.Assert(t, ok, qt.IsTrue)
+	// The count is not pinned (it tracks goastssa's own churn); the ceiling
+	// and the remedy are, since those are what make the error actionable.
+	for _, want := range []string{"candidate pairs", "9992", "narrow the target"} {
+		qt.Assert(t, strings.Contains(tc.Text, want), qt.IsTrue,
+			qt.Commentf("guard message not actionable: %s", tc.Text))
+	}
+}
+
+// The guard must not fire on a target inside the ceiling: the dupcluster
+// fixture still returns its clone pair.
+func TestFindDuplicates_GuardAllowsSmallTarget(t *testing.T) {
+	mc := inProcessClient(t)
+	env := callTool(t, mc, "find_duplicates", map[string]any{"target": dupclusterPkg})
+	envelopeOK(t, env, 1.0)
+	qt.Assert(t, len(env["result"].([]any)) > 0, qt.IsTrue)
+}
+
+// goastcfgPkg is a real package (unlike the phase1 fixture): 14 functions, so
+// compute-idf's log(14/df) is a BigFloat for every df that does not divide 14.
+const goastcfgPkg = "github.com/aalpar/wile-goast/goastcfg/..."
+
+// containsFloat64 reports whether any leaf of a marshalled envelope is a
+// float64. Shape-agnostic: high-idf keys are package-path strings, not
+// symbols, so the alist marshals as dotted pairs rather than an object.
+func containsFloat64(v any) bool {
+	switch x := v.(type) {
+	case float64:
+		return true
+	case map[string]any:
+		for _, e := range x {
+			if containsFloat64(e) {
+				return true
+			}
+		}
+	case []any:
+		return slices.ContainsFunc(x, containsFloat64)
+	}
+	return false
+}
+
+// recommend_split must marshal a real package's report. The phase1 fixture
+// passes by arithmetic accident (N=4, one high-IDF package at df=2, so 4/2 is
+// an Integer and log returns a Float); any package with a non-dividing df
+// produces a BigFloat and used to fail the whole envelope with
+// "marshal: type=*values.BigFloat: unsupported wile value type".
+func TestRecommendSplit_RealPackageBigFloatIDF(t *testing.T) {
+	mc := inProcessClient(t)
+	env := callTool(t, mc, "recommend_split", map[string]any{"target": goastcfgPkg})
+	envelopeOK(t, env, 1.0)
+
+	result := env["result"]
+	qt.Assert(t, result, qt.Not(qt.IsNil))
+	qt.Assert(t, containsFloat64(result), qt.IsTrue,
+		qt.Commentf("no float64 leaf in result: %v", result))
 }

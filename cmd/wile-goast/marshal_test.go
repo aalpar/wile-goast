@@ -43,6 +43,10 @@ func TestMarshalToJSON(t *testing.T) {
 		{"negative integer", "-7", `-7`},
 		{"float", "3.14", `3.14`},
 		{"rational", "9/10", `"9/10"`},
+		// compute-idf emits log(N/df); an exact Rational argument makes Wile's
+		// log return a 256-bit BigFloat, which had no mapping-table row and
+		// failed the whole envelope. Truncated to float64 like any inexact real.
+		{"bigfloat", "(log 7/2)", `1.252762968495368`},
 		{"bigint", "100000000000000000000", `100000000000000000000`},
 		{"symbol", "'strong", `"strong"`},
 		{"string", `"hello"`, `"hello"`},

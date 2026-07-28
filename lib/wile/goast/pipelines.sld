@@ -46,6 +46,11 @@
     (wile goast scmnav)
     (wile goast utils)       ; filter (pipeline-scheme-defs root validation)
     (srfi 13)               ; string-trim-both (pipeline-scheme-defs root splitting)
-    (only (wile goast dup-detect) find-scored-candidates candidate->verdict)
+    ;; find-scored-candidates + candidate->verdict: the analysis and its opt-in
+    ;; verdict. duplicate-candidate-concepts + function-ref-context: discovery
+    ;; only, so pipeline-find-duplicates can size the result before scoring it.
+    (only (wile goast dup-detect)
+          find-scored-candidates candidate->verdict
+          duplicate-candidate-concepts function-ref-context)
     (only (wile goast provenance) finding-value finding-where finding-score))
   (include "pipelines.scm"))

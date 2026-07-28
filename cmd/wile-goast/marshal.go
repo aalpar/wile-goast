@@ -46,6 +46,7 @@ func marshalToJSON(wv wile.Value) (any, error) {
 //	*values.Integer    -> int64 (number)
 //	*values.BigInteger -> json.Number (exact, unquoted number)
 //	*values.Float      -> float64 (number)
+//	*values.BigFloat   -> float64 (number, LOSSY: 256-bit truncated)
 //	*values.Rational   -> string "9/10" (exact value preserved)
 //	*values.Vector     -> array
 //	*values.Pair       -> object (symbol-keyed alist), array (proper
@@ -77,6 +78,19 @@ func marshalValue(v values.Value) (any, error) {
 		return json.Number(x.SchemeString()), nil
 	case *values.Float:
 		return x.Value, nil
+	case *values.BigFloat:
+		// Lossy by necessity: JSON has no arbitrary-precision float, so the
+		// accuracy bit is not actionable at this boundary and Float64Truncated
+		// is the documented call for that case. BigFloat is already inexact,
+		// so unlike Rational there is no exactness to preserve as a string.
+		//
+		// Wile's numeric tower produces these from ordinary arithmetic on
+		// exact non-integers -- (log 7/2) is a BigFloat while (log 7) is a
+		// Float -- so any pipeline forwarding raw analysis numbers can emit
+		// one. (wile goast pipelines)'s ->float64 does the same truncation
+		// Scheme-side; it stays, since a pipeline may still want float64 in
+		// the value it builds rather than only at the marshal boundary.
+		return x.Float64Truncated(), nil
 	case *values.Rational:
 		// Exact value preserved as string per locked mapping ("9/10").
 		return x.SchemeString(), nil

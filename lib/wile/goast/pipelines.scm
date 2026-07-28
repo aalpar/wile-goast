@@ -178,12 +178,18 @@
 ;; project each candidate into marshaller-clean alists. Pure surfacing: no
 ;; change to dup-detect.scm.
 
-;; ->float64: coerce an inexact real to a JSON-marshallable float64.
+;; ->float64: coerce an inexact real to float64.
 ;; score-diffs emits effective-similarity via exact->inexact over Rational,
-;; which produces BigFloat (256-bit). The marshaller maps *values.BigFloat
-;; to errMarshalUnsupported; inexact-with-accuracy is the only primitive
-;; that explicitly truncates BigFloat to float64 (it returns (values Float
-;; acc-symbol)). Returns Float unchanged.
+;; which produces BigFloat (256-bit). inexact-with-accuracy is the only
+;; primitive that explicitly truncates BigFloat to float64 (it returns
+;; (values Float acc-symbol)). Returns Float unchanged.
+;;
+;; No longer load-bearing for marshalling: marshalValue now maps
+;; *values.BigFloat to float64 itself (same truncation, via
+;; Float64Truncated), so an uncoerced BigFloat no longer fails the envelope.
+;; Kept because the projected value should be float64 in Scheme too -- a
+;; caller reading the alist directly, or any arithmetic done on it before the
+;; envelope is built, should not silently be at 256-bit precision.
 (define (->float64 n)
   (call-with-values (lambda () (inexact-with-accuracy n))
     (lambda (v _) v)))
@@ -220,6 +226,28 @@
       (append base (list (cons 'verdict (candidate->verdict cand))))
       base)))
 
+;; max-candidate-pairs: the widest result candidate->clean can project.
+;; Projection costs one interpreter frame per pair against Wile's fixed 10000
+;; call-depth limit, so a wider run dies *after* the whole scoring cost is
+;; already sunk (./goast/..., 20404 pairs: 79s to a bare "call depth 10001
+;; exceeds limit 10000"). Measured cliff: 9992 projects, 9993 exceeds.
+;;
+;; NB this bounds the projection, not the analysis: find-scored-candidates
+;; scores all 20404 of ./goast/...'s pairs without complaint. Raising the
+;; ceiling therefore needs the projection made iterative, not a bigger number.
+(define max-candidate-pairs 9992)
+
+;; candidate-pair-count: how many pairs scoring will produce, sum of C(k,2)
+;; over the candidate concepts' extents. Derived from discovery alone (refs ->
+;; lattice -> concepts, no SSA build), which is the ~1s half of the analysis,
+;; so the guard is cheap against the 60-80s it avoids.
+(define (candidate-pair-count concepts)
+  (let loop ((cs concepts) (n 0))
+    (if (null? cs)
+      n
+      (let ((k (length (concept-extent (car cs)))))
+        (loop (cdr cs) (+ n (quotient (* k (- k 1)) 2)))))))
+
 ;; pipeline-find-duplicates: scan TARGET for semantic duplicate function pairs
 ;; (FCA reference clustering + SSA/AST-verified equivalence). OPTS is an alist;
 ;; recognised keys are threshold (number, default 0.6 -- the unify/similarity
@@ -227,17 +255,35 @@
 ;; attach the opt-in categorical verdict). NB: threshold does not filter which
 ;; pairs are returned; every within-cluster pair that resolves to AST is a
 ;; candidate. An empty result (no clusterable pairs) is a success, count 0.
+;;
+;; Runs discovery first and refuses a target over max-candidate-pairs. The
+;; refusal is an error, not an empty result: result is a list here, so an empty
+;; one already means "no duplicates" and could not carry a refusal unambiguously.
 (define (pipeline-find-duplicates target opts)
   (let* ((threshold (or (assoc-default opts 'threshold) 0.6))
          (verdict?  (and (assoc-default opts 'verdict) #t))
-         (cands     (find-scored-candidates target threshold))
-         (clean     (map (lambda (c) (candidate->clean c verdict?)) cands)))
-    (pipeline-envelope 1
-      (list (cons 'target target)
-            (cons 'threshold threshold)
-            (cons 'candidate-count (length cands))
-            (cons 'verdict-included verdict?))
-      clean)))
+         (session   (if (go-session? target) target (go-load target)))
+         (concepts  (duplicate-candidate-concepts
+                      (concept-lattice
+                        (function-ref-context (go-func-refs session)))))
+         (npairs    (candidate-pair-count concepts)))
+    (if (> npairs max-candidate-pairs)
+      (error (string-append
+               "find_duplicates: target yields " (number->string npairs)
+               " candidate pairs, over the " (number->string max-candidate-pairs)
+               " the result projection can carry; narrow the target to a single"
+               " package rather than a /... tree")
+             target)
+      (let* ((cands (find-scored-candidates session threshold))
+             (clean (map (lambda (c) (candidate->clean c verdict?)) cands)))
+        (pipeline-envelope 1
+          (list (cons 'target target)
+                (cons 'threshold threshold)
+                (cons 'candidate-count (length cands))
+                (cons 'candidate-pair-count npairs)
+                (cons 'max-candidate-pairs max-candidate-pairs)
+                (cons 'verdict-included verdict?))
+          clean)))))
 
 ;; ── scheme_defs / scheme_symbols ─────────────────────────
 ;;

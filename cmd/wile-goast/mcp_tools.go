@@ -91,7 +91,9 @@ func (ms *mcpServer) registerPhase1Tools(s *server.MCPServer) {
 				"SSA/AST-verified structural equivalence (proven/structural/divergent) "+
 				"per pair, not token similarity: answers what grep/dupl and gopls "+
 				"cannot. Returns scored, located candidate pairs; pass verdict=true "+
-				"for an opt-in duplicate/likely-duplicate/distinct label."),
+				"for an opt-in duplicate/likely-duplicate/distinct label. Refuses "+
+				"a target yielding over 9992 candidate pairs (the projection "+
+				"ceiling) in about a second: narrow a '/...' tree to one package."),
 			mcp.WithString("target", mcp.Required(),
 				mcp.Description("Go package pattern (e.g., 'my/pkg/...')")),
 			mcp.WithNumber("threshold",

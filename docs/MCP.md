@@ -62,6 +62,14 @@ appear on both stdio and HTTP. Implemented in `lib/wile/goast/pipelines.scm`
   pair's `equiv_tier`; it does not filter which pairs are returned.
   `discover_beliefs` with `committed_path` omitted or `""` disables
   suppression and returns raw discovery output.
+- `find_duplicates` runs discovery first and errors if the target yields more
+  than `max-candidate-pairs` (9992) pairs, since projecting a candidate costs
+  one interpreter frame against Wile's 10000 call-depth limit. The guard reads
+  the concept lattice only, so it refuses in ~1s instead of after the full
+  scoring cost (`./goast/...`: 79s to a bare depth error, now 1.2s). Provenance
+  carries `candidate_pair_count` and `max_candidate_pairs`. The ceiling bounds
+  the *projection*, not the analysis: `find-scored-candidates` scores 20404
+  pairs fine, so lifting it means making the projection iterative.
 - Prefer a pipeline tool for its known structural query; use `eval` for
   open-ended exploration. Design: `plans/2026-04-19-mcp-tool-surface-{design,impl}.md`.
 
