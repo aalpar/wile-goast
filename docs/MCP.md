@@ -46,7 +46,7 @@ appear on both stdio and HTTP. Implemented in `lib/wile/goast/pipelines.scm`
 | `recommend_split` | `target`, `idf_threshold?`, `refine?`, `max_attributes?` | split proposal + `confidence` |
 | `recommend_boundaries` | `target`, `mode?` | `{splits, merges, extracts}` Pareto frontiers |
 | `find_false_boundaries` | `target`, `mode?`, `min_extent?`, `min_intent?`, `min_types?` | cross-boundary report |
-| `find_duplicates` | `target`, `threshold?`, `verdict?` | scored, located duplicate-pair candidates with `equiv_tier`; opt-in `verdict` |
+| `find_duplicates` | `target`, `threshold?`, `verdict?` | the scored, located pairs that unify (`equiv_tier` `proven`/`structural`); opt-in `verdict` |
 | `scheme_defs` | `symbol`, `roots` | definition sites (file/line/col) for `symbol` across comma-separated `roots`; exploded `define-record-type` names, resolved `.sld` exports; lexical, pre-macro-expansion |
 | `scheme_symbols` | `file` | one `.scm`/`.sld`'s top-level definitions ordered by line, plus its library export list if a `.sld` |
 
@@ -59,17 +59,26 @@ appear on both stdio and HTTP. Implemented in `lib/wile/goast/pipelines.scm`
 - Optional-parameter defaults: `idf_threshold` 0.36, `max_attributes` 30,
   `refine` false, `threshold` 0.6, `verdict` false, `min_extent` /
   `min_intent` / `min_types` 2. `find_duplicates`'s `threshold` sets each
-  pair's `equiv_tier`; it does not filter which pairs are returned.
+  pair's `equiv_tier`, and so selects what is returned (see below).
   `discover_beliefs` with `committed_path` omitted or `""` disables
   suppression and returns raw discovery output.
+- `find_duplicates` returns only the pairs the unifier accepted (`equiv_tier`
+  `proven` or `structural`). FCA clustering is candidate *generation*, C(k,2)
+  per concept; the tier is the adjudication that follows, so a `divergent`
+  pair is one already rejected. Rejected pairs are counted, not listed:
+  provenance carries `tiers` (`proven`/`structural`/`divergent`),
+  `scored_pair_count`, and `candidate_count` (= returned rows). On `./goast`
+  that is 68 rows out of 20404 scored pairs, 30 KB instead of 9 MB. An empty
+  `result` with a non-zero `divergent` count is a real answer: the pairs were
+  examined and none unified.
 - `find_duplicates` runs discovery first and errors if the target yields more
-  than `max-candidate-pairs` (9992) pairs, since projecting a candidate costs
-  one interpreter frame against Wile's 10000 call-depth limit. The guard reads
-  the concept lattice only, so it refuses in ~1s instead of after the full
-  scoring cost (`./goast/...`: 79s to a bare depth error, now 1.2s). Provenance
-  carries `candidate_pair_count` and `max_candidate_pairs`. The ceiling bounds
-  the *projection*, not the analysis: `find-scored-candidates` scores 20404
-  pairs fine, so lifting it means making the projection iterative.
+  than `max-candidate-pairs` (25000) pairs. That is a latency budget, not a
+  projection ceiling: scoring runs 280-340 pairs/s and the cost is sunk before
+  any result exists, so the guard reads the concept lattice only and refuses in
+  ~1s rather than after minutes (`./...`, 58551 pairs, 3m31s). Provenance
+  carries `candidate_pair_count` and `max_candidate_pairs`. No single package
+  in this repo exceeds the budget; `goast`, the largest, yields 20404 and is
+  answered in ~60s.
 - Prefer a pipeline tool for its known structural query; use `eval` for
   open-ended exploration. Design: `plans/2026-04-19-mcp-tool-surface-{design,impl}.md`.
 

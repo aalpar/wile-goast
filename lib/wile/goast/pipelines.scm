@@ -226,16 +226,23 @@
       (append base (list (cons 'verdict (candidate->verdict cand))))
       base)))
 
-;; max-candidate-pairs: the widest result candidate->clean can project.
-;; Projection costs one interpreter frame per pair against Wile's fixed 10000
-;; call-depth limit, so a wider run dies *after* the whole scoring cost is
-;; already sunk (./goast/..., 20404 pairs: 79s to a bare "call depth 10001
-;; exceeds limit 10000"). Measured cliff: 9992 projects, 9993 exceeds.
+;; max-candidate-pairs: the widest target this tool will score.
 ;;
-;; NB this bounds the projection, not the analysis: find-scored-candidates
-;; scores all 20404 of ./goast/...'s pairs without complaint. Raising the
-;; ceiling therefore needs the projection made iterative, not a bigger number.
-(define max-candidate-pairs 9992)
+;; A LATENCY budget, not a projection ceiling. The whole scoring cost is sunk
+;; before any result exists, so a target past the budget is refused up front
+;; rather than paid for and then abandoned. Measured on this repo: ./goast,
+;; 20404 pairs, 60s (340/s); ./..., 58551 pairs, 3m31s (279/s -- the rate
+;; falls as the session grows). 25000 is ~80s at that range: it admits the
+;; largest single package and refuses the whole-tree pattern.
+;;
+;; It is deliberately NOT the old 9992, which was Wile's 10000-frame call
+;; depth showing through a non-tail `map` over every scored pair. The result
+;; now carries only the pairs that unify (kept-tiers) and filter-map projects
+;; them in constant call depth, so that limit no longer binds. The old number
+;; also made the tool unable to answer for goast at all: goast is a single
+;; package and yields 20404 pairs on its own, so "narrow to one package" had
+;; no valid answer.
+(define max-candidate-pairs 25000)
 
 ;; candidate-pair-count: how many pairs scoring will produce, sum of C(k,2)
 ;; over the candidate concepts' extents. Derived from discovery alone (refs ->
@@ -248,13 +255,39 @@
       (let ((k (length (concept-extent (car cs)))))
         (loop (cdr cs) (+ n (quotient (* k (- k 1)) 2)))))))
 
+;; candidate-tier: a scored candidate's equiv-tier (proven / structural /
+;; divergent), as set by score-candidate-pair at the caller's threshold.
+(define (candidate-tier cand)
+  (cdr (assq 'equiv-tier (cdr (assq 'measures cand)))))
+
+;; kept-tiers: the tiers that constitute a finding. FCA clustering is candidate
+;; GENERATION ("these functions reference overlapping things", C(k,2) per
+;; concept); the tier is the ADJUDICATION that follows it. A divergent pair is
+;; one the unifier tried and rejected, so shipping it as a result row would
+;; report the question, not the answer -- and dominate the payload doing it
+;; (./goast: 20336 of 20404 pairs are divergent). The rejected pairs stay
+;; visible as counts under provenance's tiers.
+(define kept-tiers '(proven structural))
+
+;; tier-tally: per-tier counts over the scored candidates, so provenance
+;; reports the work done even when every pair was rejected and result is [].
+(define (tier-tally cands)
+  (let loop ((cs cands) (p 0) (s 0) (d 0))
+    (if (null? cs)
+      (list (cons 'proven p) (cons 'structural s) (cons 'divergent d))
+      (let ((t (candidate-tier (car cs))))
+        (cond ((eq? t 'proven)     (loop (cdr cs) (+ p 1) s d))
+              ((eq? t 'structural) (loop (cdr cs) p (+ s 1) d))
+              (else                (loop (cdr cs) p s (+ d 1))))))))
+
 ;; pipeline-find-duplicates: scan TARGET for semantic duplicate function pairs
 ;; (FCA reference clustering + SSA/AST-verified equivalence). OPTS is an alist;
 ;; recognised keys are threshold (number, default 0.6 -- the unify/similarity
-;; threshold that sets each pair's equiv-tier) and verdict (bool, default #f --
-;; attach the opt-in categorical verdict). NB: threshold does not filter which
-;; pairs are returned; every within-cluster pair that resolves to AST is a
-;; candidate. An empty result (no clusterable pairs) is a success, count 0.
+;; threshold) and verdict (bool, default #f -- attach the opt-in categorical
+;; verdict). Result carries only the pairs whose tier is in kept-tiers, so
+;; threshold IS the selection knob: it decides unifiable?, unifiable? decides
+;; the tier, and the tier decides inclusion. An empty result (nothing unified,
+;; or nothing clusterable) is a success, count 0.
 ;;
 ;; Runs discovery first and refuses a target over max-candidate-pairs. The
 ;; refusal is an error, not an empty result: result is a list here, so an empty
@@ -271,15 +304,22 @@
       (error (string-append
                "find_duplicates: target yields " (number->string npairs)
                " candidate pairs, over the " (number->string max-candidate-pairs)
-               " the result projection can carry; narrow the target to a single"
-               " package rather than a /... tree")
+               " this tool will score; narrow a '/...' tree to one package")
              target)
+      ;; filter-map, not filter + map: one tail-recursive pass that both drops
+      ;; the divergent pairs and projects the survivors, in constant call depth.
       (let* ((cands (find-scored-candidates session threshold))
-             (clean (map (lambda (c) (candidate->clean c verdict?)) cands)))
+             (clean (filter-map
+                      (lambda (c)
+                        (and (memq (candidate-tier c) kept-tiers)
+                             (candidate->clean c verdict?)))
+                      cands)))
         (pipeline-envelope 1
           (list (cons 'target target)
                 (cons 'threshold threshold)
-                (cons 'candidate-count (length cands))
+                (cons 'candidate-count (length clean))
+                (cons 'scored-pair-count (length cands))
+                (cons 'tiers (tier-tally cands))
                 (cons 'candidate-pair-count npairs)
                 (cons 'max-candidate-pairs max-candidate-pairs)
                 (cons 'verdict-included verdict?))

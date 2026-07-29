@@ -467,33 +467,92 @@ func TestPhase1ToolsRegistered(t *testing.T) {
 	}
 }
 
-// goastssaPkg yields 13941 candidate pairs, comfortably over the projection
-// ceiling, so it exercises the guard on real (not fixture) input.
-const goastssaPkg = "github.com/aalpar/wile-goast/goastssa/..."
+// wholeTreePkg yields 58551 candidate pairs, comfortably over the scoring
+// budget, so it exercises the guard on real (not fixture) input. Note the
+// budget is NOT exceeded by any single package here: goast, the largest,
+// yields 20404 and is answered rather than refused.
+const wholeTreePkg = "github.com/aalpar/wile-goast/..."
 
-// find_duplicates must refuse a target wider than the projection ceiling
-// before paying the scoring cost, and say so in terms the caller can act on.
-// Without the guard this target scores for ~64s and then dies on a bare
-// "call depth 10001 exceeds limit 10000" with no target, count, or remedy.
+// find_duplicates must refuse a target past the scoring budget before paying
+// the cost, and say so in terms the caller can act on. Discovery alone sizes
+// the target, so the refusal lands in about a second against the minutes the
+// scoring would take.
 func TestFindDuplicates_PairCountGuard(t *testing.T) {
 	mc := inProcessClient(t)
 
 	ctx := context.Background()
 	req := mcp.CallToolRequest{}
 	req.Params.Name = "find_duplicates"
-	req.Params.Arguments = map[string]any{"target": goastssaPkg}
+	req.Params.Arguments = map[string]any{"target": wholeTreePkg}
 	res, err := mc.CallTool(ctx, req)
 	qt.Assert(t, err, qt.IsNil)
 	qt.Assert(t, res.IsError, qt.IsTrue)
 
 	tc, ok := mcp.AsTextContent(res.Content[0])
 	qt.Assert(t, ok, qt.IsTrue)
-	// The count is not pinned (it tracks goastssa's own churn); the ceiling
+	// The count is not pinned (it tracks the tree's own churn); the budget
 	// and the remedy are, since those are what make the error actionable.
-	for _, want := range []string{"candidate pairs", "9992", "narrow the target"} {
+	for _, want := range []string{"candidate pairs", "25000", "narrow a '/...' tree"} {
 		qt.Assert(t, strings.Contains(tc.Text, want), qt.IsTrue,
 			qt.Commentf("guard message not actionable: %s", tc.Text))
 	}
+}
+
+// goastssaPkg yields 13941 candidate pairs: over the old 9992 projection
+// ceiling, under the 25000 scoring budget. It is the regression pin for the
+// ceiling having been lifted rather than merely raised — a real package the
+// tool used to refuse and now answers.
+const goastssaPkg = "github.com/aalpar/wile-goast/goastssa/..."
+
+// A target between the old ceiling and the current budget must be answered,
+// not refused, and every returned pair must be one the unifier accepted.
+func TestFindDuplicates_AnswersPastOldCeiling(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration test: scores 13941 pairs, ~50s")
+	}
+	mc := inProcessClient(t)
+	env := callTool(t, mc, "find_duplicates", map[string]any{"target": goastssaPkg})
+	envelopeOK(t, env, 1.0)
+
+	prov := env["provenance"].(map[string]any)
+	qt.Assert(t, prov["scored_pair_count"].(float64) > 9992, qt.IsTrue,
+		qt.Commentf("target no longer exercises the old ceiling: %v", prov["scored_pair_count"]))
+
+	tiers := prov["tiers"].(map[string]any)
+	kept := tiers["proven"].(float64) + tiers["structural"].(float64)
+	qt.Assert(t, prov["candidate_count"], qt.Equals, kept)
+	qt.Assert(t, float64(len(env["result"].([]any))), qt.Equals, kept)
+
+	for _, r := range env["result"].([]any) {
+		tier := r.(map[string]any)["equiv_tier"].(string)
+		qt.Assert(t, tier == "proven" || tier == "structural", qt.IsTrue,
+			qt.Commentf("divergent pair leaked into result: tier=%s", tier))
+	}
+}
+
+// goastcfgDupsPkg is a real package whose candidate pairs are ALL divergent:
+// FCA clusters them by shared references, the unifier rejects every one.
+const goastcfgDupsPkg = "github.com/aalpar/wile-goast/goastcfg"
+
+// The rejected pairs must survive as counts, not rows. A caller asking "are
+// there duplicates here" gets an empty result plus the evidence that the
+// question was actually answered (89 pairs examined, none unified) rather
+// than an empty result indistinguishable from a target that never clustered.
+func TestFindDuplicates_DivergentOnlyReportsInProvenance(t *testing.T) {
+	mc := inProcessClient(t)
+	env := callTool(t, mc, "find_duplicates", map[string]any{"target": goastcfgDupsPkg})
+	envelopeOK(t, env, 1.0)
+
+	qt.Assert(t, env["result"], qt.DeepEquals, []any{})
+	prov := env["provenance"].(map[string]any)
+	qt.Assert(t, prov["candidate_count"], qt.Equals, float64(0))
+
+	tiers := prov["tiers"].(map[string]any)
+	qt.Assert(t, tiers["proven"], qt.Equals, float64(0))
+	qt.Assert(t, tiers["structural"], qt.Equals, float64(0))
+	qt.Assert(t, tiers["divergent"].(float64) > 0, qt.IsTrue,
+		qt.Commentf("no rejected pairs recorded: %v", tiers))
+	qt.Assert(t, prov["scored_pair_count"], qt.Equals, tiers["divergent"])
 }
 
 // The guard must not fire on a target inside the ceiling: the dupcluster

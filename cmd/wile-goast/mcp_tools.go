@@ -87,18 +87,21 @@ func (ms *mcpServer) registerPhase1Tools(s *server.MCPServer) {
 	s.AddTool(
 		mcp.NewTool("find_duplicates",
 			mcp.WithDescription("Are functions in this package semantic duplicates? "+
-				"Scans a Go package for duplicate function pairs and reports "+
-				"SSA/AST-verified structural equivalence (proven/structural/divergent) "+
-				"per pair, not token similarity: answers what grep/dupl and gopls "+
-				"cannot. Returns scored, located candidate pairs; pass verdict=true "+
-				"for an opt-in duplicate/likely-duplicate/distinct label. Refuses "+
-				"a target yielding over 9992 candidate pairs (the projection "+
-				"ceiling) in about a second: narrow a '/...' tree to one package."),
+				"Scans a Go package for duplicate function pairs, verifying "+
+				"equivalence over canonicalized SSA and AST rather than token "+
+				"similarity: answers what grep/dupl and gopls cannot. Returns only "+
+				"the pairs that unify (tier proven or structural), scored and "+
+				"located; pass verdict=true for an opt-in duplicate/likely-duplicate "+
+				"label. Pairs the unifier rejected are counted, not listed, under "+
+				"provenance.tiers. An empty result is a success: no duplicates. "+
+				"Refuses a target yielding over 25000 candidate pairs in about a "+
+				"second rather than scoring it: narrow a '/...' tree to one package."),
 			mcp.WithString("target", mcp.Required(),
 				mcp.Description("Go package pattern (e.g., 'my/pkg/...')")),
 			mcp.WithNumber("threshold",
-				mcp.Description("Similarity/unifiability threshold that sets each pair's "+
-					"equivalence tier (default 0.6). Does not filter which pairs are returned.")),
+				mcp.Description("Similarity/unifiability threshold (default 0.6). Sets each "+
+					"pair's equivalence tier, and so selects what is returned: lower it "+
+					"to admit looser pairs, raise it to admit only near-identical ones.")),
 			mcp.WithBoolean("verdict",
 				mcp.Description("Attach the opt-in categorical verdict "+
 					"(duplicate/likely-duplicate/distinct) per candidate (default false)")),
