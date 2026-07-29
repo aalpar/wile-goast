@@ -18,6 +18,7 @@
     filter filter-map flat-map
     member? unique has-char? string-contains string-contains? string-join
     ordered-pairs
+    glob-match? position-file
     take drop
     opt-ref
     ast-transform ast-splice)

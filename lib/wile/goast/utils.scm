@@ -166,3 +166,79 @@
         (if result
           (loop (cdr xs) (append (reverse result) acc))
           (loop (cdr xs) (cons (car xs) acc)))))))
+
+;;; ── Glob matching ────────────────────────────────────────
+
+;; glob-match-anchored?: does PAT match the WHOLE of S? `*' is the only
+;; metacharacter and matches any run of characters, separators included.
+;; Iterative greedy-with-backtrack (star/mark): every branch is a tail call,
+;; so a long absolute path costs no stack. Worst case O(|pat| * |s|).
+(define (glob-match-anchored? pat s)
+  (let ((pl (string-length pat))
+        (sl (string-length s)))
+    (let loop ((i 0) (j 0) (star -1) (mark 0))
+      (if (>= i sl)
+        ;; S exhausted: PAT matches iff only `*'s remain.
+        (let skip ((k j))
+          (cond ((>= k pl) #t)
+                ((char=? (string-ref pat k) #\*) (skip (+ k 1)))
+                (else #f)))
+        (cond
+          ;; `*' tested first, so a literal `*' in S is not consumed by it.
+          ((and (< j pl) (char=? (string-ref pat j) #\*))
+           (loop i (+ j 1) j i))
+          ((and (< j pl) (char=? (string-ref pat j) (string-ref s i)))
+           (loop (+ i 1) (+ j 1) star mark))
+          ;; Mismatch: retry the most recent `*', letting it eat one more char.
+          ((>= star 0)
+           (loop (+ mark 1) (+ star 1) star (+ mark 1)))
+          (else #f))))))
+
+;; glob-match?: PAT matches S if it matches the whole string, or the whole of
+;; any suffix of S beginning just after a SEP character.
+;;
+;; Matching a suffix at ANY boundary, not only the last one, is what makes the
+;; inputs a caller actually holds work. With SEP #\/ against an absolute
+;; position path, "marshal.go", "goast/marshal.go" and "*/goast/*.go" all
+;; match, with no relativization anywhere. With SEP #\., a bare
+;; "cloneTypeExpr" matches both the "Type.Method" form one tool reports and
+;; the fully package-qualified form the other does.
+;;
+;; The trade-off: a glob can match via several candidate suffixes, so a caller
+;; cannot demand the fully qualified form specifically, and a short symbol can
+;; match same-named methods on different receivers. Every returned row carries
+;; the qualified name, so a second, narrower call is always available.
+;;
+;; A non-string S (an unlocated row) matches nothing.
+(define (glob-match? pat s sep)
+  (and (string? s)
+       (let ((n (string-length s)))
+         (let loop ((i 0))
+           (cond ((> i n) #f)
+                 ((and (or (= i 0) (char=? (string-ref s (- i 1)) sep))
+                       (glob-match-anchored? pat (substring s i n)))
+                  #t)
+                 (else (loop (+ i 1))))))))
+
+;; position-file: the file part of a "file:line:col" position, so a path glob
+;; can be written against the path a caller has ("marshal.go") rather than the
+;; position ("marshal.go:568:1"), which an anchored glob could never match.
+;; Strips exactly one trailing :<digits>:<digits>; anything else (a bare path,
+;; a malformed position) is returned unchanged.
+(define (position-file pos)
+  (let* ((n (string-length pos))
+         (digits-back
+           ;; index just past the last digit run ending at END
+           (lambda (end)
+             (let loop ((i end))
+               (if (and (> i 0) (char-numeric? (string-ref pos (- i 1))))
+                 (loop (- i 1))
+                 i))))
+         (col (digits-back n)))
+    (if (and (< col n) (> col 0) (char=? (string-ref pos (- col 1)) #\:))
+      (let ((line (digits-back (- col 1))))
+        (if (and (< line (- col 1)) (> line 0)
+                 (char=? (string-ref pos (- line 1)) #\:))
+          (substring pos 0 (- line 1))
+          pos))
+      pos)))
