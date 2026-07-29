@@ -92,9 +92,11 @@ func TestGlobMatch_Symbol(t *testing.T) {
 	}
 }
 
-// A literal '*' in the subject must be matched by a literal '*' in the
-// pattern, not consumed by the wildcard branch, and a non-string subject
-// (an unlocated row) matches nothing rather than erroring.
+// A literal '*' in the subject can only ever be consumed by the pattern's
+// wildcard (one character at a time via backtracking, or as part of a wider
+// span): PAT has no way to hold a literal '*' of its own, since a '*' in PAT
+// is always tested as the wildcard before literal equality is tried. A
+// non-string subject (an unlocated row) matches nothing rather than erroring.
 func TestGlobMatch_EdgeCases(t *testing.T) {
 	engine := newBeliefEngine(t)
 	eval(t, engine, `(import (wile goast utils))`)
@@ -110,6 +112,18 @@ func TestGlobMatch_EdgeCases(t *testing.T) {
 		`(glob-match? "*x" "ax" #\/)`:             "#t",
 		`(glob-match? "x*" "xa" #\/)`:             "#t",
 		`(glob-match? "abc" #f #\/)`:              "#f",
+		// The subject itself contains a literal '*' character: the
+		// wildcard's one-character backtrack step consumes it like any
+		// other character, there being no way to write a literal '*' in
+		// PAT to match it "as itself".
+		`(glob-match? "a*c" "a*c" #\/)`: "#t",
+		// Same, but the wildcard's span covers several characters,
+		// the literal '*' among them.
+		`(glob-match? "a*c" "ab*c" #\/)`: "#t",
+		// Control: with no wildcard in PAT at all, a subject '*' is just
+		// another character PAT must match literally (impossible for "abc"
+		// against a 4-byte subject), so it does not slip through unmatched.
+		`(glob-match? "abc" "ab*c" #\/)`: "#f",
 	} {
 		got := eval(t, engine, expr)
 		qt.Assert(t, got.SchemeString(), qt.Equals, want, qt.Commentf("%s", expr))

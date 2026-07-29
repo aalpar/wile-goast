@@ -211,6 +211,7 @@
 ;;
 ;; A non-string S (an unlocated row) matches nothing.
 (define (glob-match? pat s sep)
+  "Test whether PAT matches S: the whole of S, or the whole of any suffix of\nS beginning just after a SEP character. `*' is the only metacharacter and\nmatches any run of characters, including SEP. A non-string S returns #f.\n\nCost: the anchored primitive is O(|pat| x |s|); this tries up to n+1 suffix\nboundaries, so the composed worst case is O(|pat| x n^2), which is fine for\nthe paths and symbol names this is used against.\n\nParameters:\n  pat : string\n  s : any\n  sep : char\nReturns: boolean\nCategory: goast-utils\n\nExamples:\n  (glob-match? \"marshal.go\" \"/repo/goast/marshal.go\" #\\/)      ; => #t\n  (glob-match? \"goast/marshal.go\" \"/repo/goast/marshal.go\" #\\/) ; => #t\n  (glob-match? \"cloneTypeExpr\" \"pkg.cloneTypeExpr\" #\\.)         ; => #t\n\nSee also: `position-file'."
   (and (string? s)
        (let ((n (string-length s)))
          (let loop ((i 0))
@@ -226,6 +227,7 @@
 ;; Strips exactly one trailing :<digits>:<digits>; anything else (a bare path,
 ;; a malformed position) is returned unchanged.
 (define (position-file pos)
+  "Return the file part of a \"file:line:col\" position string.\nStrips exactly one trailing :<digits>:<digits>; anything else (a bare path,\na malformed position) is returned unchanged.\n\nParameters:\n  pos : string\nReturns: string\nCategory: goast-utils\n\nExamples:\n  (position-file \"/a/b.go:568:1\")  ; => \"/a/b.go\"\n  (position-file \"marshal.go\")     ; => \"marshal.go\"\n\nSee also: `glob-match?'."
   (let* ((n (string-length pos))
          (digits-back
            ;; index just past the last digit run ending at END
