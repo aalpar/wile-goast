@@ -341,20 +341,30 @@
 ;; the caller set, not a free-varying signal. It is also bounded above by
 ;; intent size, since each attribute contributes at most one struct name --
 ;; so the primary component is a coarsening of the secondary one, not an
-;; independent axis. Measured write-only over four corpora, 120 rows total:
+;; independent axis. Measured write-only over six corpora, 154 rows total:
 ;;
-;;   target                 rows   types-count hist        intent range
-;;   wile-goast/...            5   {2:4, 3:1}                    2-3
-;;   wile/pkg/...             61   {2:45, 3:8, 4:4, 5:4}         2-11
-;;   go/types                 21   {2:20, 5:1}                   2-8
-;;   x/tools/go/ssa           33   {2:24, 3:9}                   2-20
+;;   target                 objects   rows   types-count hist       intent
+;;   wile-goast/...             178      5   {2:4, 3:1}                2-3
+;;   wile/pkg/...              2006     61   {2:45, 3:8, 4:4, 5:4}     2-11
+;;   go/types                   523     21   {2:20, 5:1}               2-8
+;;   x/tools/go/ssa             384     33   {2:24, 3:9}               2-20
+;;   k8s pkg/apis/core/...     1060      3   {2:2, 7:1}                2-13
+;;   k8s pkg/scheduler/...     1410     31   {2:26, 3:5}               2-6
 ;;
-;; So types-count DOES vary (up to 5) and the field is worth exposing, but
-;; it sits at the min-types floor on 93 of 120 rows (78%). For those rows
+;; Two things the objects column shows. Row count does NOT track codebase
+;; size: k8s pkg/apis/core has 6x wile-goast's objects and fewer findings,
+;; because it is mostly generated per-type deepcopy and conversion code and
+;; a cross-boundary concept needs one function writing fields of SEVERAL
+;; types. And no corpus here exceeds view-default-limit, so 100 covers every
+;; measured case for this tool.
+;;
+;; So types-count DOES vary (up to 7) and the field is worth exposing, but
+;; it sits at the min-types floor on 121 of 154 rows (78%). For those rows
 ;; the ordering is decided entirely by intent size and extent size. What
 ;; the primary key actually buys is a head: it floats the ~22% spanning 3+
 ;; types above the rest, and the two axes do decouple at scale (types-count
-;; equals intent size on 26% of rows here against 60% on the 5-row corpus).
+;; equals intent size on 47 of the 154 rows, 31%, against 3 of 5 on the
+;; wile-goast corpus alone).
 ;; That is a defensible two-tier order, now evidenced rather than asserted.
 ;; Left as-is deliberately -- but a reader should not read the primary key
 ;; as doing the ranking work, because for most rows it does not.
