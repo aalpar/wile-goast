@@ -1,16 +1,16 @@
 # Changelog
 
-## Unreleased: Result-View Parameters (find_duplicates, find_false_boundaries)
+## Unreleased — Result-View Parameters (find_duplicates, find_false_boundaries)
 
 `find_duplicates` and `find_false_boundaries` gain five shared optional
 parameters, uniformly filtered, ranked, paged, and rendered by `apply-view`
 (`lib/wile/goast/pipelines.scm`):
 
-- `scope` / `symbol`: glob filters over the row's function(s), pushed down
+- `scope` / `symbol` — glob filters over the row's function(s), pushed down
   before scoring on `find_duplicates`, post-filtered on finished concepts on
   `find_false_boundaries`.
-- `detail`: `summary` (default) or `full` row width.
-- `limit` / `offset`: paging, defaults 50 and 0.
+- `detail` — `summary` (default) or `full` row width.
+- `limit` / `offset` — paging, defaults 50 and 0.
 
 Both tools move to envelope `version` 2: `detail=summary` is now the
 default, so a default call's row shape changed (`find_duplicates` drops the
