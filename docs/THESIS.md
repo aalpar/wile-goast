@@ -297,6 +297,89 @@ detection assumes function boundaries are written correctly; structural similari
 evidence that some existing boundaries are wrong. Answering either cleanly requires
 answering both together.
 
+## Judgments need a second criterion
+
+The two arms grade **facts**: statements true of the program, with ground truth outside
+the tool, scored by exact match. They explain why an agent's own derivation of a fact
+misfires. Several tools here do not report facts. They report **judgments**, claims
+about what should be done, which nothing in the program decides.
+
+A judgment cannot be graded by accuracy, because every row it returns is already true.
+Its failure mode is a **true row nobody needed**, and when the output is ranked and
+truncated, ordering is the whole of the quality. The arms are silent on that.
+
+*Status: argued, **unmeasured**. Hypothesis 10 names the experiment.*
+
+### The cut is a design lever, not a property of the analysis
+
+FCA is not the source of the underdetermination. The concept lattice of a formal
+context is uniquely determined, and computing it is as fact-shaped as reachability.
+Underdetermination enters at the **cut**: where a tool stops reporting the lattice and
+starts recommending an action. Move the cut and the tool changes shape. The three tools
+built on the lattice sit at three different cuts, and the differences are instructive
+rather than accidental:
+
+- `find_duplicates` leaves the cut to the caller. The similarity score and the `proven`
+  tier (SSA-verified structural equivalence) are facts; the
+  duplicate/likely-duplicate/distinct label is a judgment, and `verdict` is opt-in so
+  that asking for one is deliberate. This is the right shape, and it predates this
+  argument.
+- `find_false_boundaries` is where the seam shows. Its name promises a judgment
+  (boundaries whose removal would enable unification); its output is
+  `cross-boundary-concepts`, a lattice fact. The algebra layer says as much: it "takes
+  min-types as a floor and expresses no preference among concepts above it"
+  (`lib/wile/goast/pipelines.scm:335-336`). The judgment enters at the tool's name and at
+  `fb-rank-key`, nowhere else.
+- `recommend_split` commits outright, reporting one proposal with a confidence verdict.
+
+### Locality is the human's detection heuristic
+
+Humans find unification candidates by colocation. Two similar functions in one file,
+two structs in one package, fields declared adjacent: reviewers, `dupl`, and grep all
+cover that population well. Structural analysis reproduces those findings, which is
+worth something as a check, but it is not what pays for the round-trip (§Cost, where
+against the honest denominator the tool is cost-neutral to 2× worse).
+
+The marginal value concentrates where colocation fails: a concept spanning three
+packages, a duplicate pair in different directories, a field cluster crossing a module
+boundary. No reviewer holds those in view at once, and reading any one file does not
+surface them.
+
+### Distance predicts that a human missed it, not that they should have caught it
+
+The proxy is one-directional, and over-reading it is the trap. Distance is
+monotonically informative about a finding's *novelty* and non-monotonically related to
+its *value*, because it causes two things pulling opposite ways:
+
+- A package boundary is a designed artifact. Crossing one is sometimes exactly the
+  finding (the boundary is false) and sometimes its refutation (the boundary is
+  load-bearing and the similarity is coincidence).
+- Distance raises the cost of acting. A cross-package unification means a new shared
+  package, import churn, and a dependency-cycle risk that a within-file extraction
+  does not carry.
+
+So distance ranks; it must not filter. The tool should still find the local signals.
+It should not spend the head of a truncated list on them.
+
+### Three terms, and the missing one is mass
+
+Distance alone inverts badly. `func (t *T) Len() int { return len(t.s) }` recurring in
+six packages is maximally non-local and worth nothing, because the unification collapses
+one line and the abstraction it wants is already in the language. What that example
+lacks is **mass**: how much code the finding would actually remove.
+
+The three terms, then: mass as a floor, strength as the multiplier, distance as the
+novelty premium.
+
+Only strength is measured today. Similarity is an *intensive* quantity, a scale-free
+ratio, so ranking by it alone systematically favors small findings, because short
+functions are easier to match exactly. That bias is independent of the locality bias
+and compounds with it: the head of `find_duplicates` is currently short *and* nearby,
+the doubly-least-differentiated quadrant. Neither `dup-rank-key` nor `fb-rank-key`
+encodes distance or mass (`lib/wile/goast/pipelines.scm:382,603`). Both inputs are
+cheap: the positions distance needs are already built in both pipelines, and mass is an
+AST node count over a decl the scorer has already resolved.
+
 ## The algebraic bet
 
 **This section states a design choice for which the project has produced no
@@ -607,6 +690,23 @@ point is the experiment, not the guess.
      hole) is **not** evidence for this hypothesis. It ran on a different corpus, at
      n=15, with a rigged tool, and its swing came from a verification mandate rather
      than from a tool description.
+
+10. **Non-local findings are the ones that pay.** *(Argued, unrun. §Judgments need a
+    second criterion.)* The claim is that an unaided arm's probability of
+    independently surfacing a finding falls with that finding's distance, so the tool's
+    marginal value concentrates in the high-distance tail. Two stages, cheap first:
+    - **Distributional gate.** Add file-span and directory-span columns to the
+      six-corpus table in `fb-rank-key`'s comment block. If nearly every finding is
+      already cross-file, distance does not discriminate and cannot rank, the same way
+      types-count turned out to sit at its floor on 78% of rows.
+    - **The A/B.** Hold a finding set fixed and ask a control arm (source, no tool) to
+      produce it. If control's recall is flat in distance, **locality is not the
+      heuristic and that section is wrong.** If recall falls with distance, the ranking
+      follows and the slope estimates how much it is worth.
+
+    This is the only hypothesis here about a judgment rather than a fact, and it needs
+    a corpus that does not exist: every corpus in this document is generated for
+    single-answer reachability and dispatch questions, which are facts.
 
 TODO(aalpar): Experiments 1, 2, and 6 are now specified sharply enough to run. What
 else would make you abandon the thesis rather than revise it? The distinction between

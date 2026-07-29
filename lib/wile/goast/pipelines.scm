@@ -368,6 +368,17 @@
 ;; That is a defensible two-tier order, now evidenced rather than asserted.
 ;; Left as-is deliberately -- but a reader should not read the primary key
 ;; as doing the ranking work, because for most rows it does not.
+;;
+;; What the key does NOT encode: distance or mass. types-count counts distinct
+;; struct TYPES, so a concept tying two structs declared in one file ranks
+;; identically to one tying two structs in different packages, and nothing here
+;; measures how much code a unification would remove. Those are the two axes
+;; that separate a finding an agent needed from one a reviewer would have caught
+;; unaided; see docs/THESIS.md, "Judgments need a second criterion", where the
+;; argument is unmeasured and hypothesis 10 states the gate (which is a
+;; span histogram over the same six corpora tabulated above). Cost note for
+;; whoever runs it: pos-index below is built lazily, only when scope or symbol
+;; is set, so a distance component would force it on every call.
 (define (fb-rank-key concept)
   (list (length (fb-types concept))
         (length (concept-intent concept))
@@ -577,6 +588,16 @@
 ;; pair's names as the deterministic tie-break. Score is coerced to float64
 ;; for the same reason candidate->clean coerces it: score-diffs emits a
 ;; 256-bit BigFloat, and the key must order by the number actually reported.
+;;
+;; What the key does NOT encode: distance or mass, and here the omission is not
+;; neutral. Similarity is an intensive (scale-free) ratio, so a similarity-first
+;; order floats short, near-identical pairs to the head, and those are
+;; disproportionately copy-paste inside one file: exactly the population dupl,
+;; grep, and a reviewer already cover. The head of a truncated list is therefore
+;; spent on the least differentiated rows. See docs/THESIS.md, "Judgments need a
+;; second criterion"; the argument is unmeasured and hypothesis 10 states the
+;; gate. Unlike fb-rank-key, distance would be free here: pos-index is
+;; already built unconditionally (pipeline-find-duplicates, below).
 (define (dup-tier-rank tier) (if (eq? tier 'proven) 1 0))
 
 (define (dup-rank-key cand)
