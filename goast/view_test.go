@@ -246,3 +246,25 @@ func TestViewSort_DeepList(t *testing.T) {
 	qt.Assert(t, eval(t, engine, `(car sorted)`).SchemeString(), qt.Equals, "0")
 	qt.Assert(t, eval(t, engine, `(list-ref sorted 24999)`).SchemeString(), qt.Equals, "24999")
 }
+
+// apply-view's page-and-render step must survive a limit past Wile's
+// 10000-frame call-depth limit, the same cliff view-sort exists to avoid:
+// `take' and `map' are both non-tail, and LIMIT has no ceiling of its own --
+// find_duplicates' own max-candidate-pairs guard admits 25000 rows, so a
+// caller asking for everything is a reachable case, not a hypothetical one.
+func TestApplyView_DeepLimit(t *testing.T) {
+	engine := newBeliefEngine(t)
+	eval(t, engine, `
+		(import (wile goast pipelines))
+		(define rows
+		  (let loop ((i 0) (acc '()))
+		    (if (>= i 25000) acc (loop (+ i 1) (cons (list (cons 'n i)) acc)))))
+		(define (rk r) (list (cdr (assq 'n r))))
+		(define (rn r detail) r)
+		(define-values (shown prov)
+		  (apply-view rows '((limit . 25000)) #f rk rn))
+	`)
+	qt.Assert(t, eval(t, engine, `(length shown)`).SchemeString(), qt.Equals, "25000")
+	qt.Assert(t, eval(t, engine, `(cdr (assq 'returned-count prov))`).SchemeString(), qt.Equals, "25000")
+	qt.Assert(t, eval(t, engine, `(cdr (assq 'truncated prov))`).SchemeString(), qt.Equals, "#f")
+}

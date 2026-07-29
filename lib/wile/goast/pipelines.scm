@@ -243,18 +243,26 @@
                      (reverse acc)
                      (loop (cdr rs) (cons (cons (rank-key (car rs)) (car rs)) acc)))))
          (sorted (view-sort (lambda (a b) (view-key<? (car a) (car b))) keyed))
-         ;; Undecorate and render only the page, which is at most LIMIT rows,
-         ;; so the non-tail `map' here is bounded by a caller-visible number.
-         (page   (take (drop sorted offset) limit))
-         (shown  (map (lambda (kv) (render (cdr kv) detail)) page)))
+         ;; Undecorate and render the page in one tail-recursive pass: `take'
+         ;; and `map' are both non-tail, and LIMIT is caller-supplied with no
+         ;; ceiling of its own (find_duplicates' max-candidate-pairs guard
+         ;; alone admits 25000 rows), so a caller asking for everything would
+         ;; hit the same call-depth cliff view-sort exists to avoid, only
+         ;; after the expensive analysis is already paid for.
+         (shown  (let loop ((rs (drop sorted offset)) (n limit) (acc '()))
+                   (if (or (null? rs) (<= n 0))
+                     (reverse acc)
+                     (loop (cdr rs) (- n 1)
+                           (cons (render (cdr (car rs)) detail) acc)))))
+         (returned (length shown)))
     (values shown
             (append
               (list (cons 'total-count total)
-                    (cons 'returned-count (length shown))
+                    (cons 'returned-count returned)
                     (cons 'offset offset)
                     (cons 'limit limit)
                     (cons 'detail detail)
-                    (cons 'truncated (> total (+ offset (length shown)))))
+                    (cons 'truncated (> total (+ offset returned))))
               (let ((sc (assoc-default opts 'scope)))
                 (if sc (list (cons 'scope sc)) '()))
               (let ((sy (assoc-default opts 'symbol)))
