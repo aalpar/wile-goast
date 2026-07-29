@@ -40,7 +40,8 @@
     cross-boundary-concepts
     boundary-report
     boundary-findings
-    propagate-field-writes)
+    propagate-field-writes
+    attr-struct-name)
   (import (wile goast utils)
           (wile goast provenance)   ; make-finding (boundary-findings)
           (wile algebra fca)

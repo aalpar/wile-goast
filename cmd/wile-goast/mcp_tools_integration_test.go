@@ -248,7 +248,7 @@ func TestFindFalseBoundaries_Phase1Fixture(t *testing.T) {
 	mc := inProcessClient(t)
 
 	env := callTool(t, mc, "find_false_boundaries", map[string]any{"target": phase1Pkg})
-	envelopeOK(t, env, 1.0)
+	envelopeOK(t, env, 2.0)
 }
 
 // dupclusterPkg is the proven duplicate-bearing fixture: clones.go holds the
@@ -601,4 +601,231 @@ func TestRecommendSplit_RealPackageBigFloatIDF(t *testing.T) {
 	qt.Assert(t, result, qt.Not(qt.IsNil))
 	qt.Assert(t, containsFloat64(result), qt.IsTrue,
 		qt.Commentf("no float64 leaf in result: %v", result))
+}
+
+// goastPkg is a real package (the phase1 fixture has no cross-boundary
+// concept at all). Measured at plan time: 178 FCA objects, an 89-concept
+// lattice, 5 cross-boundary concepts, ~1.7s.
+const goastPkg = "github.com/aalpar/wile-goast/goast"
+
+// Decision 2's regression pin. Pushing a symbol filter into the FCA context
+// restricts the objects, recomputes the lattice over a different context, and
+// reports absence where findings exist. Measured on ./goast, write-only:
+// *restructure* keeps 3 objects and finds 0 concepts pushed down, against the
+// 2 finished concepts whose extent contains restructureBackwardGotos. Telling
+// a caller there are no false boundaries when there are is worse than
+// declining, so this tool post-filters.
+//
+// Asserted as an invariant rather than a pinned count, because the extent
+// names track goast's own churn: non-empty, a subset of the unfiltered rows,
+// and every returned row genuinely matches. If goast changes such that no
+// concept contains "restructure", replace the glob with another one that
+// separates the two approaches (*attach* and *loopRewriter* also did at plan
+// time) -- do not "fix" it by pushing the filter down.
+func TestFindFalseBoundaries_PostFilterPreservesFindings(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration test: builds an 89-concept lattice over ./goast")
+	}
+	mc := inProcessClient(t)
+
+	all := callTool(t, mc, "find_false_boundaries", map[string]any{"target": goastPkg})
+	envelopeOK(t, all, 2.0)
+	allRows := all["result"].([]any)
+	qt.Assert(t, len(allRows) > 0, qt.IsTrue,
+		qt.Commentf("fixture no longer produces cross-boundary concepts"))
+
+	scoped := callTool(t, mc, "find_false_boundaries", map[string]any{
+		"target": goastPkg,
+		"symbol": "*restructure*",
+	})
+	envelopeOK(t, scoped, 2.0)
+	rows := scoped["result"].([]any)
+
+	qt.Assert(t, len(rows) > 0, qt.IsTrue,
+		qt.Commentf("post-filter reported absence where findings exist: %v", rows))
+	qt.Assert(t, len(rows) < len(allRows), qt.IsTrue,
+		qt.Commentf("filter did not narrow: %d of %d", len(rows), len(allRows)))
+
+	// Every returned row really matches, and is one of the unfiltered rows.
+	unfiltered := map[string]bool{}
+	for _, r := range allRows {
+		unfiltered[extentKey(r)] = true
+	}
+	for _, r := range rows {
+		qt.Assert(t, unfiltered[extentKey(r)], qt.IsTrue,
+			qt.Commentf("row absent from the unfiltered result: %v", r))
+		matched := false
+		for _, n := range r.(map[string]any)["extent"].([]any) {
+			if strings.Contains(n.(string), "restructure") {
+				matched = true
+			}
+		}
+		qt.Assert(t, matched, qt.IsTrue,
+			qt.Commentf("row has no matching extent member: %v", r))
+	}
+
+	// The provenance is self-describing: cross_boundary_count is the
+	// pre-filter population, total_count the post-filter one.
+	prov := scoped["provenance"].(map[string]any)
+	qt.Assert(t, prov["symbol"], qt.Equals, "*restructure*")
+	qt.Assert(t, prov["total_count"].(float64), qt.Equals, float64(len(rows)))
+	qt.Assert(t, prov["cross_boundary_count"].(float64) > prov["total_count"].(float64),
+		qt.IsTrue, qt.Commentf("prov=%v", prov))
+}
+
+// extentKey joins a boundary row's extent into a stable identity string.
+func extentKey(row any) string {
+	ext, ok := row.(map[string]any)["extent"].([]any)
+	if !ok {
+		return ""
+	}
+	names := make([]string, 0, len(ext))
+	for _, n := range ext {
+		s, _ := n.(string)
+		names = append(names, s)
+	}
+	return strings.Join(names, "|")
+}
+
+// Row WIDTH, not row count, is this tool's failure mode: measured on ./goast
+// the three lattice-relationship lists are 90.5% of the result bytes
+// (incomparable_with alone is 60.6%). summary drops them and adds types_count;
+// full reproduces today's shape exactly.
+func TestFindFalseBoundaries_DetailFieldSets(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration test: builds an 89-concept lattice over ./goast")
+	}
+	mc := inProcessClient(t)
+
+	summary := callTool(t, mc, "find_false_boundaries", map[string]any{"target": goastPkg})
+	full := callTool(t, mc, "find_false_boundaries", map[string]any{
+		"target": goastPkg,
+		"detail": "full",
+	})
+
+	wantSummary := []string{"extent", "intent", "extent_size", "summary", "types_count"}
+	wantFull := []string{"extent", "intent", "extent_size", "summary",
+		"subconcept_of", "superconcept_of", "incomparable_with"}
+
+	assertFieldSet(t, summary["result"].([]any), wantSummary)
+	assertFieldSet(t, full["result"].([]any), wantFull)
+
+	// types_count agrees with the summary string, which is the '+'-joined
+	// type list, so the recompute from the intent is not drifting.
+	for _, r := range summary["result"].([]any) {
+		row := r.(map[string]any)
+		n := int(row["types_count"].(float64))
+		qt.Assert(t, n, qt.Equals, strings.Count(row["summary"].(string), "+")+1,
+			qt.Commentf("types_count vs summary: %v", row))
+	}
+}
+
+// assertFieldSet fails unless every row has exactly the wanted keys.
+func assertFieldSet(t *testing.T, rows []any, want []string) {
+	t.Helper()
+	qt.Assert(t, len(rows) > 0, qt.IsTrue, qt.Commentf("no rows to check"))
+	for _, r := range rows {
+		row := r.(map[string]any)
+		got := make([]string, 0, len(row))
+		for k := range row {
+			got = append(got, k)
+		}
+		slices.Sort(got)
+		w := slices.Clone(want)
+		slices.Sort(w)
+		qt.Assert(t, got, qt.DeepEquals, w, qt.Commentf("row=%v", row))
+	}
+}
+
+// Ranking: more struct types tied together first, then a larger shared field
+// set, then a larger extent. Repeated identical calls agree, and pages
+// partition the unpaged result.
+func TestFindFalseBoundaries_RankStabilityAndPaging(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration test: builds an 89-concept lattice over ./goast")
+	}
+	mc := inProcessClient(t)
+	args := map[string]any{"target": goastPkg}
+
+	a := callTool(t, mc, "find_false_boundaries", args)
+	b := callTool(t, mc, "find_false_boundaries", args)
+	qt.Assert(t, reflect.DeepEqual(a["result"], b["result"]), qt.IsTrue,
+		qt.Commentf("non-deterministic order"))
+
+	all := a["result"].([]any)
+	qt.Assert(t, len(all) >= 2, qt.IsTrue, qt.Commentf("need >=2 rows to page"))
+
+	// Rank key is non-increasing across the result.
+	prev := -1
+	for _, r := range all {
+		n := int(r.(map[string]any)["types_count"].(float64))
+		if prev >= 0 {
+			qt.Assert(t, n <= prev, qt.IsTrue,
+				qt.Commentf("types_count not descending: %d after %d", n, prev))
+		}
+		prev = n
+	}
+
+	p1 := callTool(t, mc, "find_false_boundaries", map[string]any{
+		"target": goastPkg, "limit": float64(1), "offset": float64(0)})
+	p2 := callTool(t, mc, "find_false_boundaries", map[string]any{
+		"target": goastPkg, "limit": float64(len(all) - 1), "offset": float64(1)})
+
+	qt.Assert(t, p1["provenance"].(map[string]any)["truncated"], qt.Equals, true)
+	qt.Assert(t, p2["provenance"].(map[string]any)["truncated"], qt.Equals, false)
+
+	joined := append(slices.Clone(p1["result"].([]any)), p2["result"].([]any)...)
+	qt.Assert(t, reflect.DeepEqual(joined, all), qt.IsTrue,
+		qt.Commentf("pages do not partition the unpaged result"))
+}
+
+// A glob matching nothing is an empty SUCCESS, not an error -- consistent
+// with an empty find_duplicates result meaning "no duplicates".
+func TestFindFalseBoundaries_NoMatchIsEmptySuccess(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration test: builds an 89-concept lattice over ./goast")
+	}
+	mc := inProcessClient(t)
+	env := callTool(t, mc, "find_false_boundaries", map[string]any{
+		"target": goastPkg,
+		"symbol": "NoSuchFunctionAnywhere",
+	})
+	envelopeOK(t, env, 2.0)
+	qt.Assert(t, env["result"], qt.DeepEquals, []any{})
+	prov := env["provenance"].(map[string]any)
+	qt.Assert(t, prov["total_count"], qt.Equals, float64(0))
+	qt.Assert(t, prov["truncated"], qt.Equals, false)
+}
+
+// detail / limit / offset are validated in the Go handler, matching how mode
+// already is. A bad value is a tool error naming what is legal.
+func TestViewParams_Validation(t *testing.T) {
+	mc := inProcessClient(t)
+	ctx := context.Background()
+
+	cases := []struct {
+		tool string
+		args map[string]any
+		want string
+	}{
+		{"find_false_boundaries", map[string]any{"target": phase1Pkg, "detail": "brief"},
+			"detail must be summary or full"},
+		{"find_false_boundaries", map[string]any{"target": phase1Pkg, "limit": float64(-1)},
+			"limit must be a non-negative integer"},
+		{"find_false_boundaries", map[string]any{"target": phase1Pkg, "offset": float64(-3)},
+			"offset must be a non-negative integer"},
+		{"find_false_boundaries", map[string]any{"target": phase1Pkg, "limit": 2.5},
+			"limit must be a non-negative integer"},
+	}
+	for _, tc := range cases {
+		req := mcp.CallToolRequest{}
+		req.Params.Name = tc.tool
+		req.Params.Arguments = tc.args
+		res, err := mc.CallTool(ctx, req)
+		qt.Assert(t, err, qt.IsNil)
+		qt.Assert(t, res.IsError, qt.IsTrue, qt.Commentf("args=%v", tc.args))
+		tcText, ok := mcp.AsTextContent(res.Content[0])
+		qt.Assert(t, ok, qt.IsTrue)
+		qt.Assert(t, tcText.Text, qt.Equals, tc.want)
+	}
 }

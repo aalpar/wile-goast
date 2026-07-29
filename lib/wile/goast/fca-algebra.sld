@@ -16,7 +16,8 @@
   (export
     concept-lattice->algebra-lattice
     annotated-boundary-report
-    concept-relationship)
+    concept-relationship
+    concept-summary)
   (import (wile goast utils)
           (wile goast fca))
   (include "fca-algebra.scm"))

@@ -17,6 +17,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"math"
 	"strings"
 
 	"github.com/mark3labs/mcp-go/mcp"
@@ -123,6 +124,22 @@ func (ms *mcpServer) registerPhase1Tools(s *server.MCPServer) {
 				mcp.Description("Minimum concept intent (attribute count) to report (default 2)")),
 			mcp.WithNumber("min_types",
 				mcp.Description("Minimum distinct struct types a concept must span (default 2)")),
+			mcp.WithString("scope",
+				mcp.Description("Only report rows whose function matches this path glob "+
+					"('*' only). Matches the whole path or any '/'-aligned suffix, so "+
+					"'marshal.go', 'goast/marshal.go' and '*/goast/*.go' all work.")),
+			mcp.WithString("symbol",
+				mcp.Description("Only report rows whose function name matches this glob "+
+					"('*' only). Matches the whole name or any '.'-aligned suffix, so a "+
+					"bare 'cloneTypeExpr' matches the package-qualified form.")),
+			mcp.WithString("detail",
+				mcp.Description("Row width: summary (default) drops the lattice "+
+					"relationship lists and adds types_count; full returns them.")),
+			mcp.WithNumber("limit",
+				mcp.Description("Maximum rows returned (default 50). provenance.truncated "+
+					"says whether rows were withheld.")),
+			mcp.WithNumber("offset",
+				mcp.Description("Rows skipped before limit applies (default 0).")),
 		),
 		ms.handleFindFalseBoundaries,
 	)
@@ -166,6 +183,50 @@ func boundaryMode(mode string) (string, bool) {
 	default:
 		return "", false
 	}
+}
+
+// viewOpts validates the five shared result-view parameters and returns the
+// Scheme (cons 'key val) fragments for those the caller actually set, or a
+// non-empty error message.
+//
+// An unset parameter emits nothing. Every default lives in the Scheme
+// pipeline (view-default-limit, view-default-detail), so there is exactly one
+// place a default is written and it is testable without an MCP round trip.
+//
+// RequireFloat accepts both float64 (JSON transport) and int (the in-process
+// test client), so the integrality check is done here rather than delegated
+// to RequireInt, which would silently truncate limit=2.5.
+func viewOpts(req mcp.CallToolRequest) ([]string, string) {
+	args := req.GetArguments()
+	var parts []string
+
+	scope := req.GetString("scope", "")
+	if scope != "" {
+		parts = append(parts, "(cons 'scope "+schemeStringLiteral(scope)+")")
+	}
+	symbol := req.GetString("symbol", "")
+	if symbol != "" {
+		parts = append(parts, "(cons 'symbol "+schemeStringLiteral(symbol)+")")
+	}
+	switch s := req.GetString("detail", ""); s {
+	case "": // unset
+	case "summary", "full":
+		parts = append(parts, "(cons 'detail '"+s+")")
+	default:
+		return nil, "detail must be summary or full"
+	}
+	for _, name := range []string{"limit", "offset"} {
+		_, present := args[name]
+		if !present {
+			continue
+		}
+		f, err := req.RequireFloat(name)
+		if err != nil || f < 0 || f != math.Trunc(f) {
+			return nil, name + " must be a non-negative integer"
+		}
+		parts = append(parts, fmt.Sprintf("(cons '%s %d)", name, int64(f)))
+	}
+	return parts, ""
 }
 
 // invokePipeline evaluates a pipeline call on the session's engine,
@@ -313,6 +374,11 @@ func (ms *mcpServer) handleFindFalseBoundaries(ctx context.Context, req mcp.Call
 	if ok {
 		optsParts = append(optsParts, fmt.Sprintf("(cons 'min-types %v)", v))
 	}
+	viewParts, verr := viewOpts(req)
+	if verr != "" {
+		return mcp.NewToolResultError(verr), nil
+	}
+	optsParts = append(optsParts, viewParts...)
 	code := `(import (wile goast pipelines))
 (pipeline-find-false-boundaries ` + schemeStringLiteral(target) +
 		` (list ` + strings.Join(optsParts, " ") + `))`

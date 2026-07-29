@@ -289,13 +289,83 @@
             (cons 'concept-count (length lattice)))
       rec)))
 
+;; ── find_false_boundaries: view hooks ────────────────────
+
+;; fb-keep?: OPTS' scope/symbol as a predicate over a cross-boundary concept,
+;; or #f when neither is set.
+;;
+;; The filter runs on FINISHED concepts, never on the FCA context. Restricting
+;; the context recomputes the lattice over a different object set and reports
+;; absence where findings exist. Measured on ./goast, write-only, 178 objects,
+;; 5 cross-boundary concepts: pushing *restructure* down keeps 3 objects and
+;; finds 0 concepts, against the 2 finished concepts whose extent contains
+;; restructureBackwardGotos. Telling a caller there are no false boundaries
+;; when there are five is worse than declining. There is no cost argument on
+;; the other side either: the whole call is ~1.7s over an 89-concept lattice.
+;;
+;; A concept is admitted when AT LEAST ONE extent member matches -- the caller
+;; asked about a function, and a cross-boundary concept is interesting
+;; precisely because it ties that function to others.
+(define (fb-keep? opts pos-index)
+  (let ((match? (view-name-matcher opts pos-index)))
+    (and match?
+         (lambda (concept)
+           (let loop ((ns (concept-extent concept)))
+             (cond ((null? ns) #f)
+                   ((match? (car ns)) #t)
+                   (else (loop (cdr ns)))))))))
+
+;; fb-types: the distinct struct types a concept's intent spans.
+;; cross-boundary-concepts computes exactly this at fca.scm:286 to enforce
+;; min-types and then discards it, returning the bare concept; the pipeline
+;; calls annotated-boundary-report rather than the boundary-report that
+;; recomputes it. So this is a one-line recompute, not an exposed value being
+;; plumbed through the algebra layer.
+(define (fb-types concept)
+  (unique (map attr-struct-name (concept-intent concept))))
+
+;; fb-rank-key: types spanned, then intent size, then extent size, all
+;; descending; the joined extent is the deterministic tie-break. A concept
+;; that ties MORE struct types together across MORE shared fields is the
+;; stronger false-boundary signal.
+;;
+;; NB this ordering is a choice made HERE. cross-boundary-concepts takes
+;; min-types as a floor and expresses no preference among concepts above it.
+(define (fb-rank-key concept)
+  (list (length (fb-types concept))
+        (length (concept-intent concept))
+        (length (concept-extent concept))
+        (string-join (concept-extent concept) " ")))
+
+;; fb-render: a concept -> its public row at DETAIL.
+;;   full    = today's shape exactly: extent, intent, extent-size, summary,
+;;             and the three lattice-relationship lists.
+;;   summary = the finding itself plus types-count, dropping the relationship
+;;             lists. Measured on ./goast those three fields are 90.5% of the
+;;             13301 result bytes (incomparable-with alone 60.6%), which is
+;;             why row WIDTH, not row count, is this tool's failure mode: a
+;;             design that only paged would leave it exactly as unusable.
+;; Because apply-view renders after paging, annotated-boundary-report runs
+;; only for the rows actually returned -- and at summary, not at all.
+(define (fb-render lattice)
+  (lambda (concept detail)
+    (if (eq? detail 'full)
+      (car (annotated-boundary-report (list concept) lattice))
+      (list (cons 'extent (concept-extent concept))
+            (cons 'intent (concept-intent concept))
+            (cons 'extent-size (length (concept-extent concept)))
+            (cons 'summary (concept-summary concept))
+            (cons 'types-count (length (fb-types concept)))))))
+
 ;; ── find_false_boundaries ────────────────────────────────
 ;;
 ;; Build an FCA context from struct-field access in MODE, filter for
-;; concepts that span multiple struct types (cross-boundary candidates),
-;; and annotate each with its lattice relationships. OPTS is an alist;
-;; recognised keys are mode (symbol) and min-extent / min-intent /
-;; min-types (integers, all default 2).
+;; concepts that span multiple struct types (cross-boundary candidates), and
+;; post-filter/rank/page/render the finished concepts through the shared
+;; result view. OPTS is an alist; recognised keys are mode (symbol),
+;; min-extent / min-intent / min-types (integers, all default 2), and the
+;; shared view parameters (scope, symbol, detail, limit, offset). scope/symbol
+;; filter the FINISHED concepts, never the FCA context -- see fb-keep?.
 
 (define (pipeline-find-false-boundaries target opts)
   (let* ((session (go-load target))
@@ -310,13 +380,26 @@
                   'min-extent min-ext
                   'min-intent min-int
                   'min-types min-typ))
-         (annotated (annotated-boundary-report cross lattice)))
-    (pipeline-envelope 1
-      (list (cons 'target target)
-            (cons 'mode mode)
-            (cons 'lattice-size (length lattice))
-            (cons 'cross-boundary-count (length cross)))
-      annotated)))
+         ;; The annotated report carries no position, so scope needs the
+         ;; name->position join the FCA layer keeps out of the algebra.
+         (pos-index (field-index->positions field-idx)))
+    (call-with-values
+      (lambda ()
+        (apply-view cross opts (fb-keep? opts pos-index)
+                    fb-rank-key (fb-render lattice)))
+      (lambda (shown view-prov)
+        ;; Version 2: detail=summary is the default, so a default call's row
+        ;; shape changed (the three relationship lists are gone).
+        (pipeline-envelope 2
+          (append
+            (list (cons 'target target)
+                  (cons 'mode mode)
+                  (cons 'lattice-size (length lattice))
+                  ;; cross-boundary-count is the PRE-filter population;
+                  ;; total-count (from the view) is the post-filter one.
+                  (cons 'cross-boundary-count (length cross)))
+            view-prov)
+          shown)))))
 
 ;; ── find_duplicates ──────────────────────────────────────
 ;;
