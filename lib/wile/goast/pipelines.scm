@@ -341,13 +341,23 @@
 ;; the caller set, not a free-varying signal. It is also bounded above by
 ;; intent size, since each attribute contributes at most one struct name --
 ;; so the primary component is a coarsening of the secondary one, not an
-;; independent axis. Measured over ./... (write-only, 116-concept lattice):
-;; 5 cross-boundary rows total, types-count histogram {2: 4, 3: 1}, and
-;; types-count equals intent size on 3 of the 5. On that evidence the types
-;; axis carries about one bit across the whole corpus, so the ordering among
-;; rows is mostly decided by intent size and extent size. Five rows is not
-;; enough to redesign the rank order on; this note exists so a future reader
-;; does not over-trust the primary key.
+;; independent axis. Measured write-only over four corpora, 120 rows total:
+;;
+;;   target                 rows   types-count hist        intent range
+;;   wile-goast/...            5   {2:4, 3:1}                    2-3
+;;   wile/pkg/...             61   {2:45, 3:8, 4:4, 5:4}         2-11
+;;   go/types                 21   {2:20, 5:1}                   2-8
+;;   x/tools/go/ssa           33   {2:24, 3:9}                   2-20
+;;
+;; So types-count DOES vary (up to 5) and the field is worth exposing, but
+;; it sits at the min-types floor on 93 of 120 rows (78%). For those rows
+;; the ordering is decided entirely by intent size and extent size. What
+;; the primary key actually buys is a head: it floats the ~22% spanning 3+
+;; types above the rest, and the two axes do decouple at scale (types-count
+;; equals intent size on 26% of rows here against 60% on the 5-row corpus).
+;; That is a defensible two-tier order, now evidenced rather than asserted.
+;; Left as-is deliberately -- but a reader should not read the primary key
+;; as doing the ranking work, because for most rows it does not.
 (define (fb-rank-key concept)
   (list (length (fb-types concept))
         (length (concept-intent concept))
