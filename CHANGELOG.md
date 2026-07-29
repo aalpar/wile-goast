@@ -1,5 +1,24 @@
 # Changelog
 
+## Unreleased — `go-load` gains a `'dir` option
+
+`go-load` accepts `'dir <path>`, resolving its patterns against `<path>`
+instead of the host process's working directory:
+
+```scheme
+(go-load "./..." 'dir "/path/to/other/module")
+```
+
+`LoadPackagesChecked` (`goast/load.go`) gains a `dir string` parameter
+threaded through all ten call sites; every caller other than `go-load`
+passes `""`, leaving behavior unchanged. When `dir` is set, an additional
+`ResourceFile`/`ActionRead` security check gates the directory before load,
+and a pre-check with `os.Stat` fails with a clear message when the path
+does not exist or is not a directory — this closes the gap where an MCP
+server rooted in this repo could not analyze a module outside this
+workspace without building the CLI and invoking it from inside the target
+checkout.
+
 ## Unreleased — Result-View Parameters (find_duplicates, find_false_boundaries)
 
 `find_duplicates` and `find_false_boundaries` gain five shared optional

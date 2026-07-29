@@ -93,6 +93,22 @@ accepts both types.
 | Symbol | Effect |
 |--------|--------|
 | `'lint` | Upgrade to `LoadAllSyntax` for `go-analyze` support |
+| `'dir <path>` | Resolve patterns against `<path>` instead of the host process's working directory |
+
+`'dir` takes `<path>` as the next element, not a bare flag:
+
+```scheme
+(go-load "./..." 'dir "/path/to/other/module")
+(go-load "./pkg/..." "./cmd/..." 'dir "/path" 'lint)
+```
+
+`go-load` is the only primitive that takes `'dir`. Every other package-loading
+primitive (`go-typecheck-package`, `go-ssa-build`, `go-cfg`, `go-callgraph`,
+`go-analyze`, `go-list-deps`) stays bound to the process's working directory;
+downstream primitives consume the GoSession that `go-load` returns, so loading
+a directory once at the session boundary covers all of them. This is what
+lets an MCP server rooted in this repo analyze a module outside this
+workspace, since `packages.Load` otherwise inherits the host process's CWD.
 
 **`go-list-deps`** uses lightweight loading (`NeedName | NeedImports` only) for
 dependency discovery before committing to a full load.

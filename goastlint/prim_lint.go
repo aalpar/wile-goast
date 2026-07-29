@@ -129,7 +129,7 @@ func analyzeFromPattern(mc machine.CallContext, patterns []string, analyzers []*
 
 	pkgs, err := goast.LoadPackagesChecked(mc,
 		packages.LoadAllSyntax,
-		fset, errLintBuild, "go-analyze",
+		fset, errLintBuild, "go-analyze", "",
 		patterns...)
 	if err != nil {
 		return err

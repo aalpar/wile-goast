@@ -16,6 +16,7 @@ package goast
 
 import (
 	"go/token"
+	"os"
 	"strings"
 
 	"golang.org/x/tools/go/packages"
@@ -29,12 +30,20 @@ import (
 // standard error aggregation. It unifies the repeated pattern of
 // security check + packages.Load + pkg.Errors collection found across
 // all five sub-extensions.
+//
+// dir, when non-empty, sets packages.Config.Dir so patterns resolve against
+// that directory instead of the host process's working directory. It also
+// gates an additional ResourceFile/ActionRead security check on dir and a
+// pre-check that dir exists and is a directory, so a bad path fails with a
+// clear message instead of packages.Load's opaque one. Callers that are
+// deliberately CWD-bound pass "", which leaves behavior unchanged.
 func LoadPackagesChecked(
 	mc machine.CallContext,
 	mode packages.LoadMode,
 	fset *token.FileSet,
 	sentinel error,
 	command string,
+	dir string,
 	patterns ...string,
 ) ([]*packages.Package, error) {
 	err := security.CheckWithAuthorizer(mc.Authorizer(), security.AccessRequest{
@@ -46,12 +55,36 @@ func LoadPackagesChecked(
 		return nil, err
 	}
 
+	if dir != "" {
+		err = security.CheckWithAuthorizer(mc.Authorizer(), security.AccessRequest{
+			Resource: security.ResourceFile,
+			Action:   security.ActionRead,
+			Target:   dir,
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		info, statErr := os.Stat(dir)
+		if statErr != nil {
+			return nil, werr.WrapForeignErrorf(sentinel,
+				"%s: dir %q: %s", command, dir, statErr)
+		}
+		if !info.IsDir() {
+			return nil, werr.WrapForeignErrorf(sentinel,
+				"%s: dir %q is not a directory", command, dir)
+		}
+	}
+
 	cfg := &packages.Config{
 		Mode:    mode,
 		Context: mc.Context(),
 	}
 	if fset != nil {
 		cfg.Fset = fset
+	}
+	if dir != "" {
+		cfg.Dir = dir
 	}
 
 	pkgs, loadErr := packages.Load(cfg, patterns...)

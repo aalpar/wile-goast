@@ -46,10 +46,12 @@ func PrimGoLoad(mc machine.CallContext) error {
 
 	patterns := []string{first.Value}
 	lintMode := false
+	dir := ""
 
 	// Walk the remaining rest list for additional patterns and options.
 	tuple, ok := rest.(values.Tuple)
 	if ok {
+	walk:
 		for !values.IsEmptyList(tuple) {
 			pair, pok := tuple.(*values.Pair)
 			if !pok {
@@ -59,11 +61,29 @@ func PrimGoLoad(mc machine.CallContext) error {
 			case *values.String:
 				patterns = append(patterns, v.Value)
 			case *values.Symbol:
-				if v.Key == "lint" {
+				switch v.Key {
+				case "lint":
 					lintMode = true
-				} else {
+				case "dir":
+					valPair, vpok := pair.Cdr().(*values.Pair)
+					if !vpok {
+						return werr.WrapForeignErrorf(errGoLoad,
+							"go-load: 'dir requires a following string value")
+					}
+					dirVal, dvok := valPair.Car().(*values.String)
+					if !dvok {
+						return werr.WrapForeignErrorf(errGoLoad,
+							"go-load: 'dir value must be a string, got %T", valPair.Car())
+					}
+					dir = dirVal.Value
+					tuple, ok = valPair.Cdr().(values.Tuple)
+					if !ok {
+						break walk
+					}
+					continue walk
+				default:
 					return werr.WrapForeignErrorf(errGoLoad,
-						"go-load: unknown option '%s'; valid options: lint", v.Key)
+						"go-load: unknown option '%s'; valid options: lint, dir", v.Key)
 				}
 			default:
 				return werr.WrapForeignErrorf(errGoLoad,
@@ -89,7 +109,7 @@ func PrimGoLoad(mc machine.CallContext) error {
 	}
 
 	pkgs, err := LoadPackagesChecked(mc, mode, fset,
-		errGoLoad, "go-load", patterns...)
+		errGoLoad, "go-load", dir, patterns...)
 	if err != nil {
 		return err
 	}
@@ -143,7 +163,7 @@ func PrimGoListDeps(mc machine.CallContext) error {
 
 	pkgs, err := LoadPackagesChecked(mc,
 		packages.NeedName|packages.NeedImports,
-		nil, errGoLoad, "go-list-deps",
+		nil, errGoLoad, "go-list-deps", "",
 		patterns...)
 	if err != nil {
 		return err

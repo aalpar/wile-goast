@@ -137,13 +137,16 @@ func addPrimitives(r *registry.Registry) error {
 				"First arg is a package pattern or GoSession; optional. If no first arg provided,\\n" +
 				"uses (current-go-target).\\n" +
 				"GoSession is an opaque value accepted by go-typecheck-package, go-ssa-build,\\n" +
-				"go-callgraph, go-cfg, go-analyze, and go-ssa-field-index.\\n\\n" +
+				"go-callgraph, go-cfg, go-analyze, and go-ssa-field-index.\\n" +
+				"'dir sets the directory patterns resolve against, overriding the host process's\\n" +
+				"working directory; use it to load a module outside this workspace.\\n\\n" +
 				"Examples:\\n" +
 				"  (define s (go-load \\\"./...\\\"))\\n" +
 				"  (go-session? s)           ; => #t\\n" +
 				"  (go-typecheck-package s)   ; reuses loaded packages\\n" +
 				"  (go-ssa-build s)           ; reuses loaded packages\\n" +
-				"  (go-callgraph s 'cha)      ; reuses loaded packages\\n\\n" +
+				"  (go-callgraph s 'cha)      ; reuses loaded packages\\n" +
+				"  (go-load \\\"./...\\\" 'dir \\\"/path/to/other/module\\\")\\n\\n" +
 				"See also: `go-session?', `go-typecheck-package', `go-ssa-build'.",
 			ParamNames: []string{"pattern", "rest"}, Category: "goast"},
 		{Name: "go-session?", ParamCount: 1, Impl: PrimGoSessionP,

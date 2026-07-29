@@ -275,7 +275,7 @@ func typecheckFromPatternWithRest(mc machine.CallContext, pattern *values.String
 	pkgs, err := LoadPackagesChecked(mc,
 		packages.NeedName|packages.NeedFiles|packages.NeedSyntax|
 			packages.NeedTypes|packages.NeedTypesInfo,
-		fset, errGoPackageLoad, "go-typecheck-package",
+		fset, errGoPackageLoad, "go-typecheck-package", "",
 		pattern.Value)
 	if err != nil {
 		return err
@@ -319,7 +319,7 @@ func implementorsFromSession(mc machine.CallContext, ifaceName string, session *
 func implementorsFromPattern(mc machine.CallContext, ifaceName string, pattern *values.String) error {
 	pkgs, err := LoadPackagesChecked(mc,
 		packages.NeedName|packages.NeedTypes,
-		nil, errGoPackageLoad, "go-interface-implementors",
+		nil, errGoPackageLoad, "go-interface-implementors", "",
 		pattern.Value)
 	if err != nil {
 		return err

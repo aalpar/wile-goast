@@ -107,7 +107,7 @@ func ssaBuildFromPatternWithRest(mc machine.CallContext, pattern *values.String,
 		packages.NeedName|packages.NeedFiles|packages.NeedSyntax|
 			packages.NeedTypes|packages.NeedTypesInfo|
 			packages.NeedImports|packages.NeedDeps,
-		fset, errSSABuild, "go-ssa-build",
+		fset, errSSABuild, "go-ssa-build", "",
 		pattern.Value)
 	if err != nil {
 		return err
@@ -199,7 +199,7 @@ func fieldIndexFromPattern(mc machine.CallContext, pattern *values.String) error
 		packages.NeedName|packages.NeedFiles|packages.NeedSyntax|
 			packages.NeedTypes|packages.NeedTypesInfo|
 			packages.NeedImports|packages.NeedDeps,
-		fset, errSSAFieldIndex, "go-ssa-field-index",
+		fset, errSSAFieldIndex, "go-ssa-field-index", "",
 		pattern.Value)
 	if err != nil {
 		return err

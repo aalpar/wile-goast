@@ -246,7 +246,7 @@ func cfgFromPattern(mc machine.CallContext, pattern *values.String, funcName str
 		packages.NeedName|packages.NeedFiles|packages.NeedSyntax|
 			packages.NeedTypes|packages.NeedTypesInfo|
 			packages.NeedImports|packages.NeedDeps,
-		fset, errCFGBuild, "go-cfg",
+		fset, errCFGBuild, "go-cfg", "",
 		pattern.Value)
 	if err != nil {
 		return err

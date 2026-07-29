@@ -154,7 +154,7 @@ func callgraphFromPattern(mc machine.CallContext, pattern *values.String, algori
 		packages.NeedName|packages.NeedFiles|packages.NeedSyntax|
 			packages.NeedTypes|packages.NeedTypesInfo|
 			packages.NeedImports|packages.NeedDeps,
-		fset, errCGBuild, "go-callgraph",
+		fset, errCGBuild, "go-callgraph", "",
 		pattern.Value)
 	if err != nil {
 		return err
