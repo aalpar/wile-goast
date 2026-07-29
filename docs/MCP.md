@@ -45,15 +45,16 @@ appear on both stdio and HTTP. Implemented in `lib/wile/goast/pipelines.scm`
 | `discover_beliefs` | `target`, `discovery_path`, `committed_path?` | `{emitted_source, filtered_results}` |
 | `recommend_split` | `target`, `idf_threshold?`, `refine?`, `max_attributes?` | split proposal + `confidence` |
 | `recommend_boundaries` | `target`, `mode?` | `{splits, merges, extracts}` Pareto frontiers |
-| `find_false_boundaries` | `target`, `mode?`, `min_extent?`, `min_intent?`, `min_types?` | cross-boundary report |
-| `find_duplicates` | `target`, `threshold?`, `verdict?` | the scored, located pairs that unify (`equiv_tier` `proven`/`structural`); opt-in `verdict` |
+| `find_false_boundaries` | `target`, `mode?`, `min_extent?`, `min_intent?`, `min_types?`, `scope?`, `symbol?`, `detail?`, `limit?`, `offset?` | cross-boundary report |
+| `find_duplicates` | `target`, `threshold?`, `verdict?`, `scope?`, `symbol?`, `detail?`, `limit?`, `offset?` | the scored, located pairs that unify (`equiv_tier` `proven`/`structural`); opt-in `verdict` |
 | `scheme_defs` | `symbol`, `roots` | definition sites (file/line/col) for `symbol` across comma-separated `roots`; exploded `define-record-type` names, resolved `.sld` exports; lexical, pre-macro-expansion |
 | `scheme_symbols` | `file` | one `.scm`/`.sld`'s top-level definitions ordered by line, plus its library export list if a `.sld` |
 
 - Envelope `version` is a per-tool integer (bumped only on breaking
   `result`-shape changes); errors surface via MCP's `isError`, not the
   envelope. JSON keys are snake_case; Scheme alists stay kebab-case
-  (converted by `cmd/wile-goast/marshal.go`).
+  (converted by `cmd/wile-goast/marshal.go`). `find_duplicates` and
+  `find_false_boundaries` are both at `version` 2.
 - `mode` is the FCA field-access mode: `write-only` (default),
   `read-write`, or `type-only`. Any other value is a tool error.
 - Optional-parameter defaults: `idf_threshold` 0.36, `max_attributes` 30,
@@ -67,7 +68,7 @@ appear on both stdio and HTTP. Implemented in `lib/wile/goast/pipelines.scm`
   per concept; the tier is the adjudication that follows, so a `divergent`
   pair is one already rejected. Rejected pairs are counted, not listed:
   provenance carries `tiers` (`proven`/`structural`/`divergent`),
-  `scored_pair_count`, and `candidate_count` (= returned rows). On `./goast`
+  `scored_pair_count`, and `total_count` (= returned rows). On `./goast`
   that is 68 rows out of 20404 scored pairs, 30 KB instead of 9 MB. An empty
   `result` with a non-zero `divergent` count is a real answer: the pairs were
   examined and none unified.
@@ -81,6 +82,60 @@ appear on both stdio and HTTP. Implemented in `lib/wile/goast/pipelines.scm`
   answered in ~60s.
 - Prefer a pipeline tool for its known structural query; use `eval` for
   open-ended exploration. Design: `plans/2026-04-19-mcp-tool-surface-{design,impl}.md`.
+
+### Result views (`find_duplicates`, `find_false_boundaries`)
+
+Both tools take the same five optional parameters, with the same meaning.
+Defaults live in the Scheme pipeline, so a client that passes none of them
+still gets a usable response.
+
+| Param | Type | Default | Meaning |
+|-------|------|---------|---------|
+| `scope` | glob | unset | file path the element must match |
+| `symbol` | glob | unset | element name must match |
+| `detail` | `summary` \| `full` | `summary` | row width |
+| `limit` | integer ≥ 0 | 50 | maximum rows returned |
+| `offset` | integer ≥ 0 | 0 | rows skipped before `limit` applies |
+
+`*` is the only metacharacter and matches any run of characters, separators
+included. A glob matches if it matches the whole string **or the whole of any
+suffix beginning at a separator boundary** — `/` for `scope`, `.` for
+`symbol`. So `scope=marshal.go`, `scope=goast/marshal.go` and
+`scope=*/goast/*.go` all work against the absolute position path with no
+relativization, and `symbol=cloneTypeExpr` works on both tools despite one
+reporting `Type.Method` and the other the package-qualified SSA form. Unset
+matches everything; both set is a conjunction on the same element. There is no
+negation or disjunction.
+
+A glob matching nothing is an **empty success**, not an error. An invalid
+`detail`, or a negative or non-integer `limit`/`offset`, is a tool error.
+
+Provenance gains `total_count` (rows after filtering, before paging),
+`returned_count`, `offset`, `limit`, `detail`, `truncated`, and an echo of
+`scope`/`symbol` when set. **`truncated` is the field to read**: false means
+the result is complete, true means narrow or page.
+
+The two tools differ in *where* the filter applies, and this is deliberate:
+
+- `find_duplicates` **pushes down**. The prune lands on the flat candidate-pair
+  list before scoring, so a scoped query is cheaper, not merely smaller — and
+  the `max-candidate-pairs` guard reads the count *after* the prune, so a
+  narrow query on a target that would otherwise be refused is answered.
+- `find_false_boundaries` **post-filters** finished concepts. Restricting the
+  FCA objects would recompute the lattice over a different context and report
+  absence where findings exist: on `./goast`, `symbol=*restructure*` pushed
+  into the context finds 0 cross-boundary concepts against the 2 that actually
+  match. The whole call is ~1.7s over an 89-concept lattice, so there is no
+  cost argument on the other side.
+
+`detail=summary` is where the second tool's real saving is: on `./goast` its
+three lattice-relationship fields are 90.5% of the result bytes, and `summary`
+skips computing them rather than computing and discarding them. It adds
+`types_count`. `find_duplicates`' `summary` drops the `measures` sub-object,
+whose `similarity` merely repeats the top-level `score`; an opt-in `verdict`
+survives both detail levels.
+
+Design: `plans/2026-07-28-goast-result-view-{design,impl}.md`.
 
 ## Prompts
 

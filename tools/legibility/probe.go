@@ -135,6 +135,13 @@ func pairKey(names []string) string {
 }
 
 // tierToBucket is the oracle: the machine-verified tier's implied action.
+//
+// The "distinct" case is unreachable-by-construction, not dead: since the
+// equiv-tier filter shipped, find_duplicates never returns a "divergent"
+// pair, so no candidate reaching this function carries that tier. Left in
+// place as the honest total mapping (and a tripwire if that filtering ever
+// changes); the prompt's choice list no longer offers "distinct" because a
+// correct answer can never need it.
 func tierToBucket(tier string) string {
 	switch tier {
 	case "proven":
@@ -180,10 +187,9 @@ Here is the tool's JSON output:
 For EACH candidate pair in the output, decide one bucket:
 - "verified": you would treat these as duplicates without further checking
 - "review":   likely duplicates, but you would review before merging
-- "distinct": not duplicates
 
 Reply with ONLY a JSON array, no prose, each element:
-{"functions":["A","B"],"bucket":"verified|review|distinct"}`
+{"functions":["A","B"],"bucket":"verified|review"}`
 }
 
 // getAnswer returns the model's answer. If answerFile is set, it reads that

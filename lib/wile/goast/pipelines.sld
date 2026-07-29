@@ -57,7 +57,7 @@
     ;; the scope/symbol prune and the pair-count guard both see the work list;
     ;; score-candidate-pairs is the scoring half it then drives.
     (only (wile goast dup-detect)
-          find-scored-candidates candidate->verdict
+          candidate->verdict
           duplicate-candidate-concepts function-ref-context
           candidate-pairs func-refs->positions score-candidate-pairs)
     (only (wile goast provenance) finding-value finding-where finding-score))

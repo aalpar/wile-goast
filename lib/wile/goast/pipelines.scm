@@ -403,12 +403,16 @@
 
 ;; ── find_duplicates ──────────────────────────────────────
 ;;
-;; Surface (wile goast dup-detect)'s find-scored-candidates as a
-;; command-level tool. The raw candidate carries make-finding records whose
-;; leading 'finding tag defeats the JSON marshaller's alist detection (it
-;; would emit an array of {car,cdr} objects); clean-finding / candidate->clean
-;; project each candidate into marshaller-clean alists. Pure surfacing: no
-;; change to dup-detect.scm.
+;; Runs (wile goast dup-detect)'s discovery (duplicate-candidate-concepts,
+;; function-ref-context, candidate-pairs, func-refs->positions) and scoring
+;; (score-candidate-pairs) as separate steps, not via find-scored-candidates,
+;; so the scope/symbol prune (dup-keep-pair?, below) can sit between them on
+;; the flat pair list, before scoring runs. dup-detect.scm was restructured
+;; in Task 4 to expose discovery and scoring as separable steps. The raw
+;; candidate carries make-finding records whose leading 'finding tag defeats
+;; the JSON marshaller's alist detection (it would emit an array of
+;; {car,cdr} objects); clean-finding / candidate->clean project each
+;; candidate into marshaller-clean alists.
 
 ;; ->float64: coerce an inexact real to float64.
 ;; score-diffs emits effective-similarity via exact->inexact over Rational,
