@@ -71,7 +71,7 @@ appear on both stdio and HTTP. Implemented in `lib/wile/goast/pipelines.scm`
   `scored_pair_count`, and `total_count` (pre-paging). On `./goast`,
   `total_count` is 68 out of 20404 scored pairs; at `detail=full` with no
   limit, that is 30 KB instead of 9 MB. Under the v2 defaults (`detail=summary`,
-  `limit` 50) a default call returns 50 narrower rows instead. An empty
+  `limit` 100) a default call returns all 68 rows, un-truncated. An empty
   `result` with a non-zero `divergent` count is a real answer: the pairs were
   examined and none unified.
 - `find_duplicates` runs discovery first and errors if the target yields more
@@ -96,7 +96,7 @@ still gets a usable response.
 | `scope` | glob | unset | file path the element must match |
 | `symbol` | glob | unset | element name must match |
 | `detail` | `summary` \| `full` | `summary` | row width |
-| `limit` | integer ≥ 0 | 50 | maximum rows returned |
+| `limit` | integer ≥ 0 | 100 | maximum rows returned |
 | `offset` | integer ≥ 0 | 0 | rows skipped before `limit` applies |
 
 `*` is the only metacharacter and matches any run of characters, separators

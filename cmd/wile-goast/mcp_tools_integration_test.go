@@ -525,10 +525,13 @@ func TestFindDuplicates_AnswersPastOldCeiling(t *testing.T) {
 	tiers := prov["tiers"].(map[string]any)
 	kept := tiers["proven"].(float64) + tiers["structural"].(float64)
 	qt.Assert(t, prov["total_count"], qt.Equals, kept)
-	// The default limit is 50, so the result is the first page of `kept`.
-	qt.Assert(t, prov["returned_count"].(float64), qt.Equals, math.Min(kept, 50))
+	// The result is the first page of `kept`, sized by whatever limit the
+	// envelope itself reports -- this asserts the relationship between
+	// total_count, limit, returned_count and truncated, not a pinned default.
+	limit := prov["limit"].(float64)
+	qt.Assert(t, prov["returned_count"].(float64), qt.Equals, math.Min(kept, limit))
 	qt.Assert(t, float64(len(env["result"].([]any))), qt.Equals, prov["returned_count"])
-	qt.Assert(t, prov["truncated"], qt.Equals, kept > 50)
+	qt.Assert(t, prov["truncated"], qt.Equals, kept > limit)
 
 	for _, r := range env["result"].([]any) {
 		tier := r.(map[string]any)["equiv_tier"].(string)

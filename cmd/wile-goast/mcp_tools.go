@@ -121,7 +121,7 @@ func (ms *mcpServer) registerPhase1Tools(s *server.MCPServer) {
 				mcp.Description("Row width: summary (default) drops the measures "+
 					"sub-object; full returns it.")),
 			mcp.WithNumber("limit",
-				mcp.Description("Maximum rows returned (default 50). provenance.truncated "+
+				mcp.Description("Maximum rows returned (default 100). provenance.truncated "+
 					"says whether rows were withheld.")),
 			mcp.WithNumber("offset",
 				mcp.Description("Rows skipped before limit applies (default 0).")),
@@ -157,7 +157,7 @@ func (ms *mcpServer) registerPhase1Tools(s *server.MCPServer) {
 					"relationship lists; full returns them. types_count is present "+
 					"at both levels.")),
 			mcp.WithNumber("limit",
-				mcp.Description("Maximum rows returned (default 50). provenance.truncated "+
+				mcp.Description("Maximum rows returned (default 100). provenance.truncated "+
 					"says whether rows were withheld.")),
 			mcp.WithNumber("offset",
 				mcp.Description("Rows skipped before limit applies (default 0).")),

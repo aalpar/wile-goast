@@ -10,7 +10,7 @@ parameters, uniformly filtered, ranked, paged, and rendered by `apply-view`
   before scoring on `find_duplicates`, post-filtered on finished concepts on
   `find_false_boundaries`.
 - `detail` — `summary` (default) or `full` row width.
-- `limit` / `offset` — paging, defaults 50 and 0.
+- `limit` / `offset` — paging, defaults 100 and 0.
 
 Both tools move to envelope `version` 2: `detail=summary` is now the
 default, so a default call's row shape changed (`find_duplicates` drops the

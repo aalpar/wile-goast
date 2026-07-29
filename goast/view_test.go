@@ -68,10 +68,12 @@ func TestApplyView_ProvenanceAndTruncation(t *testing.T) {
 
 	// Complete result: truncated #f, counts agree, defaults echoed.
 	for expr, want := range map[string]string{
-		`(get '() 'total-count)`:                       "4",
-		`(get '() 'returned-count)`:                    "4",
-		`(get '() 'truncated)`:                         "#f",
-		`(get '() 'limit)`:                             "50",
+		`(get '() 'total-count)`:    "4",
+		`(get '() 'returned-count)`: "4",
+		`(get '() 'truncated)`:      "#f",
+		// This is the one site that pins the default's actual value; every
+		// other assertion of the limit reads it off the envelope instead.
+		`(get '() 'limit)`:                             "100",
 		`(get '() 'offset)`:                            "0",
 		`(get '() 'detail)`:                            "summary",
 		`(get '((limit . 2)) 'returned-count)`:         "2",

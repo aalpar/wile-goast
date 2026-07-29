@@ -128,7 +128,7 @@
 ;; that knows nothing about these parameters gets a usable first response and
 ;; there is exactly one place to read the defaults off.
 
-(define view-default-limit 50)
+(define view-default-limit 100)
 (define view-default-detail 'summary)
 
 (define (view-detail opts) (or (assoc-default opts 'detail) view-default-detail))
