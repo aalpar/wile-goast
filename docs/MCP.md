@@ -68,7 +68,7 @@ appear on both stdio and HTTP. Implemented in `lib/wile/goast/pipelines.scm`
   per concept; the tier is the adjudication that follows, so a `divergent`
   pair is one already rejected. Rejected pairs are counted, not listed:
   provenance carries `tiers` (`proven`/`structural`/`divergent`),
-  `scored_pair_count`, and `total_count` (= returned rows). On `./goast`
+  `scored_pair_count`, and `total_count` (pre-paging). On `./goast`
   that is 68 rows out of 20404 scored pairs, 30 KB instead of 9 MB. An empty
   `result` with a non-zero `divergent` count is a real answer: the pairs were
   examined and none unified.
