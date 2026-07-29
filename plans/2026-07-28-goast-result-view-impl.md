@@ -1384,6 +1384,17 @@ findings exist: *restructure* pushed down finds 0 concepts against the 2
 that actually match. Envelope version 1 -> 2 (default row shape changed)."
 ```
 
+> **2026-07-29:** the "full is unchanged" / "full reproduces today's shape
+> exactly" field lists above (test comment and commit message, as landed)
+> are historical record of Task 3 as originally shipped, kept as-is. The
+> requirement they document — `full` byte-for-byte stable, `types_count`
+> summary-only — is retired by owner's decision: `types_count` is
+> `fb-rank-key`'s primary sort field, so a `full` result was ordered by a
+> key it did not expose, and this tool has no consumers other than the
+> owner to preserve the old shape for. `types_count` now appears at both
+> detail levels. See `2026-07-28-goast-result-view-design.md`, Testing
+> item 6.
+
 ---
 
 ### Task 4: `dup-detect.scm` — a pair-list entry point (pure refactor)

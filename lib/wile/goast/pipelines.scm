@@ -334,31 +334,45 @@
 ;;
 ;; NB this ordering is a choice made HERE. cross-boundary-concepts takes
 ;; min-types as a floor and expresses no preference among concepts above it.
+;;
+;; That preference is weaker than it sounds. types-count can never fall
+;; below min-types (default 2): cross-boundary-concepts (fca.scm:287-289)
+;; filters on exactly that count, so the primary key's low end is a floor
+;; the caller set, not a free-varying signal. It is also bounded above by
+;; intent size, since each attribute contributes at most one struct name --
+;; so the primary component is a coarsening of the secondary one, not an
+;; independent axis. Measured over ./... (write-only, 116-concept lattice):
+;; 5 cross-boundary rows total, types-count histogram {2: 4, 3: 1}, and
+;; types-count equals intent size on 3 of the 5. On that evidence the types
+;; axis carries about one bit across the whole corpus, so the ordering among
+;; rows is mostly decided by intent size and extent size. Five rows is not
+;; enough to redesign the rank order on; this note exists so a future reader
+;; does not over-trust the primary key.
 (define (fb-rank-key concept)
   (list (length (fb-types concept))
         (length (concept-intent concept))
         (length (concept-extent concept))
         (string-join (concept-extent concept) " ")))
 
-;; fb-render: a concept -> its public row at DETAIL.
-;;   full    = today's shape exactly: extent, intent, extent-size, summary,
-;;             and the three lattice-relationship lists.
-;;   summary = the finding itself plus types-count, dropping the relationship
-;;             lists. Measured on ./goast those three fields are 90.5% of the
-;;             13301 result bytes (incomparable-with alone 60.6%), which is
-;;             why row WIDTH, not row count, is this tool's failure mode: a
-;;             design that only paged would leave it exactly as unusable.
+;; fb-render: a concept -> its public row at DETAIL. Both levels carry the
+;; finding itself (extent, intent, extent-size, summary, types-count); full
+;; adds the three lattice-relationship lists that summary drops. Measured on
+;; ./goast those three lists are 90.5% of the 13301 result bytes
+;; (incomparable-with alone 60.6%), which is why row WIDTH, not row count, is
+;; this tool's failure mode: a design that only paged would leave it exactly
+;; as unusable.
 ;; Because apply-view renders after paging, annotated-boundary-report runs
 ;; only for the rows actually returned -- and at summary, not at all.
 (define (fb-render lattice)
   (lambda (concept detail)
-    (if (eq? detail 'full)
-      (car (annotated-boundary-report (list concept) lattice))
-      (list (cons 'extent (concept-extent concept))
-            (cons 'intent (concept-intent concept))
-            (cons 'extent-size (length (concept-extent concept)))
-            (cons 'summary (concept-summary concept))
-            (cons 'types-count (length (fb-types concept)))))))
+    (let ((types-count (cons 'types-count (length (fb-types concept)))))
+      (if (eq? detail 'full)
+        (cons types-count (car (annotated-boundary-report (list concept) lattice)))
+        (list (cons 'extent (concept-extent concept))
+              (cons 'intent (concept-intent concept))
+              (cons 'extent-size (length (concept-extent concept)))
+              (cons 'summary (concept-summary concept))
+              types-count)))))
 
 ;; ── find_false_boundaries ────────────────────────────────
 ;;

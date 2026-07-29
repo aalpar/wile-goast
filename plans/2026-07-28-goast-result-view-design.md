@@ -270,6 +270,13 @@ consistent with the existing rule that an empty `find_duplicates` result means
    complete result, including the empty one.
 6. **Field sets.** `summary` and `full` each return exactly their documented
    fields; `full` reproduces today's shape byte-for-byte.
+
+   > **2026-07-29:** retired by owner's decision. `fb-rank-key` sorts primarily
+   > on `types_count`, which `full` did not expose; the byte-for-byte
+   > requirement was blocking that fix for no live reason — this tool has no
+   > consumers other than the owner, so there is no legacy shape to preserve.
+   > `types_count` now appears at both detail levels. See
+   > `2026-07-28-goast-result-view-impl.md` for the corresponding Task 3 note.
 7. **Glob semantics.** `*` matching; whole-string *or* separator-aligned-suffix
    match against both an absolute position path and a qualified name, including
    the multi-segment `goast/marshal.go` case; unset means everything; both set

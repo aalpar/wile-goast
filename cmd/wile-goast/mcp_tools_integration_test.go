@@ -696,8 +696,9 @@ func extentKey(row any) string {
 
 // Row WIDTH, not row count, is this tool's failure mode: measured on ./goast
 // the three lattice-relationship lists are 90.5% of the result bytes
-// (incomparable_with alone is 60.6%). summary drops them and adds types_count;
-// full reproduces today's shape exactly.
+// (incomparable_with alone is 60.6%). Both levels carry types_count; full
+// additionally carries the three lattice-relationship lists that summary
+// drops.
 func TestFindFalseBoundaries_DetailFieldSets(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration test: builds an 89-concept lattice over ./goast")
@@ -711,19 +712,23 @@ func TestFindFalseBoundaries_DetailFieldSets(t *testing.T) {
 	})
 
 	wantSummary := []string{"extent", "intent", "extent_size", "summary", "types_count"}
-	wantFull := []string{"extent", "intent", "extent_size", "summary",
+	wantFull := []string{"extent", "intent", "extent_size", "summary", "types_count",
 		"subconcept_of", "superconcept_of", "incomparable_with"}
 
 	assertFieldSet(t, summary["result"].([]any), wantSummary)
 	assertFieldSet(t, full["result"].([]any), wantFull)
 
 	// types_count agrees with the summary string, which is the '+'-joined
-	// type list, so the recompute from the intent is not drifting.
-	for _, r := range summary["result"].([]any) {
-		row := r.(map[string]any)
-		n := int(row["types_count"].(float64))
-		qt.Assert(t, n, qt.Equals, strings.Count(row["summary"].(string), "+")+1,
-			qt.Commentf("types_count vs summary: %v", row))
+	// type list, so the recompute from the intent is not drifting. fb-types
+	// and concept-summary derive the struct set independently from the same
+	// intent, so this catches drift between them at both detail levels.
+	for _, rows := range [][]any{summary["result"].([]any), full["result"].([]any)} {
+		for _, r := range rows {
+			row := r.(map[string]any)
+			n := int(row["types_count"].(float64))
+			qt.Assert(t, n, qt.Equals, strings.Count(row["summary"].(string), "+")+1,
+				qt.Commentf("types_count vs summary: %v", row))
+		}
 	}
 }
 

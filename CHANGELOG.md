@@ -15,10 +15,12 @@ parameters, uniformly filtered, ranked, paged, and rendered by `apply-view`
 Both tools move to envelope `version` 2: `detail=summary` is now the
 default, so a default call's row shape changed (`find_duplicates` drops the
 `measures` sub-object; `find_false_boundaries` drops its three lattice-
-relationship lists and adds `types_count`). The provenance key
-`candidate_count` is retired in favor of the shared `total_count` (rows
-after filtering, before paging), alongside new `returned_count`, `offset`,
-`limit`, `detail`, and `truncated` (whether rows were withheld).
+relationship lists). `types_count` — `find_false_boundaries`' primary rank
+key — is present at both detail levels, so `full` is ordered by a field it
+also exposes. The provenance key `candidate_count` is retired in favor of
+the shared `total_count` (rows after filtering, before paging), alongside
+new `returned_count`, `offset`, `limit`, `detail`, and `truncated` (whether
+rows were withheld).
 
 ## Unreleased — MCP Pipeline Tools (Phase 1)
 

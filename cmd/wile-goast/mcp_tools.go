@@ -154,7 +154,8 @@ func (ms *mcpServer) registerPhase1Tools(s *server.MCPServer) {
 					"survives if any one extent member matches.")),
 			mcp.WithString("detail",
 				mcp.Description("Row width: summary (default) drops the lattice "+
-					"relationship lists and adds types_count; full returns them.")),
+					"relationship lists; full returns them. types_count is present "+
+					"at both levels.")),
 			mcp.WithNumber("limit",
 				mcp.Description("Maximum rows returned (default 50). provenance.truncated "+
 					"says whether rows were withheld.")),

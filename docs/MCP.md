@@ -135,9 +135,11 @@ The two tools differ in *where* the filter applies, and this is deliberate:
 
 `detail=summary` is where the second tool's real saving is: on `./goast` its
 three lattice-relationship fields are 90.5% of the result bytes, and `summary`
-skips computing them rather than computing and discarding them. It adds
-`types_count`. `find_duplicates`' `summary` drops the `measures` sub-object,
-whose `similarity` merely repeats the top-level `score`; an opt-in `verdict`
+skips computing them rather than computing and discarding them. `types_count`
+survives both detail levels, since it is `fb-rank-key`'s primary sort
+component and a `full` result should expose the key it is ordered by.
+`find_duplicates`' `summary` drops the `measures` sub-object, whose
+`similarity` merely repeats the top-level `score`; an opt-in `verdict`
 survives both detail levels.
 
 Design: `plans/2026-07-28-goast-result-view-{design,impl}.md`.
