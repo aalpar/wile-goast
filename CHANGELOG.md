@@ -1,5 +1,25 @@
 # Changelog
 
+## Unreleased: Result-View Parameters (find_duplicates, find_false_boundaries)
+
+`find_duplicates` and `find_false_boundaries` gain five shared optional
+parameters, uniformly filtered, ranked, paged, and rendered by `apply-view`
+(`lib/wile/goast/pipelines.scm`):
+
+- `scope` / `symbol`: glob filters over the row's function(s), pushed down
+  before scoring on `find_duplicates`, post-filtered on finished concepts on
+  `find_false_boundaries`.
+- `detail`: `summary` (default) or `full` row width.
+- `limit` / `offset`: paging, defaults 50 and 0.
+
+Both tools move to envelope `version` 2: `detail=summary` is now the
+default, so a default call's row shape changed (`find_duplicates` drops the
+`measures` sub-object; `find_false_boundaries` drops its three lattice-
+relationship lists and adds `types_count`). The provenance key
+`candidate_count` is retired in favor of the shared `total_count` (rows
+after filtering, before paging), alongside new `returned_count`, `offset`,
+`limit`, `detail`, and `truncated` (whether rows were withheld).
+
 ## Unreleased — MCP Pipeline Tools (Phase 1)
 
 Five pipeline-shaped MCP tools expose already-implemented analyses as
@@ -28,9 +48,8 @@ Supporting changes:
 - A Wile→JSON marshaller (`cmd/wile-goast/marshal.go`) bridges Scheme
   alists/lists/scalars to JSON-marshallable Go values.
 
-Phases 2–4 of the tool surface (`filter_concepts`, `find_duplicates`,
-`explain_function`, `restructure_block`, `trace_path`) will ship under
-their own plans.
+Phases 2–4 of the tool surface (`filter_concepts`, `explain_function`,
+`restructure_block`, `trace_path`) will ship under their own plans.
 
 ## Unreleased — Belief Suppression
 

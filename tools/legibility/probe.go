@@ -73,7 +73,12 @@ func runTool(ctx context.Context, pkg string) (map[string]any, string, error) {
 
 	callReq := mcp.CallToolRequest{}
 	callReq.Params.Name = "find_duplicates"
-	callReq.Params.Arguments = map[string]any{"target": pkg}
+	// probeLimit is well above any fixture's pair count, so the view's
+	// default limit (50) cannot silently drop rows out from under this
+	// probe: it scores legibility of the tool's OWN output, and a truncated
+	// page is a different (smaller, easier) thing to score than the whole
+	// answer. checkNotTruncated below is the belt to this suspenders.
+	callReq.Params.Arguments = map[string]any{"target": pkg, "limit": probeLimit}
 	res, err := c.CallTool(ctx, callReq)
 	if err != nil {
 		return nil, "", fmt.Errorf("call find_duplicates: %w", err)
@@ -81,19 +86,45 @@ func runTool(ctx context.Context, pkg string) (map[string]any, string, error) {
 	if res.IsError {
 		return nil, "", fmt.Errorf("tool returned error for %q", pkg)
 	}
+	var env map[string]any
 	if m, ok := res.StructuredContent.(map[string]any); ok {
-		return m, desc, nil
-	}
-	if len(res.Content) > 0 {
+		env = m
+	} else if len(res.Content) > 0 {
 		if tc, ok := mcp.AsTextContent(res.Content[0]); ok {
-			var env map[string]any
 			if err := json.Unmarshal([]byte(tc.Text), &env); err != nil {
 				return nil, "", fmt.Errorf("parse tool JSON: %w", err)
 			}
-			return env, desc, nil
 		}
 	}
-	return nil, "", fmt.Errorf("tool returned neither structured nor text JSON")
+	if env == nil {
+		return nil, "", fmt.Errorf("tool returned neither structured nor text JSON")
+	}
+	if err := checkNotTruncated(env); err != nil {
+		return nil, "", err
+	}
+	return env, desc, nil
+}
+
+// probeLimit is the `limit` this probe passes to find_duplicates. It must
+// stay above any fixture's candidate-pair count; checkNotTruncated is what
+// actually enforces that at run time.
+const probeLimit = 1000
+
+// checkNotTruncated fails loudly if the tool withheld rows via paging: the
+// probe would otherwise score a fraction of the answer and, with `limit`
+// defaulting to 50 (added after this probe was first written), silently
+// mis-measure legibility on any target with more pairs than that.
+func checkNotTruncated(env map[string]any) error {
+	prov, ok := env["provenance"].(map[string]any)
+	if !ok {
+		return fmt.Errorf("envelope has no provenance object")
+	}
+	truncated, _ := prov["truncated"].(bool)
+	if truncated {
+		return fmt.Errorf("find_duplicates truncated its result (total_count %v > limit %v); "+
+			"raise probeLimit", prov["total_count"], prov["limit"])
+	}
+	return nil
 }
 
 // resultCandidates extracts the result array as candidate maps. Non-map or

@@ -195,10 +195,13 @@
 
 ;; view-key<?: lexicographic order over a rank key (a list). NUMERIC
 ;; components compare DESCENDING -- a higher score, or more struct types tied
-;; together, ranks first. STRING components compare ascending. Every rank key
-;; ends in a string unique to its row, so the order is total: two calls with
-;; the same arguments return the same rows in the same order, and page 2
-;; cannot repeat a row from page 1. Offset paging is meaningless without that.
+;; together, ranks first. STRING components compare ascending. The order is
+;; not always total: find_duplicates' candidate-pairs is a not-deduplicated
+;; `apply append`, so the same (a . b) pair reached through two FCA concepts
+;; yields two rows with byte-identical rank keys. Paging is still safe,
+;; because view-sort is a STABLE sort over a deterministic input order: two
+;; calls with the same arguments feed it the same rows in the same order, so
+;; page 2 cannot repeat a row from page 1 even when keys tie.
 (define (view-key<? ka kb)
   (cond ((null? ka) #f)
         ((null? kb) #f)
@@ -381,8 +384,11 @@
                   'min-intent min-int
                   'min-types min-typ))
          ;; The annotated report carries no position, so scope needs the
-         ;; name->position join the FCA layer keeps out of the algebra.
-         (pos-index (field-index->positions field-idx)))
+         ;; name->position join the FCA layer keeps out of the algebra. Built
+         ;; only when scope/symbol is actually set -- same guard as
+         ;; view-name-matcher's -- since fb-keep? never touches it otherwise.
+         (pos-index (and (or (assoc-default opts 'scope) (assoc-default opts 'symbol))
+                          (field-index->positions field-idx))))
     (call-with-values
       (lambda ()
         (apply-view cross opts (fb-keep? opts pos-index)
@@ -407,8 +413,10 @@
 ;; function-ref-context, candidate-pairs, func-refs->positions) and scoring
 ;; (score-candidate-pairs) as separate steps, not via find-scored-candidates,
 ;; so the scope/symbol prune (dup-keep-pair?, below) can sit between them on
-;; the flat pair list, before scoring runs. dup-detect.scm was restructured
-;; in Task 4 to expose discovery and scoring as separable steps. The raw
+;; the flat pair list, before scoring runs. score-candidate-pairs was split
+;; out of find-scored-candidates for this: taking a flat pair list rather
+;; than concepts is what lets a prune sit between discovery and scoring at
+;; all. The raw
 ;; candidate carries make-finding records whose leading 'finding tag defeats
 ;; the JSON marshaller's alist detection (it would emit an array of
 ;; {car,cdr} objects); clean-finding / candidate->clean project each
@@ -473,8 +481,9 @@
 ;;
 ;; It is deliberately NOT the old 9992, which was Wile's 10000-frame call
 ;; depth showing through a non-tail `map` over every scored pair. The result
-;; now carries only the pairs that unify (kept-tiers) and filter-map projects
-;; them in constant call depth, so that limit no longer binds. The old number
+;; now carries only the pairs that unify (kept-tiers), filtered and rendered
+;; by apply-view's tail-recursive loops, so that limit no longer binds. The
+;; old number
 ;; also made the tool unable to answer for goast at all: goast is a single
 ;; package and yields 20404 pairs on its own, so "narrow to one package" had
 ;; no valid answer.

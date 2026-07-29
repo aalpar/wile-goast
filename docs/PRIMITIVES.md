@@ -1058,6 +1058,8 @@ Traversal utilities for the tagged-alist node format shared by all layers.
 | `(opt-ref opts key default)` | Look up a keyword option in a `'key value ...` list |
 | `(ast-transform node f)` | Depth-first pre-order tree rewriter. `f` returns replacement or `#f` (keep). Note: `#f` cannot be used as a replacement value |
 | `(ast-splice lst f)` | Flat-map rewriter for lists. `f` returns list (splice) or `#f` (keep). Note: `#f` cannot be a splice element |
+| `(glob-match? pat s sep)` | Does `pat` match the whole of `s`, or the whole of any suffix of `s` starting just after a `sep` character? `*` is the only metacharacter |
+| `(position-file pos)` | The file part of a `"file:line:col"` position string; a bare path or malformed position is returned unchanged |
 
 ### Usage
 

@@ -150,7 +150,8 @@ func (ms *mcpServer) registerPhase1Tools(s *server.MCPServer) {
 			mcp.WithString("symbol",
 				mcp.Description("Only report rows whose function name matches this glob "+
 					"('*' only). Matches the whole name or any '.'-aligned suffix, so a "+
-					"bare 'cloneTypeExpr' matches the package-qualified form.")),
+					"bare 'cloneTypeExpr' matches the package-qualified form. A concept "+
+					"survives if any one extent member matches.")),
 			mcp.WithString("detail",
 				mcp.Description("Row width: summary (default) drops the lattice "+
 					"relationship lists and adds types_count; full returns them.")),
@@ -240,7 +241,7 @@ func viewOpts(req mcp.CallToolRequest) ([]string, string) {
 			continue
 		}
 		f, err := req.RequireFloat(name)
-		if err != nil || f < 0 || f != math.Trunc(f) {
+		if err != nil || f < 0 || f != math.Trunc(f) || f > math.MaxInt32 {
 			return nil, name + " must be a non-negative integer"
 		}
 		parts = append(parts, fmt.Sprintf("(cons '%s %d)", name, int64(f)))

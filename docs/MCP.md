@@ -68,8 +68,10 @@ appear on both stdio and HTTP. Implemented in `lib/wile/goast/pipelines.scm`
   per concept; the tier is the adjudication that follows, so a `divergent`
   pair is one already rejected. Rejected pairs are counted, not listed:
   provenance carries `tiers` (`proven`/`structural`/`divergent`),
-  `scored_pair_count`, and `total_count` (pre-paging). On `./goast`
-  that is 68 rows out of 20404 scored pairs, 30 KB instead of 9 MB. An empty
+  `scored_pair_count`, and `total_count` (pre-paging). On `./goast`,
+  `total_count` is 68 out of 20404 scored pairs; at `detail=full` with no
+  limit, that is 30 KB instead of 9 MB. Under the v2 defaults (`detail=summary`,
+  `limit` 50) a default call returns 50 narrower rows instead. An empty
   `result` with a non-zero `divergent` count is a real answer: the pairs were
   examined and none unified.
 - `find_duplicates` runs discovery first and errors if the target yields more
@@ -112,8 +114,11 @@ A glob matching nothing is an **empty success**, not an error. An invalid
 
 Provenance gains `total_count` (rows after filtering, before paging),
 `returned_count`, `offset`, `limit`, `detail`, `truncated`, and an echo of
-`scope`/`symbol` when set. **`truncated` is the field to read**: false means
-the result is complete, true means narrow or page.
+`scope`/`symbol` when set. **`truncated` is the field to read**, but it says
+whether *rows* were withheld, not whether every field is present: false at the
+default `detail=summary` still means each row is narrower than `full` (on
+`find_false_boundaries`, 90.5% of the bytes narrower). True means narrow or
+page.
 
 The two tools differ in *where* the filter applies, and this is deliberate:
 

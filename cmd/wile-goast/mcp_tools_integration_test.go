@@ -424,7 +424,7 @@ func findCandidateWithPair(results []any, a, b string) map[string]any {
 const nodupsPkg = "github.com/aalpar/wile-goast/cmd/wile-goast/testdata/nodups"
 
 // Empty success: a package with no clusterable pairs returns a valid envelope
-// with candidate_count 0 and an empty result array — not an error. "No
+// with total_count 0 and an empty result array — not an error. "No
 // duplicates found" is a useful answer.
 func TestFindDuplicates_EmptySuccess(t *testing.T) {
 	mc := inProcessClient(t)
@@ -822,6 +822,8 @@ func TestViewParams_Validation(t *testing.T) {
 		{"find_false_boundaries", map[string]any{"target": phase1Pkg, "offset": float64(-3)},
 			"offset must be a non-negative integer"},
 		{"find_false_boundaries", map[string]any{"target": phase1Pkg, "limit": 2.5},
+			"limit must be a non-negative integer"},
+		{"find_false_boundaries", map[string]any{"target": phase1Pkg, "limit": 1e30},
 			"limit must be a non-negative integer"},
 	}
 	for _, tc := range cases {
