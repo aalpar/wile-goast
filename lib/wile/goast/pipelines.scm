@@ -119,6 +119,147 @@
   (let ((e (assoc key alist)))
     (if e (cdr e) #f)))
 
+;; ── Shared result view ───────────────────────────────────
+;;
+;; Filter, rank, page and render, uniformly across tools. Five caller
+;; parameters live in OPTS: scope and symbol (globs), detail ('summary or
+;; 'full), limit, offset. The DEFAULTS ARE WRITTEN HERE AND NOWHERE ELSE --
+;; the Go handler forwards only what the caller actually set -- so a client
+;; that knows nothing about these parameters gets a usable first response and
+;; there is exactly one place to read the defaults off.
+
+(define view-default-limit 50)
+(define view-default-detail 'summary)
+
+(define (view-detail opts) (or (assoc-default opts 'detail) view-default-detail))
+(define (view-limit opts)  (or (assoc-default opts 'limit)  view-default-limit))
+(define (view-offset opts) (or (assoc-default opts 'offset) 0))
+
+;; view-merge / view-sort: a stable bottom-up merge sort in which every loop
+;; is a tail call.
+;;
+;; The builtin `sort' is unusable here: measured on this engine it recurses one
+;; frame per element and dies with "call depth 10001 exceeds limit 10000" on a
+;; 20000-element list. find_duplicates can reach that -- max-candidate-pairs
+;; admits 25000 scored pairs and nothing stops all of them unifying -- and the
+;; failure would land AFTER the whole scoring cost is sunk. This is the same
+;; class of bug as the old non-tail `map' that produced max-candidate-pairs
+;; 9992; the fix there was to make the pass iterative, and it is here too.
+(define (view-merge less? a b)
+  (let loop ((a a) (b b) (acc '()))
+    (cond ((and (null? a) (null? b)) (reverse acc))
+          ((null? a) (loop a (cdr b) (cons (car b) acc)))
+          ((null? b) (loop (cdr a) b (cons (car a) acc)))
+          ;; Take from B only when strictly less, so equal keys keep A's
+          ;; order: the sort is stable.
+          ((less? (car b) (car a)) (loop a (cdr b) (cons (car b) acc)))
+          (else (loop (cdr a) b (cons (car a) acc))))))
+
+(define (view-sort less? lst)
+  (if (or (null? lst) (null? (cdr lst)))
+    lst
+    (let pass ((runs (let split ((xs lst) (acc '()))
+                       (if (null? xs)
+                         (reverse acc)
+                         (split (cdr xs) (cons (list (car xs)) acc))))))
+      (if (null? (cdr runs))
+        (car runs)
+        (pass (let merge-pass ((rs runs) (acc '()))
+                (cond ((null? rs) (reverse acc))
+                      ((null? (cdr rs)) (reverse (cons (car rs) acc)))
+                      (else (merge-pass (cddr rs)
+                                        (cons (view-merge less? (car rs) (cadr rs))
+                                              acc))))))))))
+
+;; view-name-matcher: OPTS' scope/symbol globs as a predicate over ONE
+;; function name, or #f when neither is set.
+;;
+;; Both tools identify a row by the function names it carries and differ only
+;; in WHICH collection they scan -- a concept's extent, or a candidate pair's
+;; two members -- so the matching itself belongs here, once. `symbol' matches
+;; the name; `scope' matches the FILE of that name's position, because a
+;; position is "file:line:col" and an anchored glob could never match one.
+;; When both are set they must match the SAME name: the caller is identifying
+;; one function by name and path, not two different ones.
+(define (view-name-matcher opts pos-index)
+  (let ((scope (assoc-default opts 'scope))
+        (sym   (assoc-default opts 'symbol)))
+    (and (or scope sym)
+         (lambda (name)
+           (and (or (not sym) (glob-match? sym name #\.))
+                (or (not scope)
+                    (glob-match? scope
+                                 (position-file
+                                   (hashtable-ref pos-index name ""))
+                                 #\/)))))))
+
+;; view-key<?: lexicographic order over a rank key (a list). NUMERIC
+;; components compare DESCENDING -- a higher score, or more struct types tied
+;; together, ranks first. STRING components compare ascending. Every rank key
+;; ends in a string unique to its row, so the order is total: two calls with
+;; the same arguments return the same rows in the same order, and page 2
+;; cannot repeat a row from page 1. Offset paging is meaningless without that.
+(define (view-key<? ka kb)
+  (cond ((null? ka) #f)
+        ((null? kb) #f)
+        (else
+          (let ((a (car ka)) (b (car kb)))
+            (if (and (number? a) (number? b))
+              (cond ((> a b) #t)
+                    ((< a b) #f)
+                    (else (view-key<? (cdr ka) (cdr kb))))
+              (cond ((string<? a b) #t)
+                    ((string<? b a) #f)
+                    (else (view-key<? (cdr ka) (cdr kb)))))))))
+
+;; apply-view: ROWS -> (values shown view-provenance).
+;;   KEEP?     admits a row; #f admits everything, for a tool that already
+;;             pruned upstream -- re-applying the predicate here would be a
+;;             no-op that hides where the work was actually saved.
+;;   RANK-KEY  row -> rank key (see view-key<?).
+;;   RENDER    (row detail) -> the row's public shape. Called only on the rows
+;;             actually returned, so a withheld row costs nothing to render.
+;;             That is what lets find_false_boundaries skip its lattice
+;;             annotation pass entirely at detail=summary rather than compute
+;;             and discard it.
+;;
+;; total-count counts rows AFTER filtering and BEFORE offset/limit, so
+;; `truncated' means the same thing whether the tool filtered here or upstream.
+;; truncated is the load-bearing field: a client seeing total-count 186,
+;; returned-count 50, truncated #t knows to narrow or page, and one seeing
+;; truncated #f knows it holds the complete answer. Silent truncation with no
+;; such signal would be worse than no limit at all.
+(define (apply-view rows opts keep? rank-key render)
+  (let* ((detail (view-detail opts))
+         (limit  (view-limit opts))
+         (offset (view-offset opts))
+         (kept   (if keep? (filter keep? rows) rows))
+         (total  (length kept))
+         ;; Decorate once per row, not once per comparison, via a tail
+         ;; recursion: `map' is not tail-recursive here and this list is one
+         ;; entry per surviving row.
+         (keyed  (let loop ((rs kept) (acc '()))
+                   (if (null? rs)
+                     (reverse acc)
+                     (loop (cdr rs) (cons (cons (rank-key (car rs)) (car rs)) acc)))))
+         (sorted (view-sort (lambda (a b) (view-key<? (car a) (car b))) keyed))
+         ;; Undecorate and render only the page, which is at most LIMIT rows,
+         ;; so the non-tail `map' here is bounded by a caller-visible number.
+         (page   (take (drop sorted offset) limit))
+         (shown  (map (lambda (kv) (render (cdr kv) detail)) page)))
+    (values shown
+            (append
+              (list (cons 'total-count total)
+                    (cons 'returned-count (length shown))
+                    (cons 'offset offset)
+                    (cons 'limit limit)
+                    (cons 'detail detail)
+                    (cons 'truncated (> total (+ offset (length shown)))))
+              (let ((sc (assoc-default opts 'scope)))
+                (if sc (list (cons 'scope sc)) '()))
+              (let ((sy (assoc-default opts 'symbol)))
+                (if sy (list (cons 'symbol sy)) '()))))))
+
 ;; ── recommend_boundaries ─────────────────────────────────
 ;;
 ;; Build a (function -> struct-field) FCA context from SSA field-access

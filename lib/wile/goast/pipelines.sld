@@ -26,6 +26,12 @@
   (export
     ;; Shared envelope constructor (per-tool version supplied per call).
     pipeline-envelope
+    ;; Shared result view (filter / rank / page / render). Exported so the
+    ;; combinator is testable against synthetic rows, without either tool's
+    ;; analysis in the way.
+    apply-view
+    view-sort
+    view-name-matcher
     ;; Tool procedures (added per task alongside their definitions).
     pipeline-check-beliefs
     pipeline-discover-beliefs
