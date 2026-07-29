@@ -17,6 +17,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"math"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -286,12 +287,15 @@ func TestPipelineFindDuplicates_EvalSmoke(t *testing.T) {
 // fixture: SumSlice/TotalSlice, both located, tier proven or structural.
 func TestFindDuplicates_DupclusterFixture(t *testing.T) {
 	mc := inProcessClient(t)
-	env := callTool(t, mc, "find_duplicates", map[string]any{"target": dupclusterPkg})
-	envelopeOK(t, env, 1.0)
+	// detail:"full" because this test asserts on the measures sub-object below,
+	// which detail=summary (the version-2 default) drops.
+	env := callTool(t, mc, "find_duplicates", map[string]any{
+		"target": dupclusterPkg, "detail": "full"})
+	envelopeOK(t, env, 2.0)
 
 	prov := env["provenance"].(map[string]any)
 	qt.Assert(t, prov["verdict_included"], qt.Equals, false)
-	qt.Assert(t, prov["candidate_count"].(float64) > 0, qt.IsTrue)
+	qt.Assert(t, prov["total_count"].(float64) > 0, qt.IsTrue)
 
 	results := env["result"].([]any)
 	clone := findCandidateWithPair(results, "SumSlice", "TotalSlice")
@@ -343,7 +347,7 @@ func TestFindDuplicates_VerdictOptIn(t *testing.T) {
 		"target":  dupclusterPkg,
 		"verdict": true,
 	})
-	envelopeOK(t, env, 1.0)
+	envelopeOK(t, env, 2.0)
 
 	prov := env["provenance"].(map[string]any)
 	qt.Assert(t, prov["verdict_included"], qt.Equals, true)
@@ -425,9 +429,9 @@ const nodupsPkg = "github.com/aalpar/wile-goast/cmd/wile-goast/testdata/nodups"
 func TestFindDuplicates_EmptySuccess(t *testing.T) {
 	mc := inProcessClient(t)
 	env := callTool(t, mc, "find_duplicates", map[string]any{"target": nodupsPkg})
-	envelopeOK(t, env, 1.0)
+	envelopeOK(t, env, 2.0)
 	prov := env["provenance"].(map[string]any)
-	qt.Assert(t, prov["candidate_count"], qt.Equals, float64(0))
+	qt.Assert(t, prov["total_count"], qt.Equals, float64(0))
 	qt.Assert(t, env["result"], qt.DeepEquals, []any{})
 }
 
@@ -512,7 +516,7 @@ func TestFindDuplicates_AnswersPastOldCeiling(t *testing.T) {
 	}
 	mc := inProcessClient(t)
 	env := callTool(t, mc, "find_duplicates", map[string]any{"target": goastssaPkg})
-	envelopeOK(t, env, 1.0)
+	envelopeOK(t, env, 2.0)
 
 	prov := env["provenance"].(map[string]any)
 	qt.Assert(t, prov["scored_pair_count"].(float64) > 9992, qt.IsTrue,
@@ -520,8 +524,11 @@ func TestFindDuplicates_AnswersPastOldCeiling(t *testing.T) {
 
 	tiers := prov["tiers"].(map[string]any)
 	kept := tiers["proven"].(float64) + tiers["structural"].(float64)
-	qt.Assert(t, prov["candidate_count"], qt.Equals, kept)
-	qt.Assert(t, float64(len(env["result"].([]any))), qt.Equals, kept)
+	qt.Assert(t, prov["total_count"], qt.Equals, kept)
+	// The default limit is 50, so the result is the first page of `kept`.
+	qt.Assert(t, prov["returned_count"].(float64), qt.Equals, math.Min(kept, 50))
+	qt.Assert(t, float64(len(env["result"].([]any))), qt.Equals, prov["returned_count"])
+	qt.Assert(t, prov["truncated"], qt.Equals, kept > 50)
 
 	for _, r := range env["result"].([]any) {
 		tier := r.(map[string]any)["equiv_tier"].(string)
@@ -541,11 +548,11 @@ const goastcfgDupsPkg = "github.com/aalpar/wile-goast/goastcfg"
 func TestFindDuplicates_DivergentOnlyReportsInProvenance(t *testing.T) {
 	mc := inProcessClient(t)
 	env := callTool(t, mc, "find_duplicates", map[string]any{"target": goastcfgDupsPkg})
-	envelopeOK(t, env, 1.0)
+	envelopeOK(t, env, 2.0)
 
 	qt.Assert(t, env["result"], qt.DeepEquals, []any{})
 	prov := env["provenance"].(map[string]any)
-	qt.Assert(t, prov["candidate_count"], qt.Equals, float64(0))
+	qt.Assert(t, prov["total_count"], qt.Equals, float64(0))
 
 	tiers := prov["tiers"].(map[string]any)
 	qt.Assert(t, tiers["proven"], qt.Equals, float64(0))
@@ -560,7 +567,7 @@ func TestFindDuplicates_DivergentOnlyReportsInProvenance(t *testing.T) {
 func TestFindDuplicates_GuardAllowsSmallTarget(t *testing.T) {
 	mc := inProcessClient(t)
 	env := callTool(t, mc, "find_duplicates", map[string]any{"target": dupclusterPkg})
-	envelopeOK(t, env, 1.0)
+	envelopeOK(t, env, 2.0)
 	qt.Assert(t, len(env["result"].([]any)) > 0, qt.IsTrue)
 }
 
@@ -828,4 +835,181 @@ func TestViewParams_Validation(t *testing.T) {
 		qt.Assert(t, ok, qt.IsTrue)
 		qt.Assert(t, tcText.Text, qt.Equals, tc.want)
 	}
+}
+
+// The push-down is a real prune, not a post-filter: a scoped call scores
+// strictly fewer pairs and returns a subset of the unscoped rows.
+//
+// Asserted on the pair counts rather than on wall-clock. A timing assertion
+// would smuggle machine-dependent nondeterminism into the suite; the pair
+// count IS the work, and it is deterministic.
+func TestFindDuplicates_ScopeIsAPrune(t *testing.T) {
+	mc := inProcessClient(t)
+
+	all := callTool(t, mc, "find_duplicates", map[string]any{"target": dupclusterPkg})
+	envelopeOK(t, all, 2.0)
+	allProv := all["provenance"].(map[string]any)
+
+	scoped := callTool(t, mc, "find_duplicates", map[string]any{
+		"target": dupclusterPkg,
+		"symbol": "*SumSlice*",
+	})
+	envelopeOK(t, scoped, 2.0)
+	prov := scoped["provenance"].(map[string]any)
+
+	// Fewer pairs reach the scorer, and the count is taken AFTER the prune.
+	qt.Assert(t, prov["candidate_pair_count"].(float64) <
+		allProv["candidate_pair_count"].(float64), qt.IsTrue,
+		qt.Commentf("pair count not pruned: %v vs %v",
+			prov["candidate_pair_count"], allProv["candidate_pair_count"]))
+	qt.Assert(t, prov["scored_pair_count"].(float64) <
+		allProv["scored_pair_count"].(float64), qt.IsTrue)
+
+	// Every scoped row is an unscoped row, and mentions the queried symbol.
+	unscoped := map[string]bool{}
+	for _, r := range all["result"].([]any) {
+		unscoped[pairKey(r)] = true
+	}
+	rows := scoped["result"].([]any)
+	qt.Assert(t, len(rows) > 0, qt.IsTrue, qt.Commentf("scoped call returned nothing"))
+	for _, r := range rows {
+		qt.Assert(t, unscoped[pairKey(r)], qt.IsTrue,
+			qt.Commentf("scoped row absent from unscoped result: %v", r))
+		qt.Assert(t, strings.Contains(pairKey(r), "SumSlice"), qt.IsTrue,
+			qt.Commentf("row does not mention the queried symbol: %v", r))
+	}
+	// A pair survives if EITHER function matches: asking about SumSlice
+	// surfaces its duplicate, TotalSlice, which does not match the glob.
+	qt.Assert(t, findCandidateWithPair(rows, "SumSlice", "TotalSlice"),
+		qt.Not(qt.IsNil))
+}
+
+// pairKey joins a candidate's function names into a stable identity string.
+func pairKey(row any) string {
+	funcs, ok := row.(map[string]any)["functions"].([]any)
+	if !ok {
+		return ""
+	}
+	names := make([]string, 0, len(funcs))
+	for _, f := range funcs {
+		n, _ := f.(map[string]any)["name"].(string)
+		names = append(names, n)
+	}
+	return strings.Join(names, "|")
+}
+
+// scope narrows by file, against the absolute position the tool carries.
+func TestFindDuplicates_ScopeByFile(t *testing.T) {
+	mc := inProcessClient(t)
+	env := callTool(t, mc, "find_duplicates", map[string]any{
+		"target": dupclusterPkg,
+		"scope":  "clones.go",
+	})
+	envelopeOK(t, env, 2.0)
+	rows := env["result"].([]any)
+	qt.Assert(t, findCandidateWithPair(rows, "SumSlice", "TotalSlice"), qt.Not(qt.IsNil),
+		qt.Commentf("scope=clones.go did not surface the clone pair: %v", rows))
+	qt.Assert(t, env["provenance"].(map[string]any)["scope"], qt.Equals, "clones.go")
+}
+
+// The single largest win in the design: the pair-count guard reads the count
+// AFTER the prune, so a narrow query against a target that would otherwise be
+// refused is answered instead. The guard becomes a wall the caller can walk
+// around by being specific.
+func TestFindDuplicates_ScopeWalksAroundTheGuard(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration test: loads and SSA-builds the whole tree")
+	}
+	mc := inProcessClient(t)
+
+	// Unscoped, this target is refused (58551 pairs, over the 25000 budget).
+	ctx := context.Background()
+	req := mcp.CallToolRequest{}
+	req.Params.Name = "find_duplicates"
+	req.Params.Arguments = map[string]any{"target": wholeTreePkg}
+	res, err := mc.CallTool(ctx, req)
+	qt.Assert(t, err, qt.IsNil)
+	qt.Assert(t, res.IsError, qt.IsTrue, qt.Commentf("target no longer exceeds the budget"))
+
+	// Scoped to one file, the same target is answered.
+	env := callTool(t, mc, "find_duplicates", map[string]any{
+		"target": wholeTreePkg,
+		"scope":  "goastcfg/prim_cfg.go",
+	})
+	envelopeOK(t, env, 2.0)
+	prov := env["provenance"].(map[string]any)
+	qt.Assert(t, prov["candidate_pair_count"].(float64) <= 25000, qt.IsTrue,
+		qt.Commentf("pruned pair count still over budget: %v", prov["candidate_pair_count"]))
+	qt.Assert(t, prov["scope"], qt.Equals, "goastcfg/prim_cfg.go")
+}
+
+// summary drops the measures sub-object (whose similarity merely repeats the
+// top-level score); full is today's shape. An opt-in verdict survives both:
+// a caller who asked for it asked for it.
+func TestFindDuplicates_DetailFieldSets(t *testing.T) {
+	mc := inProcessClient(t)
+
+	summary := callTool(t, mc, "find_duplicates", map[string]any{"target": dupclusterPkg})
+	full := callTool(t, mc, "find_duplicates", map[string]any{
+		"target": dupclusterPkg, "detail": "full"})
+	withVerdict := callTool(t, mc, "find_duplicates", map[string]any{
+		"target": dupclusterPkg, "verdict": true})
+
+	assertFieldSet(t, summary["result"].([]any),
+		[]string{"functions", "score", "equiv_tier"})
+	assertFieldSet(t, full["result"].([]any),
+		[]string{"functions", "score", "equiv_tier", "measures"})
+	assertFieldSet(t, withVerdict["result"].([]any),
+		[]string{"functions", "score", "equiv_tier", "verdict"})
+}
+
+// Ranking: score descending, proven before structural on ties, deterministic
+// on repeat, and pages partition the unpaged result.
+func TestFindDuplicates_RankStabilityAndPaging(t *testing.T) {
+	mc := inProcessClient(t)
+	args := map[string]any{"target": dupclusterPkg}
+	a := callTool(t, mc, "find_duplicates", args)
+	b := callTool(t, mc, "find_duplicates", args)
+	qt.Assert(t, reflect.DeepEqual(a["result"], b["result"]), qt.IsTrue,
+		qt.Commentf("non-deterministic order"))
+
+	all := a["result"].([]any)
+	qt.Assert(t, len(all) >= 2, qt.IsTrue, qt.Commentf("need >=2 rows to page"))
+
+	prev := 2.0
+	for _, r := range all {
+		s := r.(map[string]any)["score"].(float64)
+		qt.Assert(t, s <= prev, qt.IsTrue,
+			qt.Commentf("score not descending: %v after %v", s, prev))
+		prev = s
+	}
+
+	p1 := callTool(t, mc, "find_duplicates", map[string]any{
+		"target": dupclusterPkg, "limit": float64(1), "offset": float64(0)})
+	p2 := callTool(t, mc, "find_duplicates", map[string]any{
+		"target": dupclusterPkg, "limit": float64(len(all) - 1), "offset": float64(1)})
+
+	qt.Assert(t, p1["provenance"].(map[string]any)["truncated"], qt.Equals, true)
+	qt.Assert(t, p1["provenance"].(map[string]any)["total_count"].(float64),
+		qt.Equals, float64(len(all)))
+	qt.Assert(t, p2["provenance"].(map[string]any)["truncated"], qt.Equals, false)
+
+	joined := append(slices.Clone(p1["result"].([]any)), p2["result"].([]any)...)
+	qt.Assert(t, reflect.DeepEqual(joined, all), qt.IsTrue,
+		qt.Commentf("pages do not partition the unpaged result"))
+}
+
+// A glob matching nothing is an empty success, not an error.
+func TestFindDuplicates_NoMatchIsEmptySuccess(t *testing.T) {
+	mc := inProcessClient(t)
+	env := callTool(t, mc, "find_duplicates", map[string]any{
+		"target": dupclusterPkg,
+		"symbol": "NoSuchFunctionAnywhere",
+	})
+	envelopeOK(t, env, 2.0)
+	qt.Assert(t, env["result"], qt.DeepEquals, []any{})
+	prov := env["provenance"].(map[string]any)
+	qt.Assert(t, prov["total_count"], qt.Equals, float64(0))
+	qt.Assert(t, prov["candidate_pair_count"], qt.Equals, float64(0))
+	qt.Assert(t, prov["truncated"], qt.Equals, false)
 }

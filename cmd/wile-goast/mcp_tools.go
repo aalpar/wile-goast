@@ -106,6 +106,25 @@ func (ms *mcpServer) registerPhase1Tools(s *server.MCPServer) {
 			mcp.WithBoolean("verdict",
 				mcp.Description("Attach the opt-in categorical verdict "+
 					"(duplicate/likely-duplicate/distinct) per candidate (default false)")),
+			mcp.WithString("scope",
+				mcp.Description("Only score pairs where one function's file matches this "+
+					"path glob ('*' only). Matches the whole path or any '/'-aligned "+
+					"suffix: 'marshal.go', 'goast/marshal.go', '*/goast/*.go'. Pushed "+
+					"down before scoring, so a scoped query is cheaper and can be "+
+					"answered on a target that would otherwise exceed the pair budget.")),
+			mcp.WithString("symbol",
+				mcp.Description("Only score pairs where one function's name matches this "+
+					"glob ('*' only). Matches the whole name or any '.'-aligned suffix, "+
+					"so 'marshalValue' matches 'ssaMapper.marshalValue'. A pair survives "+
+					"if either function matches.")),
+			mcp.WithString("detail",
+				mcp.Description("Row width: summary (default) drops the measures "+
+					"sub-object; full returns it.")),
+			mcp.WithNumber("limit",
+				mcp.Description("Maximum rows returned (default 50). provenance.truncated "+
+					"says whether rows were withheld.")),
+			mcp.WithNumber("offset",
+				mcp.Description("Rows skipped before limit applies (default 0).")),
 		),
 		ms.handleFindDuplicates,
 	)
@@ -403,6 +422,11 @@ func (ms *mcpServer) handleFindDuplicates(ctx context.Context, req mcp.CallToolR
 			optsParts = append(optsParts, "(cons 'verdict #t)")
 		}
 	}
+	viewParts, verr := viewOpts(req)
+	if verr != "" {
+		return mcp.NewToolResultError(verr), nil
+	}
+	optsParts = append(optsParts, viewParts...)
 	code := `(import (wile goast pipelines))
 (pipeline-find-duplicates ` + schemeStringLiteral(target) +
 		` (list ` + strings.Join(optsParts, " ") + `))`

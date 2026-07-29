@@ -474,18 +474,13 @@
 ;; also made the tool unable to answer for goast at all: goast is a single
 ;; package and yields 20404 pairs on its own, so "narrow to one package" had
 ;; no valid answer.
+;;
+;; The count checked against this budget is taken AFTER the scope/symbol
+;; prune, so a narrow query against a wide target is answered rather than
+;; refused. That converts the guard from a hard wall into one the caller can
+;; walk around by being specific: ./... is 58551 pairs unscoped and refused,
+;; but a scope naming one file is scored and answered.
 (define max-candidate-pairs 25000)
-
-;; candidate-pair-count: how many pairs scoring will produce, sum of C(k,2)
-;; over the candidate concepts' extents. Derived from discovery alone (refs ->
-;; lattice -> concepts, no SSA build), which is the ~1s half of the analysis,
-;; so the guard is cheap against the 60-80s it avoids.
-(define (candidate-pair-count concepts)
-  (let loop ((cs concepts) (n 0))
-    (if (null? cs)
-      n
-      (let ((k (length (concept-extent (car cs)))))
-        (loop (cdr cs) (+ n (quotient (* k (- k 1)) 2)))))))
 
 ;; candidate-tier: a scored candidate's equiv-tier (proven / structural /
 ;; divergent), as set by score-candidate-pair at the caller's threshold.
@@ -512,11 +507,56 @@
               ((eq? t 'structural) (loop (cdr cs) p (+ s 1) d))
               (else                (loop (cdr cs) p s (+ d 1))))))))
 
+;; ── find_duplicates: view hooks ──────────────────────────
+
+;; dup-keep-pair?: OPTS' scope/symbol as a predicate over a CANDIDATE PAIR
+;; (a . b) of function names, or #f when neither is set.
+;;
+;; This filter pushes DOWN: it lands on the flat pair list, before scoring, so
+;; a scoped query costs less rather than merely returning less. Sound because
+;; the FCA concepts are formed from the whole session BEFORE the prune, and
+;; score-candidate-pair depends only on the two functions and the threshold --
+;; a surviving pair scores identically, so a scoped result is a genuine subset
+;; of the unscoped one.
+;;
+;; A pair survives if EITHER function matches: asking about marshalValue
+;; should surface its duplicate wherever that lives.
+(define (dup-keep-pair? opts pos-index)
+  (let ((match? (view-name-matcher opts pos-index)))
+    (and match?
+         (lambda (pr) (or (match? (car pr)) (match? (cdr pr)))))))
+
+;; dup-rank-key: score descending, then proven before structural, then the
+;; pair's names as the deterministic tie-break. Score is coerced to float64
+;; for the same reason candidate->clean coerces it: score-diffs emits a
+;; 256-bit BigFloat, and the key must order by the number actually reported.
+(define (dup-tier-rank tier) (if (eq? tier 'proven) 1 0))
+
+(define (dup-rank-key cand)
+  (let ((measures (cdr (assq 'measures cand))))
+    (list (->float64 (cdr (assq 'similarity measures)))
+          (dup-tier-rank (cdr (assq 'equiv-tier measures)))
+          (string-join (cdr (assq 'pair cand)) " "))))
+
+;; dup-render: a RAW scored candidate -> its public row at DETAIL. Both levels
+;; go through candidate->clean, because a raw make-finding record's leading
+;; 'finding tag defeats the marshaller's alist detection. summary then drops
+;; the measures sub-object, whose `similarity' merely repeats the top-level
+;; score. An opt-in verdict survives both levels: a caller who asked for it
+;; asked for it.
+(define (dup-render verdict?)
+  (lambda (cand detail)
+    (let ((row (candidate->clean cand verdict?)))
+      (if (eq? detail 'full)
+        row
+        (filter (lambda (kv) (not (eq? (car kv) 'measures))) row)))))
+
 ;; pipeline-find-duplicates: scan TARGET for semantic duplicate function pairs
 ;; (FCA reference clustering + SSA/AST-verified equivalence). OPTS is an alist;
 ;; recognised keys are threshold (number, default 0.6 -- the unify/similarity
-;; threshold) and verdict (bool, default #f -- attach the opt-in categorical
-;; verdict). Result carries only the pairs whose tier is in kept-tiers, so
+;; threshold), verdict (bool, default #f -- attach the opt-in categorical
+;; verdict), and the shared view parameters (scope, symbol, detail, limit,
+;; offset). Result carries only the pairs whose tier is in kept-tiers, so
 ;; threshold IS the selection knob: it decides unifiable?, unifiable? decides
 ;; the tier, and the tier decides inclusion. An empty result (nothing unified,
 ;; or nothing clusterable) is a success, count 0.
@@ -528,34 +568,50 @@
   (let* ((threshold (or (assoc-default opts 'threshold) 0.6))
          (verdict?  (and (assoc-default opts 'verdict) #t))
          (session   (if (go-session? target) target (go-load target)))
+         ;; Discovery runs once, here, and its refs and positions are handed
+         ;; to the scorer rather than re-derived: pos-index is available from
+         ;; the cheap go-func-refs pass, before the expensive canon-index, so
+         ;; the prune can see both name and file.
+         (refs      (go-func-refs session))
          (concepts  (duplicate-candidate-concepts
-                      (concept-lattice
-                        (function-ref-context (go-func-refs session)))))
-         (npairs    (candidate-pair-count concepts)))
+                      (concept-lattice (function-ref-context refs))))
+         (pos-index (func-refs->positions refs))
+         (keep-pair? (dup-keep-pair? opts pos-index))
+         (all-prs   (candidate-pairs concepts))
+         (pairs     (if keep-pair? (filter keep-pair? all-prs) all-prs))
+         (npairs    (length pairs)))
     (if (> npairs max-candidate-pairs)
       (error (string-append
                "find_duplicates: target yields " (number->string npairs)
                " candidate pairs, over the " (number->string max-candidate-pairs)
-               " this tool will score; narrow a '/...' tree to one package")
+               " this tool will score; narrow with scope or symbol, or narrow"
+               " a '/...' tree to one package")
              target)
-      ;; filter-map, not filter + map: one tail-recursive pass that both drops
-      ;; the divergent pairs and projects the survivors, in constant call depth.
-      (let* ((cands (find-scored-candidates session threshold))
-             (clean (filter-map
-                      (lambda (c)
-                        (and (memq (candidate-tier c) kept-tiers)
-                             (candidate->clean c verdict?)))
-                      cands)))
-        (pipeline-envelope 1
-          (list (cons 'target target)
-                (cons 'threshold threshold)
-                (cons 'candidate-count (length clean))
-                (cons 'scored-pair-count (length cands))
-                (cons 'tiers (tier-tally cands))
-                (cons 'candidate-pair-count npairs)
-                (cons 'max-candidate-pairs max-candidate-pairs)
-                (cons 'verdict-included verdict?))
-          clean)))))
+      (let* ((cands (score-candidate-pairs session refs pairs threshold))
+             ;; The tier filter is adjudication, not the caller's filter, so
+             ;; it runs here and apply-view's keep? stays #f: re-applying the
+             ;; scope predicate on finished rows would be a no-op that hides
+             ;; where the work was actually saved.
+             (kept  (filter (lambda (c) (memq (candidate-tier c) kept-tiers))
+                            cands)))
+        (call-with-values
+          (lambda () (apply-view kept opts #f dup-rank-key (dup-render verdict?)))
+          (lambda (shown view-prov)
+            ;; Version 2: detail=summary is the default, so a default call's
+            ;; row shape changed (measures is gone), and candidate-count is
+            ;; retired in favour of the view's total-count -- one number, one
+            ;; name, the same on both tools.
+            (pipeline-envelope 2
+              (append
+                (list (cons 'target target)
+                      (cons 'threshold threshold)
+                      (cons 'scored-pair-count (length cands))
+                      (cons 'tiers (tier-tally cands))
+                      (cons 'candidate-pair-count npairs)
+                      (cons 'max-candidate-pairs max-candidate-pairs)
+                      (cons 'verdict-included verdict?))
+                view-prov)
+              shown)))))))
 
 ;; ── scheme_defs / scheme_symbols ─────────────────────────
 ;;
