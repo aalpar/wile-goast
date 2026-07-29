@@ -234,10 +234,6 @@
                               (list (cons 'peer name-a) (cons 'measures measures)))
                         sim))))
 
-;; scored-candidates: for each candidate concept, every within-cluster pair that
-;; resolves to AST nodes becomes a scored candidate entry:
-;;   ((pair . (a b)) (measures . M) (findings . (finding-a finding-b))).
-;; Pairs whose AST nodes cannot be resolved (short-name miss) are dropped.
 ;; score-pair-entry: one candidate pair -> a scored entry alist, or #f when the
 ;; pair does not resolve to AST nodes. Pure over the (immutable, pre-built)
 ;; indexes — no shared mutable state, no Go re-entry (canonicalization already
@@ -257,26 +253,66 @@
 (define (candidate-pairs concepts)
   (apply append (map (lambda (c) (all-pairs (concept-extent c))) concepts)))
 
-(define (scored-candidates concepts ast-index canon-index pos-index threshold)
+;; scored-candidates: score a flat PAIRS work list into scored candidate
+;; entries ((pair . (a b)) (measures . M) (findings . (finding-a finding-b))).
+;; Pairs whose AST nodes cannot be resolved (short-name miss) are dropped.
+;;
+;; Takes the pairs rather than the concepts so a caller can size or prune the
+;; work list before paying for it; candidate-pairs flattens concepts into that
+;; list. The concept grouping does not survive into the (flat) output anyway.
+(define (scored-candidates pairs ast-index canon-index pos-index threshold)
   (filter-map (lambda (pr)
                 (score-pair-entry pr ast-index canon-index pos-index threshold))
-              (candidate-pairs concepts)))
+              pairs))
 
-;; find-scored-candidates: top-level. TARGET is a package pattern or a GoSession.
-;; Runs 5a discovery (FCA-on-refs clusters) then 5b structural scoring over each
-;; cluster's pairs. Optional THRESHOLD (default 0.6) is the similarity/unifiable?
-;; threshold. Returns a flat list of scored candidate entries.
+;; pair-short-names: the short names appearing anywhere in PAIRS, as a set.
+;; These are the only keys score-candidate-pair will ever look up, so
+;; canonicalizing anything else is wasted work -- and skipping it is what makes
+;; a narrowly scoped scan genuinely CHEAP rather than merely small.
+(define (pair-short-names pairs)
+  (let ((h (make-hashtable)))
+    (for-each (lambda (pr)
+                (hashtable-set! h (short-name (car pr)) #t)
+                (hashtable-set! h (short-name (cdr pr)) #t))
+              pairs)
+    h))
+
+;; score-candidate-pairs: score PAIRS against SESSION's AST and SSA. REFS is
+;; the caller's go-func-refs result, reused rather than re-fetched.
+;;
+;; Split out of find-scored-candidates so a caller that already ran discovery
+;; -- to size the work list against a budget, or to prune it -- does not run
+;; discovery twice.
+;;
+;; The canon index covers only the functions PAIRS actually names. This is
+;; result-preserving: score-candidate-pair reads canon-index by short name and
+;; only for names in PAIRS, and filtering by short-name membership keeps
+;; colliding short names together (both survive or neither), so
+;; build-func-canon-index's last-wins order over a collision is unchanged.
+(define (score-candidate-pairs session refs pairs threshold)
+  (let* ((needed (pair-short-names pairs))
+         (pos-index (func-refs->positions refs))
+         (ast-index (build-func-ast-index (go-typecheck-package session)))
+         (canon-index
+           (build-func-canon-index
+             (filter (lambda (fn)
+                       (let ((nm (nf fn 'name)))
+                         (and (string? nm)
+                              (hashtable-ref needed (short-name nm) #f))))
+                     (let ((fs (go-ssa-build session))) (if (pair? fs) fs '()))))))
+    (scored-candidates pairs ast-index canon-index pos-index threshold)))
+
+;; find-scored-candidates: top-level. TARGET is a package pattern or a
+;; GoSession. Runs 5a discovery (FCA-on-refs clusters) then 5b structural
+;; scoring over every within-cluster pair. Optional THRESHOLD (default 0.6) is
+;; the similarity/unifiable? threshold. Returns a flat list of scored entries.
 (define (find-scored-candidates target . opts)
   (let* ((threshold (if (pair? opts) (car opts) 0.6))
          (s         (if (go-session? target) target (go-load target)))
          (refs      (go-func-refs s))
-         (ctx       (function-ref-context refs))
-         (lat       (concept-lattice ctx))
-         (cands     (duplicate-candidate-concepts lat))
-         (pos-index (func-refs->positions refs))
-         (ast-index (build-func-ast-index (go-typecheck-package s)))
-         (canon-index (build-func-canon-index (go-ssa-build s))))
-    (scored-candidates cands ast-index canon-index pos-index threshold)))
+         (cands     (duplicate-candidate-concepts
+                      (concept-lattice (function-ref-context refs)))))
+    (score-candidate-pairs s refs (candidate-pairs cands) threshold)))
 
 ;; candidate->verdict: an OPT-IN projection of a scored candidate's measures into
 ;; a categorical verdict. The default analysis output is the measure surface; the

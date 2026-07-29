@@ -374,3 +374,80 @@ func TestBuildFuncCanonIndex(t *testing.T) {
 		c.Assert(out, qt.Equals, "#t")
 	})
 }
+
+// The split of find-scored-candidates into discovery + score-candidate-pairs
+// is behaviour-preserving: driving the lower entry point with the full pair
+// list must reproduce the top-level result exactly. This is the regression
+// guard for the restructure that the scope/symbol push-down rides on.
+func TestScoreCandidatePairs_MatchesTopLevel(t *testing.T) {
+	engine := newBeliefEngine(t)
+	pkg := "github.com/aalpar/wile-goast/examples/goast-query/testdata/dupcluster"
+
+	eval(t, engine, `
+		(import (wile goast dup-detect))
+		(import (wile goast fca))
+		(import (wile goast utils))
+		(define sess (go-load "`+pkg+`"))
+		(define refs (go-func-refs sess))
+		(define cands (duplicate-candidate-concepts
+		                (concept-lattice (function-ref-context refs))))
+		(define prs (candidate-pairs cands))
+		(define via-top (find-scored-candidates sess 0.6))
+		(define via-pairs (score-candidate-pairs sess refs prs 0.6))
+		(define (ids cs)
+		  (map (lambda (c) (cdr (assq 'pair c))) cs))
+		(define (tiers cs)
+		  (map (lambda (c) (cdr (assq 'equiv-tier (cdr (assq 'measures c))))) cs))
+	`)
+
+	c := qt.New(t)
+	c.Assert(eval(t, engine, `(> (length via-top) 0)`).SchemeString(), qt.Equals, "#t")
+	c.Assert(eval(t, engine, `(= (length via-top) (length via-pairs))`).SchemeString(),
+		qt.Equals, "#t")
+	c.Assert(eval(t, engine, `(equal? (ids via-top) (ids via-pairs))`).SchemeString(),
+		qt.Equals, "#t")
+	c.Assert(eval(t, engine, `(equal? (tiers via-top) (tiers via-pairs))`).SchemeString(),
+		qt.Equals, "#t")
+}
+
+// Scoring a PRUNED pair list yields exactly the corresponding subset: the
+// same pairs score identically whether or not their neighbours were scored.
+// That is the soundness claim the push-down rests on.
+func TestScoreCandidatePairs_PrunedIsSubset(t *testing.T) {
+	engine := newBeliefEngine(t)
+	pkg := "github.com/aalpar/wile-goast/examples/goast-query/testdata/dupcluster"
+
+	eval(t, engine, `
+		(import (wile goast dup-detect))
+		(import (wile goast fca))
+		(import (wile goast utils))
+		(define sess2 (go-load "`+pkg+`"))
+		(define refs2 (go-func-refs sess2))
+		(define cands2 (duplicate-candidate-concepts
+		                 (concept-lattice (function-ref-context refs2))))
+		(define prs2 (candidate-pairs cands2))
+		(define (touches-sum? pr)
+		  (or (glob-match? "*SumSlice*" (car pr) #\.)
+		      (glob-match? "*SumSlice*" (cdr pr) #\.)))
+		(define pruned (filter touches-sum? prs2))
+		(define full-run (score-candidate-pairs sess2 refs2 prs2 0.6))
+		(define pruned-run (score-candidate-pairs sess2 refs2 pruned 0.6))
+		(define (find-pair cs a b)
+		  (let loop ((xs cs))
+		    (cond ((null? xs) #f)
+		          ((equal? (cdr (assq 'pair (car xs))) (list a b)) (car xs))
+		          (else (loop (cdr xs))))))
+	`)
+
+	c := qt.New(t)
+	c.Assert(eval(t, engine, `(< (length pruned) (length prs2))`).SchemeString(),
+		qt.Equals, "#t")
+	c.Assert(eval(t, engine, `(<= (length pruned-run) (length full-run))`).SchemeString(),
+		qt.Equals, "#t")
+	// The clone pair scores identically in both runs.
+	c.Assert(eval(t, engine, `
+		(let ((a (find-pair full-run "SumSlice" "TotalSlice"))
+		      (b (find-pair pruned-run "SumSlice" "TotalSlice")))
+		  (and a b (equal? (cdr (assq 'measures a)) (cdr (assq 'measures b)))))
+	`).SchemeString(), qt.Equals, "#t")
+}

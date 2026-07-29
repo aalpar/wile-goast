@@ -26,7 +26,9 @@
           build-func-canon-index
           score-candidate-pair
           pair-findings
+          candidate-pairs
           scored-candidates
+          score-candidate-pairs
           find-scored-candidates
           candidate->verdict
           ;; slice 5c: cost-half measures
