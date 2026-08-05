@@ -40,7 +40,7 @@ var Builder = registry.NewRegistryBuilder(addPrimitives)
 // AddToRegistry registers all SSA primitives.
 var AddToRegistry = Builder.AddToRegistry
 
-func addPrimitives(r *registry.Registry) error {
+func addPrimitives(r *registry.PrimitiveRegistry) error {
 	r.AddPrimitives([]registry.PrimitiveSpec{
 		{Name: "go-ssa-build", ParamCount: 1, IsVariadic: true, Impl: PrimGoSSABuild,
 			Doc: "Builds SSA form for a Go package and returns a list of ssa-func nodes.\n" +

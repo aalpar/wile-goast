@@ -34,7 +34,7 @@ var Builder = registry.NewRegistryBuilder(addPrimitives, addTargetParam)
 // AddToRegistry registers all Go AST primitives.
 var AddToRegistry = Builder.AddToRegistry
 
-func addPrimitives(r *registry.Registry) error {
+func addPrimitives(r *registry.PrimitiveRegistry) error {
 	r.AddPrimitives([]registry.PrimitiveSpec{
 		{Name: "go-parse-file", ParamCount: 2, IsVariadic: true, Impl: PrimGoParseFile,
 			Doc: "Parses a Go source file and returns an s-expression AST.\n" +
@@ -202,7 +202,7 @@ func addPrimitives(r *registry.Registry) error {
 
 // addTargetParam registers the current-go-target R7RS parameter as a
 // global binding. See goast/target.go for the parameter's semantics.
-func addTargetParam(r *registry.Registry) error {
+func addTargetParam(r *registry.PrimitiveRegistry) error {
 	r.AddGlobalValue("current-go-target", GetCurrentGoTargetParam())
 	return nil
 }

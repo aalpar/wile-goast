@@ -40,7 +40,7 @@ var Builder = registry.NewRegistryBuilder(addPrimitives)
 // AddToRegistry registers all callgraph primitives.
 var AddToRegistry = Builder.AddToRegistry
 
-func addPrimitives(r *registry.Registry) error {
+func addPrimitives(r *registry.PrimitiveRegistry) error {
 	r.AddPrimitives([]registry.PrimitiveSpec{
 		{Name: "go-callgraph", ParamCount: 2, Impl: PrimGoCallgraph,
 			Doc: "Builds a call graph for a Go package using the specified algorithm.\n" +

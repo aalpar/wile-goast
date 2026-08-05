@@ -40,7 +40,7 @@ var Builder = registry.NewRegistryBuilder(addPrimitives)
 // AddToRegistry registers all CFG primitives.
 var AddToRegistry = Builder.AddToRegistry
 
-func addPrimitives(r *registry.Registry) error {
+func addPrimitives(r *registry.PrimitiveRegistry) error {
 	r.AddPrimitives([]registry.PrimitiveSpec{
 		{Name: "go-cfg", ParamCount: 3, IsVariadic: true, Impl: PrimGoCFG,
 			Doc: "Builds the control flow graph for a named function in a Go package.\n" +
