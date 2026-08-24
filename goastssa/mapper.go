@@ -31,22 +31,35 @@ type ssaMapper struct {
 	positions bool
 }
 
-func (p *ssaMapper) mapFunction(fn *ssa.Function) values.Value {
-	params := make([]values.Value, len(fn.Params))
-	for i, param := range fn.Params {
-		params[i] = goast.Node("ssa-param",
-			goast.Field("name", goast.Str(param.Name())),
-			goast.Field("type", goast.Str(types.TypeString(param.Type(), nil))),
-		)
+// mapValueDecls maps declared SSA values (a function's parameters or its
+// captured free variables) to nodes tagged tag.
+//
+// Parameter and FreeVar are distinct types, but everything mapped here reaches
+// them through ssa.Value: Name, Type and Pos. Keeping this as two parallel
+// loops differing only in the tag is what let both of them go unlocated in the
+// first place, so they share one loop rather than two that must be edited in
+// step.
+func mapValueDecls[T ssa.Value](p *ssaMapper, tag string, vs []T) []values.Value {
+	out := make([]values.Value, len(vs))
+	for i, v := range vs {
+		fields := []values.Value{
+			goast.Field("name", goast.Str(v.Name())),
+			goast.Field("type", goast.Str(types.TypeString(v.Type(), nil))),
+		}
+		if p.positions {
+			if pos := v.Pos(); pos.IsValid() {
+				fields = append(fields,
+					goast.Field("pos", goast.Str(p.fset.Position(pos).String())))
+			}
+		}
+		out[i] = goast.Node(tag, fields...)
 	}
+	return out
+}
 
-	freeVars := make([]values.Value, len(fn.FreeVars))
-	for i, fv := range fn.FreeVars {
-		freeVars[i] = goast.Node("ssa-free-var",
-			goast.Field("name", goast.Str(fv.Name())),
-			goast.Field("type", goast.Str(types.TypeString(fv.Type(), nil))),
-		)
-	}
+func (p *ssaMapper) mapFunction(fn *ssa.Function) values.Value {
+	params := mapValueDecls(p, "ssa-param", fn.Params)
+	freeVars := mapValueDecls(p, "ssa-free-var", fn.FreeVars)
 
 	blocks := make([]values.Value, len(fn.Blocks))
 	for i, b := range fn.Blocks {
@@ -64,7 +77,40 @@ func (p *ssaMapper) mapFunction(fn *ssa.Function) values.Value {
 	if fn.Pkg != nil {
 		fields = append(fields, goast.Field("pkg", goast.Str(fn.Pkg.Pkg.Path())))
 	}
+	// Unconditional, unlike the instruction-level pos: this is one field per
+	// function rather than one per instruction, so the payload argument that
+	// motivates the 'positions gate does not apply. go-ssa-field-index already
+	// emits fn.Pos() ungated (see ssaFieldSummary); a located summary and an
+	// unlocated whole function was an accident, not a distinction.
+	//
+	// fn.Pos() is the position of the function's NAME identifier, not of the
+	// func keyword. Synthetic functions (wrappers, bound methods) report NoPos
+	// and go unlocated, but collectSSAFuncs already skips those.
+	if pos := fn.Pos(); pos.IsValid() {
+		fields = append(fields, goast.Field("pos", goast.Str(p.fset.Position(pos).String())))
+	}
 	return goast.Node("ssa-func", fields...)
+}
+
+// blockPos returns the anchor position for b: the first instruction carrying a
+// valid position, or token.NoPos if the block has none.
+//
+// goastcfg pins its anchor to b.Instrs[0].Pos() (goastcfg/mapper.go), which is
+// safe there because go/cfg blocks hold ast.Nodes and those are always located.
+// SSA instructions are not: If, Jump and RunDefers return token.NoPos by
+// construction, and lifted registers frequently do too. Pinning to instruction
+// 0 would drop the anchor precisely in the blocks whose terminator has no
+// position of its own, which is the case the anchor exists to cover.
+func blockPos(b *ssa.BasicBlock) token.Pos {
+	for _, instr := range b.Instrs {
+		if instr == nil {
+			continue
+		}
+		if pos := instr.Pos(); pos.IsValid() {
+			return pos
+		}
+	}
+	return token.NoPos
 }
 
 func (p *ssaMapper) mapBlock(b *ssa.BasicBlock) values.Value {
@@ -95,6 +141,14 @@ func (p *ssaMapper) mapBlock(b *ssa.BasicBlock) values.Value {
 	idom := b.Idom()
 	if idom != nil {
 		fields = append(fields, goast.Field("idom", values.NewInteger(int64(idom.Index))))
+	}
+	// Gated like the instruction-level pos: one field per block is closer to
+	// instruction volume than to function volume. A positionless terminator
+	// inherits this anchor by containment rather than by claiming it as its own.
+	if p.positions {
+		if pos := blockPos(b); pos.IsValid() {
+			fields = append(fields, goast.Field("pos", goast.Str(p.fset.Position(pos).String())))
+		}
 	}
 	return goast.Node("ssa-block", fields...)
 }

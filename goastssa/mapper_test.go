@@ -775,3 +775,148 @@ func listLength(v values.Value) int {
 	}
 	return n
 }
+
+// TestMapFunctionPosition: ssa-func carries fn.Pos() with no 'positions
+// option, matching what ssa-field-summary already does for the same value.
+func TestMapFunctionPosition(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	fn := buildSSAFromSource(t, dir, `
+package testpkg
+
+func Add(a, b int) int {
+	return a + b
+}
+`, "Add")
+
+	mapper := &ssaMapper{fset: fn.Prog.Fset}
+	result := mapper.mapFunction(fn)
+
+	pos, ok := goast.GetField(result.(*values.Pair).Cdr(), "pos")
+	c.Assert(ok, qt.IsTrue,
+		qt.Commentf("ssa-func should carry pos without the positions option"))
+	// 4:6 not 4:1 -- fn.Pos() is the name identifier, not the func keyword.
+	c.Assert(pos.(*values.String).Value, qt.Matches, `.*main\.go:4:6`)
+}
+
+// TestMapBlockPosition: the block anchor is gated on the positions option and
+// resolves to the first instruction carrying a valid position.
+func TestMapBlockPosition(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	fn := buildSSAFromSource(t, dir, `
+package testpkg
+
+func Choose(a int) int {
+	if a > 0 {
+		return a
+	}
+	return -a
+}
+`, "Choose")
+
+	firstBlockFields := func(m *ssaMapper) values.Value {
+		blocks, ok := goast.GetField(m.mapFunction(fn).(*values.Pair).Cdr(), "blocks")
+		c.Assert(ok, qt.IsTrue)
+		return blocks.(*values.Pair).Car().(*values.Pair).Cdr()
+	}
+
+	withPos := firstBlockFields(&ssaMapper{fset: fn.Prog.Fset, positions: true})
+	pos, ok := goast.GetField(withPos, "pos")
+	c.Assert(ok, qt.IsTrue, qt.Commentf("ssa-block should carry pos under 'positions"))
+	c.Assert(pos.(*values.String).Value, qt.Matches, `.*main\.go:\d+:\d+`)
+
+	withoutPos := firstBlockFields(&ssaMapper{fset: fn.Prog.Fset})
+	_, ok = goast.GetField(withoutPos, "pos")
+	c.Assert(ok, qt.IsFalse, qt.Commentf("ssa-block pos should be opt-in"))
+}
+
+// TestBlockPosSkipsPositionlessInstructions: a block whose leading
+// instructions carry no position still gets an anchor. This is where the
+// SSA layer must diverge from goastcfg, which pins the anchor to
+// b.Instrs[0].
+func TestBlockPosSkipsPositionlessInstructions(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	fn := buildSSAFromSource(t, dir, `
+package testpkg
+
+func Loop(n int) int {
+	total := 0
+	for i := 0; i < n; i++ {
+		total += i
+	}
+	return total
+}
+`, "Loop")
+
+	anchored := 0
+	for _, b := range fn.Blocks {
+		if blockPos(b).IsValid() {
+			anchored++
+		}
+		// Every block that has any located instruction must be anchored.
+		located := false
+		for _, instr := range b.Instrs {
+			if instr != nil && instr.Pos().IsValid() {
+				located = true
+				break
+			}
+		}
+		c.Assert(blockPos(b).IsValid(), qt.Equals, located,
+			qt.Commentf("block %d anchor should track instruction locatability", b.Index))
+	}
+	c.Assert(anchored, qt.Not(qt.Equals), 0)
+}
+
+// TestMapParamAndFreeVarPositions: ssa-param and ssa-free-var carry pos under
+// 'positions and omit it otherwise.
+func TestMapParamAndFreeVarPositions(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	fn := buildSSAFromSource(t, dir, `
+package testpkg
+
+func Outer(seed int) func() int {
+	step := seed * 2
+	return func() int {
+		return step + 1
+	}
+}
+`, "Outer")
+
+	// The closure is an anonymous function of Outer; it is the one with FreeVars.
+	c.Assert(len(fn.AnonFuncs), qt.Not(qt.Equals), 0)
+	closure := fn.AnonFuncs[0]
+	c.Assert(len(closure.FreeVars), qt.Not(qt.Equals), 0)
+
+	posOf := func(m *ssaMapper, f *ssa.Function, listKey string) (string, bool) {
+		list, ok := goast.GetField(m.mapFunction(f).(*values.Pair).Cdr(), listKey)
+		c.Assert(ok, qt.IsTrue)
+		node := list.(*values.Pair).Car().(*values.Pair)
+		p, found := goast.GetField(node.Cdr(), "pos")
+		if !found {
+			return "", false
+		}
+		return p.(*values.String).Value, true
+	}
+
+	located := &ssaMapper{fset: fn.Prog.Fset, positions: true}
+	plain := &ssaMapper{fset: fn.Prog.Fset}
+
+	// Parameter `seed` is declared on the func signature line.
+	got, ok := posOf(located, fn, "params")
+	c.Assert(ok, qt.IsTrue, qt.Commentf("ssa-param should carry pos under 'positions"))
+	c.Assert(got, qt.Matches, `.*main\.go:4:12`)
+
+	_, ok = posOf(plain, fn, "params")
+	c.Assert(ok, qt.IsFalse, qt.Commentf("ssa-param pos should be opt-in"))
+
+	// Free variable `step` points at its declaration inside Outer.
+	got, ok = posOf(located, closure, "free-vars")
+	c.Assert(ok, qt.IsTrue, qt.Commentf("ssa-free-var should carry pos under 'positions"))
+	c.Assert(got, qt.Matches, `.*main\.go:5:2`)
+
+	_, ok = posOf(plain, closure, "free-vars")
+	c.Assert(ok, qt.IsFalse, qt.Commentf("ssa-free-var pos should be opt-in"))
+}

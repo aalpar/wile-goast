@@ -373,3 +373,38 @@ func TestSSAMakeInterface_Concrete(t *testing.T) {
 		                          (else (iloop (cdr is))))))))))`)
 	c.Assert(result.Internal(), qt.Not(qt.Equals), values.FalseValue)
 }
+
+// TestGoSSABuild_Positions checks the two position fields through the public
+// Scheme surface: ssa-func carries pos with no option, ssa-block only under
+// 'positions.
+func TestGoSSABuild_Positions(t *testing.T) {
+	c := qt.New(t)
+	engine := newEngine(t)
+
+	eval(t, engine, `
+		(define (first-block fn) (car (cdr (assoc 'blocks (cdr fn)))))
+		(define (find-pos fns get)
+		  (let loop ((fs fns))
+		    (if (null? fs) #f
+		      (let ((p (assoc 'pos (cdr (get (car fs))))))
+		        (if (and p (string? (cdr p))) (cdr p) (loop (cdr fs)))))))
+		(define plain (go-ssa-build "github.com/aalpar/wile-goast/goastcfg"))
+		(define located
+		  (go-ssa-build "github.com/aalpar/wile-goast/goastcfg" 'positions))`)
+
+	t.Run("ssa-func pos is unconditional", func(t *testing.T) {
+		pos := eval(t, engine, `(find-pos plain (lambda (f) f))`).SchemeString()
+		c.Assert(pos, qt.Not(qt.Equals), "#f")
+		c.Assert(strings.Contains(pos, "goastcfg/"), qt.IsTrue, qt.Commentf("pos = %s", pos))
+	})
+
+	t.Run("ssa-block pos requires the positions option", func(t *testing.T) {
+		with := eval(t, engine, `(find-pos located first-block)`).SchemeString()
+		c.Assert(with, qt.Not(qt.Equals), "#f")
+		c.Assert(strings.Contains(with, "goastcfg/"), qt.IsTrue, qt.Commentf("pos = %s", with))
+
+		without := eval(t, engine, `(find-pos plain first-block)`).SchemeString()
+		c.Assert(without, qt.Equals, "#f",
+			qt.Commentf("no ssa-block should carry pos without 'positions"))
+	})
+}

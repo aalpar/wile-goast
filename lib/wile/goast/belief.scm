@@ -236,7 +236,7 @@
 ;; Form 3 is globally unique — pkg-path is kept in the signature
 ;; for backward compatibility but not used for lookup.
 (define (ctx-find-ssa-func ctx pkg-path name)
-  "Look up an SSA function by Form 3 name.\nBuilds an index on first call for O(1) subsequent lookups.\nReturns an ssa-func node or #f if not found.\nThe ssa-func has: name, signature, params, free-vars, blocks, pkg.\nUse (nf ssa-func 'blocks) to access SSA basic blocks.\n\nParameters:\n  ctx : list\n  pkg-path : string\n  name : string\nReturns: any\nCategory: goast-belief\n\nExamples:\n  (define ssa-fn (ctx-find-ssa-func ctx \"my/pkg\" \"my/pkg.handleRequest\"))\n  (when ssa-fn\n    (nf ssa-fn 'name)       ; => \"my/pkg.handleRequest\"\n    (nf ssa-fn 'blocks)     ; => list of ssa-block nodes\n    (nf ssa-fn 'signature)) ; => \"func(w http.ResponseWriter, r *http.Request)\"\n\nSee also: `ctx-ssa', `make-context', `custom'."
+  "Look up an SSA function by Form 3 name.\nBuilds an index on first call for O(1) subsequent lookups.\nReturns an ssa-func node or #f if not found.\nThe ssa-func has: name, signature, params, free-vars, blocks, pkg, pos.\nUse (nf ssa-func 'blocks) to access SSA basic blocks.\n\nParameters:\n  ctx : list\n  pkg-path : string\n  name : string\nReturns: any\nCategory: goast-belief\n\nExamples:\n  (define ssa-fn (ctx-find-ssa-func ctx \"my/pkg\" \"my/pkg.handleRequest\"))\n  (when ssa-fn\n    (nf ssa-fn 'name)       ; => \"my/pkg.handleRequest\"\n    (nf ssa-fn 'blocks)     ; => list of ssa-block nodes\n    (nf ssa-fn 'signature)) ; => \"func(w http.ResponseWriter, r *http.Request)\"\n\nSee also: `ctx-ssa', `make-context', `custom'."
   (let ((entry (assoc name (ctx-ssa-index ctx))))
     (and entry (cdr entry))))
 

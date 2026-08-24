@@ -545,7 +545,19 @@ func renameFreeVars(freeVars values.Value, nameMap map[string]string) values.Val
 			if oldName != "" {
 				nameMap[oldName] = canonical
 			}
-			result = append(result, replaceField(node, "name", goast.Str(canonical)))
+			// Rebuild from name+type rather than replacing the name in place:
+			// the canonical form must depend only on structure, and an
+			// ssa-free-var now also carries pos under 'positions. Params get
+			// this for free because rebuildSSAFunc re-emits them from parsed
+			// data; preserving unknown fields here would make two closures
+			// that differ only in source location canonicalize differently.
+			typVal, found := goast.GetField(node.Cdr(), "type")
+			if !found {
+				typVal = goast.Str("")
+			}
+			result = append(result, goast.Node("ssa-free-var",
+				goast.Field("name", goast.Str(canonical)),
+				goast.Field("type", typVal)))
 			idx++
 		} else {
 			result = append(result, pair.Car())

@@ -45,9 +45,13 @@ func addPrimitives(r *registry.PrimitiveRegistry) error {
 		{Name: "go-ssa-build", ParamCount: 1, IsVariadic: true, Impl: PrimGoSSABuild,
 			Doc: "Builds SSA form for a Go package and returns a list of ssa-func nodes.\n" +
 				"Pattern or GoSession may be the first arg; if absent, (current-go-target) is used.\n" +
-				"Options: 'debug.\n" +
-				"Each ssa-func has: name, signature, params, free-vars, blocks, pkg.\n" +
-				"Each ssa-block has: index, preds, succs, instrs, and optional idom, comment.\n" +
+				"Options: 'positions.\n" +
+				"Each ssa-func has: name, signature, params, free-vars, blocks, pkg, pos.\n" +
+				"pos is the function's name identifier and is always present; 'positions\n" +
+				"additionally locates each ssa-param, ssa-free-var, ssa-block and\n" +
+				"instruction.\n" +
+				"Each ssa-block has: index, preds, succs, instrs, and optional idom,\n" +
+				"comment, pos (the first located instruction, under 'positions).\n" +
 				"Instructions are tagged nodes: ssa-call, ssa-if, ssa-return, ssa-store, etc.\n" +
 				"ssa-call has: args, mode (call or invoke), func (or method+recv), name, type.\n\n" +
 				"Examples:\n" +

@@ -368,10 +368,28 @@ A list of `(ssa-func ...)` nodes. Each function contains:
 | `free-vars` | list of `ssa-free-var` | Captured variables (closures) |
 | `blocks` | list of `ssa-block` | Basic blocks |
 | `pkg` | string | Package path (when available) |
+| `pos` | string | `file:line:col` of the function's *name identifier* |
+
+`pos` is emitted without `'positions`: it is one field per function, not per
+instruction, so the payload cost that motivates the option does not apply.
+It is absent only for functions reporting no position (synthetic wrappers,
+which `go-ssa-build` already skips).
+
+Each `ssa-param` and `ssa-free-var` contains `name`, `type`, and under
+`'positions` a `pos` giving the declaration site: the signature for a
+parameter, the enclosing function's declaration of the captured variable for
+a free variable. `go-ssa-canonicalize` strips both, so two functions differing
+only in source location still canonicalize identically.
 
 Each `ssa-block` contains `index`, `preds`, `succs`, `instrs`, and optionally
-`comment` and `idom` (immediate dominator block index; absent on the entry
-block).
+`comment`, `idom` (immediate dominator block index; absent on the entry
+block), and `pos`.
+
+Block `pos` requires `'positions`. It anchors the block to its first
+instruction carrying a valid position, not to instruction 0: `ssa-if`,
+`ssa-jump` and `ssa-run-defers` report no position by construction, so a
+block's terminator relies on this anchor by containment rather than
+carrying one of its own.
 
 ### SSA instruction tags
 

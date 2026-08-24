@@ -15,6 +15,7 @@
 package goastssa_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/aalpar/wile/pkg/values"
@@ -215,4 +216,30 @@ func TestGoSSACanonicalize_BlockOrder(t *testing.T) {
 								(loop (cdr bs)))))))`)
 		qt.New(t).Assert(result.Internal(), qt.Equals, values.TrueValue)
 	})
+}
+
+// TestCanonicalizeDropsDeclPositions: canonicalization must strip pos from
+// ssa-param AND ssa-free-var. Two functions identical up to source location
+// have to canonicalize identically, or find_duplicates stops unifying them.
+// Params were already normalized; free-vars were passed through verbatim,
+// which was equivalent only while free-vars carried nothing but name and type.
+func TestCanonicalizeDropsDeclPositions(t *testing.T) {
+	c := qt.New(t)
+	engine := newEngine(t)
+
+	result := eval(t, engine, `
+		(go-ssa-canonicalize
+		  '(ssa-func
+		     (name . "f") (signature . "func()")
+		     (params    (ssa-param    (name . "x") (type . "int") (pos . "a.go:1:1")))
+		     (free-vars (ssa-free-var (name . "y") (type . "int") (pos . "a.go:2:2")))
+		     (blocks . ((ssa-block (index . 0) (idom . -1)
+		                           (preds . ()) (succs . ()) (instrs . ()))))))`)
+
+	out := result.SchemeString()
+	c.Assert(strings.Contains(out, "a.go"), qt.IsFalse,
+		qt.Commentf("canonical form must not carry declaration positions: %s", out))
+	// The declarations themselves must survive.
+	c.Assert(strings.Contains(out, "ssa-param"), qt.IsTrue, qt.Commentf("%s", out))
+	c.Assert(strings.Contains(out, "ssa-free-var"), qt.IsTrue, qt.Commentf("%s", out))
 }
