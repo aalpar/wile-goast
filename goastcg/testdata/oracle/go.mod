@@ -1,6 +1,6 @@
 module vendprobe
 
-go 1.25.0
+go 1.27.0
 
 require (
 	golang.org/x/sys v0.46.0

@@ -25,7 +25,7 @@
 ;; identical to the FCA context objects, so the join is exact-match. Functions
 ;; without a 'pos (synthetic/positionless) are skipped — unlocated when looked up.
 (define (func-refs->positions func-refs)
-  (let ((h (make-hashtable)))
+  (let ((h (make-equal-hashtable)))
     (for-each
       (lambda (fr)
         (let ((name (nf fr 'name))
@@ -133,7 +133,7 @@
 
 ;; build-func-ast-index / build-func-ssa-index: short-name -> node hashtables.
 (define (build-func-ast-index pkgs)
-  (let ((h (make-hashtable)))
+  (let ((h (make-equal-hashtable)))
     (for-each
       (lambda (fd)
         (let ((nm (nf fd 'name)))
@@ -142,7 +142,7 @@
     h))
 
 (define (build-func-ssa-index ssa-funcs)
-  (let ((h (make-hashtable)))
+  (let ((h (make-equal-hashtable)))
     (for-each
       (lambda (fn)
         (let ((nm (nf fn 'name)))
@@ -169,7 +169,7 @@
 ;; global lock. Threads are real goroutines but only one runs Scheme at a time, so
 ;; the sweep stays deliberately serial.
 (define (build-func-canon-index ssa-funcs)
-  (let ((h (make-hashtable)))
+  (let ((h (make-equal-hashtable)))
     (for-each
       (lambda (fn)
         (let ((nm (nf fn 'name)))
@@ -270,7 +270,7 @@
 ;; canonicalizing anything else is wasted work -- and skipping it is what makes
 ;; a narrowly scoped scan genuinely CHEAP rather than merely small.
 (define (pair-short-names pairs)
-  (let ((h (make-hashtable)))
+  (let ((h (make-equal-hashtable)))
     (for-each (lambda (pr)
                 (hashtable-set! h (short-name (car pr)) #t)
                 (hashtable-set! h (short-name (cdr pr)) #t))
@@ -384,7 +384,7 @@
 
 ;; build-func-ref-index: name -> func-ref entry (for pkg + ref-set lookup).
 (define (build-func-ref-index func-refs)
-  (let ((h (make-hashtable)))
+  (let ((h (make-equal-hashtable)))
     (for-each
       (lambda (fr)
         (let ((n (nf fr 'name)))

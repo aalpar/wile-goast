@@ -251,16 +251,22 @@ func loadFile(ctx context.Context, engine *wile.Engine, filename string) error {
 	if err != nil {
 		return err
 	}
-	return engine.WithLoadPath(absPath, func() error {
-		val, evalErr := engine.EvalMultipleWithSource(ctx, string(data), filename)
-		if evalErr != nil {
-			return evalErr
-		}
-		if val != nil && !val.IsVoid() {
-			fmt.Println(val.SchemeString())
-		}
-		return nil
-	})
+	// The load path lives on the context, so a relative (include …) or (load …)
+	// in the script resolves against the script's own directory. Replaces
+	// engine.WithLoadPath, which pushed onto a stack shared by every thread in
+	// the engine.
+	loadCtx, err := engine.ContextWithLoadPath(ctx, absPath)
+	if err != nil {
+		return err
+	}
+	val, err := engine.EvalMultipleWithSource(loadCtx, string(data), filename)
+	if err != nil {
+		return err
+	}
+	if val != nil && !val.IsVoid() {
+		fmt.Println(val.SchemeString())
+	}
+	return nil
 }
 
 func evalAndPrint(ctx context.Context, engine *wile.Engine, code string) error {

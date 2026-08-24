@@ -448,7 +448,7 @@ See also: `import-signatures', `find-split', `verify-acyclic'."
 ;; which would be circular). why = (split-group (side . a|b)); score = #f.
 (define (recommend-split-findings report func-refs)
   (let* ((pos-index
-           (let ((h (make-hashtable)))
+           (let ((h (make-equal-hashtable)))
              (for-each
                (lambda (fr)
                  (let ((n (nf fr 'name)) (p (nf fr 'pos)))

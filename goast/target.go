@@ -93,7 +93,7 @@ func InitTargetState() {
 		if initial == "" {
 			initial = targetDefaultPattern
 		}
-		targetParam = machine.NewParameter(values.NewString(initial), nil)
+		targetParam = machine.NewParameter(values.NewString(initial), nil, machine.MutableBase)
 	})
 }
 

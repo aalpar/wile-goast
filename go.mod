@@ -1,6 +1,6 @@
 module github.com/aalpar/wile-goast
 
-go 1.25.0
+go 1.27.0
 
 require (
 	github.com/aalpar/wile v1.19.1

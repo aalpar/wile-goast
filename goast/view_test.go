@@ -159,7 +159,7 @@ func TestApplyView_RenderPerDetail(t *testing.T) {
 		;; The render counter lives in a hashtable, not a top-level variable:
 		;; Wile top-level bindings are immutable ("cannot mutate immutable
 		;; binding"), so set! on one fails. Mutating the hashtable is fine.
-		(define counter (make-hashtable))
+		(define counter (make-equal-hashtable))
 		(define (bump!) (hashtable-set! counter 'n (+ 1 (hashtable-ref counter 'n 0))))
 		(define (renders) (hashtable-ref counter 'n 0))
 		(define (rn r detail)
@@ -199,7 +199,7 @@ func TestViewNameMatcher(t *testing.T) {
 	eval(t, engine, `
 		(import (wile goast pipelines))
 		(import (wile goast utils))
-		(define px (make-hashtable))
+		(define px (make-equal-hashtable))
 		(hashtable-set! px "pkg.Alpha" "/repo/goast/a.go:10:1")
 		(hashtable-set! px "pkg.Beta"  "/repo/goast/b.go:20:1")
 		;; Gamma is deliberately unlocated: no entry in the index.

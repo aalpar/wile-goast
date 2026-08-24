@@ -76,7 +76,7 @@
 ;; the algebra returns opaque object names; positions live on the Go side and
 ;; are re-attached here by name.
 (define (field-index->positions index)
-  (let ((h (make-hashtable)))
+  (let ((h (make-equal-hashtable)))
     (for-each
       (lambda (summary)
         (let ((fn  (nf summary 'func))
@@ -102,7 +102,7 @@
 
 ;; Build adjacency map from call graph: func-name → list of callee names.
 (define (cg-adjacency callgraph)
-  (let ((adj (make-hashtable)))
+  (let ((adj (make-equal-hashtable)))
     (for-each
       (lambda (node)
         (let* ((name (nf node 'name))
@@ -123,8 +123,8 @@
 ;; Stack frames are (node . remaining-callees). When remaining-callees
 ;; is exhausted, the node finishes (black) and is added to topo order.
 (define (cg-topo-sort adj all-nodes)
-  (let ((color (make-hashtable))
-        (back-edges (make-hashtable))
+  (let ((color (make-equal-hashtable))
+        (back-edges (make-equal-hashtable))
         (topo '())
         (stack '()))
     ;; Push a node onto the DFS stack if unvisited.
@@ -169,7 +169,7 @@
 
 ;; Extract write-mode field accesses per function.
 (define (direct-write-map field-index)
-  (let ((m (make-hashtable)))
+  (let ((m (make-equal-hashtable)))
     (for-each
       (lambda (summary)
         (let* ((fname (nf summary 'func))
@@ -193,7 +193,7 @@
 ;; back-edges: hashtable of back-edge keys.
 ;; Returns: hashtable of func → accumulated field-access list.
 (define (accumulate-writes processing-order adj direct back-edges)
-  (let ((acc (make-hashtable)))
+  (let ((acc (make-equal-hashtable)))
     (for-each
       (lambda (func)
         (let loop ((callees (hashtable-ref adj func '()))
@@ -211,7 +211,7 @@
 ;; Preserves pkg from originals; includes functions from call graph
 ;; that had no direct writes but gained transitive writes.
 (define (rebuild-summaries field-index all-funcs acc)
-  (let ((pkg-map (make-hashtable)))
+  (let ((pkg-map (make-equal-hashtable)))
     (for-each
       (lambda (s) (hashtable-set! pkg-map (nf s 'func) (nf s 'pkg)))
       field-index)
