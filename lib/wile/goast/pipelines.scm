@@ -525,13 +525,15 @@
 ;; largest single package and refuses the whole-tree pattern.
 ;;
 ;; It is deliberately NOT the old 9992, which was Wile's 10000-frame call
-;; depth showing through a non-tail `map` over every scored pair. The result
-;; now carries only the pairs that unify (kept-tiers), filtered and rendered
-;; by apply-view's tail-recursive loops, so that limit no longer binds. The
-;; old number
-;; also made the tool unable to answer for goast at all: goast is a single
-;; package and yields 20404 pairs on its own, so "narrow to one package" had
-;; no valid answer.
+;; depth showing through a non-tail `map` over every scored pair. Every stage
+;; that touches the surviving rows is now a tail loop -- apply-view's decorate
+;; pass, view-sort's merge, and the paged render -- so that limit no longer
+;; binds, and it does not re-bind now that the similarity floor (rather than
+;; the tier) decides how many rows survive: view-sort was written for the
+;; 20000-element case this tool can reach, and render runs after paging, so
+;; only LIMIT rows are ever built. The old number also made the tool unable to
+;; answer for goast at all: goast is a single package and yields 20404 pairs on
+;; its own, so "narrow to one package" had no valid answer.
 ;;
 ;; The count checked against this budget is taken AFTER the scope/symbol
 ;; prune, so a narrow query against a wide target is answered rather than
@@ -545,14 +547,46 @@
 (define (candidate-tier cand)
   (cdr (assq 'equiv-tier (cdr (assq 'measures cand)))))
 
-;; kept-tiers: the tiers that constitute a finding. FCA clustering is candidate
-;; GENERATION ("these functions reference overlapping things", C(k,2) per
-;; concept); the tier is the ADJUDICATION that follows it. A divergent pair is
-;; one the unifier tried and rejected, so shipping it as a result row would
-;; report the question, not the answer -- and dominate the payload doing it
-;; (./goast: 20336 of 20404 pairs are divergent). The rejected pairs stay
-;; visible as counts under provenance's tiers.
-(define kept-tiers '(proven structural))
+;; candidate-similarity: a scored candidate's effective similarity, as the
+;; float64 that will actually be reported. Gating on the truncated value keeps
+;; the threshold honest: a row is included iff the number the caller SEES
+;; clears the number the caller SET. score-diffs emits a 256-bit BigFloat.
+(define (candidate-similarity cand)
+  (->float64 (cdr (assq 'similarity (cdr (assq 'measures cand))))))
+
+;; What THRESHOLD selects on, and why it is similarity rather than tier.
+;;
+;; It used to be the tier: score every pair, let unifiable? assign
+;; proven/structural/divergent, return only the first two. The argument was
+;; that a divergent pair is one the unifier tried and rejected, so shipping it
+;; reports the question rather than the answer.
+;;
+;; That argument holds for the tier and not for the tool. unifiable? is
+;; CATEGORICAL in its second clause -- effective similarity >= threshold AND no
+;; remaining diff outside {type-name, derived-type, identifier, register}. The
+;; second clause has no knob. So a pair could sit at 0.94 similarity and still
+;; be divergent, and no value of threshold could retrieve it: measured on the
+;; wile quasi cluster at its pre-refactor commit, quasiquoteNeedsRuntime vs
+;; quasisyntaxNeedsRuntimeGuarded scores 0.937 with unifiable? #f at 0.90,
+;; 0.60 AND 0.10. The tool reported total-count 0, which reads exactly like a
+;; clean tree.
+;;
+;; Worse, that pair's four `structural' diffs were the three latent bugs a
+;; human review found in the same file hours later (a missing vector case, a
+;; dropped improper tail, an element-wise dotted tail). The informative
+;; divergence IS the payload; the tier filter deleted precisely it.
+;;
+;; So threshold now means what its name says: a floor on effective similarity,
+;; in similarity units, the same units the row reports. The tier survives as a
+;; REPORTED field and as the provenance tally -- adjudication the caller can
+;; read, not a filter imposed before they see anything. That restores this
+;; library's own stated contract (dup-detect.scm, candidate->verdict): the
+;; measure surface is the default, the verdict is requested, never imposed.
+;;
+;; The payload concern was real and is now answered in the right currency:
+;; volume is bounded by the floor the caller set, not by a categorical gate
+;; they cannot reach. A caller who wants only pairs that unify by substitution
+;; alone filters on the reported equiv-tier.
 
 ;; tier-tally: per-tier counts over the scored candidates, so provenance
 ;; reports the work done even when every pair was rejected and result is [].
@@ -621,13 +655,13 @@
 
 ;; pipeline-find-duplicates: scan TARGET for semantic duplicate function pairs
 ;; (FCA reference clustering + SSA/AST-verified equivalence). OPTS is an alist;
-;; recognised keys are threshold (number, default 0.6 -- the unify/similarity
-;; threshold), verdict (bool, default #f -- attach the opt-in categorical
+;; recognised keys are threshold (number, default 0.6 -- a floor on effective
+;; similarity), verdict (bool, default #f -- attach the opt-in categorical
 ;; verdict), and the shared view parameters (scope, symbol, detail, limit,
-;; offset). Result carries only the pairs whose tier is in kept-tiers, so
-;; threshold IS the selection knob: it decides unifiable?, unifiable? decides
-;; the tier, and the tier decides inclusion. An empty result (nothing unified,
-;; or nothing clusterable) is a success, count 0.
+;; offset). Result carries every scored pair at or above threshold, each
+;; reporting its own equiv-tier; threshold is the selection knob and it selects
+;; in similarity units. An empty result (nothing above the floor, or nothing
+;; clusterable) is a success, count 0.
 ;;
 ;; Runs discovery first and refuses a target over max-candidate-pairs. The
 ;; refusal is an error, not an empty result: result is a list here, so an empty
@@ -656,11 +690,11 @@
                " a '/...' tree to one package")
              target)
       (let* ((cands (score-candidate-pairs session refs pairs threshold))
-             ;; The tier filter is adjudication, not the caller's filter, so
-             ;; it runs here and apply-view's keep? stays #f: re-applying the
-             ;; scope predicate on finished rows would be a no-op that hides
-             ;; where the work was actually saved.
-             (kept  (filter (lambda (c) (memq (candidate-tier c) kept-tiers))
+             ;; The similarity floor runs here rather than in apply-view's
+             ;; keep?, which stays #f: the scope/symbol predicate already ran
+             ;; on the pair list before scoring, and re-applying it to finished
+             ;; rows would be a no-op that hides where the work was saved.
+             (kept  (filter (lambda (c) (>= (candidate-similarity c) threshold))
                             cands)))
         (call-with-values
           (lambda () (apply-view kept opts #f dup-rank-key (dup-render verdict?)))

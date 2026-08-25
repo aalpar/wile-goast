@@ -179,6 +179,34 @@
       (if (pair? ssa-funcs) ssa-funcs '()))
     h))
 
+;; measure-directions: the direction of improvement for every RANKABLE key in
+;; the measure surface, for (wile algebra pareto)'s dominates?/pareto-frontier.
+;;
+;; The surface mixes directions in one alist, and nothing about the values says
+;; so: `benefit' 269 and `type-params' 1 are both plain counts, but more shared
+;; nodes is better and more type parameters is worse. Ranked all-up (pareto's
+;; default), a pair needing MORE type parameters dominates one needing fewer,
+;; and the frontier still looks like a frontier. Naming the directions here
+;; puts the fact in the data instead of in the caller's memory.
+;;
+;; `equiv-tier' is deliberately ABSENT: it is a categorical verdict, not a
+;; measure, and dominates? orders only booleans and numbers. Projecting the
+;; measures for ranking means taking these keys, not dropping that one by
+;; hand each time. Report the tier; do not rank on it.
+(define measure-directions
+  '((benefit      . up)      ;; shared AST nodes: more is a bigger win
+    (similarity   . up)      ;; effective similarity in [0,1]
+    (type-params  . down)    ;; substitutions the unification must carry
+    (value-params . down)))  ;; literal parameters it must carry
+
+;; cost-directions: the 5c cost axes. Same contract, kept separate because a
+;; caller ranks the benefit surface, the cost surface, or their append -- and
+;; appending two alists is cheaper than splitting one.
+(define cost-directions
+  '((new-edges     . down)   ;; in-degree the merged function would carry
+    (creates-cycle . down)   ;; #f < #t, and #t is the bad end
+    (dep-overlap   . up)))   ;; Jaccard of external ref sets
+
 ;; score-candidate-pair: benefit measures + equivalence tier for a candidate pair
 ;; (joined to AST/SSA via short-name). Returns an alist or #f when the AST nodes
 ;; cannot be resolved. Tier (prior-art pattern, NOT binop ssa-equivalent?):

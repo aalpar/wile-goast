@@ -19,6 +19,8 @@
           dup-candidate-findings
           find-duplicate-candidates
           ;; slice 5b: structural measure surface
+          measure-directions
+          cost-directions
           short-name
           all-pairs
           build-func-ast-index

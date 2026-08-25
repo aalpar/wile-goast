@@ -1,5 +1,53 @@
 # Changelog
 
+## Unreleased — `find_duplicates` selects on similarity, not on tier
+
+`find_duplicates`' `threshold` now means what its name says: a floor on
+effective similarity, in the same units each row reports. Every scored pair at
+or above it is returned, carrying its own `equiv_tier`. The tier is reported
+and tallied; it no longer decides what the caller is allowed to see.
+
+It used to be the filter, and that was wrong in a way no threshold could work
+around. `unifiable?` is categorical in its second clause — the effective
+similarity must clear `threshold` **and** no remaining diff may fall outside
+`{type-name, derived-type, identifier, register}`. The second clause has no
+knob. So a pair could sit at 0.94 similarity and still be `divergent`, and
+lowering `threshold` never retrieved it: measured on wile's quasi cluster at
+its pre-refactor commit, `quasiquoteNeedsRuntime` vs
+`quasisyntaxNeedsRuntimeGuarded` scores 0.94 with `unifiable?` `#f` at 0.90,
+0.60 *and* 0.10. The tool reported `total_count` 0, which reads exactly like a
+clean tree.
+
+The deleted rows were the valuable ones. That pair's four `structural` diffs
+were, item for item, three latent bugs a human review found in the same file
+hours later: a missing vector case, a dropped improper tail, and an
+element-wise dotted tail. A high-similarity divergent pair's structural diffs
+are precisely where two implementations of one algorithm disagree.
+
+This restores the contract the library states for itself (`dup-detect.scm`,
+`candidate->verdict`): the measure surface is the default, the verdict is
+requested, never imposed.
+
+The payload concern the tier gate existed to answer is now answered in the
+right currency. Volume is bounded by the floor the caller sets: on the wile
+quasi cluster, `threshold` 0.6 keeps 1258 of 5855 scored pairs. Raise
+`threshold` to narrow; filter the reported `equiv_tier` to recover the old
+view. Every stage touching surviving rows was already a tail loop and
+rendering already ran after paging, so the call-depth ceiling `view-sort`
+exists to avoid does not re-bind.
+
+The envelope `version` stays 2: the result *shape* is unchanged (same fields
+per row), and `version` is documented as bumping on shape changes only. The
+row *population* is what moved.
+
+`measure-directions` and `cost-directions` are new exports from
+`(wile goast dup-detect)`, naming each rankable measure's direction of
+improvement for `(wile algebra pareto)`'s new directions argument. `benefit`
+and `similarity` are `up`; `type-params` and `value-params` are `down`.
+Hand-negating a lower-is-better axis before ranking is no longer required, and
+no longer correct. `equiv-tier` is deliberately absent from both: it is a
+categorical verdict, and `factor-leq?` orders only booleans and numbers.
+
 ## Unreleased — `go-load` gains a `'dir` option
 
 `go-load` accepts `'dir <path>`, resolving its patterns against `<path>`

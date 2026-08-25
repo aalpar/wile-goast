@@ -46,7 +46,7 @@ appear on both stdio and HTTP. Implemented in `lib/wile/goast/pipelines.scm`
 | `recommend_split` | `target`, `idf_threshold?`, `refine?`, `max_attributes?` | split proposal + `confidence` |
 | `recommend_boundaries` | `target`, `mode?` | `{splits, merges, extracts}` Pareto frontiers |
 | `find_false_boundaries` | `target`, `mode?`, `min_extent?`, `min_intent?`, `min_types?`, `scope?`, `symbol?`, `detail?`, `limit?`, `offset?` | cross-boundary report |
-| `find_duplicates` | `target`, `threshold?`, `verdict?`, `scope?`, `symbol?`, `detail?`, `limit?`, `offset?` | the scored, located pairs that unify (`equiv_tier` `proven`/`structural`); opt-in `verdict` |
+| `find_duplicates` | `target`, `threshold?`, `verdict?`, `scope?`, `symbol?`, `detail?`, `limit?`, `offset?` | the scored, located pairs at or above `threshold` similarity, each labelled with its `equiv_tier` (`proven`/`structural`/`divergent`); opt-in `verdict` |
 | `scheme_defs` | `symbol`, `roots` | definition sites (file/line/col) for `symbol` across comma-separated `roots`; exploded `define-record-type` names, resolved `.sld` exports; lexical, pre-macro-expansion |
 | `scheme_symbols` | `file` | one `.scm`/`.sld`'s top-level definitions ordered by line, plus its library export list if a `.sld` |
 
@@ -59,21 +59,35 @@ appear on both stdio and HTTP. Implemented in `lib/wile/goast/pipelines.scm`
   `read-write`, or `type-only`. Any other value is a tool error.
 - Optional-parameter defaults: `idf_threshold` 0.36, `max_attributes` 30,
   `refine` false, `threshold` 0.6, `verdict` false, `min_extent` /
-  `min_intent` / `min_types` 2. `find_duplicates`'s `threshold` sets each
-  pair's `equiv_tier`, and so selects what is returned (see below).
+  `min_intent` / `min_types` 2. `find_duplicates`'s `threshold` is a floor on
+  effective similarity and is what selects the rows returned (see below).
   `discover_beliefs` with `committed_path` omitted or `""` disables
   suppression and returns raw discovery output.
-- `find_duplicates` returns only the pairs the unifier accepted (`equiv_tier`
-  `proven` or `structural`). FCA clustering is candidate *generation*, C(k,2)
-  per concept; the tier is the adjudication that follows, so a `divergent`
-  pair is one already rejected. Rejected pairs are counted, not listed:
-  provenance carries `tiers` (`proven`/`structural`/`divergent`),
-  `scored_pair_count`, and `total_count` (pre-paging). On `./goast`,
-  `total_count` is 68 out of 20404 scored pairs; at `detail=full` with no
-  limit, that is 30 KB instead of 9 MB. Under the v2 defaults (`detail=summary`,
-  `limit` 100) a default call returns all 68 rows, un-truncated. An empty
-  `result` with a non-zero `divergent` count is a real answer: the pairs were
-  examined and none unified.
+- `find_duplicates` returns every scored pair at or above `threshold`, each
+  carrying its own `equiv_tier`. FCA clustering is candidate *generation*,
+  C(k,2) per concept; the tier is the adjudication that follows, and it is
+  **reported, not imposed**. Provenance carries `tiers`
+  (`proven`/`structural`/`divergent`), `scored_pair_count`, and `total_count`
+  (post-floor, pre-paging).
+
+  The tier used to be the filter, and that was wrong in a way no threshold
+  could work around. `unifiable?` is categorical in its second clause — the
+  effective similarity must clear `threshold` **and** no remaining diff may
+  fall outside `{type-name, derived-type, identifier, register}`. The second
+  clause has no knob, so a pair can sit at 0.94 similarity and still be
+  `divergent` at threshold 0.90, 0.60 *and* 0.10. Measured on wile's quasi
+  cluster at its pre-refactor commit, `quasiquoteNeedsRuntime` vs
+  `quasisyntaxNeedsRuntimeGuarded` scored 0.94 and the tool reported
+  `total_count` 0 — indistinguishable from a clean tree. That pair's four
+  `structural` diffs were the three latent bugs a human review found in the
+  same file hours later. The informative divergence *is* the payload.
+
+  Volume is bounded by the floor the caller sets rather than by a gate they
+  cannot reach: on the wile quasi cluster, `threshold` 0.6 keeps 1258 of 5855
+  scored pairs. Raise `threshold` to narrow; filter the reported `equiv_tier`
+  to recover the old "only pairs that unify by substitution alone" view. An
+  empty `result` with a non-zero `divergent` count is still a real answer: the
+  pairs were examined and none cleared the floor.
 - `find_duplicates` runs discovery first and errors if the target yields more
   than `max-candidate-pairs` (25000) pairs. That is a latency budget, not a
   projection ceiling: scoring runs 280-340 pairs/s and the cost is sunk before

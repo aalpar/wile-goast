@@ -170,6 +170,8 @@ data this module joins on.
 
 | Export | Description |
 |--------|-------------|
+| `measure-directions` | Direction of improvement per RANKABLE measure key: `benefit`/`similarity` `up`, `type-params`/`value-params` `down`. Pass as `pareto-frontier`'s `factors`. `equiv-tier` is deliberately absent — a verdict, not a measure |
+| `cost-directions` | The 5c cost axes' directions (`new-edges`/`creates-cycle` `down`, `dep-overlap` `up`); append to `measure-directions` when ranking both halves |
 | `function-ref-context` | `function × external-ref` FCA context, IDF-filtered (reuses the `split.scm` chain at function granularity) |
 | `duplicate-candidate-concepts` | Concepts with extent ≥ 2 and a non-empty intent — by FCA closure, duplicate-candidate clusters |
 | `func-refs->positions` | Name→source hashtable from `go-func-refs` output (the `field-index->positions` twin; exact-match keys) |
@@ -192,16 +194,23 @@ data this module joins on.
 | `build-func-ref-index` | (5c) name → `func-ref` entry, for `cand-locality`'s pkg + ref-set lookup |
 | `find-candidates-with-cost` | (5c) Top-level full ledger: 5b scoring + the cost measures, findings embedding the full set |
 
-Cost axes plug into the same `pareto-frontier`; negate lower-is-better axes
-(e.g. `new-edges`) since dominance treats higher as better. (Note: `cand-creates-cycle?`
+Cost axes plug into the same `pareto-frontier`. Pass `measure-directions`
+(and `cost-directions`, appended, when ranking the cost half) as the `factors`
+argument: `dominates?` reads each axis's direction from it, so `benefit` and
+`type-params` can sit in one alist without one of them being ranked backwards.
+Hand-negating a lower-is-better axis is no longer required, and no longer
+correct. (Note: `cand-creates-cycle?`
 keeps its own BFS over `go-callgraph-callees` rather than calling
 `(wile goast path-algebra)`'s `go-callgraph-reachable`: candidates are `short-name`s
 and callee names are qualified, so the traversal has to compare on `short-name`.)
 
 Rank the measure surface with `pareto-frontier`/`dominates?` from
 `(wile goast fca-recommend)` — the one documented combinator (no dedup-specific
-ranking). Each item is `(id numeric-factors-alist)`; project to numeric measures
-(e.g. `benefit`, `similarity`) since dominance ignores no key. The cost-half
+ranking). Each item is `(id factors-alist)`; project to the keys named in
+`measure-directions`, since dominance ignores no key and `equiv-tier` is a
+categorical verdict that `factor-leq?` cannot order. That projection is the
+reason `measure-directions` omits `equiv-tier`: take its keys rather than
+remembering to drop that one by hand. The cost-half
 measures (`cand-new-edges`, `cand-creates-cycle?`, `cand-locality`) are slice 5c.
 `short-name` reconciliation collides only when two methods share a short name
 across receiver types (rare; index keeps the last). The LLM judge is deferred.
@@ -457,7 +466,7 @@ not echo the call name in responses. See [MCP.md](MCP.md) for the tool-level con
 | `pipeline-scheme-defs` | `(pipeline-scheme-defs <symbol> <roots-string>)`. `roots-string` is comma-separated directory roots, trimmed on both ends; errors if any root is unreadable. Builds a lexical (pre-macro-expansion) index over the `.scm`/`.sld` files under the roots and returns `defs-query`'s hits for `symbol`; provenance carries `files-scanned`, `parse-errors`, and the fixed `limits` list |
 | `pipeline-scheme-symbols` | `(pipeline-scheme-symbols <file>)`. Classifies every top-level def form in `file` directly, applying `with-source-file` itself since `read-syntax` never populates a real filename over a file port; returns `defs` sorted by line plus the file's `library` export form when present |
 | `pipeline-find-false-boundaries` | `(pipeline-find-false-boundaries <target> <opts>)`. `opts` keys: `mode`, `min-extent`, `min-intent`, `min-types` (the minima default to 2), plus the five shared view keys below |
-| `pipeline-find-duplicates` | `(pipeline-find-duplicates <target> <opts>)`. `opts` keys: `threshold` (default 0.6) and `verdict` (default `#f`), plus the five shared view keys below. `threshold` sets each pair's `equiv-tier`, and only `proven`/`structural` tiers are returned, so it **does** select what comes back. Projects `dup-detect`'s findings into marshaller-clean alists and truncates BigFloat scores to float64 |
+| `pipeline-find-duplicates` | `(pipeline-find-duplicates <target> <opts>)`. `opts` keys: `threshold` (default 0.6) and `verdict` (default `#f`), plus the five shared view keys below. `threshold` is a **floor on effective similarity**, in the same units the row reports; every pair above it is returned carrying its own `equiv-tier`. The tier is reported and tallied, never a filter: `unifiable?` is categorical in its second clause, so a 0.94 pair can be `divergent` at *any* threshold, and gating on the tier hid exactly the high-similarity pairs whose structural diffs are the finding. Projects `dup-detect`'s findings into marshaller-clean alists and truncates BigFloat scores to float64 |
 | `apply-view` | `(apply-view rows opts keep? rank-key render)` -> `(values shown view-provenance)`. Shared filter/rank/page/render combinator behind both tools' `scope`, `symbol`, `detail`, `limit`, `offset` (defaults `view-default-limit` 100, `view-default-detail` 'summary, offset 0, all read only here). `keep?` is `#f` when the caller already pruned upstream. `view-provenance`'s `truncated` is the signal that rows were withheld |
 | `view-sort` | Stable bottom-up merge sort over a list, every loop a tail call. The builtin `sort` exceeds Wile's 10000-frame call depth on a 20000-element list, which `find_duplicates` can reach |
 | `view-name-matcher` | `(view-name-matcher opts pos-index)` -> a predicate over one function name, built from `opts`' `scope`/`symbol` globs, or `#f` when neither is set. `symbol` matches the name; `scope` matches the file of that name's position. Both tools' own keep? predicate wraps this one |

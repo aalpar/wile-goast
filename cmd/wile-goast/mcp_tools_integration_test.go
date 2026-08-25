@@ -509,7 +509,7 @@ func TestFindDuplicates_PairCountGuard(t *testing.T) {
 const goastssaPkg = "github.com/aalpar/wile-goast/goastssa/..."
 
 // A target between the old ceiling and the current budget must be answered,
-// not refused, and every returned pair must be one the unifier accepted.
+// not refused, and every returned pair must clear the similarity floor.
 func TestFindDuplicates_AnswersPastOldCeiling(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration test: scores 13941 pairs, ~50s")
@@ -522,47 +522,92 @@ func TestFindDuplicates_AnswersPastOldCeiling(t *testing.T) {
 	qt.Assert(t, prov["scored_pair_count"].(float64) > 9992, qt.IsTrue,
 		qt.Commentf("target no longer exercises the old ceiling: %v", prov["scored_pair_count"]))
 
-	tiers := prov["tiers"].(map[string]any)
-	kept := tiers["proven"].(float64) + tiers["structural"].(float64)
-	qt.Assert(t, prov["total_count"], qt.Equals, kept)
-	// The result is the first page of `kept`, sized by whatever limit the
+	// total_count is what cleared the similarity floor, so it is bounded by
+	// the pairs scored and not derivable from the tier tally: threshold
+	// selects in similarity units, tier is reported alongside.
+	total := prov["total_count"].(float64)
+	qt.Assert(t, total <= prov["scored_pair_count"].(float64), qt.IsTrue,
+		qt.Commentf("more rows kept than scored: %v > %v", total, prov["scored_pair_count"]))
+	// The result is the first page of `total`, sized by whatever limit the
 	// envelope itself reports -- this asserts the relationship between
 	// total_count, limit, returned_count and truncated, not a pinned default.
 	limit := prov["limit"].(float64)
-	qt.Assert(t, prov["returned_count"].(float64), qt.Equals, math.Min(kept, limit))
+	qt.Assert(t, prov["returned_count"].(float64), qt.Equals, math.Min(total, limit))
 	qt.Assert(t, float64(len(env["result"].([]any))), qt.Equals, prov["returned_count"])
-	qt.Assert(t, prov["truncated"], qt.Equals, kept > limit)
+	qt.Assert(t, prov["truncated"], qt.Equals, total > limit)
 
+	threshold := prov["threshold"].(float64)
 	for _, r := range env["result"].([]any) {
-		tier := r.(map[string]any)["equiv_tier"].(string)
-		qt.Assert(t, tier == "proven" || tier == "structural", qt.IsTrue,
-			qt.Commentf("divergent pair leaked into result: tier=%s", tier))
+		row := r.(map[string]any)
+		qt.Assert(t, row["score"].(float64) >= threshold, qt.IsTrue,
+			qt.Commentf("row below the floor: score=%v threshold=%v", row["score"], threshold))
+		// Every row still carries its adjudication; it just no longer gates.
+		tier := row["equiv_tier"].(string)
+		qt.Assert(t, tier == "proven" || tier == "structural" || tier == "divergent",
+			qt.IsTrue, qt.Commentf("unknown tier: %s", tier))
 	}
 }
 
 // goastcfgDupsPkg is a real package whose candidate pairs are ALL divergent:
-// FCA clusters them by shared references, the unifier rejects every one.
+// FCA clusters them by shared references, the unifier accepts none of them.
 const goastcfgDupsPkg = "github.com/aalpar/wile-goast/goastcfg"
 
-// The rejected pairs must survive as counts, not rows. A caller asking "are
-// there duplicates here" gets an empty result plus the evidence that the
-// question was actually answered (89 pairs examined, none unified) rather
-// than an empty result indistinguishable from a target that never clustered.
-func TestFindDuplicates_DivergentOnlyReportsInProvenance(t *testing.T) {
+// A divergent pair above the similarity floor is a ROW, labelled with the
+// verdict that rejected it -- not a count the caller never sees.
+//
+// unifiable? is categorical in its second clause (no remaining diff outside
+// type/register), so a pair can sit at 0.87 similarity and still be
+// divergent, and no threshold can retrieve it. Gating on the tier therefore
+// reported total_count 0 on a package holding near-identical functions, which
+// is indistinguishable from a package that never clustered. It also deleted
+// the most useful rows the tool produces: a high-similarity divergent pair's
+// structural diffs are where the two implementations actually disagree.
+//
+// The tier tally stays in provenance, so the adjudication is still legible;
+// it just no longer decides what the caller is allowed to see.
+func TestFindDuplicates_DivergentPairsAreReturnedAndLabelled(t *testing.T) {
 	mc := inProcessClient(t)
 	env := callTool(t, mc, "find_duplicates", map[string]any{"target": goastcfgDupsPkg})
 	envelopeOK(t, env, 2.0)
 
-	qt.Assert(t, env["result"], qt.DeepEquals, []any{})
 	prov := env["provenance"].(map[string]any)
-	qt.Assert(t, prov["total_count"], qt.Equals, float64(0))
-
 	tiers := prov["tiers"].(map[string]any)
 	qt.Assert(t, tiers["proven"], qt.Equals, float64(0))
 	qt.Assert(t, tiers["structural"], qt.Equals, float64(0))
 	qt.Assert(t, tiers["divergent"].(float64) > 0, qt.IsTrue,
 		qt.Commentf("no rejected pairs recorded: %v", tiers))
 	qt.Assert(t, prov["scored_pair_count"], qt.Equals, tiers["divergent"])
+
+	// Every pair here is divergent, so anything returned is a divergent pair
+	// that cleared the floor -- exactly the population the tier gate deleted.
+	rows := env["result"].([]any)
+	qt.Assert(t, len(rows) > 0, qt.IsTrue,
+		qt.Commentf("divergent pairs above the floor were dropped: total=%v", prov["total_count"]))
+	qt.Assert(t, prov["total_count"].(float64) > 0, qt.IsTrue)
+
+	threshold := prov["threshold"].(float64)
+	for _, r := range rows {
+		row := r.(map[string]any)
+		qt.Assert(t, row["equiv_tier"], qt.Equals, "divergent")
+		qt.Assert(t, row["score"].(float64) >= threshold, qt.IsTrue,
+			qt.Commentf("row below the floor: score=%v threshold=%v", row["score"], threshold))
+	}
+}
+
+// The floor is the knob, and it must actually move: raising the threshold
+// past every pair's similarity empties the result. This is what the tier gate
+// could not do in reverse -- lowering it never admitted a divergent pair.
+func TestFindDuplicates_ThresholdIsASimilarityFloor(t *testing.T) {
+	mc := inProcessClient(t)
+	env := callTool(t, mc, "find_duplicates",
+		map[string]any{"target": goastcfgDupsPkg, "threshold": 0.999})
+	envelopeOK(t, env, 2.0)
+
+	prov := env["provenance"].(map[string]any)
+	qt.Assert(t, prov["total_count"], qt.Equals, float64(0))
+	qt.Assert(t, env["result"], qt.DeepEquals, []any{})
+	// The work still happened and is still reported.
+	qt.Assert(t, prov["scored_pair_count"].(float64) > 0, qt.IsTrue)
 }
 
 // The guard must not fire on a target inside the ceiling: the dupcluster
