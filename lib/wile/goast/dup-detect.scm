@@ -202,10 +202,24 @@
 ;; cost-directions: the 5c cost axes. Same contract, kept separate because a
 ;; caller ranks the benefit surface, the cost surface, or their append -- and
 ;; appending two alists is cheaper than splitting one.
+;;
+;; The keys here are the keys find-candidates-with-cost actually emits, and
+;; `creates-cycle?' keeps its question mark for that reason: factor-direction
+;; falls back to 'up on a key it cannot find, so a near-miss spelling does not
+;; fail, it silently inverts the axis. With #f < #t and the fallback in force,
+;; "creates a cycle" would rank as the GOOD end. Spell these off the emitter,
+;; never off the prose describing it.
+;;
+;; `locality' is excluded for the same reason `equiv-tier' is excluded from
+;; measure-directions, and one step further: its value is an alist
+;; ((scope . S) (dep-overlap . J)), which factor-leq? cannot order at all --
+;; it raises rather than mis-ranking. `dep-overlap' is a key INSIDE that alist,
+;; not a top-level factor, so naming it here would have described an axis that
+;; does not exist. A caller wanting to rank on it must lift it out of
+;; `locality' first and name the direction ('up) at that point.
 (define cost-directions
-  '((new-edges     . down)   ;; in-degree the merged function would carry
-    (creates-cycle . down)   ;; #f < #t, and #t is the bad end
-    (dep-overlap   . up)))   ;; Jaccard of external ref sets
+  '((new-edges      . down)   ;; in-degree the merged function would carry
+    (creates-cycle? . down))) ;; #f < #t, and #t is the bad end
 
 ;; score-candidate-pair: benefit measures + equivalence tier for a candidate pair
 ;; (joined to AST/SSA via short-name). Returns an alist or #f when the AST nodes

@@ -44,9 +44,12 @@ row *population* is what moved.
 `(wile goast dup-detect)`, naming each rankable measure's direction of
 improvement for `(wile algebra pareto)`'s new directions argument. `benefit`
 and `similarity` are `up`; `type-params` and `value-params` are `down`.
-Hand-negating a lower-is-better axis before ranking is no longer required, and
-no longer correct. `equiv-tier` is deliberately absent from both: it is a
-categorical verdict, and `factor-leq?` orders only booleans and numbers.
+Hand-negating a lower-is-better axis before ranking is no longer required.
+It still ranks correctly on its own, so existing code is not wrong; what it
+must not do is negate *and* name a direction for the same axis, which
+double-inverts. `equiv-tier` and `locality` are deliberately absent from both
+tables: one is a categorical verdict and the other is a nested alist, and
+`factor-leq?` orders only booleans and numbers.
 
 ## Unreleased — `go-load` gains a `'dir` option
 

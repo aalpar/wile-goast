@@ -632,7 +632,17 @@
 ;; second criterion"; the argument is unmeasured and hypothesis 10 states the
 ;; gate. Unlike fb-rank-key, distance would be free here: pos-index is
 ;; already built unconditionally (pipeline-find-duplicates, below).
-(define (dup-tier-rank tier) (if (eq? tier 'proven) 1 0))
+;; dup-tier-rank: a TOTAL order over the three tiers, not a proven/not-proven
+;; bit. It was the bit while the tier gate was in force, because only proven
+;; and structural ever reached the ranker and 0 therefore meant `structural'
+;; unambiguously. Once the similarity floor replaced the gate, divergent joined
+;; the ranked population and collapsed onto that same 0: two pairs at equal
+;; similarity, one accepted by the unifier and one rejected, tied and fell
+;; through to the name tie-break, so the rejected one could sort first.
+(define (dup-tier-rank tier)
+  (cond ((eq? tier 'proven)     2)
+        ((eq? tier 'structural) 1)
+        (else                   0)))
 
 (define (dup-rank-key cand)
   (let ((measures (cdr (assq 'measures cand))))

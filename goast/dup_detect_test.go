@@ -336,6 +336,82 @@ func TestFindCandidatesWithCost(t *testing.T) {
 	})
 }
 
+// The direction tables are data ABOUT another alist, and nothing in the
+// language ties them to it. factor-direction falls back to 'up on a key it
+// cannot find, so a near-miss spelling does not fail — it silently inverts the
+// axis. `creates-cycle' for the emitted `creates-cycle?' shipped exactly that
+// way, and with #f < #t the fallback made "creates a cycle" the good end.
+//
+// This pins the join in both directions: every key a table names must be a key
+// the scorer emits, and the two keys deliberately left OUT stay out. `locality'
+// and `equiv-tier' are excluded because factor-leq? cannot order an alist or a
+// symbol; pinning the exclusion keeps a future edit from "completing" the table
+// and turning a raise into a mis-rank.
+func TestDirectionTablesMatchEmittedMeasures(t *testing.T) {
+	c := qt.New(t)
+	engine := newBeliefEngine(t)
+	pkg := "github.com/aalpar/wile-goast/examples/goast-query/testdata/dupcluster"
+	eval(t, engine, `
+		(import (wile goast dup-detect))
+		(import (wile goast fca-recommend))
+		(define cands (find-candidates-with-cost "`+pkg+`"))
+		(define m (cdr (assoc 'measures (car cands))))
+		;; Returns #t, or the first key that is named but never emitted.
+		(define (unmatched dirs)
+		  (let loop ((ds dirs))
+		    (cond ((null? ds) #t)
+		          ((assoc (car (car ds)) m) (loop (cdr ds)))
+		          (else (car (car ds))))))
+	`)
+
+	t.Run("every measure-directions key is emitted", func(t *testing.T) {
+		out := eval(t, engine, `(unmatched measure-directions)`).SchemeString()
+		c.Assert(out, qt.Equals, "#t", qt.Commentf("key named but never emitted: %s", out))
+	})
+
+	t.Run("every cost-directions key is emitted", func(t *testing.T) {
+		out := eval(t, engine, `(unmatched cost-directions)`).SchemeString()
+		c.Assert(out, qt.Equals, "#t", qt.Commentf("key named but never emitted: %s", out))
+	})
+
+	t.Run("every direction is up or down", func(t *testing.T) {
+		out := eval(t, engine, `
+			(let loop ((ds (append measure-directions cost-directions)))
+			  (cond ((null? ds) #t)
+			        ((memq (cdr (car ds)) '(up down)) (loop (cdr ds)))
+			        (else (car (car ds)))))
+		`).SchemeString()
+		c.Assert(out, qt.Equals, "#t")
+	})
+
+	t.Run("non-orderable measures stay out of both tables", func(t *testing.T) {
+		out := eval(t, engine, `
+			(let ((both (append measure-directions cost-directions)))
+			  (and (not (assoc 'equiv-tier both))
+			       (not (assoc 'locality both))
+			       ;; and they really are emitted, so the exclusion is a choice
+			       (assoc 'equiv-tier m) (assoc 'locality m)
+			       #t))
+		`).SchemeString()
+		c.Assert(out, qt.Equals, "#t")
+	})
+
+	// The payoff: ranking straight off the emitted alist with the table as the
+	// directions argument, no hand-negation anywhere.
+	t.Run("directions rank the cost surface without negating", func(t *testing.T) {
+		out := eval(t, engine, `
+			(let* ((keys (map car cost-directions))
+			       (items (map (lambda (cd)
+			                     (let ((mm (cdr (assoc 'measures cd))))
+			                       (list (cdr (assoc 'pair cd))
+			                             (map (lambda (k) (assoc k mm)) keys))))
+			                   cands)))
+			  (>= (length (cdr (assoc 'frontier (pareto-frontier items cost-directions)))) 1))
+		`).SchemeString()
+		c.Assert(out, qt.Equals, "#t")
+	})
+}
+
 // TestBuildFuncCanonIndex locks the two reasons canonicalization is hoisted out
 // of score-candidate-pair into a single guarded pass (findings #1 + #2):
 //   - it is keyed by short-name like build-func-ssa-index (its raw counterpart);

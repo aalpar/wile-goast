@@ -171,7 +171,7 @@ data this module joins on.
 | Export | Description |
 |--------|-------------|
 | `measure-directions` | Direction of improvement per RANKABLE measure key: `benefit`/`similarity` `up`, `type-params`/`value-params` `down`. Pass as `pareto-frontier`'s `factors`. `equiv-tier` is deliberately absent — a verdict, not a measure |
-| `cost-directions` | The 5c cost axes' directions (`new-edges`/`creates-cycle` `down`, `dep-overlap` `up`); append to `measure-directions` when ranking both halves |
+| `cost-directions` | The 5c cost axes' directions (`new-edges` and `creates-cycle?` both `down`); append to `measure-directions` when ranking both halves. `locality` is excluded: its value is a nested alist `((scope . S) (dep-overlap . J))` that `factor-leq?` cannot order, so lift `dep-overlap` out and name its direction (`up`) at that point |
 | `function-ref-context` | `function × external-ref` FCA context, IDF-filtered (reuses the `split.scm` chain at function granularity) |
 | `duplicate-candidate-concepts` | Concepts with extent ≥ 2 and a non-empty intent — by FCA closure, duplicate-candidate clusters |
 | `func-refs->positions` | Name→source hashtable from `go-func-refs` output (the `field-index->positions` twin; exact-match keys) |
@@ -198,8 +198,13 @@ Cost axes plug into the same `pareto-frontier`. Pass `measure-directions`
 (and `cost-directions`, appended, when ranking the cost half) as the `factors`
 argument: `dominates?` reads each axis's direction from it, so `benefit` and
 `type-params` can sit in one alist without one of them being ranked backwards.
-Hand-negating a lower-is-better axis is no longer required, and no longer
-correct. (Note: `cand-creates-cycle?`
+Hand-negating a lower-is-better axis is no longer required. It still ranks
+correctly on its own; what it must not do is negate *and* name a direction for
+the same axis, which double-inverts. Note also that a key a direction table
+names but the scorer never emits does not fail — `factor-direction` falls back
+to `'up`, so a near-miss spelling silently inverts that axis. `creates-cycle?`
+carries its question mark for exactly that reason, and
+`TestDirectionTablesMatchEmittedMeasures` pins the join. (Note: `cand-creates-cycle?`
 keeps its own BFS over `go-callgraph-callees` rather than calling
 `(wile goast path-algebra)`'s `go-callgraph-reachable`: candidates are `short-name`s
 and callee names are qualified, so the traversal has to compare on `short-name`.)
