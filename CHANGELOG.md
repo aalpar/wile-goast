@@ -1,5 +1,45 @@
 # Changelog
 
+## Unreleased — every `pareto-frontier` caller states its factor directions
+
+`fca-recommend`'s three frontiers passed bare factor-name lists, which
+`pareto-frontier` treats as documentation only and ranks all-up. Reading each
+factor off the computation that produces it, all-up is in fact correct for all
+eleven, so this changes no ranking:
+
+- **split** (`fca-recommend.scm:137-141`) ranks how badly a function wants
+  splitting, so size is evidence of the problem rather than a cost to minimise.
+  More `incomparable-count`, more `intent-disjointness`, `no-cross-flow` `#t`
+  (and `#f < #t` puts the safe end high), more `pattern-balance`, more
+  `stmt-count`.
+- **merge** (`:181-184`) measures how much the functions genuinely share, and
+  more sharing is a stronger case that they are one operation.
+- **extract** (`:238-240`) — `sub-concept-depth` is `up` because `concept-depth`
+  (`:216`) counts only the steps where intent size grows, so a deeper broad
+  concept is a *more specific* shared sub-operation, not a more generic one.
+
+They are stated anyway, as `split-directions` / `merge-directions` /
+`extract-directions`, for two reasons. The direction is not derivable from the
+values: `stmt-count` and `dup-detect`'s `type-params` are both plain counts and
+point opposite ways. And leaving it to the `'up` default means the first
+lower-is-better factor anyone adds is ranked backwards while the frontier still
+looks like a frontier — the failure the directions argument exists to remove,
+and the one that already shipped once in `cost-directions`.
+
+This also makes the two consumers of `pareto-frontier` consistent: with
+`dup-detect` naming its directions, `fca-recommend` naming its own means
+"all up" reads as a finding about these factors rather than as a caller that
+never asked the question.
+
+`TestDirectionTablesMatchFrontierFactors` pins each table's key set against the
+factors its candidate function actually emits, in both directions, so a factor
+added without a direction and a direction for a factor that no longer exists
+both fail — by name. Verified as a ratchet: each drift was introduced and the
+failure names the offending key.
+
+No algebra changed. `(wile algebra pareto)` is untouched; this is only how the
+results are evaluated.
+
 ## Unreleased — `find_duplicates` selects on similarity, not on tier
 
 `find_duplicates`' `threshold` now means what its name says: a floor on

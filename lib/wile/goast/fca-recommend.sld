@@ -27,6 +27,11 @@
     merge-candidates
     extract-candidates
 
+    ;; Factor directions, one table per frontier (all 'up; see fca-recommend.scm)
+    split-directions
+    merge-directions
+    extract-directions
+
     ;; Top-level
     boundary-recommendations
 

@@ -248,6 +248,51 @@
 
 ;;; ── Top-level recommendation pipeline ───────────────────
 
+;;; ── Factor directions ───────────────────────────────────
+;;;
+;;; Every factor on all three frontiers is higher-is-better, so passing these
+;;; is behaviourally identical to the bare name lists that preceded them. They
+;;; are stated anyway, for two reasons.
+;;;
+;;; The fact is not derivable from the values. `stmt-count' and `type-params'
+;;; (in dup-detect) are both plain counts and they point opposite ways; nothing
+;;; but a claim like this one distinguishes them. Relying on the 'up default
+;;; means a future factor that IS lower-is-better gets ranked backwards and the
+;;; frontier still looks like a frontier -- the silent misrank the directions
+;;; argument was added to remove.
+;;;
+;;; And it makes the plugin's two consumers of pareto-frontier consistent:
+;;; dup-detect names its directions (measure-directions, cost-directions), so
+;;; this one naming them means "all up" reads as a finding about these factors
+;;; rather than as a caller that never considered the question.
+;;;
+;;; Each entry's justification, read off the computation that produces it:
+
+;; split-candidates (:137-141). The frontier ranks how badly a function wants
+;; splitting, so size is evidence of the problem, not a cost to minimise.
+(define split-directions
+  '((incomparable-count  . up)   ;; more incomparable state clusters served
+    (intent-disjointness . up)   ;; 1 - |i1∩i2|/|i1∪i2|: more disjoint, cleaner cut
+    (no-cross-flow       . up)   ;; #f < #t, and #t (no SSA flow between them) is safe
+    (pattern-balance     . up)   ;; min|e|/max|e|: a real two-way split, not a sliver
+    (stmt-count          . up))) ;; a big function serving two clusters is the bigger win
+
+;; merge-candidates (:181-184). All three measure how much the functions truly
+;; share; more sharing is a stronger case that they are one operation.
+(define merge-directions
+  '((intent-overlap . up)    ;; |int|/|all-union|: fraction of the union that is shared
+    (write-overlap  . up)    ;; the same restricted to non-":r" (mutating) fields
+    (extent-count   . up)))  ;; more functions folded in, bigger payoff
+
+;; extract-candidates (:238-240). `sub-concept-depth' is up because it tracks
+;; `intent-size' by construction -- concept-depth (:216) counts only the steps
+;; where intent size grows -- so a deeper broad concept is a more specific
+;; shared sub-operation, not a more generic one.
+(define extract-directions
+  '((extent-ratio      . up)    ;; |e-broad|/|e-narrow|: shared by more callers
+    (intent-size       . up)    ;; a larger sub-operation extracts more code
+    (sub-concept-depth . up)))  ;; deeper = more specific, correlated with intent-size
+
 ;; Produce ranked recommendations: three Pareto frontiers.
 ;; lattice: from (concept-lattice ctx)
 ;; ssa-funcs: from (go-ssa-build session), or #f to skip SSA filtering
@@ -273,17 +318,13 @@
          (empty-frontier '((frontier) (dominated)))
          (split-frontier
            (if (null? split-input) empty-frontier
-             (pareto-frontier split-input
-               '(incomparable-count intent-disjointness no-cross-flow
-                 pattern-balance stmt-count))))
+             (pareto-frontier split-input split-directions)))
          (merge-frontier
            (if (null? merge-input) empty-frontier
-             (pareto-frontier merge-input
-               '(intent-overlap write-overlap extent-count))))
+             (pareto-frontier merge-input merge-directions)))
          (extract-frontier
            (if (null? extract-input) empty-frontier
-             (pareto-frontier extract-input
-               '(extent-ratio intent-size sub-concept-depth)))))
+             (pareto-frontier extract-input extract-directions))))
     (list (cons 'splits split-frontier)
           (cons 'merges merge-frontier)
           (cons 'extracts extract-frontier))))

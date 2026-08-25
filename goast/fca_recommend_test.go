@@ -281,6 +281,94 @@ func TestBoundaryRecommendations(t *testing.T) {
 	})
 }
 
+// The three direction tables are data ABOUT the factor alists the candidate
+// functions build, and nothing in the language ties them to those alists.
+// factor-direction falls back to 'up on a key it cannot find, so a table that
+// names a factor the producer does not emit does not fail — that axis just
+// silently keeps the default. Every entry here happens to BE 'up today, which
+// makes the failure completely invisible: the tables could be entirely wrong
+// and every existing test would still pass.
+//
+// So pin the join instead of the values: each table's key set must equal the
+// key set its candidate function emits, in both directions. A factor added to
+// split-candidates without a direction fails this, and so does a direction for
+// a factor that no longer exists.
+func TestDirectionTablesMatchFrontierFactors(t *testing.T) {
+	c := qt.New(t)
+	engine := newBeliefEngine(t)
+
+	eval(t, engine, `
+		(import (wile goast fca))
+		(import (wile goast fca-recommend))
+		(import (wile goast utils))
+
+		;; A lattice rich enough to yield all three candidate kinds.
+		(define ctx (context-from-alist
+		  '(("Split1" "A.x" "B.y")
+		    ("A-only" "A.x")
+		    ("B-only" "B.y")
+		    ("Merge1" "C.a" "C.b")
+		    ("Merge2" "C.a" "C.b")
+		    ("Broad1" "D.p")
+		    ("Broad2" "D.p")
+		    ("Narrow1" "D.p" "D.q"))))
+		(define lat (concept-lattice ctx))
+
+		(define (keys-of alist) (map car alist))
+		;; Containment only, and NOT length-guarded: a length check would make
+		;; both directions fail together on any drift, so the assertion that
+		;; fired would not tell you which way it drifted. Returns #t, or the
+		;; first element of A missing from B -- the offending key itself.
+		(define (covered-by? a b)
+		  (let loop ((xs a))
+		    (cond ((null? xs) #t)
+		          ((member? (car xs) b) (loop (cdr xs)))
+		          (else (car xs)))))
+		;; CANDS is a candidate list; pull the factors off the first entry.
+		(define (factor-keys cands)
+		  (if (null? cands) '()
+		    (keys-of (cdr (assoc 'factors (car cands))))))
+
+		(define split-keys   (factor-keys (split-candidates lat #f)))
+		(define merge-keys   (factor-keys (merge-candidates lat)))
+		(define extract-keys (factor-keys (extract-candidates lat)))
+	`)
+
+	// If a fixture stops producing a candidate kind the agreement check below
+	// passes vacuously, so assert the fixture first.
+	t.Run("fixture yields all three candidate kinds", func(t *testing.T) {
+		out := eval(t, engine, `
+			(and (pair? split-keys) (pair? merge-keys) (pair? extract-keys) #t)
+		`).SchemeString()
+		c.Assert(out, qt.Equals, "#t")
+	})
+
+	for _, tc := range []struct{ name, table, keys string }{
+		{"split", "split-directions", "split-keys"},
+		{"merge", "merge-directions", "merge-keys"},
+		{"extract", "extract-directions", "extract-keys"},
+	} {
+		t.Run(tc.name+" directions match emitted factors", func(t *testing.T) {
+			out := eval(t, engine, `(covered-by? (keys-of `+tc.table+`) `+tc.keys+`)`).SchemeString()
+			c.Assert(out, qt.Equals, "#t",
+				qt.Commentf("%s names a factor the producer does not emit: %s", tc.table, out))
+			out = eval(t, engine, `(covered-by? `+tc.keys+` (keys-of `+tc.table+`))`).SchemeString()
+			c.Assert(out, qt.Equals, "#t",
+				qt.Commentf("factor emitted with no direction in %s: %s", tc.table, out))
+		})
+	}
+
+	t.Run("every direction is up or down", func(t *testing.T) {
+		out := eval(t, engine, `
+			(let loop ((ds (append split-directions merge-directions extract-directions)))
+			  (cond ((null? ds) #t)
+			        ((memq (cdr (car ds)) '(up down)) (loop (cdr ds)))
+			        (else (car (car ds)))))
+		`).SchemeString()
+		c.Assert(out, qt.Equals, "#t")
+	})
+}
+
 func TestExtractCandidates(t *testing.T) {
 	engine := newBeliefEngine(t)
 

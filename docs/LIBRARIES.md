@@ -119,6 +119,7 @@ Analyzes FCA concept lattices to produce ranked split/merge/extract recommendati
 | `split-candidates` | Functions serving incomparable state clusters |
 | `merge-candidates` | Functions maintaining shared state separately |
 | `extract-candidates` | Sub-operations shared by more callers than the full op |
+| `split-directions` / `merge-directions` / `extract-directions` | Factor direction per frontier, passed to `pareto-frontier` as its `factors` argument. Every entry is `up`, so behaviour matches the bare name lists these replaced; they are stated because the fact is not derivable from the values (`stmt-count` and `dup-detect`'s `type-params` are both counts pointing opposite ways) and because relying on the `'up` default means a future lower-is-better factor ranks backwards silently |
 | `boundary-recommendations` | Top-level: three Pareto frontiers (split/merge/extract) |
 | `recommendation-functions` | The function names a candidate concerns, by type (split→`function`, merge→`functions`, extract→`broad-extent`) |
 | `locate-recommendations` | Attach located findings to split/merge/extract candidates via `field-index->positions`; `why` = `(recommendation (type . T))` |
