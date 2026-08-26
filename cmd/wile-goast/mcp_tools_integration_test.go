@@ -291,7 +291,7 @@ func TestFindDuplicates_DupclusterFixture(t *testing.T) {
 	// which detail=summary (the version-2 default) drops.
 	env := callTool(t, mc, "find_duplicates", map[string]any{
 		"target": dupclusterPkg, "detail": "full"})
-	envelopeOK(t, env, 2.0)
+	envelopeOK(t, env, 3.0)
 
 	prov := env["provenance"].(map[string]any)
 	qt.Assert(t, prov["verdict_included"], qt.Equals, false)
@@ -347,7 +347,7 @@ func TestFindDuplicates_VerdictOptIn(t *testing.T) {
 		"target":  dupclusterPkg,
 		"verdict": true,
 	})
-	envelopeOK(t, env, 2.0)
+	envelopeOK(t, env, 3.0)
 
 	prov := env["provenance"].(map[string]any)
 	qt.Assert(t, prov["verdict_included"], qt.Equals, true)
@@ -429,7 +429,7 @@ const nodupsPkg = "github.com/aalpar/wile-goast/cmd/wile-goast/testdata/nodups"
 func TestFindDuplicates_EmptySuccess(t *testing.T) {
 	mc := inProcessClient(t)
 	env := callTool(t, mc, "find_duplicates", map[string]any{"target": nodupsPkg})
-	envelopeOK(t, env, 2.0)
+	envelopeOK(t, env, 3.0)
 	prov := env["provenance"].(map[string]any)
 	qt.Assert(t, prov["total_count"], qt.Equals, float64(0))
 	qt.Assert(t, env["result"], qt.DeepEquals, []any{})
@@ -516,7 +516,7 @@ func TestFindDuplicates_AnswersPastOldCeiling(t *testing.T) {
 	}
 	mc := inProcessClient(t)
 	env := callTool(t, mc, "find_duplicates", map[string]any{"target": goastssaPkg})
-	envelopeOK(t, env, 2.0)
+	envelopeOK(t, env, 3.0)
 
 	prov := env["provenance"].(map[string]any)
 	qt.Assert(t, prov["scored_pair_count"].(float64) > 9992, qt.IsTrue,
@@ -568,7 +568,7 @@ const goastcfgDupsPkg = "github.com/aalpar/wile-goast/goastcfg"
 func TestFindDuplicates_DivergentPairsAreReturnedAndLabelled(t *testing.T) {
 	mc := inProcessClient(t)
 	env := callTool(t, mc, "find_duplicates", map[string]any{"target": goastcfgDupsPkg})
-	envelopeOK(t, env, 2.0)
+	envelopeOK(t, env, 3.0)
 
 	prov := env["provenance"].(map[string]any)
 	tiers := prov["tiers"].(map[string]any)
@@ -601,7 +601,7 @@ func TestFindDuplicates_ThresholdIsASimilarityFloor(t *testing.T) {
 	mc := inProcessClient(t)
 	env := callTool(t, mc, "find_duplicates",
 		map[string]any{"target": goastcfgDupsPkg, "threshold": 0.999})
-	envelopeOK(t, env, 2.0)
+	envelopeOK(t, env, 3.0)
 
 	prov := env["provenance"].(map[string]any)
 	qt.Assert(t, prov["total_count"], qt.Equals, float64(0))
@@ -615,7 +615,7 @@ func TestFindDuplicates_ThresholdIsASimilarityFloor(t *testing.T) {
 func TestFindDuplicates_GuardAllowsSmallTarget(t *testing.T) {
 	mc := inProcessClient(t)
 	env := callTool(t, mc, "find_duplicates", map[string]any{"target": dupclusterPkg})
-	envelopeOK(t, env, 2.0)
+	envelopeOK(t, env, 3.0)
 	qt.Assert(t, len(env["result"].([]any)) > 0, qt.IsTrue)
 }
 
@@ -902,14 +902,14 @@ func TestFindDuplicates_ScopeIsAPrune(t *testing.T) {
 	mc := inProcessClient(t)
 
 	all := callTool(t, mc, "find_duplicates", map[string]any{"target": dupclusterPkg})
-	envelopeOK(t, all, 2.0)
+	envelopeOK(t, all, 3.0)
 	allProv := all["provenance"].(map[string]any)
 
 	scoped := callTool(t, mc, "find_duplicates", map[string]any{
 		"target": dupclusterPkg,
 		"symbol": "*SumSlice*",
 	})
-	envelopeOK(t, scoped, 2.0)
+	envelopeOK(t, scoped, 3.0)
 	prov := scoped["provenance"].(map[string]any)
 
 	// Fewer pairs reach the scorer, and the count is taken AFTER the prune.
@@ -960,7 +960,7 @@ func TestFindDuplicates_ScopeByFile(t *testing.T) {
 		"target": dupclusterPkg,
 		"scope":  "clones.go",
 	})
-	envelopeOK(t, env, 2.0)
+	envelopeOK(t, env, 3.0)
 	rows := env["result"].([]any)
 	qt.Assert(t, findCandidateWithPair(rows, "SumSlice", "TotalSlice"), qt.Not(qt.IsNil),
 		qt.Commentf("scope=clones.go did not surface the clone pair: %v", rows))
@@ -991,7 +991,7 @@ func TestFindDuplicates_ScopeWalksAroundTheGuard(t *testing.T) {
 		"target": wholeTreePkg,
 		"scope":  "goastcfg/prim_cfg.go",
 	})
-	envelopeOK(t, env, 2.0)
+	envelopeOK(t, env, 3.0)
 	prov := env["provenance"].(map[string]any)
 	qt.Assert(t, prov["candidate_pair_count"].(float64) <= 25000, qt.IsTrue,
 		qt.Commentf("pruned pair count still over budget: %v", prov["candidate_pair_count"]))
@@ -1061,7 +1061,7 @@ func TestFindDuplicates_NoMatchIsEmptySuccess(t *testing.T) {
 		"target": dupclusterPkg,
 		"symbol": "NoSuchFunctionAnywhere",
 	})
-	envelopeOK(t, env, 2.0)
+	envelopeOK(t, env, 3.0)
 	qt.Assert(t, env["result"], qt.DeepEquals, []any{})
 	prov := env["provenance"].(map[string]any)
 	qt.Assert(t, prov["total_count"], qt.Equals, float64(0))

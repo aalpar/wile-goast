@@ -20,8 +20,17 @@
 ;;    (result     . <alist-or-list>))
 ;;
 ;; The version is a per-tool integer, supplied by each pipeline. It is
-;; bumped only on breaking changes to that tool's result shape;
-;; additive provenance changes do not bump.
+;; bumped on any breaking change to what that tool returns -- the row
+;; *shape* (a field renamed, retyped or removed) or the row
+;; *population* (a selection rule that admits rows a prior consumer's
+;; case analysis does not cover). Additive provenance changes do not
+;; bump.
+;;
+;; Population is in scope because a consumer breaks on either. When
+;; find_duplicates stopped gating on equiv-tier, the shape was
+;; identical and every row still carried the same fields -- but a
+;; renderer written against tiers {proven, structural} began receiving
+;; divergent, which a shape-only rule would have shipped unannounced.
 ;;
 ;; The Go handler converts this alist to JSON via the marshaller in
 ;; cmd/wile-goast/marshal.go. Alist keys are emitted in kebab-case
@@ -709,11 +718,14 @@
         (call-with-values
           (lambda () (apply-view kept opts #f dup-rank-key (dup-render verdict?)))
           (lambda (shown view-prov)
-            ;; Version 2: detail=summary is the default, so a default call's
-            ;; row shape changed (measures is gone), and candidate-count is
-            ;; retired in favour of the view's total-count -- one number, one
-            ;; name, the same on both tools.
-            (pipeline-envelope 2
+            ;; Version 3: threshold selects on similarity rather than on
+            ;; equiv-tier, so divergent rows now reach the caller. The shape
+            ;; is untouched; the population is not, and a consumer whose case
+            ;; analysis covered only proven/structural breaks on it.
+            ;; (Version 2 was the detail=summary default: measures left the
+            ;; default row, candidate-count gave way to the view's
+            ;; total-count -- one number, one name, the same on both tools.)
+            (pipeline-envelope 3
               (append
                 (list (cons 'target target)
                       (cons 'threshold threshold)

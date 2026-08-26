@@ -50,11 +50,14 @@ appear on both stdio and HTTP. Implemented in `lib/wile/goast/pipelines.scm`
 | `scheme_defs` | `symbol`, `roots` | definition sites (file/line/col) for `symbol` across comma-separated `roots`; exploded `define-record-type` names, resolved `.sld` exports; lexical, pre-macro-expansion |
 | `scheme_symbols` | `file` | one `.scm`/`.sld`'s top-level definitions ordered by line, plus its library export list if a `.sld` |
 
-- Envelope `version` is a per-tool integer (bumped only on breaking
-  `result`-shape changes); errors surface via MCP's `isError`, not the
-  envelope. JSON keys are snake_case; Scheme alists stay kebab-case
-  (converted by `cmd/wile-goast/marshal.go`). `find_duplicates` and
-  `find_false_boundaries` are both at `version` 2.
+- Envelope `version` is a per-tool integer, bumped on any breaking change to
+  what the tool returns: the row *shape* (a field renamed, retyped or removed)
+  or the row *population* (a selection rule that admits rows a prior
+  consumer's case analysis does not cover). Additive provenance changes do not
+  bump. Errors surface via MCP's `isError`, not the envelope. JSON keys are
+  snake_case; Scheme alists stay kebab-case (converted by
+  `cmd/wile-goast/marshal.go`). `find_duplicates` is at `version` 3,
+  `find_false_boundaries` at 2.
 - `mode` is the FCA field-access mode: `write-only` (default),
   `read-write`, or `type-only`. Any other value is a tool error.
 - Optional-parameter defaults: `idf_threshold` 0.36, `max_attributes` 30,

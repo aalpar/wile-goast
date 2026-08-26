@@ -1,6 +1,23 @@
 # Changelog
 
-## v0.5.340 — MCP Pipeline Tools, Belief Suppression, Validated Pareto Directions
+## Unreleased — `find_duplicates` is at envelope `version` 3
+
+v0.5.340 made `threshold` a floor on similarity rather than a gate on
+`equiv_tier`, and left the envelope at 2 on the grounds that the result
+*shape* had not changed. It had not. But the row *population* had: a consumer
+whose case analysis covered `proven` and `structural` now receives `divergent`
+too, under a version number asserting nothing moved. That is the break the
+field exists to announce, so `find_duplicates` is now `version` 3.
+
+The contract widened to make the bump mean something. `version` had been
+documented as bumping on result-*shape* changes only — a rule that cannot
+describe this change, and under which no honest bump was available. It now
+bumps on a breaking change to either the shape (a field renamed, retyped or
+removed) or the population (a selection rule admitting rows a prior consumer
+does not handle). Additive provenance changes still do not bump.
+
+`find_false_boundaries` stays at 2 and the six `version` 1 tools are
+unaffected; neither their shape nor their population moved.
 
 Everything accumulated since v0.5.111, in the order it landed (newest first).
 The through-line is that the pipeline tools stopped being a thin shell over

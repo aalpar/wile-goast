@@ -461,8 +461,9 @@ already-implemented analysis and returns the flat envelope
 `((version . <int>) (provenance . <alist>) (result . <alist-or-list>))`;
 `cmd/wile-goast/mcp_tools.go` evaluates it and `cmd/wile-goast/marshal.go` marshals to
 JSON (kebab-case keys here, snake_case at the JSON boundary). `version` is per-tool
-and bumps only on a breaking result-shape change. No `tool` field: peer protocols do
-not echo the call name in responses. See [MCP.md](MCP.md) for the tool-level contract.
+and bumps on a breaking change to the row shape or the row population. No `tool`
+field: peer protocols do not echo the call name in responses. See
+[MCP.md](MCP.md) for the tool-level contract.
 
 | Export | Description |
 |--------|-------------|
