@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased — `find_duplicates` is at envelope `version` 3
+## v0.5.341 — `find_duplicates` is at envelope `version` 3
 
 v0.5.340 made `threshold` a floor on similarity rather than a gate on
 `equiv_tier`, and left the envelope at 2 on the grounds that the result
@@ -18,6 +18,8 @@ does not handle). Additive provenance changes still do not bump.
 
 `find_false_boundaries` stays at 2 and the six `version` 1 tools are
 unaffected; neither their shape nor their population moved.
+
+## v0.5.340 — MCP Pipeline Tools, Belief Suppression, Validated Pareto Directions
 
 Everything accumulated since v0.5.111, in the order it landed (newest first).
 The through-line is that the pipeline tools stopped being a thin shell over
@@ -414,6 +416,7 @@ Bug fixes:
 - CFG and dominators (`go-cfg`, `go-cfg-dominators`, `go-cfg-paths`)
 - Lint framework (`go-analyze`, ~25 built-in analyzers)
 
-[Unreleased]: https://github.com/aalpar/wile-goast/compare/v0.5.340...HEAD
+[Unreleased]: https://github.com/aalpar/wile-goast/compare/v0.5.341...HEAD
+[0.5.341]: https://github.com/aalpar/wile-goast/compare/v0.5.340...v0.5.341
 [0.5.340]: https://github.com/aalpar/wile-goast/compare/v0.5.111...v0.5.340
 [0.5.111]: https://github.com/aalpar/wile-goast/compare/v0.5.108...v0.5.111
