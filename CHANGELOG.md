@@ -1,6 +1,14 @@
 # Changelog
 
-## Unreleased — a misspelled direction key raises instead of inverting an axis
+## v0.5.340 — MCP Pipeline Tools, Belief Suppression, Validated Pareto Directions
+
+Everything accumulated since v0.5.111, in the order it landed (newest first).
+The through-line is that the pipeline tools stopped being a thin shell over
+`eval` — they gained result-view paging, a `'dir` escape from the host working
+directory, and a `threshold` that means what it says — while the ranking
+underneath them stopped accepting specs it could not check.
+
+### A misspelled direction key raises instead of inverting an axis
 
 The `wile` dependency moves to **v1.20.0**. The pin had said `v1.19.1` since
 July while the code tracked master, so `GOWORK=off go build` had been failing
@@ -33,7 +41,7 @@ other way too: a table may name only keys **every** candidate carries, so
 `cost-directions` ranks the 5c surface or the append with
 `measure-directions`, never the 5b surface alone.
 
-## Unreleased — every `pareto-frontier` caller states its factor directions
+### Every `pareto-frontier` caller states its factor directions
 
 `fca-recommend`'s three frontiers passed bare factor-name lists, which
 `pareto-frontier` treats as documentation only and ranks all-up. Reading each
@@ -73,7 +81,7 @@ failure names the offending key.
 No algebra changed. `(wile algebra pareto)` is untouched; this is only how the
 results are evaluated.
 
-## Unreleased — `find_duplicates` selects on similarity, not on tier
+### `find_duplicates` selects on similarity, not on tier
 
 `find_duplicates`' `threshold` now means what its name says: a floor on
 effective similarity, in the same units each row reports. Every scored pair at
@@ -124,7 +132,7 @@ double-inverts. `equiv-tier` and `locality` are deliberately absent from both
 tables: one is a categorical verdict and the other is a nested alist, and
 `factor-leq?` orders only booleans and numbers.
 
-## Unreleased — `go-load` gains a `'dir` option
+### `go-load` gains a `'dir` option
 
 `go-load` accepts `'dir <path>`, resolving its patterns against `<path>`
 instead of the host process's working directory:
@@ -143,7 +151,7 @@ server rooted in this repo could not analyze a module outside this
 workspace without building the CLI and invoking it from inside the target
 checkout.
 
-## Unreleased — Result-View Parameters (find_duplicates, find_false_boundaries)
+### Result-View Parameters (find_duplicates, find_false_boundaries)
 
 `find_duplicates` and `find_false_boundaries` gain five shared optional
 parameters, uniformly filtered, ranked, paged, and rendered by `apply-view`
@@ -165,7 +173,7 @@ the shared `total_count` (rows after filtering, before paging), alongside
 new `returned_count`, `offset`, `limit`, `detail`, and `truncated` (whether
 rows were withheld).
 
-## Unreleased — MCP Pipeline Tools (Phase 1)
+### MCP Pipeline Tools (Phase 1)
 
 Five pipeline-shaped MCP tools expose already-implemented analyses as
 first-class tool calls, complementing the existing `eval` tool. Each
@@ -196,7 +204,7 @@ Supporting changes:
 Phases 2–4 of the tool surface (`filter_concepts`, `explain_function`,
 `restructure_block`, `trace_path`) will ship under their own plans.
 
-## Unreleased — Belief Suppression
+### Belief Suppression
 
 Close the belief DSL's discover → review → commit → enforce lifecycle.
 
@@ -389,5 +397,6 @@ Bug fixes:
 - CFG and dominators (`go-cfg`, `go-cfg-dominators`, `go-cfg-paths`)
 - Lint framework (`go-analyze`, ~25 built-in analyzers)
 
-[Unreleased]: https://github.com/aalpar/wile-goast/compare/v0.5.111...HEAD
+[Unreleased]: https://github.com/aalpar/wile-goast/compare/v0.5.340...HEAD
+[0.5.340]: https://github.com/aalpar/wile-goast/compare/v0.5.111...v0.5.340
 [0.5.111]: https://github.com/aalpar/wile-goast/compare/v0.5.108...v0.5.111
