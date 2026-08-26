@@ -201,10 +201,12 @@ argument: `dominates?` reads each axis's direction from it, so `benefit` and
 `type-params` can sit in one alist without one of them being ranked backwards.
 Hand-negating a lower-is-better axis is no longer required. It still ranks
 correctly on its own; what it must not do is negate *and* name a direction for
-the same axis, which double-inverts. Note also that a key a direction table
-names but the scorer never emits does not fail — `factor-direction` falls back
-to `'up`, so a near-miss spelling silently inverts that axis. `creates-cycle?`
-carries its question mark for exactly that reason, and
+the same axis, which double-inverts. A key a direction table names but the
+scorer never emits is now an error, not a silent `'up`: `dominates?` and
+`pareto-frontier` run `check-directions` against every candidate's factors
+before ranking. So a table may name only keys every candidate carries —
+`cost-directions` ranks the 5c surface or the append, never the 5b surface
+alone. `creates-cycle?` carries its question mark for that reason, and
 `TestDirectionTablesMatchEmittedMeasures` pins the join. (Note: `cand-creates-cycle?`
 keeps its own BFS over `go-callgraph-callees` rather than calling
 `(wile goast path-algebra)`'s `go-callgraph-reachable`: candidates are `short-name`s

@@ -204,11 +204,19 @@
 ;; appending two alists is cheaper than splitting one.
 ;;
 ;; The keys here are the keys find-candidates-with-cost actually emits, and
-;; `creates-cycle?' keeps its question mark for that reason: factor-direction
-;; falls back to 'up on a key it cannot find, so a near-miss spelling does not
-;; fail, it silently inverts the axis. With #f < #t and the fallback in force,
-;; "creates a cycle" would rank as the GOOD end. Spell these off the emitter,
+;; `creates-cycle?' keeps its question mark for that reason. As of the
+;; direction-validation change in (wile algebra pareto), a near-miss spelling
+;; no longer inverts the axis quietly: dominates? and pareto-frontier run
+;; check-directions against every candidate's factors first and raise on a
+;; direction naming a factor that is not present. (factor-direction called
+;; directly still answers 'up for an absent key -- the fallback moved behind
+;; the ranking entry points, it did not go away.) Spell these off the emitter,
 ;; never off the prose describing it.
+;;
+;; The check runs the containment the other way too: a table may name only
+;; keys EVERY candidate carries. So cost-directions ranks the 5c surface or
+;; the append, never the 5b surface on its own -- base measures carry no
+;; new-edges, and the frontier now raises instead of ignoring the axis.
 ;;
 ;; `locality' is excluded for the same reason `equiv-tier' is excluded from
 ;; measure-directions, and one step further: its value is an alist

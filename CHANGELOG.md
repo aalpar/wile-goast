@@ -1,5 +1,34 @@
 # Changelog
 
+## Unreleased — a misspelled direction key raises instead of inverting an axis
+
+The `wile` dependency moves to **v1.20.0**. The pin had said `v1.19.1` since
+July while the code tracked master, so `GOWORK=off go build` had been failing
+on `registry.PrimitiveRegistry`, `machine.NewParameter` and
+`machine.MutableBase` since early August: workspace mode was the only
+configuration that built. Both configurations now build and test green.
+
+The release brings the direction validation. `(wile algebra pareto)` now
+checks a direction spec eagerly:
+`dominates?` and `pareto-frontier` run `check-directions` against every
+candidate's factors and raise on a direction naming a factor that is not
+present, on a value that is neither `'up` nor `'down`, and on a spec mixing
+bare names with `(name . dir)` pairs. Rankings are unchanged — every key in
+`split-directions`, `merge-directions`, `extract-directions`,
+`measure-directions` and `cost-directions` is one its candidate actually
+emits, and `TestDirectionTablesMatchFrontierFactors` /
+`TestDirectionTablesMatchEmittedMeasures` already pin that join.
+
+Two consequences for callers building their own tables, recorded in
+`dup-detect.scm` and `docs/LIBRARIES.md` where the old rationale said the
+opposite. A near-miss spelling used to fall back to `'up` and silently invert
+the axis; it is now an error at the ranking call. (`factor-direction` on its
+own still answers `'up` for an absent key — the fallback moved behind the
+ranking entry points rather than going away.) And the containment runs the
+other way too: a table may name only keys **every** candidate carries, so
+`cost-directions` ranks the 5c surface or the append with
+`measure-directions`, never the 5b surface alone.
+
 ## Unreleased — every `pareto-frontier` caller states its factor directions
 
 `fca-recommend`'s three frontiers passed bare factor-name lists, which
