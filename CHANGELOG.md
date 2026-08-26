@@ -7,6 +7,10 @@ July while the code tracked master, so `GOWORK=off go build` had been failing
 on `registry.PrimitiveRegistry`, `machine.NewParameter` and
 `machine.MutableBase` since early August: workspace mode was the only
 configuration that built. Both configurations now build and test green.
+Restoring the typecheck also un-masked five lint findings the broken load had
+been swallowing — four compound if-inits in `goastssa/mapper.go` and one
+`strings.SplitN` that `strings.Cut` says better — so `make lint` is green
+again rather than green-because-blind.
 
 The release brings the direction validation. `(wile algebra pareto)` now
 checks a direction spec eagerly:

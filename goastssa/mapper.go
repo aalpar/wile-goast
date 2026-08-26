@@ -47,7 +47,8 @@ func mapValueDecls[T ssa.Value](p *ssaMapper, tag string, vs []T) []values.Value
 			goast.Field("type", goast.Str(types.TypeString(v.Type(), nil))),
 		}
 		if p.positions {
-			if pos := v.Pos(); pos.IsValid() {
+			pos := v.Pos()
+			if pos.IsValid() {
 				fields = append(fields,
 					goast.Field("pos", goast.Str(p.fset.Position(pos).String())))
 			}
@@ -86,8 +87,9 @@ func (p *ssaMapper) mapFunction(fn *ssa.Function) values.Value {
 	// fn.Pos() is the position of the function's NAME identifier, not of the
 	// func keyword. Synthetic functions (wrappers, bound methods) report NoPos
 	// and go unlocated, but collectSSAFuncs already skips those.
-	if pos := fn.Pos(); pos.IsValid() {
-		fields = append(fields, goast.Field("pos", goast.Str(p.fset.Position(pos).String())))
+	fnPos := fn.Pos()
+	if fnPos.IsValid() {
+		fields = append(fields, goast.Field("pos", goast.Str(p.fset.Position(fnPos).String())))
 	}
 	return goast.Node("ssa-func", fields...)
 }
@@ -106,7 +108,8 @@ func blockPos(b *ssa.BasicBlock) token.Pos {
 		if instr == nil {
 			continue
 		}
-		if pos := instr.Pos(); pos.IsValid() {
+		pos := instr.Pos()
+		if pos.IsValid() {
 			return pos
 		}
 	}
@@ -146,7 +149,8 @@ func (p *ssaMapper) mapBlock(b *ssa.BasicBlock) values.Value {
 	// instruction volume than to function volume. A positionless terminator
 	// inherits this anchor by containment rather than by claiming it as its own.
 	if p.positions {
-		if pos := blockPos(b); pos.IsValid() {
+		pos := blockPos(b)
+		if pos.IsValid() {
 			fields = append(fields, goast.Field("pos", goast.Str(p.fset.Position(pos).String())))
 		}
 	}

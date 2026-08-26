@@ -70,7 +70,7 @@ func TestDoVersionWithoutLdflagsFallsBackToDev(t *testing.T) {
 
 	// Either BuildInfo.Main.Version supplies a value or we fall back to "dev"
 	// — but the first token after "wile-goast" must be non-empty.
-	first := strings.SplitN(out, "\n", 2)[0]
+	first, _, _ := strings.Cut(out, "\n")
 	c.Assert(strings.HasPrefix(first, "wile-goast "), qt.IsTrue)
 	c.Assert(len(first) > len("wile-goast "), qt.IsTrue)
 }
