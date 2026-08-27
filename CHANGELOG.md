@@ -1,5 +1,30 @@
 # Changelog
 
+## v0.5.342 — `find_duplicates` describes the filter it actually has
+
+v0.5.340 made `threshold` a floor on similarity and stopped gating on
+`equiv_tier`, and updated `docs/MCP.md`. The MCP **tool description** was left
+behind, so the text an agent reads to decide whether this tool answers its
+question still advertised the gate that had been removed: "returns only the
+pairs that unify (tier proven or structural)", with pairs outside those tiers
+"counted, not listed".
+
+That reproduced the original failure one layer up. A caller told only
+`proven`/`structural` come back has no reason to reach for the tool to find
+high-similarity *divergent* pairs — which is exactly the output the fix
+exposed, and where two implementations of one algorithm disagree. The
+description now says so, names `equiv_tier` as a label on the row rather than
+a filter, and reads the empty case as "nothing cleared the floor" instead of
+"no duplicates". `threshold` is described as what it now is: a floor on
+effective similarity, the only thing selecting rows.
+
+Three stale comments carrying the same phrasing went with it — the refusal
+rationale in `pipelines.scm`, which contradicted its own paragraph five lines
+above, and two in the integration tests, one of which implied the tier is why
+the dupcluster pair surfaces rather than a property of that fixture.
+
+No behaviour change; `find_duplicates` stays at envelope `version` 3.
+
 ## v0.5.341 — `find_duplicates` is at envelope `version` 3
 
 v0.5.340 made `threshold` a floor on similarity rather than a gate on
@@ -416,7 +441,8 @@ Bug fixes:
 - CFG and dominators (`go-cfg`, `go-cfg-dominators`, `go-cfg-paths`)
 - Lint framework (`go-analyze`, ~25 built-in analyzers)
 
-[Unreleased]: https://github.com/aalpar/wile-goast/compare/v0.5.341...HEAD
+[Unreleased]: https://github.com/aalpar/wile-goast/compare/v0.5.342...HEAD
+[0.5.342]: https://github.com/aalpar/wile-goast/compare/v0.5.341...v0.5.342
 [0.5.341]: https://github.com/aalpar/wile-goast/compare/v0.5.340...v0.5.341
 [0.5.340]: https://github.com/aalpar/wile-goast/compare/v0.5.111...v0.5.340
 [0.5.111]: https://github.com/aalpar/wile-goast/compare/v0.5.108...v0.5.111
