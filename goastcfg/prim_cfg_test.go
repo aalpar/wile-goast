@@ -279,3 +279,67 @@ func TestGoCFG_Errors(t *testing.T) {
 		})
 	}
 }
+
+// TestGoCFG_FuncLiteralRoundTrip pins that a "parent$N" name survives the
+// Scheme string boundary and resolves. PrimGoCFGPaths encloses one literal
+// (its recursive dfs); its own body is 14 blocks and the literal is 9.
+func TestGoCFG_FuncLiteralRoundTrip(t *testing.T) {
+	c := qt.New(t)
+	engine := newEngine(t)
+
+	result := eval(t, engine, `
+		(let ((outer (go-cfg "github.com/aalpar/wile-goast/goastcfg" "PrimGoCFGPaths"))
+		      (inner (go-cfg "github.com/aalpar/wile-goast/goastcfg" "PrimGoCFGPaths$1")))
+			(and (pair? outer)
+			     (pair? inner)
+			     (> (length inner) 1)))`)
+	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
+}
+
+// TestGoCFG_ClosuresFieldSurfaces pins the field end to end and the fact that
+// it does not appear where there is nothing to report: PrimGoCFGPaths encloses
+// its dfs literal, PrimGoCFGDominators encloses none.
+func TestGoCFG_ClosuresFieldSurfaces(t *testing.T) {
+	c := qt.New(t)
+	engine := newEngine(t)
+
+	eval(t, engine, `
+		(define (block-closures blocks)
+			(let loop ((bs blocks) (acc '()))
+				(if (null? bs)
+					(reverse acc)
+					(let ((f (assoc 'closures (cdr (car bs)))))
+						(loop (cdr bs) (if f (cons (cdr f) acc) acc))))))`)
+
+	result := eval(t, engine, `
+		(block-closures (go-cfg "github.com/aalpar/wile-goast/goastcfg" "PrimGoCFGPaths"))`)
+	c.Assert(result.SchemeString(), qt.Equals,
+		`(("github.com/aalpar/wile-goast/goastcfg.PrimGoCFGPaths$1"))`)
+
+	result = eval(t, engine, `
+		(null? (block-closures
+			(go-cfg "github.com/aalpar/wile-goast/goastcfg" "PrimGoCFGDominators")))`)
+	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
+}
+
+// TestGoCFG_ClosureNameFeedsBackIn is the round trip the closures field exists
+// for: read a name off a block, hand it straight back to go-cfg, get that
+// literal's own CFG. No second lookup, no name mangling across the FFI boundary.
+func TestGoCFG_ClosureNameFeedsBackIn(t *testing.T) {
+	c := qt.New(t)
+	engine := newEngine(t)
+
+	result := eval(t, engine, `
+		(let* ((pkg "github.com/aalpar/wile-goast/goastcfg")
+		       (outer (go-cfg pkg "PrimGoCFGPaths"))
+		       (named (let loop ((bs outer))
+		                (if (null? bs)
+		                    #f
+		                    (let ((f (assoc 'closures (cdr (car bs)))))
+		                      (if f (car (cdr f)) (loop (cdr bs))))))))
+			(and (string? named)
+			     (pair? (go-cfg pkg named))
+			     named))`)
+	c.Assert(result.SchemeString(), qt.Equals,
+		`"github.com/aalpar/wile-goast/goastcfg.PrimGoCFGPaths$1"`)
+}

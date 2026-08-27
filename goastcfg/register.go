@@ -47,7 +47,8 @@ func addPrimitives(r *registry.PrimitiveRegistry) error {
 				"First arg is a package pattern or GoSession.\n" +
 				"Returns a list of cfg-block alists. Each block has: index, preds,\n" +
 				"succs, and idom (#f for entry block). Optional fields: comment,\n" +
-				"recover (#t for recover block). Option 'positions adds pos fields.\n\n" +
+				"recover (#t for recover block), closures (func literals the block\n" +
+				"builds). Option 'positions adds pos fields.\n\n" +
 				"Examples:\n" +
 				"  (import (wile goast utils))\n" +
 				"  (define blocks (go-cfg \"./...\" \"MyFunc\"))\n" +
@@ -56,18 +57,29 @@ func addPrimitives(r *registry.PrimitiveRegistry) error {
 				"  (nf (car blocks) 'idom)   ; => #f  (entry block)\n" +
 				"  ;; With positions:\n" +
 				"  (go-cfg \"./...\" \"MyFunc\" 'positions)\n\n" +
-				"LIMITATION -- closures are invisible, and silently so. The blocks are\n" +
-				"the named function's own; go/ssa hoists each `func' literal into the\n" +
-				"enclosing Function.AnonFuncs, which this lookup does not search, so a\n" +
-				"literal is one MakeClosure instruction and the branches and loops\n" +
-				"inside it yield no blocks, no edges, and no marker. Measured on Wile:\n" +
-				"a function whose whole body is `return func(yield ...) {...}' (an\n" +
-				"iter.Seq2 iterator) returns 1 block and 0 edges; one whose type switch\n" +
-				"sits in a callback argument returns only its outer nil guard, 4 blocks\n" +
-				"and cyclomatic 2 against a hand count of 5. So a derived metric\n" +
-				"(cyclomatic = E - N + 2) under-reports these with a well-formed answer\n" +
-				"rather than an error, and Go 1.23 range-over-func makes the shape more\n" +
-				"common. Prefer a source-level measure where that matters.\n\n" +
+				"Func literals are reachable, and visible. go/ssa hoists each `func'\n" +
+				"literal into its enclosing function under the name parent$N, 1-based\n" +
+				"in go/ssa's build order -- source order in an ordinary body, but not\n" +
+				"in a `for' post statement, a `select', or a package `init' that\n" +
+				"aggregates var initializers across files. So pass \"MyFunc$1\" to get\n" +
+				"that literal's own CFG; nesting composes (\"MyFunc$1$2\"), and a\n" +
+				"literal in a method takes either form, \"M$1\" or \"(*pkg.T).M$1\".\n" +
+				"A block that builds one carries a `closures' field naming it, so a\n" +
+				"walk over the blocks finds every literal without a second lookup.\n" +
+				"Those names are the qualified form (\"pkg.MyFunc$1\",\n" +
+				"\"(*pkg.T).M$1\") and feed straight back in; the short form would not,\n" +
+				"because it is not unique -- two same-named methods on different\n" +
+				"types both yield \"Same$1\".\n" +
+				"go/ssa emits no instruction at all for a literal that captures\n" +
+				"nothing, so that one is attributed to the block that first uses it\n" +
+				"instead. A bound-method wrapper (`return t.M') is not a literal and\n" +
+				"is not listed; a Go 1.23 range-over-func body is one, and is.\n\n" +
+				"LIMITATION -- one CFG per function. A literal's blocks are NOT merged\n" +
+				"into the enclosing function's, because block indices are per-function\n" +
+				"and preds/succs index into one block list. So a derived metric\n" +
+				"(cyclomatic = E - N + 2) still measures one function at a time; sum\n" +
+				"over a function and its literals, less 1 per extra function, to cover\n" +
+				"the source function as written.\n\n" +
 				"See also: `go-cfg-dominators', `go-cfg-paths', `go-cfg-to-structured'.",
 			ParamNames: []string{"pattern", "func-name", "options"}, Category: "goast-cfg",
 			ReturnType: values.TypeList},

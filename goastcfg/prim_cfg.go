@@ -147,43 +147,22 @@ func parseCFGOpts(rest values.Value, fset *token.FileSet) (*cfgMapper, error) {
 	return opts, nil
 }
 
-// findFunction looks up a function by name across all members and methods
-// in an SSA package. Accepts both Form 1 short names ("Step") and Form 3
-// qualified names ("(*pkg.raft).Step"). Returns nil if not found.
-func findFunction(prog *ssa.Program, ssaPkg *ssa.Package, name string) *ssa.Function {
-	// Form 3: qualified name — try exact match via fn.String()
-	if strings.Contains(name, ".") || strings.Contains(name, "(") {
-		for _, mem := range ssaPkg.Members {
-			fn, ok := mem.(*ssa.Function)
-			if ok && fn.String() == name {
-				return fn
-			}
+// eachRootFunc calls visit on every function of ssaPkg that can enclose a func
+// literal — package-level functions first, then the methods of its named types
+// — and returns the first non-nil result. Methods need the MethodSets detour
+// because they are not package members, so a literal inside a method is
+// unreachable from ssaPkg.Members alone.
+func eachRootFunc(prog *ssa.Program, ssaPkg *ssa.Package, visit func(*ssa.Function) *ssa.Function) *ssa.Function {
+	for _, mem := range ssaPkg.Members {
+		fn, ok := mem.(*ssa.Function)
+		if !ok {
+			continue
 		}
-		// Also search methods on named types.
-		for _, mem := range ssaPkg.Members {
-			typ, ok := mem.(*ssa.Type)
-			if !ok {
-				continue
-			}
-			for _, recvType := range []types.Type{types.NewPointer(typ.Type()), typ.Type()} {
-				mset := prog.MethodSets.MethodSet(recvType)
-				for sel := range mset.Methods() {
-					fn := prog.MethodValue(sel)
-					if fn != nil && fn.String() == name {
-						return fn
-					}
-				}
-			}
+		found := visit(fn)
+		if found != nil {
+			return found
 		}
-		return nil
 	}
-
-	// Form 1: short name — existing logic
-	fn := ssaPkg.Func(name)
-	if fn != nil {
-		return fn
-	}
-	// Search methods on named types.
 	for _, mem := range ssaPkg.Members {
 		typ, ok := mem.(*ssa.Type)
 		if !ok {
@@ -193,13 +172,66 @@ func findFunction(prog *ssa.Program, ssaPkg *ssa.Package, name string) *ssa.Func
 			mset := prog.MethodSets.MethodSet(recvType)
 			for sel := range mset.Methods() {
 				fn := prog.MethodValue(sel)
-				if fn != nil && fn.Name() == name && fn.Pkg == ssaPkg {
-					return fn
+				if fn == nil {
+					continue
+				}
+				found := visit(fn)
+				if found != nil {
+					return found
 				}
 			}
 		}
 	}
 	return nil
+}
+
+// findAnonFunc searches fn.AnonFuncs depth-first for the first function
+// satisfying match. The recursion is load-bearing: go/ssa hoists a literal into
+// its enclosing Function.AnonFuncs and names it "parent$N", so a nested literal
+// is "Outer$1$1" and a one-level walk (goastssa/narrow.go's, for instance)
+// cannot see it.
+func findAnonFunc(fn *ssa.Function, match func(*ssa.Function) bool) *ssa.Function {
+	for _, anon := range fn.AnonFuncs {
+		if match(anon) {
+			return anon
+		}
+		found := findAnonFunc(anon, match)
+		if found != nil {
+			return found
+		}
+	}
+	return nil
+}
+
+// findFunction looks up a function by name across the members, methods, and
+// func literals of an SSA package. Accepts Form 1 short names ("Step") and
+// Form 3 qualified names ("(*pkg.raft).Step"), and in either form the
+// "parent$N" name go/ssa gives a func literal ("Step$1", "(*pkg.raft).Step$1",
+// nested "Step$1$1"). Returns nil if not found.
+func findFunction(prog *ssa.Program, ssaPkg *ssa.Package, name string) *ssa.Function {
+	qualified := strings.Contains(name, ".") || strings.Contains(name, "(")
+	matches := func(fn *ssa.Function) bool {
+		if qualified {
+			return fn.String() == name
+		}
+		return fn.Name() == name && fn.Pkg == ssaPkg
+	}
+
+	// Named functions and methods first — the common case, and it keeps the
+	// anon walk entirely off the hit path.
+	fn := eachRootFunc(prog, ssaPkg, func(root *ssa.Function) *ssa.Function {
+		if matches(root) {
+			return root
+		}
+		return nil
+	})
+	if fn != nil {
+		return fn
+	}
+
+	return eachRootFunc(prog, ssaPkg, func(root *ssa.Function) *ssa.Function {
+		return findAnonFunc(root, matches)
+	})
 }
 
 // PrimGoCFG implements (go-cfg target func-name . options).

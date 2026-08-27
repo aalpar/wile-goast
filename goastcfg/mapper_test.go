@@ -18,6 +18,7 @@ import (
 	"go/token"
 	"os"
 	"path/filepath"
+	"sort"
 	"testing"
 
 	"golang.org/x/tools/go/packages"
@@ -67,6 +68,180 @@ func buildSSAFunc(t *testing.T, dir, source, funcName string) (*token.FileSet, *
 	c.Assert(fn, qt.IsNotNil, qt.Commentf("function %s not found", funcName))
 	return fset, fn
 }
+
+// buildSSAPackage writes source into dir, loads and builds it, and returns the
+// SSA program and first package so a test can call findFunction directly.
+// buildSSAFunc cannot serve here: it resolves through ssa.Package.Func, which
+// is exactly the member-only lookup under test.
+//
+// The builder mode is the one both production entry points use
+// (cfgFromPattern and goast.GoSession.SSA), InstantiateGenerics included, so a
+// generic instance's literals are in scope for the round-trip invariant rather
+// than merely absent from the test.
+func buildSSAPackage(t *testing.T, dir, source string) (*token.FileSet, *ssa.Program, *ssa.Package) {
+	t.Helper()
+	c := qt.New(t)
+	writeTestPackage(t, dir, source)
+
+	fset := token.NewFileSet()
+	cfg := &packages.Config{
+		Mode: packages.NeedName | packages.NeedFiles | packages.NeedSyntax |
+			packages.NeedTypes | packages.NeedTypesInfo |
+			packages.NeedImports | packages.NeedDeps,
+		Fset: fset,
+		Dir:  dir,
+	}
+	pkgs, err := packages.Load(cfg, ".")
+	c.Assert(err, qt.IsNil)
+
+	prog, ssaPkgs := ssautil.Packages(pkgs, ssa.SanityCheckFunctions|ssa.InstantiateGenerics)
+	for _, p := range ssaPkgs {
+		if p != nil {
+			p.Build()
+		}
+	}
+	c.Assert(len(ssaPkgs) > 0, qt.IsTrue, qt.Commentf("no SSA packages built"))
+	c.Assert(ssaPkgs[0], qt.IsNotNil)
+	return fset, prog, ssaPkgs[0]
+}
+
+// funcLitSource covers every func-literal shape go/ssa constructs differently:
+// an iterator body, a call argument, nesting, two siblings in one function, a
+// literal inside a method, and the go/defer path (builder.go:2524, a second
+// construction site from the one at builder.go:632). RangeFunc adds the Go 1.23
+// range-over-func lowering, whose body is an ordinary AnonFuncs entry carrying
+// Synthetic == "range-over-func yield". LateUse and Discarded are the two
+// degenerate attribution cases: a non-capturing literal first used in a block
+// other than the one that writes it, and one that is never referred to at all.
+// Generic and UseGeneric put a literal on both sides of an instantiation, which
+// only matters because buildSSAPackage builds with InstantiateGenerics as
+// production does. BoundMethod yields a synthetic M$bound wrapper, which
+// TestMapCFG_SyntheticClosureOmitted asserts is NOT listed.
+const funcLitSource = `
+package testpkg
+
+import "iter"
+
+type T struct{ n int }
+
+func Spine(xs []int) iter.Seq2[int, int] {
+	return func(yield func(int, int) bool) {
+		for i, x := range xs {
+			if x < 0 {
+				continue
+			}
+			if !yield(i, x) {
+				return
+			}
+		}
+	}
+}
+
+func Apply(xs []int, f func(int)) {
+	for _, x := range xs {
+		f(x)
+	}
+}
+
+func FlipScope(xs []int) int {
+	total := 0
+	Apply(xs, func(x int) {
+		if x > 0 {
+			total += x
+		} else {
+			total -= x
+		}
+	})
+	return total
+}
+
+func Nested() func() func() int {
+	return func() func() int {
+		return func() int {
+			return 42
+		}
+	}
+}
+
+func Two() (func() int, func() int) {
+	a := func() int {
+		return 1
+	}
+	b := func() int {
+		return 2
+	}
+	return a, b
+}
+
+func (p *T) M() func() int {
+	return func() int {
+		if p.n > 0 {
+			return p.n
+		}
+		return -p.n
+	}
+}
+
+func GoDefer(ch chan int) {
+	defer func() {
+		close(ch)
+	}()
+	go func() {
+		ch <- 1
+	}()
+}
+
+func BoundMethod(t *T) func() func() int {
+	return t.M
+}
+
+func RangeFunc(seq func(func(int) bool)) int {
+	total := 0
+	for x := range seq {
+		total += x
+		if total > 100 {
+			break
+		}
+	}
+	return total
+}
+
+func LateUse(n int) int {
+	f := func() int {
+		return 1
+	}
+	total := 0
+	for i := 0; i < n; i++ {
+		total += f()
+	}
+	return total
+}
+
+func Discarded() {
+	_ = func() int {
+		return 7
+	}
+}
+
+func Generic[E any](xs []E, keep func(E) bool) []E {
+	q := make([]E, 0, len(xs))
+	Apply(nil, func(int) {
+		q = q[:0]
+	})
+	for _, x := range xs {
+		if keep(x) {
+			q = append(q, x)
+		}
+	}
+	return q
+}
+
+func UseGeneric(xs []int) []int {
+	return Generic(xs, func(x int) bool {
+		return x > 0
+	})
+}
+`
 
 func listLength(v values.Value) int {
 	n := 0
@@ -199,5 +374,360 @@ func Max(a, b int) int {
 		}
 		first = false
 		tuple = pair.Cdr().(values.Tuple)
+	}
+}
+
+func TestFindFunction_FuncLiterals(t *testing.T) {
+	dir := t.TempDir()
+	_, prog, pkg := buildSSAPackage(t, dir, funcLitSource)
+
+	tcs := []struct {
+		name       string
+		lookup     string
+		wantBlocks int
+	}{
+		{name: "a/iter-seq2 body literal", lookup: "Spine$1", wantBlocks: 6},
+		{name: "b/literal as call argument", lookup: "FlipScope$1", wantBlocks: 4},
+		{name: "c/nested literal", lookup: "Nested$1$1", wantBlocks: 1},
+		{name: "d/first literal, $N order", lookup: "Two$1", wantBlocks: 1},
+		{name: "d/second literal, $N order", lookup: "Two$2", wantBlocks: 1},
+		{name: "e/literal in a method", lookup: "M$1", wantBlocks: 3},
+		{name: "f/defer literal", lookup: "GoDefer$1", wantBlocks: 1},
+		{name: "f/go literal", lookup: "GoDefer$2", wantBlocks: 1},
+		{name: "g/range-over-func lowered body", lookup: "RangeFunc$1", wantBlocks: 5},
+		{name: "a/qualified form", lookup: "testpkg.Spine$1", wantBlocks: 6},
+		{name: "e/qualified method form", lookup: "(*testpkg.T).M$1", wantBlocks: 3},
+	}
+	for _, tc := range tcs {
+		t.Run(tc.name, func(t *testing.T) {
+			c := qt.New(t)
+			fn := findFunction(prog, pkg, tc.lookup)
+			c.Assert(fn, qt.IsNotNil,
+				qt.Commentf("findFunction(%q) returned nil: the literal is unreachable", tc.lookup))
+			c.Assert(len(fn.Blocks), qt.Equals, tc.wantBlocks,
+				qt.Commentf("block count for %q", tc.lookup))
+		})
+	}
+}
+
+// TestFindFunction_AbsentNames is the regression guard for the obvious wrong
+// way to pass TestFindFunction_FuncLiterals: making the walk return something
+// for any name. errCFGFuncNotFound must still fire for a genuinely absent one.
+func TestFindFunction_AbsentNames(t *testing.T) {
+	dir := t.TempDir()
+	_, prog, pkg := buildSSAPackage(t, dir, funcLitSource)
+
+	for _, name := range []string{
+		"NoSuchFunc",
+		"NoSuchFunc$1",
+		"Spine$2",
+		"Spine$1$1",
+		"testpkg.NoSuchFunc$1",
+		"(*testpkg.T).NoSuchMethod$1",
+		"M$bound",
+	} {
+		t.Run(name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(findFunction(prog, pkg, name), qt.IsNil)
+		})
+	}
+}
+
+// blockClosures returns the closures field of the cfg-block at index i in a
+// mapFunction result, and whether the field was present at all. Absence and
+// emptiness are different answers: the field must not appear on a block that
+// makes no closure.
+func blockClosures(t *testing.T, cfg values.Value, i int) ([]string, bool) {
+	t.Helper()
+	c := qt.New(t)
+	tuple, ok := cfg.(values.Tuple)
+	c.Assert(ok, qt.IsTrue)
+	for n := 0; !values.IsEmptyList(tuple); n++ {
+		pair, ok := tuple.(*values.Pair)
+		c.Assert(ok, qt.IsTrue)
+		if n == i {
+			field, found := goast.GetField(pair.Car().(*values.Pair).Cdr(), "closures")
+			if !found {
+				return nil, false
+			}
+			var q []string
+			ft, ok := field.(values.Tuple)
+			c.Assert(ok, qt.IsTrue)
+			for !values.IsEmptyList(ft) {
+				fp, ok := ft.(*values.Pair)
+				c.Assert(ok, qt.IsTrue)
+				s, ok := fp.Car().(*values.String)
+				c.Assert(ok, qt.IsTrue)
+				q = append(q, s.Value)
+				ft, ok = fp.Cdr().(values.Tuple)
+				c.Assert(ok, qt.IsTrue)
+			}
+			return q, true
+		}
+		tuple, ok = pair.Cdr().(values.Tuple)
+		c.Assert(ok, qt.IsTrue)
+	}
+	c.Fatalf("no block at index %d", i)
+	return nil, false
+}
+
+func TestMapCFG_Closures(t *testing.T) {
+	dir := t.TempDir()
+	fset, prog, pkg := buildSSAPackage(t, dir, funcLitSource)
+
+	tcs := []struct {
+		name  string
+		fn    string
+		block int
+		want  []string
+	}{
+		{name: "iterator body", fn: "Spine", block: 0, want: []string{"testpkg.Spine$1"}},
+		{name: "call argument", fn: "FlipScope", block: 0, want: []string{"testpkg.FlipScope$1"}},
+		{name: "two literals in $N order", fn: "Two", block: 0, want: []string{"testpkg.Two$1", "testpkg.Two$2"}},
+		{name: "defer then go", fn: "GoDefer", block: 0, want: []string{"testpkg.GoDefer$1", "testpkg.GoDefer$2"}},
+		{name: "method", fn: "(*testpkg.T).M", block: 0, want: []string{"(*testpkg.T).M$1"}},
+		{name: "nested outer", fn: "Nested", block: 0, want: []string{"testpkg.Nested$1"}},
+		{name: "nested inner", fn: "Nested$1", block: 0, want: []string{"testpkg.Nested$1$1"}},
+		{name: "range-over-func lowered body", fn: "RangeFunc", block: 0, want: []string{"testpkg.RangeFunc$1"}},
+		{name: "unreferenced literal falls to the entry block", fn: "Discarded", block: 0, want: []string{"testpkg.Discarded$1"}},
+		{name: "literal in a generic function", fn: "Generic", block: 0, want: []string{"testpkg.Generic$1"}},
+		{name: "literal passed to a generic function", fn: "UseGeneric", block: 0, want: []string{"testpkg.UseGeneric$1"}},
+	}
+	for _, tc := range tcs {
+		t.Run(tc.name, func(t *testing.T) {
+			c := qt.New(t)
+			fn := findFunction(prog, pkg, tc.fn)
+			c.Assert(fn, qt.IsNotNil)
+			mapper := &cfgMapper{fset: fset}
+			got, found := blockClosures(t, mapper.mapFunction(fn), tc.block)
+			c.Assert(found, qt.IsTrue, qt.Commentf("no closures field on %s block %d", tc.fn, tc.block))
+			c.Assert(got, qt.DeepEquals, tc.want)
+		})
+	}
+}
+
+// TestMapCFG_ClosureUnionIsExactlyAnonFuncs is the completeness gate. go/ssa
+// emits no instruction at all for a literal that captures nothing, so an
+// implementation that enumerates MakeClosure instructions silently drops those
+// -- the same silent omission the closures field exists to end. Whatever the
+// per-block attribution, the union over the blocks must be every direct entry
+// of fn.AnonFuncs, once each.
+func TestMapCFG_ClosureUnionIsExactlyAnonFuncs(t *testing.T) {
+	dir := t.TempDir()
+	fset, prog, pkg := buildSSAPackage(t, dir, funcLitSource)
+
+	for _, name := range []string{
+		"Spine", "Apply", "FlipScope", "Nested", "Nested$1", "Two",
+		"(*testpkg.T).M", "GoDefer", "BoundMethod", "RangeFunc", "LateUse", "Discarded",
+		"Generic", "UseGeneric",
+	} {
+		t.Run(name, func(t *testing.T) {
+			c := qt.New(t)
+			fn := findFunction(prog, pkg, name)
+			c.Assert(fn, qt.IsNotNil)
+
+			want := make([]string, 0, len(fn.AnonFuncs))
+			for _, anon := range fn.AnonFuncs {
+				want = append(want, anon.String())
+			}
+
+			mapper := &cfgMapper{fset: fset}
+			cfg := mapper.mapFunction(fn)
+			got := make([]string, 0, len(want))
+			for i := range listLength(cfg) {
+				names, found := blockClosures(t, cfg, i)
+				if !found {
+					continue
+				}
+				c.Assert(len(names) > 0, qt.IsTrue,
+					qt.Commentf("block %d carries an empty closures field", i))
+				got = append(got, names...)
+			}
+			sort.Strings(want)
+			sort.Strings(got)
+			c.Assert(got, qt.DeepEquals, want)
+		})
+	}
+}
+
+// TestMapCFG_LateUseAttribution pins the one case where "constructs" and "first
+// uses" come apart: LateUse writes its literal before the loop but calls it
+// inside, and go/ssa emits nothing at the write, so the only evidence of the
+// literal in the instruction stream is the Call. The block index is deliberately
+// not pinned -- the claim is that attribution follows the use.
+func TestMapCFG_LateUseAttribution(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	fset, prog, pkg := buildSSAPackage(t, dir, funcLitSource)
+
+	fn := findFunction(prog, pkg, "LateUse")
+	c.Assert(fn, qt.IsNotNil)
+	mapper := &cfgMapper{fset: fset}
+	cfg := mapper.mapFunction(fn)
+
+	_, foundOnEntry := blockClosures(t, cfg, 0)
+	c.Assert(foundOnEntry, qt.IsFalse,
+		qt.Commentf("entry block writes the literal but go/ssa emits no instruction there"))
+
+	carriers := 0
+	for i := range listLength(cfg) {
+		names, found := blockClosures(t, cfg, i)
+		if !found {
+			continue
+		}
+		carriers++
+		c.Assert(names, qt.DeepEquals, []string{"testpkg.LateUse$1"})
+	}
+	c.Assert(carriers, qt.Equals, 1)
+}
+
+// TestMapCFG_NoClosuresField is risk R1's gate: a block that constructs nothing
+// must be byte-identical to what it was before, i.e. gain no field. Apply has
+// four blocks and calls its parameter; it makes no closure.
+func TestMapCFG_NoClosuresField(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	fset, prog, pkg := buildSSAPackage(t, dir, funcLitSource)
+
+	fn := findFunction(prog, pkg, "Apply")
+	c.Assert(fn, qt.IsNotNil)
+	mapper := &cfgMapper{fset: fset}
+	cfg := mapper.mapFunction(fn)
+	for i := range listLength(cfg) {
+		_, found := blockClosures(t, cfg, i)
+		c.Assert(found, qt.IsFalse, qt.Commentf("Apply block %d gained a closures field", i))
+	}
+}
+
+// TestMapCFG_SyntheticClosureOmitted pins decision D1. BoundMethod's single
+// MakeClosure targets M$bound, a bound-method wrapper go/ssa synthesises; it is
+// not a func literal in source and findFunction cannot resolve it, so listing
+// it would emit a name that does not round-trip.
+func TestMapCFG_SyntheticClosureOmitted(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	fset, prog, pkg := buildSSAPackage(t, dir, funcLitSource)
+
+	fn := findFunction(prog, pkg, "BoundMethod")
+	c.Assert(fn, qt.IsNotNil)
+	mapper := &cfgMapper{fset: fset}
+	_, found := blockClosures(t, mapper.mapFunction(fn), 0)
+	c.Assert(found, qt.IsFalse,
+		qt.Commentf("synthetic M$bound must not be listed"))
+}
+
+// TestMapCFG_EveryListedNameResolves is the round-trip invariant: a name in a
+// closures field is go/ssa's own parent$N form, so feeding it straight back to
+// findFunction must yield the literal it names. This is what keeps a synthetic
+// wrapper out without a Synthetic string test -- M$bound is in no AnonFuncs
+// list, so it can never be listed, and everything that can be listed resolves.
+func TestMapCFG_EveryListedNameResolves(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	fset, prog, pkg := buildSSAPackage(t, dir, funcLitSource)
+
+	listed := 0
+	for _, name := range []string{
+		"Spine", "Apply", "FlipScope", "Nested", "Nested$1", "Two",
+		"(*testpkg.T).M", "GoDefer", "BoundMethod", "RangeFunc", "LateUse", "Discarded",
+		"Generic", "UseGeneric",
+	} {
+		fn := findFunction(prog, pkg, name)
+		c.Assert(fn, qt.IsNotNil)
+		mapper := &cfgMapper{fset: fset}
+		cfg := mapper.mapFunction(fn)
+		for i := range listLength(cfg) {
+			names, found := blockClosures(t, cfg, i)
+			if !found {
+				continue
+			}
+			for _, n := range names {
+				c.Assert(findFunction(prog, pkg, n), qt.IsNotNil,
+					qt.Commentf("%s block %d lists %q, which go-cfg cannot resolve", name, i, n))
+				listed++
+			}
+		}
+	}
+	c.Assert(listed > 0, qt.IsTrue)
+}
+
+// collisionSource has two types whose same-named methods each hold one func
+// literal, of different block counts. go/ssa's Name() for both literals is
+// "Same$1" — parent$N over the *short* name — so the two are indistinguishable
+// by that form, while String() keeps them apart.
+const collisionSource = `
+package testpkg
+
+type T struct{}
+type U struct{}
+
+func (T) Same() int {
+	x := func() int {
+		return 1
+	}
+	return x()
+}
+
+func (U) Same(n int) int {
+	y := func(k int) int {
+		if k > 0 {
+			return 2
+		}
+		return 3
+	}
+	return y(n)
+}
+`
+
+// TestMapCFG_ClosureNamesAreUnambiguous is the gate on the field's only
+// promise: a name read out of it resolves back to the literal it names. Short
+// "parent$N" names do not clear that bar. Two same-named methods on different
+// types both yield "Same$1", and findFunction's short-name predicate accepts
+// either, picking by Go map order over ssaPkg.Members — so a consumer feeding
+// the name back gets a different, well-formed CFG run to run, silently.
+// Measured on x/tools v0.47.0 outside this fixture: 5 literals in
+// wile/pkg/values share the name "schemeStringWithVisited$1" and 16 in
+// wile/pkg/machine share "EqualTo$1".
+//
+// funcLitSource cannot see this: it has one type with one method, so every
+// short name in it happens to be unique.
+func TestMapCFG_ClosureNamesAreUnambiguous(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	fset, prog, pkg := buildSSAPackage(t, dir, collisionSource)
+
+	// The premise: the two literals really do collide under Name().
+	tf := findFunction(prog, pkg, "(testpkg.T).Same")
+	uf := findFunction(prog, pkg, "(testpkg.U).Same")
+	c.Assert(tf, qt.IsNotNil)
+	c.Assert(uf, qt.IsNotNil)
+	c.Assert(len(tf.AnonFuncs), qt.Equals, 1)
+	c.Assert(len(uf.AnonFuncs), qt.Equals, 1)
+	c.Assert(tf.AnonFuncs[0].Name(), qt.Equals, uf.AnonFuncs[0].Name(),
+		qt.Commentf("fixture is not exercising the collision"))
+	c.Assert(len(tf.AnonFuncs[0].Blocks), qt.Not(qt.Equals), len(uf.AnonFuncs[0].Blocks),
+		qt.Commentf("the two literals must differ in shape, or a wrong pick is invisible"))
+
+	// The claim: each side's field names its own literal, and resolving that
+	// name yields a CFG of the right shape.
+	for _, tc := range []struct {
+		recv string
+		fn   *ssa.Function
+	}{
+		{recv: "T", fn: tf},
+		{recv: "U", fn: uf},
+	} {
+		t.Run(tc.recv, func(t *testing.T) {
+			c := qt.New(t)
+			mapper := &cfgMapper{fset: fset}
+			names, found := blockClosures(t, mapper.mapFunction(tc.fn), 0)
+			c.Assert(found, qt.IsTrue)
+			c.Assert(names, qt.DeepEquals, []string{tc.fn.AnonFuncs[0].String()})
+
+			got := findFunction(prog, pkg, names[0])
+			c.Assert(got, qt.IsNotNil)
+			c.Assert(got, qt.Equals, tc.fn.AnonFuncs[0],
+				qt.Commentf("%q resolved to %s, not the literal it names", names[0], got))
+		})
 	}
 }
