@@ -56,6 +56,18 @@ func addPrimitives(r *registry.PrimitiveRegistry) error {
 				"  (nf (car blocks) 'idom)   ; => #f  (entry block)\n" +
 				"  ;; With positions:\n" +
 				"  (go-cfg \"./...\" \"MyFunc\" 'positions)\n\n" +
+				"LIMITATION -- closures are invisible, and silently so. The blocks are\n" +
+				"the named function's own; go/ssa hoists each `func' literal into the\n" +
+				"enclosing Function.AnonFuncs, which this lookup does not search, so a\n" +
+				"literal is one MakeClosure instruction and the branches and loops\n" +
+				"inside it yield no blocks, no edges, and no marker. Measured on Wile:\n" +
+				"a function whose whole body is `return func(yield ...) {...}' (an\n" +
+				"iter.Seq2 iterator) returns 1 block and 0 edges; one whose type switch\n" +
+				"sits in a callback argument returns only its outer nil guard, 4 blocks\n" +
+				"and cyclomatic 2 against a hand count of 5. So a derived metric\n" +
+				"(cyclomatic = E - N + 2) under-reports these with a well-formed answer\n" +
+				"rather than an error, and Go 1.23 range-over-func makes the shape more\n" +
+				"common. Prefer a source-level measure where that matters.\n\n" +
 				"See also: `go-cfg-dominators', `go-cfg-paths', `go-cfg-to-structured'.",
 			ParamNames: []string{"pattern", "func-name", "options"}, Category: "goast-cfg",
 			ReturnType: values.TypeList},
