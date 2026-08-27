@@ -279,3 +279,19 @@ func TestGoCFG_Errors(t *testing.T) {
 		})
 	}
 }
+
+// TestGoCFG_FuncLiteralRoundTrip pins that a "parent$N" name survives the
+// Scheme string boundary and resolves. PrimGoCFGPaths encloses one literal
+// (its recursive dfs); its own body is 14 blocks and the literal is 9.
+func TestGoCFG_FuncLiteralRoundTrip(t *testing.T) {
+	c := qt.New(t)
+	engine := newEngine(t)
+
+	result := eval(t, engine, `
+		(let ((outer (go-cfg "github.com/aalpar/wile-goast/goastcfg" "PrimGoCFGPaths"))
+		      (inner (go-cfg "github.com/aalpar/wile-goast/goastcfg" "PrimGoCFGPaths$1")))
+			(and (pair? outer)
+			     (pair? inner)
+			     (> (length inner) 1)))`)
+	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
+}

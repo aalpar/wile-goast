@@ -68,6 +68,180 @@ func buildSSAFunc(t *testing.T, dir, source, funcName string) (*token.FileSet, *
 	return fset, fn
 }
 
+// buildSSAPackage writes source into dir, loads and builds it, and returns the
+// SSA program and first package so a test can call findFunction directly.
+// buildSSAFunc cannot serve here: it resolves through ssa.Package.Func, which
+// is exactly the member-only lookup under test.
+//
+// The builder mode is the one both production entry points use
+// (cfgFromPattern and goast.GoSession.SSA), InstantiateGenerics included, so a
+// generic instance's literals are in scope for the round-trip invariant rather
+// than merely absent from the test.
+func buildSSAPackage(t *testing.T, dir, source string) (*token.FileSet, *ssa.Program, *ssa.Package) {
+	t.Helper()
+	c := qt.New(t)
+	writeTestPackage(t, dir, source)
+
+	fset := token.NewFileSet()
+	cfg := &packages.Config{
+		Mode: packages.NeedName | packages.NeedFiles | packages.NeedSyntax |
+			packages.NeedTypes | packages.NeedTypesInfo |
+			packages.NeedImports | packages.NeedDeps,
+		Fset: fset,
+		Dir:  dir,
+	}
+	pkgs, err := packages.Load(cfg, ".")
+	c.Assert(err, qt.IsNil)
+
+	prog, ssaPkgs := ssautil.Packages(pkgs, ssa.SanityCheckFunctions|ssa.InstantiateGenerics)
+	for _, p := range ssaPkgs {
+		if p != nil {
+			p.Build()
+		}
+	}
+	c.Assert(len(ssaPkgs) > 0, qt.IsTrue, qt.Commentf("no SSA packages built"))
+	c.Assert(ssaPkgs[0], qt.IsNotNil)
+	return fset, prog, ssaPkgs[0]
+}
+
+// funcLitSource covers every func-literal shape go/ssa constructs differently:
+// an iterator body, a call argument, nesting, two siblings in one function, a
+// literal inside a method, and the go/defer path (builder.go:2524, a second
+// construction site from the one at builder.go:632). RangeFunc adds the Go 1.23
+// range-over-func lowering, whose body is an ordinary AnonFuncs entry carrying
+// Synthetic == "range-over-func yield". LateUse and Discarded are the two
+// degenerate attribution cases: a non-capturing literal first used in a block
+// other than the one that writes it, and one that is never referred to at all.
+// Generic and UseGeneric put a literal on both sides of an instantiation, which
+// only matters because buildSSAPackage builds with InstantiateGenerics as
+// production does. BoundMethod yields a synthetic M$bound wrapper, which
+// TestMapCFG_SyntheticClosureOmitted asserts is NOT listed.
+const funcLitSource = `
+package testpkg
+
+import "iter"
+
+type T struct{ n int }
+
+func Spine(xs []int) iter.Seq2[int, int] {
+	return func(yield func(int, int) bool) {
+		for i, x := range xs {
+			if x < 0 {
+				continue
+			}
+			if !yield(i, x) {
+				return
+			}
+		}
+	}
+}
+
+func Apply(xs []int, f func(int)) {
+	for _, x := range xs {
+		f(x)
+	}
+}
+
+func FlipScope(xs []int) int {
+	total := 0
+	Apply(xs, func(x int) {
+		if x > 0 {
+			total += x
+		} else {
+			total -= x
+		}
+	})
+	return total
+}
+
+func Nested() func() func() int {
+	return func() func() int {
+		return func() int {
+			return 42
+		}
+	}
+}
+
+func Two() (func() int, func() int) {
+	a := func() int {
+		return 1
+	}
+	b := func() int {
+		return 2
+	}
+	return a, b
+}
+
+func (p *T) M() func() int {
+	return func() int {
+		if p.n > 0 {
+			return p.n
+		}
+		return -p.n
+	}
+}
+
+func GoDefer(ch chan int) {
+	defer func() {
+		close(ch)
+	}()
+	go func() {
+		ch <- 1
+	}()
+}
+
+func BoundMethod(t *T) func() func() int {
+	return t.M
+}
+
+func RangeFunc(seq func(func(int) bool)) int {
+	total := 0
+	for x := range seq {
+		total += x
+		if total > 100 {
+			break
+		}
+	}
+	return total
+}
+
+func LateUse(n int) int {
+	f := func() int {
+		return 1
+	}
+	total := 0
+	for i := 0; i < n; i++ {
+		total += f()
+	}
+	return total
+}
+
+func Discarded() {
+	_ = func() int {
+		return 7
+	}
+}
+
+func Generic[E any](xs []E, keep func(E) bool) []E {
+	q := make([]E, 0, len(xs))
+	Apply(nil, func(int) {
+		q = q[:0]
+	})
+	for _, x := range xs {
+		if keep(x) {
+			q = append(q, x)
+		}
+	}
+	return q
+}
+
+func UseGeneric(xs []int) []int {
+	return Generic(xs, func(x int) bool {
+		return x > 0
+	})
+}
+`
+
 func listLength(v values.Value) int {
 	n := 0
 	tuple, ok := v.(values.Tuple)
@@ -199,5 +373,61 @@ func Max(a, b int) int {
 		}
 		first = false
 		tuple = pair.Cdr().(values.Tuple)
+	}
+}
+
+func TestFindFunction_FuncLiterals(t *testing.T) {
+	dir := t.TempDir()
+	_, prog, pkg := buildSSAPackage(t, dir, funcLitSource)
+
+	tcs := []struct {
+		name       string
+		lookup     string
+		wantBlocks int
+	}{
+		{name: "a/iter-seq2 body literal", lookup: "Spine$1", wantBlocks: 6},
+		{name: "b/literal as call argument", lookup: "FlipScope$1", wantBlocks: 4},
+		{name: "c/nested literal", lookup: "Nested$1$1", wantBlocks: 1},
+		{name: "d/first literal, $N order", lookup: "Two$1", wantBlocks: 1},
+		{name: "d/second literal, $N order", lookup: "Two$2", wantBlocks: 1},
+		{name: "e/literal in a method", lookup: "M$1", wantBlocks: 3},
+		{name: "f/defer literal", lookup: "GoDefer$1", wantBlocks: 1},
+		{name: "f/go literal", lookup: "GoDefer$2", wantBlocks: 1},
+		{name: "g/range-over-func lowered body", lookup: "RangeFunc$1", wantBlocks: 5},
+		{name: "a/qualified form", lookup: "testpkg.Spine$1", wantBlocks: 6},
+		{name: "e/qualified method form", lookup: "(*testpkg.T).M$1", wantBlocks: 3},
+	}
+	for _, tc := range tcs {
+		t.Run(tc.name, func(t *testing.T) {
+			c := qt.New(t)
+			fn := findFunction(prog, pkg, tc.lookup)
+			c.Assert(fn, qt.IsNotNil,
+				qt.Commentf("findFunction(%q) returned nil: the literal is unreachable", tc.lookup))
+			c.Assert(len(fn.Blocks), qt.Equals, tc.wantBlocks,
+				qt.Commentf("block count for %q", tc.lookup))
+		})
+	}
+}
+
+// TestFindFunction_AbsentNames is the regression guard for the obvious wrong
+// way to pass TestFindFunction_FuncLiterals: making the walk return something
+// for any name. errCFGFuncNotFound must still fire for a genuinely absent one.
+func TestFindFunction_AbsentNames(t *testing.T) {
+	dir := t.TempDir()
+	_, prog, pkg := buildSSAPackage(t, dir, funcLitSource)
+
+	for _, name := range []string{
+		"NoSuchFunc",
+		"NoSuchFunc$1",
+		"Spine$2",
+		"Spine$1$1",
+		"testpkg.NoSuchFunc$1",
+		"(*testpkg.T).NoSuchMethod$1",
+		"M$bound",
+	} {
+		t.Run(name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(findFunction(prog, pkg, name), qt.IsNil)
+		})
 	}
 }
