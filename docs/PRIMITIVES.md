@@ -660,8 +660,16 @@ Unrecognized option symbols produce an error.
 ### Parameters
 
 - **pattern** (string): A `go list`-compatible pattern.
-- **func-name** (string): Function name (unqualified). Searches package-level
-  functions and methods on named types.
+- **func-name** (string): Function name (unqualified, or fully qualified as
+  `(*pkg.T).M`). Searches package-level functions, methods on named types, and
+  func literals. A literal is named `parent$N` — 1-based in go/ssa's build
+  order, nesting composes — so `MyFunc$1`, `MyFunc$1$2`, `M$1`, `(*pkg.T).M$1`
+  all resolve. Build order is source order in an ordinary function body, but not
+  in a `for` post statement, a `select`, or a package `init` that aggregates var
+  initializers across files. An unqualified `$N` name is **not** unique: two
+  same-named methods on different types both yield `Same$1`, and which one
+  resolves is unspecified. The `closures` field on a `cfg-block` names the
+  literals that block builds, in the qualified form, which is unique.
 - **cfg** (list): The CFG block list returned by `go-cfg`.
 - **dom-tree** (list): The dominator tree returned by `go-cfg-dominators`.
 - **a**, **b** (integer): Block indices.
@@ -679,7 +687,18 @@ Unrecognized option symbols produce an error.
 | `idom` | integer or `#f` | Immediate dominator index (`#f` for entry block) |
 | `recover` | `#t` | Present only on the recover block |
 | `comment` | string | Block comment (when available) |
+| `closures` | list of strings | Qualified names of the func literals this block builds, in `$N` order (present only when it builds one) |
 | `pos` | string | Position of first instruction (with `'positions` option) |
+
+Every name in a `closures` field is go/ssa's own qualified `parent$N` form
+(`pkg.MyFunc$1`, `(*pkg.T).M$1`), so it feeds straight back into `go-cfg` to get
+that literal's own CFG. The qualified form is used because the short one is not
+unique — see **func-name** above. The union over a function's blocks is exactly
+its direct func literals, once each. Attribution is the constructing block,
+except for a literal that captures nothing: go/ssa emits no instruction for
+those, so one is attributed to the block that first uses it. Bound-method
+wrappers (`return t.M`) are not literals and are never listed; a Go 1.23
+range-over-func body is one, and is.
 
 `go-cfg-dominators` returns a list of `(dom-node ...)`:
 
