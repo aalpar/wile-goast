@@ -284,11 +284,14 @@ func TestPipelineFindDuplicates_EvalSmoke(t *testing.T) {
 }
 
 // find_duplicates surfaces the SSA/AST-verified clone pair from the dupcluster
-// fixture: SumSlice/TotalSlice, both located, tier proven or structural.
+// fixture: SumSlice/TotalSlice, both located. The pair is returned because it
+// clears the similarity floor; that this particular fixture's pair also lands
+// in tier proven or structural is a property of the fixture, asserted below,
+// not the reason it appears.
 func TestFindDuplicates_DupclusterFixture(t *testing.T) {
 	mc := inProcessClient(t)
 	// detail:"full" because this test asserts on the measures sub-object below,
-	// which detail=summary (the version-2 default) drops.
+	// which detail=summary (the default) drops.
 	env := callTool(t, mc, "find_duplicates", map[string]any{
 		"target": dupclusterPkg, "detail": "full"})
 	envelopeOK(t, env, 3.0)
@@ -840,7 +843,7 @@ func TestFindFalseBoundaries_RankStabilityAndPaging(t *testing.T) {
 }
 
 // A glob matching nothing is an empty SUCCESS, not an error -- consistent
-// with an empty find_duplicates result meaning "no duplicates".
+// with an empty find_duplicates result meaning "nothing cleared the floor".
 func TestFindFalseBoundaries_NoMatchIsEmptySuccess(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration test: builds an 89-concept lattice over ./goast")

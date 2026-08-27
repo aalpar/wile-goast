@@ -684,7 +684,8 @@
 ;;
 ;; Runs discovery first and refuses a target over max-candidate-pairs. The
 ;; refusal is an error, not an empty result: result is a list here, so an empty
-;; one already means "no duplicates" and could not carry a refusal unambiguously.
+;; one already means "nothing cleared the floor" and could not carry a refusal
+;; unambiguously.
 (define (pipeline-find-duplicates target opts)
   (let* ((threshold (or (assoc-default opts 'threshold) 0.6))
          (verdict?  (and (assoc-default opts 'verdict) #t))

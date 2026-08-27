@@ -87,22 +87,28 @@ func (ms *mcpServer) registerPhase1Tools(s *server.MCPServer) {
 	)
 	s.AddTool(
 		mcp.NewTool("find_duplicates",
-			mcp.WithDescription("Are functions in this package semantic duplicates? "+
-				"Scans a Go package for duplicate function pairs, verifying "+
-				"equivalence over canonicalized SSA and AST rather than token "+
-				"similarity: answers what grep/dupl and gopls cannot. Returns only "+
-				"the pairs that unify (tier proven or structural), scored and "+
-				"located; pass verdict=true for an opt-in duplicate/likely-duplicate "+
-				"label. Pairs the unifier rejected are counted, not listed, under "+
-				"provenance.tiers. An empty result is a success: no duplicates. "+
+			mcp.WithDescription("Are functions in this package semantic duplicates, "+
+				"and where do near-copies disagree? Scores function pairs over "+
+				"canonicalized SSA and AST rather than token similarity: answers "+
+				"what grep/dupl and gopls cannot. Returns every pair at or above "+
+				"threshold similarity, scored and located, each labelled with its "+
+				"own equiv_tier (proven, structural, or divergent); the tier is "+
+				"reported and tallied under provenance.tiers, it does not filter. "+
+				"Pass verdict=true for an opt-in duplicate/likely-duplicate label. "+
+				"A high-similarity divergent pair is the most valuable row here, "+
+				"not a rejected one: its structural diffs are the points where two "+
+				"implementations of one algorithm disagree, which is where latent "+
+				"bugs sit. An empty result means nothing cleared the floor. "+
 				"Refuses a target yielding over 25000 candidate pairs in about a "+
 				"second rather than scoring it: narrow a '/...' tree to one package."),
 			mcp.WithString("target", mcp.Required(),
 				mcp.Description("Go package pattern (e.g., 'my/pkg/...')")),
 			mcp.WithNumber("threshold",
-				mcp.Description("Similarity/unifiability threshold (default 0.6). Sets each "+
-					"pair's equivalence tier, and so selects what is returned: lower it "+
-					"to admit looser pairs, raise it to admit only near-identical ones.")),
+				mcp.Description("Floor on effective similarity (default 0.6), in the units "+
+					"each row reports, and the only thing selecting what is returned: "+
+					"lower it to admit looser pairs, raise it to admit only "+
+					"near-identical ones. It also sets each pair's equivalence tier, but "+
+					"the tier is a label on the row, not a second filter.")),
 			mcp.WithBoolean("verdict",
 				mcp.Description("Attach the opt-in categorical verdict "+
 					"(duplicate/likely-duplicate/distinct) per candidate (default false)")),
