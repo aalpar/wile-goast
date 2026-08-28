@@ -1,5 +1,55 @@
 # Changelog
 
+## v0.5.343 — a closure's CFG is reachable, and visible
+
+`go-cfg` returned a well-formed wrong answer for any function containing a
+func literal, and nothing distinguished it from a correct one. go/ssa hoists
+each literal into the enclosing `Function.AnonFuncs`, which `findFunction`
+never searched, so a closure's CFG was unreachable under any name while the
+enclosing function's graph silently omitted its blocks. Measured against
+`tools/cmd/cxmeasure` on `wile/pkg/syntax`, `syntax.Spine`, whose whole body
+is `return func(yield ...)`, read cyclomatic 1 against an oracle of 7.
+
+Two changes. `findFunction` walks `AnonFuncs` recursively on the miss path,
+in both the short and the qualified form, so `Spine$1`, `Nested$1$1`, `M$1`
+and `(*pkg.T).M$1` all resolve; the walk covers package members *and* method
+sets, because a literal inside a method is not reachable from `Members` at
+all. And a block that builds a literal now carries
+`(closures "pkg.Name$1" ...)`, so one walk over the blocks finds every
+literal and each name feeds straight back into `go-cfg`. A block that builds
+nothing is unchanged, field and all.
+
+Three decisions from the plan were overturned by measurement:
+
+- The enumeration starts at `fn.AnonFuncs`, not at `MakeClosure`
+  instructions. go/ssa emits a `MakeClosure` only for a literal that
+  *captures* something; one that captures nothing is emitted as no
+  instruction at all and appears only as an `*ssa.Function` operand where it
+  is used. A `MakeClosure` scan drops every one of those silently, which is
+  the omission the field exists to end.
+- Synthetic targets are settled structurally rather than by a `Synthetic`
+  string test. Only an `AnonFuncs` entry can be listed, which excludes
+  `M$bound` (no parent, and unresolvable by `findFunction` anyway) and keeps
+  the Go 1.23 range-over-func body, which is synthetic yet is an ordinary
+  `AnonFuncs` entry holding the user's loop body.
+- The field carries the qualified name from `String()`, not `Name()`. A
+  short `parent$N` name is built from the enclosing function's short name,
+  so it is not unique within a package: five distinct literals in
+  `wile/pkg/values` are all `schemeStringWithVisited$1`, and twelve runs of
+  `go-cfg` on that name returned the 4-block one three times and a 1-block
+  one nine times, with no error and no marker. `String()` round-tripped 236
+  of 236 literals across `net/http`, `go/types` and `x/tools/go/ssa`;
+  `Name()` failed 9.
+
+The `LIMITATION` in `docs/PRIMITIVES.md` shrinks to the half of it that is
+still true: one CFG per function. A literal's blocks are not merged into the
+enclosing function's, because block indices are per-function and preds/succs
+index into one block list, so a derived metric still measures one function
+at a time. The summing recipe is spelled out because it is not addition:
+each CFG contributes its own +1, so a whole-source-function cyclomatic count
+is the sum less 1 per extra function. The docs also record that `parent$N`
+is go/ssa's build order, not source order.
+
 ## v0.5.342 — `find_duplicates` describes the filter it actually has
 
 v0.5.340 made `threshold` a floor on similarity and stopped gating on
@@ -441,7 +491,8 @@ Bug fixes:
 - CFG and dominators (`go-cfg`, `go-cfg-dominators`, `go-cfg-paths`)
 - Lint framework (`go-analyze`, ~25 built-in analyzers)
 
-[Unreleased]: https://github.com/aalpar/wile-goast/compare/v0.5.342...HEAD
+[Unreleased]: https://github.com/aalpar/wile-goast/compare/v0.5.343...HEAD
+[0.5.343]: https://github.com/aalpar/wile-goast/compare/v0.5.342...v0.5.343
 [0.5.342]: https://github.com/aalpar/wile-goast/compare/v0.5.341...v0.5.342
 [0.5.341]: https://github.com/aalpar/wile-goast/compare/v0.5.340...v0.5.341
 [0.5.340]: https://github.com/aalpar/wile-goast/compare/v0.5.111...v0.5.340
