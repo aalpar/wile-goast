@@ -291,20 +291,12 @@
                               (set-cdr! e (+ (cdr e) 1))
                               (set! visit-counts
                                 (cons (cons idx 1) visit-counts))))))
-         ;; Widen a single interval: push growing bounds to infinity.
-         (widen-interval
-           (lambda (old new)
-             (cond ((eq? old 'interval-bot) new)
-                   ((eq? new 'interval-bot) old)
-                   (else
-                     (cons (if (inf<= (car new) (car old)) (car new) 'neg-inf)
-                           (if (inf<= (cdr old) (cdr new)) (cdr new) 'pos-inf))))))
          ;; Widen an entire map-lattice state: pointwise on each key.
          (widen-state
            (lambda (old-st new-st)
              (map (lambda (old-entry new-entry)
                     (cons (car new-entry)
-                          (widen-interval (cdr old-entry) (cdr new-entry))))
+                          (interval-widen (cdr old-entry) (cdr new-entry))))
                   old-st new-st)))
          (transfer
            (lambda (block state)
@@ -377,4 +369,8 @@
                (if (> visits threshold)
                    (widen-state state raw-result)
                    raw-result)))))
-    (run-analysis 'forward lat transfer ssa-fn (ssa-cfg-protocol))))
+    ;; Widen at loop headers as well. The transfer's threshold widening
+    ;; compares a block's in-state with its own out-state; the solver's
+    ;; widening point is the back-edge join, where the ascending chain forms.
+    (run-analysis 'forward lat transfer ssa-fn (ssa-cfg-protocol)
+                  (widen widen-state))))
