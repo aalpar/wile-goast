@@ -1348,8 +1348,9 @@ func TestDataflowMonotonicityViolation(t *testing.T) {
 		;; '() -- a genuine shrink versus the prior out, i.e. the violation.
 		;; A predecessor-less entry (the real HandleSafeA CFG used above) or
 		;; a bottom initial state each independently prevent this: the former
-		;; never re-enqueues anything, the latter never produces a non-bottom
-		;; out to shrink away from.
+		;; is never re-enqueued (its successors are, but only the entry's out
+		;; is non-bottom, so no other block has anything to shrink from), the
+		;; latter never produces a non-bottom out to shrink away from.
 		(define self-loop-proto
 		  (make-cfg-protocol
 		    (lambda (ignored-fn) (list 0))
