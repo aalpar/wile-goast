@@ -1757,19 +1757,25 @@ func TestDomainsIntervalAnalysis(t *testing.T) {
 		qt.New(t).Assert(result.SchemeString(), qt.Equals, "#t")
 	})
 
-	t.Run("analysis terminates on LoopSum with widening", func(t *testing.T) {
-		result := eval(t, engine, `
-			(let ((r (make-interval-analysis fn-loop)))
-			  (> (length r) 0))`)
-		qt.New(t).Assert(result.SchemeString(), qt.Equals, "#t")
-	})
-
-	t.Run("custom widening threshold", func(t *testing.T) {
-		result := eval(t, engine, `
-			(let ((r (make-interval-analysis fn-loop 2)))
-			  (> (length r) 0))`)
-		qt.New(t).Assert(result.SchemeString(), qt.Equals, "#t")
-	})
+	// Block 1 is LoopSum's loop header. t0 (sum) and t1 (i) are its phis and
+	// t4 is i+1. A length check alone passed while every state was bottom.
+	for _, tc := range []struct {
+		name string
+		call string
+	}{
+		{"analysis terminates on LoopSum with widening", "(make-interval-analysis fn-loop)"},
+		{"widening threshold 1", "(make-interval-analysis fn-loop 1)"},
+		{"widening threshold 3", "(make-interval-analysis fn-loop 3)"},
+		{"widening threshold 10", "(make-interval-analysis fn-loop 10)"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			result := eval(t, engine, `
+				(let ((in (analysis-in `+tc.call+` 1)))
+				  (map (lambda (n) (cdr (assoc n in))) '("t0" "t1" "t4")))`)
+			qt.New(t).Assert(result.SchemeString(), qt.Equals,
+				"((0 . pos-inf) (0 . pos-inf) (1 . pos-inf))")
+		})
+	}
 }
 
 func TestAggregateBeliefEvaluation(t *testing.T) {
