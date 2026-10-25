@@ -1102,7 +1102,7 @@ func TestDataflowRunAnalysisForwardSingleBlock(t *testing.T) {
 	engine := newBeliefEngine(t)
 
 	eval(t, engine, `
-		(import (wile algebra))
+		(import (except (wile algebra) make-context))
 		(import (wile goast dataflow))
 		(import (wile goast belief))
 

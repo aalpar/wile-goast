@@ -14,7 +14,7 @@
 
 (define-library (wile goast split)
   (import (wile goast utils)
-          (wile goast fca)
+          (except (wile goast fca) make-context)
           (wile goast belief)
           (wile goast provenance))
   (export

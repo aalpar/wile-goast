@@ -44,7 +44,7 @@
   (import
     (wile goast)
     (wile goast ssa)
-    (wile goast belief)
+    (except (wile goast belief) make-context)   ; fca's make-context
     (wile goast split)
     (wile goast fca)
     (wile goast fca-algebra)

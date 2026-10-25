@@ -16,5 +16,8 @@
   (export taint-flows
           taint-from-names taint-from-pattern
           taint-default-sources taint-default-sinks taint-default-sanitizers)
-  (import (scheme base) (srfi 1) (wile goast ifds) (wile goast utils))
+  (import (scheme base)
+          (except (srfi 1) filter filter-map take drop)   ; utils' own
+          (wile goast ifds)
+          (wile goast utils))
   (include "taint.scm"))
