@@ -91,11 +91,11 @@ func reachableShortNames(g *callgraph.Graph, rootShort string) []string {
 }
 
 func shortName(qualified string) string {
-	i := strings.LastIndex(qualified, ".")
-	if i < 0 {
+	_, name, ok := strings.CutLast(qualified, ".")
+	if !ok {
 		return qualified
 	}
-	return qualified[i+1:]
+	return name
 }
 
 // TestPreciseCallgraph_ConstantIndexSlice is the core-win test: a constant
