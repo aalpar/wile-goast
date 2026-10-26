@@ -1,5 +1,33 @@
 # Changelog
 
+## v0.5.344 — interval analysis terminates on loops; wile v1.21.0
+
+`make-interval-analysis` never bounded a loop. Its local `widen-interval` had
+both bounds the wrong way round, keeping a bound that was growing and sending
+a stable one to infinity, and `run-analysis` was given no widening operator, so
+the back-edge join at a loop header was never widened either. Against wile
+v1.21.0, where a first visit always propagates, `LoopSum`'s header ascended
+until `run-analysis`'s 100000-revisit cap, about 32 s per subtest. Against
+v1.20.0 the tests passed only because every state stayed at bottom.
+
+`widen-state` now applies the library's `interval-widen` pointwise, and
+`run-analysis` receives `(widen widen-state)`. `TestDomainsIntervalAnalysis`
+pins `LoopSum`'s loop-header phis (sum and i at `[0, +inf)`, i+1 at
+`[1, +inf)`) at four thresholds, where it used to assert only a non-empty
+result.
+
+wile v1.21.0 refuses an import of a name already bound to a different binding
+(R7RS §5.2), where v1.20.0 let the later import win. Three libraries relied on
+that: `split` (FCA's and belief's `make-context`), `pipelines` (the same pair,
+the other way round) and `taint` (`(srfi 1)` against utils' `filter`,
+`filter-map`, `take`, `drop`). Each now excepts the side it was not using, so
+none changes behavior. A script of your own that imports both
+`(wile goast belief)` and `(wile goast fca)` now fails to load until it
+excepts one `make-context`.
+
+golang.org/x/tools moves to v0.52.0: v0.47.0 cannot read the export data
+go1.27.3 writes (version 5), which failed every package load in 17 tests.
+
 ## v0.5.343 — a closure's CFG is reachable, and visible
 
 `go-cfg` returned a well-formed wrong answer for any function containing a
@@ -491,7 +519,8 @@ Bug fixes:
 - CFG and dominators (`go-cfg`, `go-cfg-dominators`, `go-cfg-paths`)
 - Lint framework (`go-analyze`, ~25 built-in analyzers)
 
-[Unreleased]: https://github.com/aalpar/wile-goast/compare/v0.5.343...HEAD
+[Unreleased]: https://github.com/aalpar/wile-goast/compare/v0.5.344...HEAD
+[0.5.344]: https://github.com/aalpar/wile-goast/compare/v0.5.343...v0.5.344
 [0.5.343]: https://github.com/aalpar/wile-goast/compare/v0.5.342...v0.5.343
 [0.5.342]: https://github.com/aalpar/wile-goast/compare/v0.5.341...v0.5.342
 [0.5.341]: https://github.com/aalpar/wile-goast/compare/v0.5.340...v0.5.341
