@@ -165,7 +165,6 @@ inlining (Track 2) earns its cost.
 - [ ] Pick target: `wile-goast` itself (~300 funcs), single package or whole repo?
 - [ ] Hand-label 15–20 function pairs believed to be duplicates / near-duplicates
 - [ ] Classify each pair: structural / algebraic / semantic (same intent, different impl)
-- [ ] Save as `plans/2026-04-18-dup-detect-corpus.md` (or similar)
 
 ### D2. Minimal detector prototype
 
