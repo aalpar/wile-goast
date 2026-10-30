@@ -59,6 +59,7 @@
     (only (wile goast dup-detect)
           candidate->verdict
           duplicate-candidate-concepts function-ref-context
-          candidate-pairs func-refs->positions score-candidate-pairs)
+          candidate-pairs func-refs->positions score-candidate-pairs
+          build-func-ref-index)
     (only (wile goast provenance) finding-value finding-where finding-score))
   (include "pipelines.scm"))

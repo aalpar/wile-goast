@@ -20,15 +20,15 @@
 ;;; located finding whose why is the shared ref intent. Composes the split.scm
 ;;; clustering chain (objects are function names) with fca + provenance.
 
-;; func-refs->positions: name->position hashtable from go-func-refs output (now
-;; carrying 'pos). The field-index->positions twin; keys are func-ref names,
+;; func-refs->positions: qname->position hashtable from go-func-refs output (now
+;; carrying 'pos). The field-index->positions twin; keys are func-ref qnames,
 ;; identical to the FCA context objects, so the join is exact-match. Functions
 ;; without a 'pos (synthetic/positionless) are skipped — unlocated when looked up.
 (define (func-refs->positions func-refs)
   (let ((h (make-equal-hashtable)))
     (for-each
       (lambda (fr)
-        (let ((name (nf fr 'name))
+        (let ((name (nf fr 'qname))
               (pos  (nf fr 'pos)))
           (if (and (string? name) (string? pos))
             (hashtable-set! h name pos))))
@@ -37,11 +37,21 @@
 
 ;; function-ref-context: function×external-ref FCA context, IDF-filtered. Reuses
 ;; the split.scm chain verbatim — the same machinery split applies at package
-;; granularity, here for dedup clustering. Objects = function names; attributes =
-;; informative external package paths. THRESHOLD defaults to 0.36 (split's).
+;; granularity, here for dedup clustering. Objects = function qnames, NOT bare
+;; names: a bare name is unique only within one package, and FCA merges equal
+;; objects, so a.Parse and b.Parse would become one object with the union of
+;; their refs and could never pair. Attributes = informative external package
+;; paths. THRESHOLD defaults to 0.36 (split's).
+;;
+;; `init' funcs are left out. Every one in a package has the qname "pkg.init"
+;; (only SSA numbers them), so they would merge into one object and resolve to
+;; one AST body; and an init cannot be called, so a duplicate pair of them is
+;; not a unification candidate anyway.
 (define (function-ref-context func-refs . opts)
   (let* ((threshold (if (pair? opts) (car opts) 0.36))
-         (sigs      (import-signatures func-refs))
+         (sigs      (import-signatures
+                      (filter (lambda (fr) (not (equal? (nf fr 'name) "init")))
+                              func-refs)))
          (idf       (compute-idf sigs))
          (filtered  (filter-noise sigs idf threshold)))
     (build-package-context filtered)))
@@ -94,13 +104,16 @@
 
 ;;; ── Slice 5b: structural measure surface ──────────────────
 
-;; short-name: the trailing component of a qualified name — the cross-layer join
-;; key. Collapses every name form to the func/method short name:
+;; short-name: the trailing component of a qualified name. Collapses every name
+;; form to the func/method short name:
 ;;   "pkg.EncodeA" -> "EncodeA", "(*pkg.Cache).Update" -> "Update",
 ;;   "Cache.Update" -> "Update", "EncodeA" -> "EncodeA".
 ;; The (wile goast belief) ssa-short-name twin (not exported there); duplicated
-;; here to avoid depending on belief internals. LIMITATION: two methods sharing a
-;; short name across receiver types collide (rare); the index keeps the last.
+;; here to avoid depending on belief internals. NOT a join key: it collides
+;; across receivers and packages (every String method, every Parse), and an
+;; index keyed by it scores a function against itself. The indexes below key on
+;; the qualified name, which the typed AST, the SSA and go-func-refs' 'qname
+;; share.
 (define (short-name full-name)
   (let ((len (string-length full-name)))
     (let loop ((i (- len 1)))
@@ -131,13 +144,16 @@
       (if (pair? pkgs) pkgs '()))
     (reverse acc)))
 
-;; build-func-ast-index / build-func-ssa-index: short-name -> node hashtables.
+;; build-func-ast-index / build-func-ssa-index: qualified-name -> node
+;; hashtables. Generic functions are AST-only (go-ssa-build omits them).
+;; Known collision: several `init' funcs in one package share "pkg.init"; the
+;; index keeps the last.
 (define (build-func-ast-index pkgs)
   (let ((h (make-equal-hashtable)))
     (for-each
       (lambda (fd)
         (let ((nm (nf fd 'name)))
-          (if (string? nm) (hashtable-set! h (short-name nm) fd))))
+          (if (string? nm) (hashtable-set! h nm fd))))
       (package-func-decls pkgs))
     h))
 
@@ -146,11 +162,11 @@
     (for-each
       (lambda (fn)
         (let ((nm (nf fn 'name)))
-          (if (string? nm) (hashtable-set! h (short-name nm) fn))))
+          (if (string? nm) (hashtable-set! h nm fn))))
       (if (pair? ssa-funcs) ssa-funcs '()))
     h))
 
-;; build-func-canon-index: short-name -> *canonicalized* SSA func, computed once
+;; build-func-canon-index: qualified-name -> *canonicalized* SSA func, computed once
 ;; per function instead of once per candidate pair. Two reasons this is hoisted
 ;; out of score-candidate-pair:
 ;;   1. Redundancy. A function in a candidate concept of extent k participates in
@@ -175,7 +191,7 @@
         (let ((nm (nf fn 'name)))
           (if (string? nm)
               (let ((c (guard (e (#t #f)) (go-ssa-canonicalize fn))))
-                (if c (hashtable-set! h (short-name nm) c))))))
+                (if c (hashtable-set! h nm c))))))
       (if (pair? ssa-funcs) ssa-funcs '()))
     h))
 
@@ -230,7 +246,7 @@
     (creates-cycle? . down))) ;; #f < #t, and #t is the bad end
 
 ;; score-candidate-pair: benefit measures + equivalence tier for a candidate pair
-;; (joined to AST/SSA via short-name). Returns an alist or #f when the AST nodes
+;; of qualified names (joined to AST/SSA by exact name). Returns an alist or #f when the AST nodes
 ;; cannot be resolved. Tier (prior-art pattern, NOT binop ssa-equivalent?):
 ;;   proven     = unifiable? over canonicalized SSA
 ;;   structural = unifiable? over AST (but not SSA-proven)
@@ -238,8 +254,8 @@
 ;; benefit = shared AST node count; type-params/value-params from score-diffs;
 ;; similarity = effective similarity (the per-pair confidence).
 (define (score-candidate-pair name-a name-b ast-index canon-index threshold)
-  (let ((ast-a (hashtable-ref ast-index (short-name name-a) #f))
-        (ast-b (hashtable-ref ast-index (short-name name-b) #f)))
+  (let ((ast-a (hashtable-ref ast-index name-a #f))
+        (ast-b (hashtable-ref ast-index name-b #f)))
     (if (not (and ast-a ast-b)) #f
       (let* ((ar      (ast-diff ast-a ast-b))
              (shared  (diff-result-shared ar))
@@ -254,8 +270,8 @@
              ;; so canonicalization is not repeated per pair. A miss (#f) means the
              ;; function was unresolvable or failed to canonicalize; the SSA tier
              ;; falls back to AST rather than erroring.
-             (ssa-a   (hashtable-ref canon-index (short-name name-a) #f))
-             (ssa-b   (hashtable-ref canon-index (short-name name-b) #f))
+             (ssa-a   (hashtable-ref canon-index name-a #f))
+             (ssa-b   (hashtable-ref canon-index name-b #f))
              (ssa-unif
                (and ssa-a ssa-b
                     (unifiable? (ssa-diff ssa-a ssa-b) threshold)))
@@ -297,15 +313,31 @@
                (cons 'measures m)
                (cons 'findings (pair-findings a b m pos-index))))))
 
-;; candidate-pairs: all within-concept pairs across CONCEPTS, flattened. The
-;; concept grouping does not survive into the (flat) output, so flattening up
-;; front yields a single work list to map over.
+;; candidate-pairs: all within-concept pairs across CONCEPTS, flattened and
+;; deduplicated. A pair in a concept's extent is also in every super-concept's,
+;; so without the dedup one pair was scored, counted and reported once per
+;; concept containing it. First occurrence wins and order is otherwise kept;
+;; (a . b) and (b . a) are the same pair.
 (define (candidate-pairs concepts)
-  (apply append (map (lambda (c) (all-pairs (concept-extent c))) concepts)))
+  (let ((seen (make-equal-hashtable)))
+    (let loop ((cs concepts) (acc '()))
+      (if (null? cs)
+        (reverse acc)
+        (loop (cdr cs)
+              (let inner ((prs (all-pairs (concept-extent (car cs)))) (acc acc))
+                (if (null? prs)
+                  acc
+                  (let* ((a (car (car prs))) (b (cdr (car prs)))
+                         (key (if (string<? a b) (cons a b) (cons b a))))
+                    (if (hashtable-ref seen key #f)
+                      (inner (cdr prs) acc)
+                      (begin
+                        (hashtable-set! seen key #t)
+                        (inner (cdr prs) (cons (car prs) acc))))))))))))
 
 ;; scored-candidates: score a flat PAIRS work list into scored candidate
 ;; entries ((pair . (a b)) (measures . M) (findings . (finding-a finding-b))).
-;; Pairs whose AST nodes cannot be resolved (short-name miss) are dropped.
+;; Pairs whose AST nodes cannot be resolved (name miss) are dropped.
 ;;
 ;; Takes the pairs rather than the concepts so a caller can size or prune the
 ;; work list before paying for it; candidate-pairs flattens concepts into that
@@ -315,15 +347,15 @@
                 (score-pair-entry pr ast-index canon-index pos-index threshold))
               pairs))
 
-;; pair-short-names: the short names appearing anywhere in PAIRS, as a set.
-;; These are the only keys score-candidate-pair will ever look up, so
-;; canonicalizing anything else is wasted work -- and skipping it is what makes
-;; a narrowly scoped scan genuinely CHEAP rather than merely small.
-(define (pair-short-names pairs)
+;; pair-names: the names appearing anywhere in PAIRS, as a set. These are the
+;; only keys score-candidate-pair will ever look up, so canonicalizing anything
+;; else is wasted work -- and skipping it is what makes a narrowly scoped scan
+;; genuinely CHEAP rather than merely small.
+(define (pair-names pairs)
   (let ((h (make-equal-hashtable)))
     (for-each (lambda (pr)
-                (hashtable-set! h (short-name (car pr)) #t)
-                (hashtable-set! h (short-name (cdr pr)) #t))
+                (hashtable-set! h (car pr) #t)
+                (hashtable-set! h (cdr pr) #t))
               pairs)
     h))
 
@@ -335,12 +367,10 @@
 ;; discovery twice.
 ;;
 ;; The canon index covers only the functions PAIRS actually names. This is
-;; result-preserving: score-candidate-pair reads canon-index by short name and
-;; only for names in PAIRS, and filtering by short-name membership keeps
-;; colliding short names together (both survive or neither), so
-;; build-func-canon-index's last-wins order over a collision is unchanged.
+;; result-preserving: score-candidate-pair reads canon-index by name and only
+;; for names in PAIRS.
 (define (score-candidate-pairs session refs pairs threshold)
-  (let* ((needed (pair-short-names pairs))
+  (let* ((needed (pair-names pairs))
          (pos-index (func-refs->positions refs))
          (ast-index (build-func-ast-index (go-typecheck-package session)))
          (canon-index
@@ -348,7 +378,7 @@
              (filter (lambda (fn)
                        (let ((nm (nf fn 'name)))
                          (and (string? nm)
-                              (hashtable-ref needed (short-name nm) #f))))
+                              (hashtable-ref needed nm #f))))
                      (let ((fs (go-ssa-build session))) (if (pair? fs) fs '()))))))
     (scored-candidates pairs ast-index canon-index pos-index threshold)))
 
@@ -398,21 +428,34 @@
       (filter-map (lambda (e) (nf e 'callee)) edges)
       '())))
 
+;; cg-name-matches?: does call-graph node NODE-NAME (always qualified) name
+;; NAME? A qualified NAME (contains `.' or `(') must match exactly; a bare NAME
+;; matches any node with that short name. The rule go-callgraph-callers and
+;; -callees apply to their name argument (goastcg cgNameMatches), so a name
+;; reaches? accepts as FROM it also accepts as TO.
+(define (cg-name-matches? node-name name)
+  (if (let loop ((i 0))
+        (and (< i (string-length name))
+             (or (memv (string-ref name i) '(#\. #\())
+                 (loop (+ i 1)))))
+    (string=? node-name name)
+    (string=? (short-name node-name) name)))
+
 ;; reaches?: does FROM transitively call TO? BFS over callees (there is no
-;; go-callgraph-reachable primitive). Candidates are short names; callee names
-;; are qualified, so compare via short-name. `seen' (short names) bounds cycles.
+;; go-callgraph-reachable primitive). Candidates carry qualified names, so the
+;; match is exact; a bare name still works, matching every function so named.
+;; `seen' (callee names, all qualified) bounds cycles.
 (define (reaches? cg from to)
-  (let ((target (short-name to)))
-    (let loop ((frontier (list from)) (seen '()))
-      (if (null? frontier) #f
-        (let ((n (car frontier)))
-          (if (member (short-name n) seen)
-            (loop (cdr frontier) seen)
-            (let ((callees (callees-of cg n)))
-              (if (member target (map short-name callees))
-                #t
-                (loop (append (cdr frontier) callees)
-                      (cons (short-name n) seen))))))))))
+  (let loop ((frontier (list from)) (seen '()))
+    (if (null? frontier) #f
+      (let ((n (car frontier)))
+        (if (member n seen)
+          (loop (cdr frontier) seen)
+          (let ((callees (callees-of cg n)))
+            (if (pair? (filter (lambda (c) (cg-name-matches? c to)) callees))
+              #t
+              (loop (append (cdr frontier) callees)
+                    (cons n seen)))))))))
 
 ;; cand-creates-cycle?: merging two functions on a call path collapses it into a
 ;; self-cycle. The merge-side analog of verify-acyclic.
@@ -432,12 +475,13 @@
         (uni   (length (unique (append a b)))))
     (if (= uni 0) 0 (/ inter uni))))
 
-;; build-func-ref-index: name -> func-ref entry (for pkg + ref-set lookup).
+;; build-func-ref-index: qname -> func-ref entry (for name, pkg + ref-set
+;; lookup). Keyed like the FCA objects, so candidate pairs look up directly.
 (define (build-func-ref-index func-refs)
   (let ((h (make-equal-hashtable)))
     (for-each
       (lambda (fr)
-        (let ((n (nf fr 'name)))
+        (let ((n (nf fr 'qname)))
           (if (string? n) (hashtable-set! h n fr))))
       (if (pair? func-refs) func-refs '()))
     h))
@@ -476,19 +520,16 @@
          (canon-index (build-func-canon-index (go-ssa-build s)))
          (fr-index  (build-func-ref-index refs))
          (cg        (go-callgraph s 'static)))
-    (apply append
-      (map (lambda (concept)
-             (filter-map
-               (lambda (pr)
-                 (let* ((a (car pr)) (b (cdr pr))
-                        (bm (score-candidate-pair a b ast-index canon-index threshold)))
-                   (and bm
-                        (let ((m (append bm
-                                   (list (cons 'new-edges (cand-new-edges a b cg))
-                                         (cons 'creates-cycle? (cand-creates-cycle? a b cg))
-                                         (cons 'locality (cand-locality a b fr-index cg))))))
-                          (list (cons 'pair (list a b))
-                                (cons 'measures m)
-                                (cons 'findings (pair-findings a b m pos-index)))))))
-               (all-pairs (concept-extent concept))))
-           concepts))))
+    (filter-map
+      (lambda (pr)
+        (let* ((a (car pr)) (b (cdr pr))
+               (bm (score-candidate-pair a b ast-index canon-index threshold)))
+          (and bm
+               (let ((m (append bm
+                          (list (cons 'new-edges (cand-new-edges a b cg))
+                                (cons 'creates-cycle? (cand-creates-cycle? a b cg))
+                                (cons 'locality (cand-locality a b fr-index cg))))))
+                 (list (cons 'pair (list a b))
+                       (cons 'measures m)
+                       (cons 'findings (pair-findings a b m pos-index)))))))
+      (candidate-pairs concepts))))

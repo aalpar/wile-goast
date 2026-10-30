@@ -222,7 +222,7 @@ func TestRecommendSplit_Phase1Fixture(t *testing.T) {
 		"target":        phase1Pkg,
 		"idf_threshold": 0.5,
 	})
-	envelopeOK(t, env, 1.0)
+	envelopeOK(t, env, 2.0)
 
 	result := env["result"].(map[string]any)
 	qt.Assert(t, result["confidence"], qt.Equals, "NONE")
@@ -294,7 +294,7 @@ func TestFindDuplicates_DupclusterFixture(t *testing.T) {
 	// which detail=summary (the default) drops.
 	env := callTool(t, mc, "find_duplicates", map[string]any{
 		"target": dupclusterPkg, "detail": "full"})
-	envelopeOK(t, env, 3.0)
+	envelopeOK(t, env, 4.0)
 
 	prov := env["provenance"].(map[string]any)
 	qt.Assert(t, prov["verdict_included"], qt.Equals, false)
@@ -350,7 +350,7 @@ func TestFindDuplicates_VerdictOptIn(t *testing.T) {
 		"target":  dupclusterPkg,
 		"verdict": true,
 	})
-	envelopeOK(t, env, 3.0)
+	envelopeOK(t, env, 4.0)
 
 	prov := env["provenance"].(map[string]any)
 	qt.Assert(t, prov["verdict_included"], qt.Equals, true)
@@ -432,7 +432,7 @@ const nodupsPkg = "github.com/aalpar/wile-goast/cmd/wile-goast/testdata/nodups"
 func TestFindDuplicates_EmptySuccess(t *testing.T) {
 	mc := inProcessClient(t)
 	env := callTool(t, mc, "find_duplicates", map[string]any{"target": nodupsPkg})
-	envelopeOK(t, env, 3.0)
+	envelopeOK(t, env, 4.0)
 	prov := env["provenance"].(map[string]any)
 	qt.Assert(t, prov["total_count"], qt.Equals, float64(0))
 	qt.Assert(t, env["result"], qt.DeepEquals, []any{})
@@ -474,10 +474,10 @@ func TestPhase1ToolsRegistered(t *testing.T) {
 	}
 }
 
-// wholeTreePkg yields 58551 candidate pairs, comfortably over the scoring
+// wholeTreePkg yields 36474 candidate pairs, comfortably over the scoring
 // budget, so it exercises the guard on real (not fixture) input. Note the
 // budget is NOT exceeded by any single package here: goast, the largest,
-// yields 20404 and is answered rather than refused.
+// yields 16011 and is answered rather than refused.
 const wholeTreePkg = "github.com/aalpar/wile-goast/..."
 
 // find_duplicates must refuse a target past the scoring budget before paying
@@ -505,21 +505,21 @@ func TestFindDuplicates_PairCountGuard(t *testing.T) {
 	}
 }
 
-// goastssaPkg yields 13941 candidate pairs: over the old 9992 projection
-// ceiling, under the 25000 scoring budget. It is the regression pin for the
+// goastPkg (16011 candidate pairs) is over the old 9992 projection ceiling
+// and under the 25000 scoring budget. It is the regression pin for the
 // ceiling having been lifted rather than merely raised — a real package the
-// tool used to refuse and now answers.
-const goastssaPkg = "github.com/aalpar/wile-goast/goastssa/..."
+// tool used to refuse and now answers. (goastssa served until candidate-pairs
+// was deduplicated, which took it from 13941 pairs to 4457.)
 
 // A target between the old ceiling and the current budget must be answered,
 // not refused, and every returned pair must clear the similarity floor.
 func TestFindDuplicates_AnswersPastOldCeiling(t *testing.T) {
 	if testing.Short() {
-		t.Skip("integration test: scores 13941 pairs, ~50s")
+		t.Skip("integration test: scores 16011 pairs, ~50s")
 	}
 	mc := inProcessClient(t)
-	env := callTool(t, mc, "find_duplicates", map[string]any{"target": goastssaPkg})
-	envelopeOK(t, env, 3.0)
+	env := callTool(t, mc, "find_duplicates", map[string]any{"target": goastPkg})
+	envelopeOK(t, env, 4.0)
 
 	prov := env["provenance"].(map[string]any)
 	qt.Assert(t, prov["scored_pair_count"].(float64) > 9992, qt.IsTrue,
@@ -571,7 +571,7 @@ const goastcfgDupsPkg = "github.com/aalpar/wile-goast/goastcfg"
 func TestFindDuplicates_DivergentPairsAreReturnedAndLabelled(t *testing.T) {
 	mc := inProcessClient(t)
 	env := callTool(t, mc, "find_duplicates", map[string]any{"target": goastcfgDupsPkg})
-	envelopeOK(t, env, 3.0)
+	envelopeOK(t, env, 4.0)
 
 	prov := env["provenance"].(map[string]any)
 	tiers := prov["tiers"].(map[string]any)
@@ -604,7 +604,7 @@ func TestFindDuplicates_ThresholdIsASimilarityFloor(t *testing.T) {
 	mc := inProcessClient(t)
 	env := callTool(t, mc, "find_duplicates",
 		map[string]any{"target": goastcfgDupsPkg, "threshold": 0.999})
-	envelopeOK(t, env, 3.0)
+	envelopeOK(t, env, 4.0)
 
 	prov := env["provenance"].(map[string]any)
 	qt.Assert(t, prov["total_count"], qt.Equals, float64(0))
@@ -618,7 +618,7 @@ func TestFindDuplicates_ThresholdIsASimilarityFloor(t *testing.T) {
 func TestFindDuplicates_GuardAllowsSmallTarget(t *testing.T) {
 	mc := inProcessClient(t)
 	env := callTool(t, mc, "find_duplicates", map[string]any{"target": dupclusterPkg})
-	envelopeOK(t, env, 3.0)
+	envelopeOK(t, env, 4.0)
 	qt.Assert(t, len(env["result"].([]any)) > 0, qt.IsTrue)
 }
 
@@ -653,7 +653,7 @@ func containsFloat64(v any) bool {
 func TestRecommendSplit_RealPackageBigFloatIDF(t *testing.T) {
 	mc := inProcessClient(t)
 	env := callTool(t, mc, "recommend_split", map[string]any{"target": goastcfgPkg})
-	envelopeOK(t, env, 1.0)
+	envelopeOK(t, env, 2.0)
 
 	result := env["result"]
 	qt.Assert(t, result, qt.Not(qt.IsNil))
@@ -905,14 +905,14 @@ func TestFindDuplicates_ScopeIsAPrune(t *testing.T) {
 	mc := inProcessClient(t)
 
 	all := callTool(t, mc, "find_duplicates", map[string]any{"target": dupclusterPkg})
-	envelopeOK(t, all, 3.0)
+	envelopeOK(t, all, 4.0)
 	allProv := all["provenance"].(map[string]any)
 
 	scoped := callTool(t, mc, "find_duplicates", map[string]any{
 		"target": dupclusterPkg,
 		"symbol": "*SumSlice*",
 	})
-	envelopeOK(t, scoped, 3.0)
+	envelopeOK(t, scoped, 4.0)
 	prov := scoped["provenance"].(map[string]any)
 
 	// Fewer pairs reach the scorer, and the count is taken AFTER the prune.
@@ -963,7 +963,7 @@ func TestFindDuplicates_ScopeByFile(t *testing.T) {
 		"target": dupclusterPkg,
 		"scope":  "clones.go",
 	})
-	envelopeOK(t, env, 3.0)
+	envelopeOK(t, env, 4.0)
 	rows := env["result"].([]any)
 	qt.Assert(t, findCandidateWithPair(rows, "SumSlice", "TotalSlice"), qt.Not(qt.IsNil),
 		qt.Commentf("scope=clones.go did not surface the clone pair: %v", rows))
@@ -980,7 +980,7 @@ func TestFindDuplicates_ScopeWalksAroundTheGuard(t *testing.T) {
 	}
 	mc := inProcessClient(t)
 
-	// Unscoped, this target is refused (58551 pairs, over the 25000 budget).
+	// Unscoped, this target is refused (36474 pairs, over the 25000 budget).
 	ctx := context.Background()
 	req := mcp.CallToolRequest{}
 	req.Params.Name = "find_duplicates"
@@ -994,7 +994,7 @@ func TestFindDuplicates_ScopeWalksAroundTheGuard(t *testing.T) {
 		"target": wholeTreePkg,
 		"scope":  "goastcfg/prim_cfg.go",
 	})
-	envelopeOK(t, env, 3.0)
+	envelopeOK(t, env, 4.0)
 	prov := env["provenance"].(map[string]any)
 	qt.Assert(t, prov["candidate_pair_count"].(float64) <= 25000, qt.IsTrue,
 		qt.Commentf("pruned pair count still over budget: %v", prov["candidate_pair_count"]))
@@ -1064,10 +1064,35 @@ func TestFindDuplicates_NoMatchIsEmptySuccess(t *testing.T) {
 		"target": dupclusterPkg,
 		"symbol": "NoSuchFunctionAnywhere",
 	})
-	envelopeOK(t, env, 3.0)
+	envelopeOK(t, env, 4.0)
 	qt.Assert(t, env["result"], qt.DeepEquals, []any{})
 	prov := env["provenance"].(map[string]any)
 	qt.Assert(t, prov["total_count"], qt.Equals, float64(0))
 	qt.Assert(t, prov["candidate_pair_count"], qt.Equals, float64(0))
 	qt.Assert(t, prov["truncated"], qt.Equals, false)
+}
+
+// Same-named functions in different packages are distinct rows: `symbol'
+// matches the short name both share, and `pkg' tells them apart.
+func TestFindDuplicates_SameNameAcrossPackages(t *testing.T) {
+	mc := inProcessClient(t)
+	root := "github.com/aalpar/wile-goast/examples/goast-query/testdata/dupcross"
+	env := callTool(t, mc, "find_duplicates", map[string]any{
+		// The import-path wildcard skips testdata; the relative pattern does not.
+		"target":    "../../examples/goast-query/testdata/dupcross/...",
+		"symbol":    "Parse",
+		"threshold": 0.0,
+	})
+	envelopeOK(t, env, 4.0)
+	// One row must pair Parse with Parse. Rows pairing Parse with an Encode
+	// would cover both packages without the cross-package pair existing.
+	var pkgs map[string]bool
+	for _, row := range env["result"].([]any) {
+		funcs := row.(map[string]any)["functions"].([]any)
+		a, b := funcs[0].(map[string]any), funcs[1].(map[string]any)
+		if a["name"] == "Parse" && b["name"] == "Parse" {
+			pkgs = map[string]bool{a["pkg"].(string): true, b["pkg"].(string): true}
+		}
+	}
+	qt.Assert(t, pkgs, qt.DeepEquals, map[string]bool{root + "/a": true, root + "/b": true})
 }

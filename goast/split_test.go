@@ -151,15 +151,15 @@ func TestSplit_RefineByAPISurface(t *testing.T) {
 		;; Simulate go-func-refs output
 		(define raw-refs
 		  '((func-ref (name . "F1")
-		              (pkg . "test/pkg")
+		              (qname . "test/pkg.F1") (pkg . "test/pkg")
 		              (refs . ((ref (pkg . "io") (objects . ("Reader" "Writer")))
 		                       (ref (pkg . "fmt") (objects . ("Println"))))))
 		    (func-ref (name . "F2")
-		              (pkg . "test/pkg")
+		              (qname . "test/pkg.F2") (pkg . "test/pkg")
 		              (refs . ((ref (pkg . "io") (objects . ("Closer")))
 		                       (ref (pkg . "fmt") (objects . ("Sprintf"))))))))
 		;; Only io is high-IDF
-		(define filtered '(("F1" "io") ("F2" "io")))
+		(define filtered '(("test/pkg.F1" "io") ("test/pkg.F2" "io")))
 		(define ctx (refine-by-api-surface raw-refs filtered))
 	`)
 
@@ -175,8 +175,8 @@ func TestSplit_RefineByAPISurface(t *testing.T) {
 
 	t.Run("F1 and F2 have different attributes", func(t *testing.T) {
 		result := eval(t, engine, `
-			(equal? (intent ctx '("F1"))
-			        (intent ctx '("F2")))`)
+			(equal? (intent ctx '("test/pkg.F1"))
+			        (intent ctx '("test/pkg.F2")))`)
 		c.Assert(result.SchemeString(), qt.Equals, "#f")
 	})
 }
@@ -238,15 +238,15 @@ func TestSplit_RecommendSplit_Synthetic(t *testing.T) {
 
 		;; Two clusters with distinct deps, one bridge function.
 		(define refs
-		  '((func-ref (name . "Read")  (pkg . "p")
+		  '((func-ref (name . "Read")  (qname . "p.Read") (pkg . "p")
 		              (refs . ((ref (pkg . "io") (objects . ("Reader"))))))
-		    (func-ref (name . "Write") (pkg . "p")
+		    (func-ref (name . "Write") (qname . "p.Write") (pkg . "p")
 		              (refs . ((ref (pkg . "io") (objects . ("Writer"))))))
-		    (func-ref (name . "Parse") (pkg . "p")
+		    (func-ref (name . "Parse") (qname . "p.Parse") (pkg . "p")
 		              (refs . ((ref (pkg . "go/ast") (objects . ("File"))))))
-		    (func-ref (name . "Check") (pkg . "p")
+		    (func-ref (name . "Check") (qname . "p.Check") (pkg . "p")
 		              (refs . ((ref (pkg . "go/ast") (objects . ("Inspect"))))))
-		    (func-ref (name . "Bridge") (pkg . "p")
+		    (func-ref (name . "Bridge") (qname . "p.Bridge") (pkg . "p")
 		              (refs . ((ref (pkg . "io") (objects . ("Reader")))
 		                       (ref (pkg . "go/ast") (objects . ("File"))))))))
 		(define report (recommend-split refs))
@@ -282,15 +282,15 @@ func TestSplit_RecommendSplit_MaxAttributesGuard(t *testing.T) {
 	eval(t, engine, `
 		(import (wile goast split))
 		(define refs
-		  '((func-ref (name . "Read")  (pkg . "p")
+		  '((func-ref (name . "Read")  (qname . "p.Read") (pkg . "p")
 		              (refs . ((ref (pkg . "io") (objects . ("Reader"))))))
-		    (func-ref (name . "Write") (pkg . "p")
+		    (func-ref (name . "Write") (qname . "p.Write") (pkg . "p")
 		              (refs . ((ref (pkg . "io") (objects . ("Writer"))))))
-		    (func-ref (name . "Parse") (pkg . "p")
+		    (func-ref (name . "Parse") (qname . "p.Parse") (pkg . "p")
 		              (refs . ((ref (pkg . "go/ast") (objects . ("File"))))))
-		    (func-ref (name . "Check") (pkg . "p")
+		    (func-ref (name . "Check") (qname . "p.Check") (pkg . "p")
 		              (refs . ((ref (pkg . "go/ast") (objects . ("Inspect"))))))
-		    (func-ref (name . "Bridge") (pkg . "p")
+		    (func-ref (name . "Bridge") (qname . "p.Bridge") (pkg . "p")
 		              (refs . ((ref (pkg . "io") (objects . ("Reader")))
 		                       (ref (pkg . "go/ast") (objects . ("File"))))))))
 		(define guarded (recommend-split refs 'max-attributes 1))
@@ -360,23 +360,23 @@ func TestSplit_VerifyAcyclic(t *testing.T) {
 		(import (wile goast utils))
 
 		;; Simulate: F1 calls F3 (a->b), but F3 doesn't call F1 (no b->a).
+		;; Same-package references live in func-uses; refs never carries them.
 		(define refs
-		  '((func-ref (name . "F1") (pkg . "my/pkg")
-		              (refs . ((ref (pkg . "my/pkg")
-		                            (objects . ("F3"))))))
-		    (func-ref (name . "F2") (pkg . "my/pkg")
-		              (refs . ()))
-		    (func-ref (name . "F3") (pkg . "my/pkg")
-		              (refs . ()))
-		    (func-ref (name . "F4") (pkg . "my/pkg")
-		              (refs . ()))))
+		  '((func-ref (name . "F1") (qname . "my/pkg.F1") (pkg . "my/pkg")
+		              (refs . ()) (func-uses . ("my/pkg.F3")))
+		    (func-ref (name . "F2") (qname . "my/pkg.F2") (pkg . "my/pkg")
+		              (refs . ()) (func-uses . ()))
+		    (func-ref (name . "F3") (qname . "my/pkg.F3") (pkg . "my/pkg")
+		              (refs . ()) (func-uses . ()))
+		    (func-ref (name . "F4") (qname . "my/pkg.F4") (pkg . "my/pkg")
+		              (refs . ()) (func-uses . ()))))
 	`)
 
 	c := qt.New(t)
 
 	t.Run("one-way dependency is acyclic", func(t *testing.T) {
 		result := eval(t, engine, `
-			(define v (verify-acyclic '("F1" "F2") '("F3" "F4") refs))
+			(define v (verify-acyclic '("my/pkg.F1" "my/pkg.F2") '("my/pkg.F3" "my/pkg.F4") refs))
 			(cdr (assoc 'acyclic v))`)
 		c.Assert(result.SchemeString(), qt.Equals, "#t")
 	})
@@ -390,13 +390,25 @@ func TestSplit_VerifyAcyclic(t *testing.T) {
 		result := eval(t, engine, `
 			;; F3 also calls F1 -> cycle
 			(define refs-cycle
-			  '((func-ref (name . "F1") (pkg . "p")
-			              (refs . ((ref (pkg . "p") (objects . ("F3"))))))
-			    (func-ref (name . "F3") (pkg . "p")
-			              (refs . ((ref (pkg . "p") (objects . ("F1"))))))))
-			(define vc (verify-acyclic '("F1") '("F3") refs-cycle))
+			  '((func-ref (name . "F1") (qname . "p.F1") (pkg . "p")
+			              (refs . ()) (func-uses . ("p.F3")))
+			    (func-ref (name . "F3") (qname . "p.F3") (pkg . "p")
+			              (refs . ()) (func-uses . ("p.F1")))))
+			(define vc (verify-acyclic '("p.F1") '("p.F3") refs-cycle))
 			(cdr (assoc 'acyclic vc))`)
 		c.Assert(result.SchemeString(), qt.Equals, "#f")
+	})
+
+	// The real go-func-refs path: Initialize calls SetupConfig in the same
+	// package. Before func-uses, same-package calls were invisible and every
+	// split counted 0 both ways.
+	t.Run("same-package calls count on real go-func-refs", func(t *testing.T) {
+		pkg := "github.com/aalpar/wile-goast/examples/goast-query/testdata/transcall"
+		result := eval(t, engine, `
+			(let ((v (verify-acyclic '("`+pkg+`.Initialize") '("`+pkg+`.SetupConfig")
+			                         (go-func-refs "`+pkg+`"))))
+			  (list (cdr (assoc 'a-refs-b v)) (cdr (assoc 'b-refs-a v))))`)
+		c.Assert(result.SchemeString(), qt.Equals, "(1 0)")
 	})
 }
 
@@ -542,4 +554,22 @@ func TestSplit_AggregateBeliefIntegration_Goast(t *testing.T) {
 	t.Run("completes without error on real package", func(t *testing.T) {
 		c.Assert(true, qt.IsTrue)
 	})
+}
+
+// Split's FCA objects are qnames: a.Parse and b.Parse are two objects, where
+// keying by bare name merged them into one with the union of their refs.
+func TestSplit_SameNameAcrossPackages(t *testing.T) {
+	engine := newBeliefEngine(t)
+	root := "github.com/aalpar/wile-goast/examples/goast-query/testdata/dupcross"
+	out := eval(t, engine, `
+		(import (wile goast split))
+		(import (wile goast fca))
+		(define sigs (import-signatures
+		               (go-func-refs "../examples/goast-query/testdata/dupcross/...")))
+		(define objs (context-objects
+		               (build-package-context (filter-noise sigs (compute-idf sigs) 0.36))))
+		(list (and (member "`+root+`/a.Parse" objs) #t)
+		      (and (member "`+root+`/b.Parse" objs) #t))
+	`).SchemeString()
+	qt.New(t).Assert(out, qt.Equals, "(#t #t)")
 }

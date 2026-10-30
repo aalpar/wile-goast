@@ -32,7 +32,7 @@ func TestFuncRefsToPositions(t *testing.T) {
 	`)
 
 	t.Run("EncodeA resolves to dupcluster.go", func(t *testing.T) {
-		out := eval(t, engine, `(hashtable-ref pos-index "EncodeA" #f)`).SchemeString()
+		out := eval(t, engine, `(hashtable-ref pos-index "`+pkg+`.EncodeA" #f)`).SchemeString()
 		c.Assert(out, qt.Not(qt.Equals), "#f")
 		c.Assert(strings.Contains(out, "dupcluster.go:"), qt.IsTrue, qt.Commentf("%s", out))
 	})
@@ -130,7 +130,7 @@ func TestScoreCandidatePair(t *testing.T) {
 		(define s (go-load "`+pkg+`"))
 		(define ast-index (build-func-ast-index (go-typecheck-package s)))
 		(define canon-index (build-func-canon-index (go-ssa-build s)))
-		(define m (score-candidate-pair "SumSlice" "TotalSlice" ast-index canon-index 0.6))
+		(define m (score-candidate-pair "`+pkg+`.SumSlice" "`+pkg+`.TotalSlice" ast-index canon-index 0.6))
 	`)
 
 	t.Run("the clone pair scores a real tier and similarity", func(t *testing.T) {
@@ -161,7 +161,7 @@ func TestFindScoredCandidates(t *testing.T) {
 		  (let loop ((cs cands))
 		    (if (null? cs) #f
 		      (let ((p (cdr (assoc 'pair (car cs)))))
-		        (if (and (member "SumSlice" p) (member "TotalSlice" p))
+		        (if (and (member "`+pkg+`.SumSlice" p) (member "`+pkg+`.TotalSlice" p))
 		          (car cs) (loop (cdr cs)))))))
 	`)
 
@@ -277,7 +277,7 @@ func TestCostLocality(t *testing.T) {
 		(import (wile goast dup-detect))
 		(define cg (go-callgraph "`+pkg+`" 'static))
 		(define fr-index (build-func-ref-index (go-func-refs "`+pkg+`")))
-		(define loc (cand-locality "SetupConfig" "SetupLogger" fr-index cg))
+		(define loc (cand-locality "`+pkg+`.SetupConfig" "`+pkg+`.SetupLogger" fr-index cg))
 	`)
 
 	t.Run("same package -> same-pkg scope", func(t *testing.T) {
@@ -306,7 +306,7 @@ func TestFindCandidatesWithCost(t *testing.T) {
 		  (let loop ((cs cands))
 		    (if (null? cs) #f
 		      (let ((p (cdr (assoc 'pair (car cs)))))
-		        (if (and (member "SumSlice" p) (member "TotalSlice" p))
+		        (if (and (member "`+pkg+`.SumSlice" p) (member "`+pkg+`.TotalSlice" p))
 		          (car cs) (loop (cdr cs)))))))
 	`)
 
@@ -414,7 +414,7 @@ func TestDirectionTablesMatchEmittedMeasures(t *testing.T) {
 
 // TestBuildFuncCanonIndex locks the two reasons canonicalization is hoisted out
 // of score-candidate-pair into a single guarded pass (findings #1 + #2):
-//   - it is keyed by short-name like build-func-ssa-index (its raw counterpart);
+//   - it is keyed by qualified name like build-func-ssa-index (its raw counterpart);
 //   - a function whose SSA fails go-ssa-canonicalize is omitted, not raised, so
 //     a single bad function cannot abort an O(n^2) scoring sweep.
 func TestBuildFuncCanonIndex(t *testing.T) {
@@ -428,11 +428,11 @@ func TestBuildFuncCanonIndex(t *testing.T) {
 		(define canon (build-func-canon-index (go-ssa-build s)))
 	`)
 
-	t.Run("raw and canon indexes are both keyed by short-name", func(t *testing.T) {
+	t.Run("raw and canon indexes are both keyed by qualified name", func(t *testing.T) {
 		out := eval(t, engine, `
 			(and (hashtable? raw) (hashtable? canon)
-			     (pair? (hashtable-ref raw "SumSlice" #f))
-			     (pair? (hashtable-ref canon "SumSlice" #f)))
+			     (pair? (hashtable-ref raw "`+pkg+`.SumSlice" #f))
+			     (pair? (hashtable-ref canon "`+pkg+`.SumSlice" #f)))
 		`).SchemeString()
 		c.Assert(out, qt.Equals, "#t")
 	})
@@ -522,8 +522,99 @@ func TestScoreCandidatePairs_PrunedIsSubset(t *testing.T) {
 		qt.Equals, "#t")
 	// The clone pair scores identically in both runs.
 	c.Assert(eval(t, engine, `
-		(let ((a (find-pair full-run "SumSlice" "TotalSlice"))
-		      (b (find-pair pruned-run "SumSlice" "TotalSlice")))
+		(let ((a (find-pair full-run "`+pkg+`.SumSlice" "`+pkg+`.TotalSlice"))
+		      (b (find-pair pruned-run "`+pkg+`.SumSlice" "`+pkg+`.TotalSlice")))
 		  (and a b (equal? (cdr (assq 'measures a)) (cdr (assq 'measures b)))))
 	`).SchemeString(), qt.Equals, "#t")
+}
+
+// Same-named functions are distinct candidates. Keyed by bare name, a.Parse and
+// b.Parse merged into one FCA object and never paired, and every index lookup
+// for X.Encode or Y.Encode resolved to one (last-wins) function, so the pair
+// scored a function against itself: similarity 1.0, tier proven.
+func TestDupDetect_SameNameAcrossPackagesAndReceivers(t *testing.T) {
+	c := qt.New(t)
+	engine := newBeliefEngine(t)
+	// The import-path wildcard skips testdata; the relative pattern does not.
+	root := "github.com/aalpar/wile-goast/examples/goast-query/testdata/dupcross"
+	eval(t, engine, `
+		(import (wile goast dup-detect))
+		(define cands (find-scored-candidates "../examples/goast-query/testdata/dupcross/..." 0.0))
+		(define (find-pair a b)
+		  (let loop ((cs cands))
+		    (cond ((null? cs) #f)
+		          ((let ((p (cdr (assq 'pair (car cs)))))
+		             (and (member a p) (member b p)))
+		           (car cs))
+		          (else (loop (cdr cs))))))
+		(define (sim c) (cdr (assq 'similarity (cdr (assq 'measures c)))))
+		(define (tier c) (cdr (assq 'equiv-tier (cdr (assq 'measures c)))))
+	`)
+
+	t.Run("a.Parse and b.Parse pair", func(t *testing.T) {
+		out := eval(t, engine, `
+			(and (find-pair "`+root+`/a.Parse" "`+root+`/b.Parse") #t)
+		`).SchemeString()
+		c.Assert(out, qt.Equals, "#t")
+	})
+
+	t.Run("X.Encode and Y.Encode are not scored against themselves", func(t *testing.T) {
+		out := eval(t, engine, `
+			(let ((cand (find-pair "(*`+root+`/a.X).Encode" "(*`+root+`/a.Y).Encode")))
+			  (list (and cand (< (sim cand) 1)) (and cand (tier cand))))
+		`).SchemeString()
+		c.Assert(out, qt.Equals, "(#t divergent)")
+	})
+}
+
+// cand-creates-cycle? compares call-graph names exactly once candidates are
+// qualified: a.CallsB reaches b.Parse, and does not reach a.Parse merely for
+// sharing its short name.
+func TestCostCycle_QualifiedNames(t *testing.T) {
+	c := qt.New(t)
+	engine := newBeliefEngine(t)
+	root := "github.com/aalpar/wile-goast/examples/goast-query/testdata/dupcross"
+	out := eval(t, engine, `
+		(import (wile goast dup-detect))
+		(define cg (go-callgraph "../examples/goast-query/testdata/dupcross/..." 'static))
+		(list (cand-creates-cycle? "`+root+`/a.CallsB" "`+root+`/b.Parse" cg)
+		      (cand-creates-cycle? "`+root+`/a.CallsB" "`+root+`/a.Parse" cg))
+	`).SchemeString()
+	c.Assert(out, qt.Equals, "(#t #f)")
+}
+
+// A pair in a concept's extent is also in every super-concept's; it is
+// discovered, scored and reported once. A and B share {x y}, C has only x, so
+// (A . B) sits in both the {A B} and the {A B C} concept.
+func TestCandidatePairs_Deduplicated(t *testing.T) {
+	c := qt.New(t)
+	engine := newBeliefEngine(t)
+	out := eval(t, engine, `
+		(import (wile goast dup-detect))
+		(import (wile goast fca))
+		(import (wile goast utils))
+		(define cs (duplicate-candidate-concepts
+		             (concept-lattice (context-from-alist '(("A" "x" "y") ("B" "x" "y") ("C" "x"))))))
+		(define naive (apply append (map (lambda (c) (all-pairs (concept-extent c))) cs)))
+		(define prs (candidate-pairs cs))
+		(list (length naive) (length prs)
+		      (length (filter (lambda (pr) (equal? pr '("A" . "B"))) prs)))
+	`).SchemeString()
+	c.Assert(out, qt.Equals, "(4 3 1)")
+}
+
+// Every init in a package shares the qname "pkg.init", so they are left out
+// of the duplicate-detection context rather than merged into one object.
+func TestFunctionRefContext_ExcludesInit(t *testing.T) {
+	c := qt.New(t)
+	engine := newBeliefEngine(t)
+	pkg := "github.com/aalpar/wile-goast/examples/goast-query/testdata/methodset"
+	out := eval(t, engine, `
+		(import (wile goast dup-detect))
+		(import (wile goast fca))
+		(and (member "`+pkg+`.init"
+		             (context-objects (function-ref-context (go-func-refs "`+pkg+`"))))
+		     #t)
+	`).SchemeString()
+	c.Assert(out, qt.Equals, "#f")
 }

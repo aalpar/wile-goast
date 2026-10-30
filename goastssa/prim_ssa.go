@@ -17,6 +17,8 @@ package goastssa
 import (
 	"go/token"
 	"go/types"
+	"maps"
+	"slices"
 
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/go/ssa"
@@ -129,7 +131,7 @@ func collectSSAFuncs(mc machine.CallContext, mapper *ssaMapper, prog *ssa.Progra
 		if ssaPkg == nil {
 			continue
 		}
-		for _, mem := range ssaPkg.Members {
+		for _, mem := range sortedMembers(ssaPkg) {
 			fn, ok := mem.(*ssa.Function)
 			if !ok {
 				continue
@@ -139,25 +141,52 @@ func collectSSAFuncs(mc machine.CallContext, mapper *ssaMapper, prog *ssa.Progra
 			}
 			funcs = append(funcs, mapper.mapFunction(fn))
 		}
-		for _, mem := range ssaPkg.Members {
-			typ, ok := mem.(*ssa.Type)
-			if !ok {
-				continue
-			}
-			mset := prog.MethodSets.MethodSet(types.NewPointer(typ.Type()))
-			for sel := range mset.Methods() {
-				fn := prog.MethodValue(sel)
-				if fn == nil || fn.Synthetic != "" {
-					continue
-				}
-				if fn.Pkg == ssaPkg {
-					funcs = append(funcs, mapper.mapFunction(fn))
-				}
-			}
+		for _, fn := range declaredMethods(prog, ssaPkg) {
+			funcs = append(funcs, mapper.mapFunction(fn))
 		}
 	}
 	mc.SetValue(goast.ValueList(funcs))
 	return nil
+}
+
+// sortedMembers returns ssaPkg's members ordered by name. Members is a map,
+// so ranging it directly makes go-ssa-build's output order vary run to run.
+func sortedMembers(ssaPkg *ssa.Package) []ssa.Member {
+	names := slices.Sorted(maps.Keys(ssaPkg.Members))
+	out := make([]ssa.Member, len(names))
+	for i, name := range names {
+		out[i] = ssaPkg.Members[name]
+	}
+	return out
+}
+
+// declaredMethods returns the methods declared on ssaPkg's named types, value
+// and pointer receivers alike, generic types included. It walks each *T
+// method set (a superset of T's) and resolves the declared function with
+// FuncValue: MethodValue would return the synthetic (*T).M wrapper for a
+// value-receiver method, and filtering wrappers out dropped every value method.
+// Promoted methods (selection path longer than one) belong to the embedded
+// type and are skipped.
+func declaredMethods(prog *ssa.Program, ssaPkg *ssa.Package) []*ssa.Function {
+	var out []*ssa.Function
+	for _, mem := range sortedMembers(ssaPkg) {
+		typ, ok := mem.(*ssa.Type)
+		if !ok {
+			continue
+		}
+		mset := prog.MethodSets.MethodSet(types.NewPointer(typ.Type()))
+		for sel := range mset.Methods() {
+			if len(sel.Index()) != 1 {
+				continue
+			}
+			fn := prog.FuncValue(sel.Obj().(*types.Func))
+			if fn == nil || fn.Synthetic != "" || fn.Pkg != ssaPkg {
+				continue
+			}
+			out = append(out, fn)
+		}
+	}
+	return out
 }
 
 // PrimGoSSAFieldIndex implements (go-ssa-field-index target).
@@ -230,7 +259,7 @@ func collectFieldSummaries(ssaPkg *ssa.Package, out *[]values.Value) {
 	pkgPath := ssaPkg.Pkg.Path()
 
 	// Package-level functions.
-	for _, mem := range ssaPkg.Members {
+	for _, mem := range sortedMembers(ssaPkg) {
 		fn, ok := mem.(*ssa.Function)
 		if !ok || fn.Synthetic != "" {
 			continue
@@ -242,22 +271,10 @@ func collectFieldSummaries(ssaPkg *ssa.Package, out *[]values.Value) {
 	}
 
 	// Methods on named types.
-	prog := ssaPkg.Prog
-	for _, mem := range ssaPkg.Members {
-		typ, ok := mem.(*ssa.Type)
-		if !ok {
-			continue
-		}
-		mset := prog.MethodSets.MethodSet(types.NewPointer(typ.Type()))
-		for sel := range mset.Methods() {
-			fn := prog.MethodValue(sel)
-			if fn == nil || fn.Synthetic != "" || fn.Pkg != ssaPkg {
-				continue
-			}
-			s := buildFuncSummary(fn, pkgPath)
-			if s != nil {
-				*out = append(*out, s)
-			}
+	for _, fn := range declaredMethods(ssaPkg.Prog, ssaPkg) {
+		s := buildFuncSummary(fn, pkgPath)
+		if s != nil {
+			*out = append(*out, s)
 		}
 	}
 }

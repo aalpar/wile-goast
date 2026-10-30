@@ -408,3 +408,22 @@ func TestGoSSABuild_Positions(t *testing.T) {
 			qt.Commentf("no ssa-block should carry pos without 'positions"))
 	})
 }
+
+// go-ssa-build lists every method declared on a package's types: value
+// receivers (reached through FuncValue, since the *T method set holds only a
+// synthetic wrapper for them) and generic types included, promoted methods
+// excluded. Value-receiver methods used to be dropped with the wrappers.
+func TestGoSSABuild_DeclaredMethods(t *testing.T) {
+	engine := newEngine(t)
+	pkg := "github.com/aalpar/wile-goast/examples/goast-query/testdata/methodset"
+	out := eval(t, engine, `
+		(define names
+		  (map (lambda (f) (cdr (assoc 'name (cdr f))))
+		       (go-ssa-build "`+pkg+`")))
+		(list (and (member "(`+pkg+`.V).Upper" names) #t)
+		      (and (member "(*`+pkg+`.P).Inc" names) #t)
+		      (and (member "(*`+pkg+`.G[T]).Get" names) #t)
+		      (and (member "(*`+pkg+`.E).Inc" names) #t))
+	`).SchemeString()
+	qt.New(t).Assert(out, qt.Equals, "(#t #t #t #f)")
+}

@@ -117,7 +117,10 @@
                  (list 'refine)
                  '())))
          (report (apply recommend-split refs kw)))
-    (pipeline-envelope 1
+    ;; Version 2: group members are qualified names (go-func-refs' qname), so
+    ;; same-named functions in different packages stay distinct; and acyclic
+    ;; now counts same-package references, which version 1 never saw.
+    (pipeline-envelope 2
       (list (cons 'target target)
             (cons 'options kw)
             (cons 'function-count (length refs)))
@@ -190,12 +193,17 @@
 ;; position is "file:line:col" and an anchored glob could never match one.
 ;; When both are set they must match the SAME name: the caller is identifying
 ;; one function by name and path, not two different ones.
-(define (view-name-matcher opts pos-index)
+;;
+;; Optional DISPLAY maps a row's key to the name `symbol' matches, for a tool
+;; whose key is not its displayed name (find_duplicates keys on the qualified
+;; name, unique across packages, but shows and matches the short one).
+(define (view-name-matcher opts pos-index . display)
   (let ((scope (assoc-default opts 'scope))
-        (sym   (assoc-default opts 'symbol)))
+        (sym   (assoc-default opts 'symbol))
+        (shown (if (pair? display) (car display) (lambda (k) k))))
     (and (or scope sym)
          (lambda (name)
-           (and (or (not sym) (glob-match? sym name #\.))
+           (and (or (not sym) (glob-match? sym (shown name) #\.))
                 (or (not scope)
                     (glob-match? scope
                                  (position-file
@@ -204,10 +212,8 @@
 
 ;; view-key<?: lexicographic order over a rank key (a list). NUMERIC
 ;; components compare DESCENDING -- a higher score, or more struct types tied
-;; together, ranks first. STRING components compare ascending. The order is
-;; not always total: find_duplicates' candidate-pairs is a not-deduplicated
-;; `apply append`, so the same (a . b) pair reached through two FCA concepts
-;; yields two rows with byte-identical rank keys. Paging is still safe,
+;; together, ranks first. STRING components compare ascending. The order need
+;; not be total: two rows may tie on every component. Paging is still safe,
 ;; because view-sort is a STABLE sort over a deterministic input order: two
 ;; calls with the same arguments feed it the same rows in the same order, so
 ;; page 2 cannot repeat a row from page 1 even when keys tie.
@@ -492,27 +498,32 @@
   (call-with-values (lambda () (inexact-with-accuracy n))
     (lambda (v _) v)))
 
-;; clean-finding: a make-finding record -> ((name . fn) (position . where)
-;; (score . s)). Drops the leading 'finding tag and the redundant nested
-;; measures carried in the finding's why. Score is coerced to float64 so
-;; the marshaller can emit it as a JSON number.
-(define (clean-finding f)
-  (list (cons 'name     (finding-value f))
-        (cons 'position (finding-where f))
-        (cons 'score    (->float64 (finding-score f)))))
+;; clean-finding: a make-finding record -> ((name . fn) (pkg . p)
+;; (position . where) (score . s)). Drops the leading 'finding tag and the
+;; redundant nested measures carried in the finding's why. The finding's value
+;; is the qualified name; FR-INDEX (qname -> func-ref) supplies the short name
+;; and package the row shows. Score is coerced to float64 so the marshaller
+;; can emit it as a JSON number.
+(define (clean-finding f fr-index)
+  (let ((fr (hashtable-ref fr-index (finding-value f) #f)))
+    (list (cons 'name     (if fr (nf fr 'name) (finding-value f)))
+          (cons 'pkg      (and fr (nf fr 'pkg)))
+          (cons 'position (finding-where f))
+          (cons 'score    (->float64 (finding-score f))))))
 
 ;; candidate->clean: a scored candidate -> the tool's public shape. Lifts
 ;; equiv-tier and similarity to top level, keeps the numeric measures
 ;; sub-object, reshapes the two located findings. VERDICT? attaches the
 ;; opt-in categorical verdict (computed from the RAW candidate, which still
 ;; carries measures.equiv-tier).
-(define (candidate->clean cand verdict?)
+(define (candidate->clean cand verdict? fr-index)
   (let* ((measures (cdr (assq 'measures cand)))
          (findings (cdr (assq 'findings cand)))
          (tier     (cdr (assq 'equiv-tier measures)))
          (sim      (->float64 (cdr (assq 'similarity measures))))
          (base
-           (list (cons 'functions (map clean-finding findings))
+           (list (cons 'functions
+                       (map (lambda (f) (clean-finding f fr-index)) findings))
                  (cons 'score sim)
                  (cons 'equiv-tier tier)
                  (cons 'measures
@@ -528,10 +539,11 @@
 ;;
 ;; A LATENCY budget, not a projection ceiling. The whole scoring cost is sunk
 ;; before any result exists, so a target past the budget is refused up front
-;; rather than paid for and then abandoned. Measured on this repo: ./goast,
-;; 20404 pairs, 60s (340/s); ./..., 58551 pairs, 3m31s (279/s -- the rate
-;; falls as the session grows). 25000 is ~80s at that range: it admits the
-;; largest single package and refuses the whole-tree pattern.
+;; rather than paid for and then abandoned. Rates measured on this repo before
+;; candidate-pairs was deduplicated: ./goast, 20404 pairs, 60s (340/s); ./...,
+;; 58551 pairs, 3m31s (279/s -- the rate falls as the session grows). 25000 is
+;; ~80s at that range: it admits the largest single package (./goast, 16011
+;; pairs deduplicated) and refuses the whole-tree pattern (36474).
 ;;
 ;; It is deliberately NOT the old 9992, which was Wile's 10000-frame call
 ;; depth showing through a non-tail `map` over every scored pair. Every stage
@@ -541,13 +553,13 @@
 ;; the tier) decides how many rows survive: view-sort was written for the
 ;; 20000-element case this tool can reach, and render runs after paging, so
 ;; only LIMIT rows are ever built. The old number also made the tool unable to
-;; answer for goast at all: goast is a single package and yields 20404 pairs on
+;; answer for goast at all: goast is a single package and yields 16011 pairs on
 ;; its own, so "narrow to one package" had no valid answer.
 ;;
 ;; The count checked against this budget is taken AFTER the scope/symbol
 ;; prune, so a narrow query against a wide target is answered rather than
 ;; refused. That converts the guard from a hard wall into one the caller can
-;; walk around by being specific: ./... is 58551 pairs unscoped and refused,
+;; walk around by being specific: ./... is 36474 pairs unscoped and refused,
 ;; but a scope naming one file is scored and answered.
 (define max-candidate-pairs 25000)
 
@@ -621,9 +633,14 @@
 ;; of the unscoped one.
 ;;
 ;; A pair survives if EITHER function matches: asking about marshalValue
-;; should surface its duplicate wherever that lives.
-(define (dup-keep-pair? opts pos-index)
-  (let ((match? (view-name-matcher opts pos-index)))
+;; should surface its duplicate wherever that lives. Pairs carry qualified
+;; names; `symbol' matches the short name the row shows (FR-INDEX maps one to
+;; the other), so `Parse' matches a.Parse and b.Parse alike.
+(define (dup-keep-pair? opts pos-index fr-index)
+  (let ((match? (view-name-matcher opts pos-index
+                  (lambda (q)
+                    (let ((fr (hashtable-ref fr-index q #f)))
+                      (if fr (nf fr 'name) q))))))
     (and match?
          (lambda (pr) (or (match? (car pr)) (match? (cdr pr)))))))
 
@@ -665,9 +682,9 @@
 ;; the measures sub-object, whose `similarity' merely repeats the top-level
 ;; score. An opt-in verdict survives both levels: a caller who asked for it
 ;; asked for it.
-(define (dup-render verdict?)
+(define (dup-render verdict? fr-index)
   (lambda (cand detail)
-    (let ((row (candidate->clean cand verdict?)))
+    (let ((row (candidate->clean cand verdict? fr-index)))
       (if (eq? detail 'full)
         row
         (filter (lambda (kv) (not (eq? (car kv) 'measures))) row)))))
@@ -698,7 +715,8 @@
          (concepts  (duplicate-candidate-concepts
                       (concept-lattice (function-ref-context refs))))
          (pos-index (func-refs->positions refs))
-         (keep-pair? (dup-keep-pair? opts pos-index))
+         (fr-index  (build-func-ref-index refs))
+         (keep-pair? (dup-keep-pair? opts pos-index fr-index))
          (all-prs   (candidate-pairs concepts))
          (pairs     (if keep-pair? (filter keep-pair? all-prs) all-prs))
          (npairs    (length pairs)))
@@ -717,8 +735,12 @@
              (kept  (filter (lambda (c) (>= (candidate-similarity c) threshold))
                             cands)))
         (call-with-values
-          (lambda () (apply-view kept opts #f dup-rank-key (dup-render verdict?)))
+          (lambda () (apply-view kept opts #f dup-rank-key (dup-render verdict? fr-index)))
           (lambda (shown view-prov)
+            ;; Version 4: functions are keyed by qualified name, so same-named
+            ;; functions in different packages (or methods on different
+            ;; receivers) are distinct and can pair, rather than merging or
+            ;; scoring against themselves; each function row gains `pkg'.
             ;; Version 3: threshold selects on similarity rather than on
             ;; equiv-tier, so divergent rows now reach the caller. The shape
             ;; is untouched; the population is not, and a consumer whose case
@@ -726,7 +748,7 @@
             ;; (Version 2 was the detail=summary default: measures left the
             ;; default row, candidate-count gave way to the view's
             ;; total-count -- one number, one name, the same on both tools.)
-            (pipeline-envelope 3
+            (pipeline-envelope 4
               (append
                 (list (cons 'target target)
                       (cons 'threshold threshold)

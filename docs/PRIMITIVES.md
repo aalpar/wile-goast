@@ -120,13 +120,20 @@ pattern string or GoSession. Returns:
 
 ```scheme
 ((func-ref (name . "MyFunc")
+           (qname . "my/pkg.MyFunc")
            (pkg . "my/pkg")
            (refs . ((ref (pkg . "io") (objects . ("Reader" "Writer")))
                     (ref (pkg . "fmt") (objects . ("Println")))))))
 ```
 
 Method receivers format as `"RecvType.Method"`. Functions with no body
-(interface methods, external declarations) are excluded.
+(interface methods, external declarations) are excluded. `name` is unique only
+within one package; `qname` is the typed-AST `func-decl` name (`"my/pkg.F"`,
+`"(*my/pkg.T).M"`), which is also the SSA name for non-generic functions, and is
+the key to join on across packages or layers. `func-uses` lists the `qname`s of
+the loaded packages' functions and methods the function references, same
+package included (`refs` covers only other packages). A
+`(pos . "file:line:col")` field is present when the position is valid.
 
 ### Options
 

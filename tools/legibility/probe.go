@@ -186,10 +186,18 @@ func tierToBucket(tier string) string {
 
 // expectedBuckets derives, from the tool's own output, the correct bucket and
 // the raw tier for each candidate pair.
+//
+// The model answers with bare function names, so a pair key is unique only
+// within one package. A fixture spanning packages with a shared name would
+// silently join a model answer to the wrong pair; refuse it instead.
 func expectedBuckets(cands []map[string]any) (buckets, tiers map[string]string) {
 	buckets, tiers = map[string]string{}, map[string]string{}
 	for _, c := range cands {
 		key := pairKey(candFunctions(c))
+		if _, dup := tiers[key]; dup {
+			fmt.Fprintf(os.Stderr, "probe: pair key %q names two candidates; fixtures must not repeat a function name across packages\n", key)
+			os.Exit(1)
+		}
 		tier, _ := c["equiv_tier"].(string)
 		tiers[key] = tier
 		buckets[key] = tierToBucket(tier)

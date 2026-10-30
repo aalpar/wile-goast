@@ -19,20 +19,22 @@
 
 (define (import-signatures func-refs)
   "Extract per-function import signatures from go-func-refs output.
-Each function maps to the set of external package paths it references.
+Each function, named by its qname (unique across packages and receivers;
+the bare name is unique only within one package), maps to the set of
+external package paths it references.
 
 Parameters:
   func-refs : list — output from (go-func-refs ...)
-Returns: list — alist mapping function name to list of package paths
+Returns: list — alist mapping function qname to list of package paths
 Category: goast-split
 
 Examples:
   (import-signatures (go-func-refs \"my/pkg\"))
-  ;; => ((\"MyFunc\" \"io\" \"fmt\") (\"Helper\" \"strings\"))
+  ;; => ((\"my/pkg.MyFunc\" \"io\" \"fmt\") (\"my/pkg.Helper\" \"strings\"))
 
 See also: `compute-idf', `filter-noise'."
   (map (lambda (fr)
-         (cons (nf fr 'name)
+         (cons (nf fr 'qname)
                (map (lambda (r) (nf r 'pkg))
                     (let ((refs (nf fr 'refs)))
                       (if refs refs '())))))
@@ -142,7 +144,7 @@ See also: `build-package-context', `import-signatures'."
     (context-from-alist
       (filter-map
         (lambda (fr)
-          (let* ((name (nf fr 'name))
+          (let* ((name (nf fr 'qname))
                  (refs (let ((r (nf fr 'refs))) (if r r '())))
                  (attrs
                    (let loop ((rs refs) (acc '()))
@@ -276,48 +278,39 @@ See also: `build-package-context', `verify-acyclic'."
 
 (define (verify-acyclic group-a group-b func-refs)
   "Check that a proposed split doesn't create Go import cycles.
-Group A functions may depend on group B's package or vice versa, but not both.
-Uses go-func-refs data to detect cross-references within the original package.
+Group A functions may depend on group B's functions or vice versa, but not
+both. Reads each function's func-uses (the loaded-package functions and
+methods it references), so same-package references count.
 
 Parameters:
-  group-a    : list — function names in group A
-  group-b    : list — function names in group B
+  group-a    : list — function qnames in group A
+  group-b    : list — function qnames in group B
   func-refs  : list — raw output from (go-func-refs ...)
 Returns: alist — (acyclic . #t/#f) (a-refs-b . count) (b-refs-a . count)
 Category: goast-split
 
 Examples:
-  (verify-acyclic '(\"F1\" \"F2\") '(\"F3\" \"F4\") refs)
+  (verify-acyclic '(\"p.F1\" \"p.F2\") '(\"p.F3\" \"p.F4\") refs)
   ;; => ((acyclic . #t) (a-refs-b . 2) (b-refs-a . 0))
 
 See also: `find-split', `recommend-split'."
-  (let* ((pkg (if (null? func-refs) ""
-               (nf (car func-refs) 'pkg)))
-         (a-refs-b (count-internal-refs group-a group-b func-refs pkg))
-         (b-refs-a (count-internal-refs group-b group-a func-refs pkg)))
+  (let ((a-refs-b (count-internal-refs group-a group-b func-refs))
+        (b-refs-a (count-internal-refs group-b group-a func-refs)))
     (list (cons 'acyclic (or (zero? a-refs-b) (zero? b-refs-a)))
           (cons 'a-refs-b a-refs-b)
           (cons 'b-refs-a b-refs-a))))
 
-(define (count-internal-refs from-group to-group func-refs pkg)
-  "Count how many functions in from-group reference identifiers belonging to to-group functions."
+(define (count-internal-refs from-group to-group func-refs)
+  "Count how many functions in from-group reference a to-group function."
   (let loop ((frs func-refs) (count 0))
     (if (null? frs) count
       (let* ((fr (car frs))
-             (name (nf fr 'name))
-             (refs (let ((r (nf fr 'refs))) (if r r '()))))
-        (if (not (member name from-group))
-          (loop (cdr frs) count)
-          (let ((has-internal
-                  (let check ((rs refs))
-                    (cond ((null? rs) #f)
-                          ((equal? (nf (car rs) 'pkg) pkg)
-                           (let ((objs (nf (car rs) 'objects)))
-                             (if (and objs (any-member? objs to-group))
-                               #t
-                               (check (cdr rs)))))
-                          (else (check (cdr rs)))))))
-            (loop (cdr frs) (if has-internal (+ count 1) count))))))))
+             (uses (let ((u (nf fr 'func-uses))) (if u u '()))))
+        (loop (cdr frs)
+              (if (and (member (nf fr 'qname) from-group)
+                       (any-member? uses to-group))
+                (+ count 1)
+                count))))))
 
 (define (any-member? items lst)
   "True if any element of items is a member of lst."
@@ -451,7 +444,7 @@ See also: `import-signatures', `find-split', `verify-acyclic'."
            (let ((h (make-equal-hashtable)))
              (for-each
                (lambda (fr)
-                 (let ((n (nf fr 'name)) (p (nf fr 'pos)))
+                 (let ((n (nf fr 'qname)) (p (nf fr 'pos)))
                    (if (and (string? n) (string? p)) (hashtable-set! h n p))))
                (if (pair? func-refs) func-refs '()))
              h))

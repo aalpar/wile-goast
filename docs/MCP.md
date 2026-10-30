@@ -56,8 +56,8 @@ appear on both stdio and HTTP. Implemented in `lib/wile/goast/pipelines.scm`
   consumer's case analysis does not cover). Additive provenance changes do not
   bump. Errors surface via MCP's `isError`, not the envelope. JSON keys are
   snake_case; Scheme alists stay kebab-case (converted by
-  `cmd/wile-goast/marshal.go`). `find_duplicates` is at `version` 3,
-  `find_false_boundaries` at 2.
+  `cmd/wile-goast/marshal.go`). `find_duplicates` is at `version` 4,
+  `find_false_boundaries` and `recommend_split` at 2.
 - `mode` is the FCA field-access mode: `write-only` (default),
   `read-write`, or `type-only`. Any other value is a tool error.
 - Optional-parameter defaults: `idf_threshold` 0.36, `max_attributes` 30,
@@ -66,6 +66,10 @@ appear on both stdio and HTTP. Implemented in `lib/wile/goast/pipelines.scm`
   effective similarity and is what selects the rows returned (see below).
   `discover_beliefs` with `committed_path` omitted or `""` disables
   suppression and returns raw discovery output.
+- `find_duplicates` keys functions by package-qualified name, so same-named
+  functions in different packages, or methods sharing a name on different
+  receivers, are distinct. Each entry in a row's `functions` carries `name`
+  (`Func` or `Recv.Method`, as displayed and as `symbol` matches) and `pkg`.
 - `find_duplicates` returns every scored pair at or above `threshold`, each
   carrying its own `equiv_tier`. FCA clustering is candidate *generation*,
   C(k,2) per concept; the tier is the adjudication that follows, and it is
@@ -95,10 +99,11 @@ appear on both stdio and HTTP. Implemented in `lib/wile/goast/pipelines.scm`
   than `max-candidate-pairs` (25000) pairs. That is a latency budget, not a
   projection ceiling: scoring runs 280-340 pairs/s and the cost is sunk before
   any result exists, so the guard reads the concept lattice only and refuses in
-  ~1s rather than after minutes (`./...`, 58551 pairs, 3m31s). Provenance
+  ~1s rather than after minutes (`./...`, 36474 pairs). Provenance
   carries `candidate_pair_count` and `max_candidate_pairs`. No single package
-  in this repo exceeds the budget; `goast`, the largest, yields 20404 and is
-  answered in ~60s.
+  in this repo exceeds the budget; `goast`, the largest, yields 16011 and is
+  answered in under a minute. A pair is counted once even when several
+  concepts contain it.
 - Prefer a pipeline tool for its known structural query; use `eval` for
   open-ended exploration. Design: `plans/2026-04-19-mcp-tool-surface-{design,impl}.md`.
 
@@ -122,7 +127,9 @@ suffix beginning at a separator boundary** — `/` for `scope`, `.` for
 `symbol`. So `scope=marshal.go`, `scope=goast/marshal.go` and
 `scope=*/goast/*.go` all work against the absolute position path with no
 relativization, and `symbol=cloneTypeExpr` works on both tools despite one
-reporting `Type.Method` and the other the package-qualified SSA form. Unset
+reporting `Type.Method` and the other the package-qualified SSA form. On
+`find_duplicates`, `symbol=Parse` matches every package's `Parse`; tell them
+apart with `scope` or the row's `pkg`. Unset
 matches everything; both set is a conjunction on the same element. There is no
 negation or disjunction.
 

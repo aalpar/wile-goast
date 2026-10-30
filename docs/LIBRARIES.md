@@ -144,13 +144,13 @@ Import signature analysis for Go package decomposition. Discovers natural packag
 
 | Export | Description |
 |--------|-------------|
-| `import-signatures` | Extract per-function package dependency sets from `go-func-refs` output |
+| `import-signatures` | Extract per-function package dependency sets from `go-func-refs` output, keyed by `qname` (functions are named by `qname` throughout, so group members are qualified names) |
 | `compute-idf` | IDF weights for dependency informativeness |
 | `filter-noise` | Remove ubiquitous (low-IDF) dependencies |
 | `build-package-context` | FCA context at package granularity |
 | `refine-by-api-surface` | FCA context at (package, object) granularity |
 | `find-split` | Min-cut two-way partition via concept lattice |
-| `verify-acyclic` | Check proposed split for Go import cycles |
+| `verify-acyclic` | Check proposed split for Go import cycles: counts functions on each side that reference (`func-uses`) a function on the other |
 | `recommend-split` | Top-level: IDF + FCA + min-cut + cycle check + confidence |
 | `recommend-split-findings` | Located findings for a `recommend-split` report: group-a/group-b members as findings (`why` = `(split-group (side . a\|b))`), positioned via `func-ref.pos` |
 | `single-cluster` | `(single-cluster [opt]...)` -> an analyzer `(lambda (sites ctx) -> report)` for `define-aggregate-belief`. Self-contained: derives `go-func-refs` from the belief context's session and ignores `sites`. Options forward to `recommend-split` |
@@ -173,26 +173,26 @@ data this module joins on.
 |--------|-------------|
 | `measure-directions` | Direction of improvement per RANKABLE measure key: `benefit`/`similarity` `up`, `type-params`/`value-params` `down`. Pass as `pareto-frontier`'s `factors`. `equiv-tier` is deliberately absent — a verdict, not a measure |
 | `cost-directions` | The 5c cost axes' directions (`new-edges` and `creates-cycle?` both `down`); append to `measure-directions` when ranking both halves. `locality` is excluded: its value is a nested alist `((scope . S) (dep-overlap . J))` that `factor-leq?` cannot order, so lift `dep-overlap` out and name its direction (`up`) at that point |
-| `function-ref-context` | `function × external-ref` FCA context, IDF-filtered (reuses the `split.scm` chain at function granularity) |
+| `function-ref-context` | `function × external-ref` FCA context, IDF-filtered (reuses the `split.scm` chain at function granularity). Objects are `qname`s; `init` funcs are excluded |
 | `duplicate-candidate-concepts` | Concepts with extent ≥ 2 and a non-empty intent — by FCA closure, duplicate-candidate clusters |
-| `func-refs->positions` | Name→source hashtable from `go-func-refs` output (the `field-index->positions` twin; exact-match keys) |
+| `func-refs->positions` | `qname`→source hashtable from `go-func-refs` output (the `field-index->positions` twin; exact-match keys) |
 | `dup-candidate-findings` | Per candidate concept, each extent member → a located `finding`; `why` = `(duplicate-candidate (refs . intent))`, `score` = `#f`. The `boundary-findings` twin |
 | `find-duplicate-candidates` | Top-level (5a): `go-func-refs` → IDF-filtered context → concept lattice → candidate concepts → located findings |
-| `short-name` | Qualified name → its trailing segment. The join key between call-graph/SSA names and AST func-decl names |
+| `short-name` | Qualified name → its trailing segment. Not a join key: it collides across receivers and packages. Used only to match a bare name in `cand-creates-cycle?`'s traversal |
 | `all-pairs` | Unordered pairs of a list, as `(a . b)` conses |
-| `build-func-ast-index` | `short-name` → AST func-decl, over parsed packages |
-| `build-func-ssa-index` | `short-name` → *raw* SSA func. The un-canonicalized counterpart to `build-func-canon-index` |
+| `build-func-ast-index` | Qualified name → AST func-decl, over parsed packages |
+| `build-func-ssa-index` | Qualified name → *raw* SSA func. The un-canonicalized counterpart to `build-func-canon-index` |
 | `pair-findings` | The two located findings for one scored pair (`score` = similarity, `why` = `(unify-candidate …)`); the shared constructor under `scored-candidates` |
-| `score-candidate-pair` | (5b) Benefit measures (`benefit`, `type-params`, `value-params`, `similarity`) + `equiv-tier` for a candidate pair, joined to AST/SSA via `short-name`. Tier: `proven` (SSA-canonical `unifiable?`) / `structural` (AST `unifiable?`) / `divergent`. Returns `#f` when names don't resolve. Takes a **pre-canonicalized** SSA index (`build-func-canon-index`), not a raw one: canonicalization is hoisted to once-per-function (a function in a concept of extent _k_ was previously re-canonicalized _k−1_ times) and guarded — a function whose dominator tree fails to cover all blocks is omitted from the index and falls back to the AST tier instead of aborting the sweep |
-| `build-func-canon-index` | (5b) `short-name` → *canonicalized* SSA func, computed once per function with `go-ssa-canonicalize` failures guarded. The pre-canonicalized counterpart to the raw `build-func-ssa-index`; consumed by `score-candidate-pair`. Eliminates the per-pair canonicalization redundancy and the crash on functions with unreachable blocks |
-| `candidate-pairs` | All within-concept pairs across CONCEPTS, flattened (`apply append` over `all-pairs` per concept). The concept grouping does not survive into the flat output, so one `(a . b)` pair appearing in two concepts yields two entries |
-| `score-candidate-pairs` | Score a flat PAIRS work list (from `candidate-pairs`) against SESSION's AST/SSA: builds the AST and canon-SSA indexes scoped to just the short names PAIRS references, then scores each pair (5b). Split out of `find-scored-candidates` so a caller that already ran discovery, to size or prune the work list, does not run it twice |
+| `score-candidate-pair` | (5b) Benefit measures (`benefit`, `type-params`, `value-params`, `similarity`) + `equiv-tier` for a candidate pair of qualified names, joined to AST/SSA by exact name. Tier: `proven` (SSA-canonical `unifiable?`) / `structural` (AST `unifiable?`) / `divergent`. Returns `#f` when names don't resolve. Takes a **pre-canonicalized** SSA index (`build-func-canon-index`), not a raw one: canonicalization is hoisted to once-per-function (a function in a concept of extent _k_ was previously re-canonicalized _k−1_ times) and guarded — a function whose dominator tree fails to cover all blocks is omitted from the index and falls back to the AST tier instead of aborting the sweep |
+| `build-func-canon-index` | (5b) Qualified name → *canonicalized* SSA func, computed once per function with `go-ssa-canonicalize` failures guarded. The pre-canonicalized counterpart to the raw `build-func-ssa-index`; consumed by `score-candidate-pair`. Eliminates the per-pair canonicalization redundancy and the crash on functions with unreachable blocks |
+| `candidate-pairs` | All within-concept pairs across CONCEPTS, flattened and deduplicated (a pair in a concept's extent is also in every super-concept's). First occurrence wins; `(a . b)` and `(b . a)` are one pair |
+| `score-candidate-pairs` | Score a flat PAIRS work list (from `candidate-pairs`) against SESSION's AST/SSA: builds the AST and canon-SSA indexes scoped to just the names PAIRS references, then scores each pair (5b). Split out of `find-scored-candidates` so a caller that already ran discovery, to size or prune the work list, does not run it twice |
 | `scored-candidates` / `find-scored-candidates` | (5b) `scored-candidates` takes a flat PAIRS work list, not a concept list, and scores each into a candidate: two located findings (`score` = effective similarity), `why` = `(unify-candidate (peer . other) (measures . M))`. `find-scored-candidates` is the top-level (clusters → `candidate-pairs` → scored pairs) |
 | `candidate->verdict` | (5b) **Opt-in** projection of a candidate's `equiv-tier` to `duplicate`/`likely-duplicate`/`distinct` — the categorical analog of `finding->scalar`; the measure surface is the default, the verdict is requested, never imposed |
 | `cand-new-edges` | (5c) `\|callers(a) ∪ callers(b)\|` — the in-degree the merged function would carry (coupling concentrated; merging retargets edges, doesn't add them) |
 | `cand-creates-cycle?` | (5c) `a reaches b ∨ b reaches a` (BFS over `go-callgraph-callees`) — merging a call-path pair collapses it into a self-cycle. Merge-side analog of `verify-acyclic` |
 | `cand-locality` | (5c) Ledger fact (never a verdict): `scope` (`same-pkg`/`shared-callers`/`disjoint`) + `dep-overlap` (Jaccard of external ref sets) |
-| `build-func-ref-index` | (5c) name → `func-ref` entry, for `cand-locality`'s pkg + ref-set lookup |
+| `build-func-ref-index` | (5c) `qname` → `func-ref` entry, for `cand-locality`'s pkg + ref-set lookup |
 | `find-candidates-with-cost` | (5c) Top-level full ledger: 5b scoring + the cost measures, findings embedding the full set |
 
 Cost axes plug into the same `pareto-frontier`. Pass `measure-directions`
@@ -209,8 +209,9 @@ before ranking. So a table may name only keys every candidate carries —
 alone. `creates-cycle?` carries its question mark for that reason, and
 `TestDirectionTablesMatchEmittedMeasures` pins the join. (Note: `cand-creates-cycle?`
 keeps its own BFS over `go-callgraph-callees` rather than calling
-`(wile goast path-algebra)`'s `go-callgraph-reachable`: candidates are `short-name`s
-and callee names are qualified, so the traversal has to compare on `short-name`.)
+`(wile goast path-algebra)`'s `go-callgraph-reachable`, and matches names as
+`go-callgraph-callers` does: a qualified name exactly, a bare one against every
+function of that short name.)
 
 Rank the measure surface with `pareto-frontier`/`dominates?` from
 `(wile goast fca-recommend)` — the one documented combinator (no dedup-specific
@@ -220,8 +221,14 @@ categorical verdict that `factor-leq?` cannot order. That projection is the
 reason `measure-directions` omits `equiv-tier`: take its keys rather than
 remembering to drop that one by hand. The cost-half
 measures (`cand-new-edges`, `cand-creates-cycle?`, `cand-locality`) are slice 5c.
-`short-name` reconciliation collides only when two methods share a short name
-across receiver types (rare; index keeps the last). The LLM judge is deferred.
+Every layer joins on the qualified name the typed AST carries (`"pkg/path.F"`,
+`"(*pkg/path.T).M"`): it is the SSA name for non-generic functions and
+`go-func-refs`' `qname`, so FCA objects, positions, and the AST/SSA indexes
+agree, and candidate pairs carry qualified names. Keying on bare or short names
+merged same-named functions across packages into one FCA object and scored
+same-named methods against themselves (similarity 1.0). `init` funcs, which
+all share `"pkg.init"`, are excluded from the context. The LLM judge is
+deferred.
 
 ## Path Algebra — `(wile goast path-algebra)`
 

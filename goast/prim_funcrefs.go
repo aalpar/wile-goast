@@ -17,6 +17,7 @@ package goast
 import (
 	"go/ast"
 	"go/token"
+	"go/types"
 	"sort"
 
 	"golang.org/x/tools/go/packages"
@@ -69,16 +70,24 @@ func funcRefsFromPattern(mc machine.CallContext, pattern *values.String) error {
 
 // funcRefEntry holds the per-function external reference data during collection.
 type funcRefEntry struct {
-	name    string
-	pkg     string
-	pos     string                 // "file:line:col", or "" when the position is invalid
-	extRefs map[string]Set[string] // ext-pkg-path -> set of object names
+	name     string
+	qname    string // qualifiedFuncName: unique across packages and receivers
+	pkg      string
+	pos      string                 // "file:line:col", or "" when the position is invalid
+	extRefs  map[string]Set[string] // ext-pkg-path -> set of object names
+	funcUses Set[string]            // qnames of loaded-package funcs/methods referenced
 }
 
 // buildFuncRefs walks all FuncDecls in the given packages, collecting
-// external references via types.Info.Uses.
+// external references via types.Info.Uses, and the functions and methods of
+// the loaded packages each one references (same package included, which the
+// external refs leave out by construction).
 func buildFuncRefs(pkgs []*packages.Package) values.Value {
 	var entries []funcRefEntry
+	loaded := make(Set[string])
+	for _, pkg := range pkgs {
+		loaded.Add(pkg.PkgPath)
+	}
 
 	for _, pkg := range pkgs {
 		if pkg.TypesInfo == nil {
@@ -101,10 +110,12 @@ func buildFuncRefs(pkgs []*packages.Package) values.Value {
 					pos = pkg.Fset.Position(p).String()
 				}
 				entry := funcRefEntry{
-					name:    name,
-					pkg:     pkg.PkgPath,
-					pos:     pos,
-					extRefs: make(map[string]Set[string]),
+					name:     name,
+					qname:    qualifiedFuncName(fn, pkg.PkgPath, pkg.TypesInfo),
+					pkg:      pkg.PkgPath,
+					pos:      pos,
+					extRefs:  make(map[string]Set[string]),
+					funcUses: make(Set[string]),
 				}
 
 				ast.Inspect(fn.Body, func(n ast.Node) bool {
@@ -117,7 +128,16 @@ func buildFuncRefs(pkgs []*packages.Package) values.Value {
 						return true
 					}
 					objPkg := obj.Pkg()
-					if objPkg == nil || objPkg.Path() == pkg.PkgPath {
+					if objPkg == nil {
+						return true
+					}
+					// Origin: a use of an instantiated generic function names
+					// the declared one, whose FullName is its qname.
+					f, isFunc := obj.(*types.Func)
+					if isFunc && loaded.Contains(objPkg.Path()) {
+						entry.funcUses.Add(f.Origin().FullName())
+					}
+					if objPkg.Path() == pkg.PkgPath {
 						return true
 					}
 					extPath := objPkg.Path()
@@ -133,8 +153,9 @@ func buildFuncRefs(pkgs []*packages.Package) values.Value {
 		}
 	}
 
-	// Sort entries deterministically: by package path, then by name.
-	sort.Slice(entries, func(i, j int) bool {
+	// Sort entries deterministically: by package path, then by name. Stable,
+	// because several init funcs in one package share a name.
+	sort.SliceStable(entries, func(i, j int) bool {
 		if entries[i].pkg != entries[j].pkg {
 			return entries[i].pkg < entries[j].pkg
 		}
@@ -149,7 +170,8 @@ func buildFuncRefs(pkgs []*packages.Package) values.Value {
 }
 
 // mapFuncRefEntry converts a funcRefEntry to a tagged alist:
-// (func-ref (name . N) (pkg . P) (refs . ((ref (pkg . X) (objects . (...))))))
+// (func-ref (name . N) (qname . Q) (pkg . P) (refs . ((ref (pkg . X) (objects . (...)))))
+// (func-uses . (Q ...)) [(pos . "file:line:col")]).
 func mapFuncRefEntry(e funcRefEntry) values.Value {
 	// Sort external package paths for deterministic output.
 	paths := make([]string, 0, len(e.extRefs))
@@ -180,8 +202,10 @@ func mapFuncRefEntry(e funcRefEntry) values.Value {
 
 	fields := []values.Value{
 		Field("name", Str(e.name)),
+		Field("qname", Str(e.qname)),
 		Field("pkg", Str(e.pkg)),
 		Field("refs", ValueList(refs)),
+		Field("func-uses", sortedStrList(e.funcUses)),
 	}
 	if e.pos != "" {
 		fields = append(fields, Field("pos", Str(e.pos)))
@@ -219,4 +243,18 @@ func recvTypeName(expr ast.Expr) string {
 		}
 	}
 	return "_"
+}
+
+// sortedStrList renders a string set as a sorted list of Scheme strings.
+func sortedStrList(set Set[string]) values.Value {
+	items := make([]string, 0, len(set))
+	for item := range set {
+		items = append(items, item)
+	}
+	sort.Strings(items)
+	out := make([]values.Value, len(items))
+	for i, item := range items {
+		out[i] = Str(item)
+	}
+	return ValueList(out)
 }

@@ -207,25 +207,33 @@ func mapFile(f *ast.File, opts *mapperOpts) values.Value {
 // qualifiedRecvType resolves an AST receiver expression to its fully-qualified
 // type string using type info. Falls back to types.ExprString when type info
 // is unavailable or the expression has no type entry.
-func qualifiedRecvType(expr ast.Expr, opts *mapperOpts) string {
-	if opts.typeInfo == nil {
+func qualifiedRecvType(expr ast.Expr, info *types.Info) string {
+	if info == nil {
 		return types.ExprString(expr)
 	}
-	tv, ok := opts.typeInfo.Types[expr]
+	tv, ok := info.Types[expr]
 	if !ok {
 		return types.ExprString(expr)
 	}
 	return types.TypeString(tv.Type, nil)
 }
 
-func mapFuncDecl(f *ast.FuncDecl, opts *mapperOpts) values.Value {
-	funcName := f.Name.Name
-	if opts.pkgPath != "" && f.Recv != nil && len(f.Recv.List) > 0 {
-		recvType := qualifiedRecvType(f.Recv.List[0].Type, opts)
-		funcName = "(" + recvType + ")." + f.Name.Name
-	} else if opts.pkgPath != "" {
-		funcName = opts.pkgPath + "." + f.Name.Name
+// qualifiedFuncName is the func-decl name the typed AST carries:
+// "pkg/path.Func" or "(*pkg/path.T).Method", which for non-generic functions
+// is also the SSA function name. go-func-refs emits it as 'qname so the layers
+// join on one key; the bare name is only unique within one package.
+func qualifiedFuncName(f *ast.FuncDecl, pkgPath string, info *types.Info) string {
+	if pkgPath == "" {
+		return f.Name.Name
 	}
+	if f.Recv != nil && len(f.Recv.List) > 0 {
+		return "(" + qualifiedRecvType(f.Recv.List[0].Type, info) + ")." + f.Name.Name
+	}
+	return pkgPath + "." + f.Name.Name
+}
+
+func mapFuncDecl(f *ast.FuncDecl, opts *mapperOpts) values.Value {
+	funcName := qualifiedFuncName(f, opts.pkgPath, opts.typeInfo)
 
 	var fields []values.Value
 	if opts.comments {

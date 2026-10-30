@@ -1,5 +1,51 @@
 # Changelog
 
+## Unreleased — functions are keyed by qualified name; `recommend_split` sees same-package calls
+
+`find_duplicates`, `(wile goast dup-detect)` and `(wile goast split)` named
+functions by their bare or short name, which is unique only within one package
+and receiver. FCA merged same-named functions from different packages into one
+object with the union of their refs, so `a.Parse` and `b.Parse` could never
+pair. The AST and SSA indexes kept the last function per short name, so any two
+methods sharing a name (`X.Encode`, `Y.Encode`; every `String`) scored one
+function against itself: similarity 1.0, tier `proven`, at the head of the
+ranking. Every layer now joins on the qualified name the typed AST already
+carries (`"pkg/path.F"`, `"(*pkg/path.T).M"`), which is also the SSA and
+call-graph name.
+
+- `go-func-refs` gains `qname` (that name) and `func-uses` (the `qname`s of the
+  loaded packages' functions and methods a body references, same package
+  included).
+- `import-signatures` keys on `qname`, so a hand-built func-ref without one no
+  longer works. Candidate pairs, finding values and the `build-func-*-index`
+  keys are qualified names.
+- `find_duplicates` moves to envelope `version` 4. Each function in a row gains
+  `pkg`; `symbol` still matches the short `name`, so `symbol=Parse` matches
+  every package's `Parse`. A pair contained in several concepts is now scored
+  and reported once: `./goast` drops from 20654 candidate pairs to 16011, and
+  `./goastssa` (4457) falls below the old 9992 ceiling it was the test pin
+  for, so that test moves to `./goast`. `init` funcs,
+  which all share `"pkg.init"`, are left out of the duplicate context.
+- `find-candidates-with-cost`'s cost measures were empty for every method: a
+  name like `X.Encode` matched no call-graph node. They are populated now, and
+  `cand-creates-cycle?` matches a qualified name exactly rather than by short
+  name.
+- `recommend_split` moves to envelope `version` 2: group members are qualified
+  names. Its acyclicity check counted same-package references, which
+  `go-func-refs` never recorded, so every split reported `a-refs-b` and
+  `b-refs-a` as 0 and passed as acyclic. It now reads `func-uses`, so
+  confidence can drop where a proposed split has references both ways.
+
+`go-ssa-build` and `go-ssa-field-index` dropped every value-receiver method:
+walking the `*T` method set yields a synthetic wrapper for each one, and
+wrappers were filtered out. Both now list each method declared on a package's
+types, value receivers and generic types included, promoted methods excluded,
+in a deterministic order (members used to be ranged straight off a map).
+
+The legibility probe refuses a fixture in which two candidate pairs share a
+bare-name key, rather than joining a model answer to the wrong pair. Fixtures:
+`examples/goast-query/testdata/dupcross` and `testdata/methodset`.
+
 ## v0.5.344 — interval analysis terminates on loops; wile v1.21.0
 
 `make-interval-analysis` never bounded a loop. Its local `widen-interval` had

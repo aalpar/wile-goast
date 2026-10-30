@@ -174,7 +174,12 @@ func addPrimitives(r *registry.PrimitiveRegistry) error {
 				"pairs it references via types.Info.Uses.\n" +
 				"Optional arg is a package pattern or GoSession; if absent, uses\n" +
 				"(current-go-target).\n" +
-				"Output: list of (func-ref (name . N) (pkg . P) (refs . ((ref ...)))).\n\n" +
+				"Output: list of (func-ref (name . N) (qname . Q) (pkg . P) (refs . ((ref ...)))\n" +
+				"(func-uses . (Q ...))).\n" +
+				"name is \"Func\" or \"Recv.Method\", unique only within one package; qname is\n" +
+				"the typed-AST func-decl name (\"pkg/path.Func\", \"(*pkg/path.T).Method\").\n" +
+				"func-uses: qnames of loaded-package functions/methods referenced, same package\n" +
+				"included (refs covers only other packages).\n\n" +
 				"Examples:\n" +
 				"  (define refs (go-func-refs \"my/pkg\"))\n" +
 				"  (cdr (assoc 'name (cdr (car refs))))  ; => \"MyFunc\"\n" +

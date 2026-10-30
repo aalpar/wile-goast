@@ -31,7 +31,8 @@ The report contains:
 - **functions** — total function count
 - **high-idf** — informative dependencies (high IDF = referenced by few functions)
 - **groups** — two function groups from the min-cut partition
-  - **group-a**, **group-b** — function names in each group
+  - **group-a**, **group-b** — qualified function names in each group
+    (`"pkg/path.F"`, `"(*pkg/path.T).M"`)
   - **cut** — functions that bridge both groups (the coupling cost)
   - **cut-ratio** — cut size / total (lower is better; < 0.15 is excellent)
 - **acyclic** — whether the split avoids Go import cycles
