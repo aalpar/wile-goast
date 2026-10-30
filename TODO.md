@@ -150,6 +150,11 @@ currently uses six (identity, absorbing, commutativity, + three added 2026-04-20
 Probe before committing to full impl. Design doc:
 `plans/2026-04-17-fca-duplicate-detection-design.md`.
 
+2026-09-03: `plans/2026-09-03-sub-function-reduction-detectors-design.md`
+supplies D1's ground truth from wile `d5c6181d..492e1871` and supersedes D2's
+SSA sub-sequence unit with an AST fragment unit; see its Gates for the D3
+measurement.
+
 Hypothesis: the dumbest cross-function SSA block-sequence detector may
 catch most real duplicates without FCA prefiltering. If so, simplify the
 impl. If not, the miss set informs whether FCA (Track 1) or aggressive
