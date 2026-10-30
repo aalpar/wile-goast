@@ -2,13 +2,13 @@
 
 Top-level task: composable API for wile-goast analysis and transformation (Go code inlining).
 Two independent tracks — shared sessions and transformation primitives — converge
-at the inlining pipeline. See `plans/2026-03-24-transformation-primitives-design.md`.
+at the inlining pipeline. See `memory/2026-03-24-transformation-primitives-design.local.md`.
 
 ## Track A: Shared Session API — DONE (v0.5.0)
 
 Completed 2026-03-24. GoSession holds loaded packages, lazy SSA/callgraph.
 All 7 package-loading primitives accept GoSession or string. Belief DSL
-creates session in `make-context`. See `plans/2026-03-24-shared-session-design.md`.
+creates session in `make-context`. See `memory/2026-03-24-shared-session-design.local.md`.
 
 ## Track B: Transformation Primitives — DONE
 
@@ -33,14 +33,14 @@ Completed 2026-03-25. Returns inside for/range are rewritten as
 `_ctl<N> = K; break` with guard-if-return statements after the loop.
 Composes with Case 1 (guard folding) in a single call. Supports nested
 loops (bottom-up) and multiple return sites per loop.
-See `plans/2026-03-25-b3-c2-c6-design.md` (B2b/B3 design).
+See `wile-memoplans/plans/2026-03-25-b3-c2-c6-design.md` (B2b/B3 design).
 
 ### B3. go-cfg-to-structured improvements (depends on B2) — DONE
 
 Completed 2026-03-25. Labeled break for switch/select returns in loops,
 result variable synthesis for multiple return values, forward and backward
 goto elimination (cross-branch still returns `#f`).
-See `plans/2026-03-25-b3-c2-c6-design.md` (B3 design).
+See `wile-memoplans/plans/2026-03-25-b3-c2-c6-design.md` (B3 design).
 
 - [x] Handle goto / labeled branches (forward and backward; cross-branch returns #f)
 - [x] Handle switch/select with early returns inside loops (labeled break)
@@ -70,7 +70,7 @@ lattice fixpoint. `ssa-normalize` uses `(wile algebra rewrite)` axiom declaratio
 
 Completed 2026-03-26. Worklist-based forward/backward analysis over SSA blocks.
 `run-analysis` with per-block transfer, `analysis-in`/`analysis-out` queries,
-`'check-monotone` flag. See `plans/2026-03-26-c2-dataflow-design.md`.
+`'check-monotone` flag. See `memory/2026-03-26-c2-dataflow-design.local.md`.
 
 - [x] Define transfer function interface (per-block)
 - [x] Forward/backward analysis combinator over SSA blocks (reverse postorder)
@@ -85,7 +85,7 @@ Completed 2026-04-12. Five domains in `(wile goast domains)` library:
 reaching definitions, liveness, constant propagation, sign, interval.
 Shared `go-concrete-eval` for integer opcodes. Interval analysis uses
 per-block widening in transfer closure.
-See `plans/2026-03-26-c3-domains-design.md`.
+See `memory/2026-03-26-c3-domains-design.local.md`.
 
 - [x] Powerset lattice — liveness, reaching definitions
 - [x] Flat lattice (⊥ < concrete values < ⊤) — constant propagation
@@ -108,7 +108,7 @@ See `plans/2026-03-26-c3-domains-design.md`.
       engine over `(wile algebra cfl)`) + `(wile goast taint)` (composable
       interprocedural taint: `taint-flows`, predicate builders, default Go security
       source/sink set). Function-summary fidelity; context-sensitive (excludes
-      wrong-caller-return paths). `plans/2026-06-06-cfl-taint-consumer-*.md`.
+      wrong-caller-return paths). `plans/2026-06-06-cfl-taint-consumer-*.local.md`.
       Remaining: statement/SSA-level precision; boolean pre-slice for scale.
 
 ### C5. Galois connections for abstract interpretation
@@ -148,9 +148,9 @@ currently uses six (identity, absorbing, commutativity, + three added 2026-04-20
 ## Track D: Duplicate Detection — Feasibility Probe (2026-04-18)
 
 Probe before committing to full impl. Design doc:
-`plans/2026-04-17-fca-duplicate-detection-design.md`.
+`plans/2026-04-17-fca-duplicate-detection-design.local.md`.
 
-2026-09-03: `plans/2026-09-03-sub-function-reduction-detectors-design.md`
+2026-09-03: `plans/2026-09-03-sub-function-reduction-detectors-design.local.md`
 supplies D1's ground truth from wile `d5c6181d..492e1871` and supersedes D2's
 SSA sub-sequence unit with an AST fragment unit; see its Gates for the D3
 measurement.
@@ -482,7 +482,7 @@ Use-case targets enabled once the substrate is judged sufficient (cf. THESIS.md
 "Intentional deferral of use cases"). Each composes existing layers; each is an
 *estimate/finding* surfaced for review, not a proof.
 
-- [ ] **Big-O runtime & memory complexity** [Analysis use case]: Estimate asymptotic time and space bounds per function. Composes CFG loop-nesting depth + call-graph recursion (SCC via `(wile goast path-algebra)`) + interval/sign domains for loop-bound inference. **For opaque calls (stdlib, third-party, anything without a body), read the supplied complexity from godoc or doc comments** rather than analyzing the callee — structured-docstring extraction already exists (`memory/2026-04-06-structured-docstrings-impl.md`). Honest framing: a best-effort *bound estimate*, not a guarantee; reports `unknown` when neither analysis nor documentation pins it down.
+- [ ] **Big-O runtime & memory complexity** [Analysis use case]: Estimate asymptotic time and space bounds per function. Composes CFG loop-nesting depth + call-graph recursion (SCC via `(wile goast path-algebra)`) + interval/sign domains for loop-bound inference. **For opaque calls (stdlib, third-party, anything without a body), read the supplied complexity from godoc or doc comments** rather than analyzing the callee — structured-docstring extraction already exists (`memory/2026-04-06-structured-docstrings-impl.local.md`). Honest framing: a best-effort *bound estimate*, not a guarantee; reports `unknown` when neither analysis nor documentation pins it down.
 
 - [ ] **nil-panic reachability** [Analysis use case]: Flag dereference sites where a nil panic is reachable — pointer/interface deref, field selection, map/slice/channel ops, and method calls on possibly-nil receivers. A maybe-nil/non-nil flat lattice propagated through the worklist framework (`run-analysis` over SSA), with guard-aware narrowing (`checked-before-use` already follows the comparison data flow). Reports the dereference and the unchecked path that reaches it as a located finding.
 
@@ -695,13 +695,13 @@ Effort tags: S (hours), M (day), L (multi-day).
       Fix pushes that mandate into the return value: label soundness at the query
       boundary, and offer a `(must . may)` variant (`must` = sound lower bound via
       `'precise`; `may` = the over-approximation surplus the caller must discharge).
-      Design + reproducer refs: `plans/2026-07-09-callgraph-reachable-soundness-legibility-design.md`.
+      Design + reproducer refs: `plans/2026-07-09-callgraph-reachable-soundness-legibility-design.local.md`.
       **[M, return-type change is a v0.x break — decision gated]**
 
 ## Belief DSL — CFG/dominance + DX gaps (from wile #9 `PrimCallCC` belief work, 2026-07-03)
 
 Surfaced while developing a structural belief for wile finding #9 (`PrimCallCC`
-dual-mode; `wile/plans/2026-07-03-continuation-callcc-dualmode-oracle.md`). The
+dual-mode; `wile-memoplans/memory/2026-07-03-continuation-callcc-dualmode-oracle.md`). The
 belief the wile plan needs is an *intra-function CFG-dominance* claim ("the
 continuation capture dominates both mode-dispatch arms"), which the current belief
 DSL cannot express. Per the platform thesis (wile = an LLM platform for building
@@ -797,7 +797,7 @@ recheck (stale-binary suspected — see the last item).
 ## Interface Dispatch — follow-ups (from `(wile goast dispatch)`, shipped 2026-07-12)
 
 Shipped in `5662f82..7515585`. Design + impl:
-`plans/2026-07-12-interface-dispatch-findings-{design,impl}.md`. The gate reproduces
+`plans/2026-07-12-interface-dispatch-findings-{design,impl}.local.md`. The gate reproduces
 the design's independently-derived census on real source sites (137 sites / 97 `must`
 vs 137 / 96). These are the residuals the build surfaced.
 
@@ -871,8 +871,8 @@ vs 137 / 96). These are the residuals the build surfaced.
 ## Scheme Source Navigation — MCP (SHIPPED 2026-07-16)
 
 Pure-Scheme `(wile goast scmnav)` — lexical jump-to-def over caller-supplied roots.
-Design: [`plans/2026-07-15-scheme-source-navigation-design.md`](plans/2026-07-15-scheme-source-navigation-design.md).
-Impl plan: [`plans/2026-07-15-scheme-source-navigation-impl.md`](plans/2026-07-15-scheme-source-navigation-impl.md).
+Design: [`plans/2026-07-15-scheme-source-navigation-design.local.md`](plans/2026-07-15-scheme-source-navigation-design.local.md).
+Impl plan: [`plans/2026-07-15-scheme-source-navigation-impl.local.md`](plans/2026-07-15-scheme-source-navigation-impl.local.md).
 Classifier explodes `define-record-type` (each name at its own line/col) and resolves the
 `.sld` export→define map (local / re-export / unresolved trichotomy). Tools: `scheme_defs`,
 `scheme_symbols`. **v1 is lexical (pre-macro-expansion)**: macro-generated bindings are
@@ -920,7 +920,7 @@ invisible, `cond-expand` is not evaluated, references/caller-finding are deferre
 
 - [ ] **[v2, GATE RESOLVED] Expansion-backed Scheme analysis — Wile's expander is
       Scheme-visible and position-preserving.** Full write-up + probes:
-      **design §8.1** (`plans/2026-07-15-scheme-source-navigation-design.md`). Summary:
+      **design §8.1** (`plans/2026-07-15-scheme-source-navigation-design.local.md`). Summary:
       * `expand` (arity 1) and `expand-once` are registered in the `eval` extension
         (`wile/extensions/eval/register.go:72`; impls `wile/extensions/eval/prim_eval.go:400,439`)
         and are LIVE in goast's KitchenSink engine. `expand` REQUIRES a syntax object —
