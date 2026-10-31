@@ -66,7 +66,7 @@ func TestMarshalToJSON(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			val, err := engine.EvalMultiple(ctx, tc.scheme)
 			qt.Assert(t, err, qt.IsNil)
-			got, err := marshalToJSON(val)
+			got, err := marshalValue(val)
 			qt.Assert(t, err, qt.IsNil)
 			b, err := json.Marshal(got)
 			qt.Assert(t, err, qt.IsNil)
@@ -87,6 +87,6 @@ func TestMarshalToJSON_UnsupportedType(t *testing.T) {
 	val, err := engine.EvalMultiple(ctx, "(lambda (x) x)")
 	qt.Assert(t, err, qt.IsNil)
 
-	_, err = marshalToJSON(val)
+	_, err = marshalValue(val)
 	qt.Assert(t, errors.Is(err, errMarshalUnsupported), qt.IsTrue)
 }

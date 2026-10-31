@@ -36,39 +36,39 @@ func TestSession_FullPipeline(t *testing.T) {
 
 	t.Run("typecheck", func(t *testing.T) {
 		result := testutil.RunScheme(t, engine, `(pair? (go-typecheck-package s))`)
-		qt.New(t).Assert(result.Internal(), qt.Equals, values.TrueValue)
+		qt.New(t).Assert(result, qt.Equals, values.TrueValue)
 	})
 
 	t.Run("ssa-build", func(t *testing.T) {
 		result := testutil.RunScheme(t, engine, `(pair? (go-ssa-build s))`)
-		qt.New(t).Assert(result.Internal(), qt.Equals, values.TrueValue)
+		qt.New(t).Assert(result, qt.Equals, values.TrueValue)
 	})
 
 	t.Run("cfg", func(t *testing.T) {
 		result := testutil.RunScheme(t, engine,
 			`(pair? (go-cfg s "PrimGoParseExpr"))`)
-		qt.New(t).Assert(result.Internal(), qt.Equals, values.TrueValue)
+		qt.New(t).Assert(result, qt.Equals, values.TrueValue)
 	})
 
 	t.Run("callgraph", func(t *testing.T) {
 		result := testutil.RunScheme(t, engine,
 			`(pair? (go-callgraph s 'static))`)
-		qt.New(t).Assert(result.Internal(), qt.Equals, values.TrueValue)
+		qt.New(t).Assert(result, qt.Equals, values.TrueValue)
 	})
 
 	t.Run("field-index", func(t *testing.T) {
 		result := testutil.RunScheme(t, engine,
 			`(list? (go-ssa-field-index s))`)
-		qt.New(t).Assert(result.Internal(), qt.Equals, values.TrueValue)
+		qt.New(t).Assert(result, qt.Equals, values.TrueValue)
 	})
 
 	t.Run("session-predicate", func(t *testing.T) {
 		result := testutil.RunScheme(t, engine, `(go-session? s)`)
-		qt.New(t).Assert(result.Internal(), qt.Equals, values.TrueValue)
+		qt.New(t).Assert(result, qt.Equals, values.TrueValue)
 	})
 
 	t.Run("opaque-tag", func(t *testing.T) {
 		result := testutil.RunScheme(t, engine, `(opaque-tag s)`)
-		qt.New(t).Assert(result.Internal(), qt.DeepEquals, values.NewSymbol("go-session"))
+		qt.New(t).Assert(result, qt.DeepEquals, values.NewSymbol("go-session"))
 	})
 }

@@ -68,7 +68,7 @@ func TestTaint_InterproceduralCanary(t *testing.T) {
 				(cons 'edges-out '()))))`)
 
 	result := eval(t, engine, `(null? (taint-flows cgAB (is-name "A") (is-name "B")))`)
-	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
+	c.Assert(result, qt.Equals, values.TrueValue)
 
 	// --- Positive half: matched return-then-call graph ---
 	// A calls s at call-site 0 (open₀: A→s, close₀: s→A).
@@ -90,9 +90,9 @@ func TestTaint_InterproceduralCanary(t *testing.T) {
 				(cons 'edges-out '()))))`)
 
 	result = eval(t, engine, `(taint-flows cgst (is-name "s") (is-name "t"))`)
-	flows, ok := result.Internal().(*values.Pair)
+	flows, ok := result.(*values.Pair)
 	if !ok {
-		t.Fatalf("taint-flows positive: expected a non-empty list, got %T: %v", result.Internal(), result.Internal())
+		t.Fatalf("taint-flows positive: expected a non-empty list, got %T: %v", result, result)
 	}
 	flow, ok := flows.Car().(*values.Pair)
 	if !ok {
@@ -142,9 +142,9 @@ func TestTaint_BuildersAndDefaults(t *testing.T) {
 		(define snk-pred (taint-from-names '("os/exec.Command")))`)
 
 	result := eval(t, engine, `(taint-flows cg-fv-cmd src-pred snk-pred)`)
-	flows, ok := result.Internal().(*values.Pair)
+	flows, ok := result.(*values.Pair)
 	if !ok {
-		t.Fatalf("taint-from-names: expected non-empty list, got %T: %v", result.Internal(), result.Internal())
+		t.Fatalf("taint-from-names: expected non-empty list, got %T: %v", result, result)
 	}
 	flow, ok := flows.Car().(*values.Pair)
 	if !ok {
@@ -163,13 +163,13 @@ func TestTaint_BuildersAndDefaults(t *testing.T) {
 
 	// taint-default-sources / -sinks / -sanitizers must be procedures.
 	isProcSrc := eval(t, engine, `(procedure? taint-default-sources)`)
-	c.Assert(isProcSrc.Internal(), qt.Equals, values.TrueValue)
+	c.Assert(isProcSrc, qt.Equals, values.TrueValue)
 
 	isProcSnk := eval(t, engine, `(procedure? taint-default-sinks)`)
-	c.Assert(isProcSnk.Internal(), qt.Equals, values.TrueValue)
+	c.Assert(isProcSnk, qt.Equals, values.TrueValue)
 
 	isProcSan := eval(t, engine, `(procedure? taint-default-sanitizers)`)
-	c.Assert(isProcSan.Internal(), qt.Equals, values.TrueValue)
+	c.Assert(isProcSan, qt.Equals, values.TrueValue)
 }
 
 // TestTaint_NamelessNodeNoCrash is a regression test for the crosscheck HIGH
@@ -194,5 +194,5 @@ func TestTaint_NamelessNodeNoCrash(t *testing.T) {
 		(define result (taint-flows cg (is-name "src") (is-name "snk")))`)
 	// No crash; src calls snk (single open edge = valid path) so one flow is reported.
 	got := eval(t, engine, `(not (null? result))`)
-	c.Assert(got.Internal(), qt.Equals, values.TrueValue)
+	c.Assert(got, qt.Equals, values.TrueValue)
 }

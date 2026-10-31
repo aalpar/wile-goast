@@ -63,7 +63,7 @@ func TestGoLoad_DirOption_LoadsExternalModule(t *testing.T) {
 	engine := newEngine(t)
 	result := testutil.RunScheme(t, engine,
 		`(go-load "./..." 'dir "`+dir+`")`)
-	s, ok := extgoast.UnwrapSession(result.Internal())
+	s, ok := extgoast.UnwrapSession(result)
 	qt.New(t).Assert(ok, qt.IsTrue)
 	qt.New(t).Assert(len(s.Packages()) > 0, qt.IsTrue)
 	qt.New(t).Assert(s.Packages()[0].PkgPath, qt.Equals, "example.com/tmpmod")
@@ -75,7 +75,7 @@ func TestGoLoad_DirOption_LoadsExternalModule(t *testing.T) {
 func TestGoLoad_DirOption_AbsentDoesNotResolveTempModule(t *testing.T) {
 	engine := newEngine(t)
 	result := testutil.RunScheme(t, engine, `(go-load "./...")`)
-	s, ok := extgoast.UnwrapSession(result.Internal())
+	s, ok := extgoast.UnwrapSession(result)
 	qt.New(t).Assert(ok, qt.IsTrue)
 	for _, pkg := range s.Packages() {
 		qt.New(t).Assert(pkg.PkgPath, qt.Not(qt.Equals), "example.com/tmpmod")
@@ -122,7 +122,7 @@ func TestGoLoad_DirOption_CombinedWithLintAndMultiplePatterns(t *testing.T) {
 	engine := newEngine(t)
 	result := testutil.RunScheme(t, engine,
 		`(go-load "./..." "./..." 'dir "`+dir+`" 'lint)`)
-	s, ok := extgoast.UnwrapSession(result.Internal())
+	s, ok := extgoast.UnwrapSession(result)
 	qt.New(t).Assert(ok, qt.IsTrue)
 	qt.New(t).Assert(s.IsLintMode(), qt.IsTrue)
 	qt.New(t).Assert(len(s.Patterns()), qt.Equals, 2)
@@ -160,7 +160,7 @@ func TestGoLoad_ReturnsSession(t *testing.T) {
 	engine := newEngine(t)
 	result := testutil.RunScheme(t, engine,
 		`(go-load "github.com/aalpar/wile-goast/goast")`)
-	_, ok := extgoast.UnwrapSession(result.Internal())
+	_, ok := extgoast.UnwrapSession(result)
 	qt.New(t).Assert(ok, qt.IsTrue)
 }
 
@@ -168,7 +168,7 @@ func TestGoLoad_MultiplePatterns(t *testing.T) {
 	engine := newEngine(t)
 	result := testutil.RunScheme(t, engine,
 		`(go-load "github.com/aalpar/wile-goast/goast" "github.com/aalpar/wile-goast/goastssa")`)
-	s, ok := extgoast.UnwrapSession(result.Internal())
+	s, ok := extgoast.UnwrapSession(result)
 	qt.New(t).Assert(ok, qt.IsTrue)
 	qt.New(t).Assert(len(s.Patterns()), qt.Equals, 2)
 }
@@ -177,7 +177,7 @@ func TestGoLoad_LintOption(t *testing.T) {
 	engine := newEngine(t)
 	result := testutil.RunScheme(t, engine,
 		`(go-load "github.com/aalpar/wile-goast/goast" 'lint)`)
-	s, ok := extgoast.UnwrapSession(result.Internal())
+	s, ok := extgoast.UnwrapSession(result)
 	qt.New(t).Assert(ok, qt.IsTrue)
 	qt.New(t).Assert(s.IsLintMode(), qt.IsTrue)
 }
@@ -187,10 +187,10 @@ func TestGoLoad_SessionPredicate(t *testing.T) {
 	testutil.RunScheme(t, engine, `(define s (go-load "github.com/aalpar/wile-goast/goast"))`)
 
 	result := testutil.RunScheme(t, engine, `(go-session? s)`)
-	qt.New(t).Assert(result.Internal(), qt.Equals, values.TrueValue)
+	qt.New(t).Assert(result, qt.Equals, values.TrueValue)
 
 	result = testutil.RunScheme(t, engine, `(go-session? "not a session")`)
-	qt.New(t).Assert(result.Internal(), qt.Equals, values.FalseValue)
+	qt.New(t).Assert(result, qt.Equals, values.FalseValue)
 }
 
 func TestGoLoad_OpaqueIntegration(t *testing.T) {
@@ -198,10 +198,10 @@ func TestGoLoad_OpaqueIntegration(t *testing.T) {
 	testutil.RunScheme(t, engine, `(define s (go-load "github.com/aalpar/wile-goast/goast"))`)
 
 	result := testutil.RunScheme(t, engine, `(opaque? s)`)
-	qt.New(t).Assert(result.Internal(), qt.Equals, values.TrueValue)
+	qt.New(t).Assert(result, qt.Equals, values.TrueValue)
 
 	result = testutil.RunScheme(t, engine, `(opaque-tag s)`)
-	qt.New(t).Assert(result.Internal(), qt.DeepEquals, values.NewSymbol("go-session"))
+	qt.New(t).Assert(result, qt.DeepEquals, values.NewSymbol("go-session"))
 }
 
 func TestGoLoad_Errors(t *testing.T) {
@@ -224,7 +224,7 @@ func TestGoTypecheckPackage_WithSession(t *testing.T) {
 	engine := newEngine(t)
 	testutil.RunScheme(t, engine, `(define s (go-load "github.com/aalpar/wile-goast/goast"))`)
 	result := testutil.RunScheme(t, engine, `(pair? (go-typecheck-package s))`)
-	qt.New(t).Assert(result.Internal(), qt.Equals, values.TrueValue)
+	qt.New(t).Assert(result, qt.Equals, values.TrueValue)
 }
 
 func TestGoTypecheckPackage_SessionMatchesString(t *testing.T) {
@@ -236,7 +236,7 @@ func TestGoTypecheckPackage_SessionMatchesString(t *testing.T) {
 	fromString := testutil.RunScheme(t, engine, `
 		(let ((pkgs (go-typecheck-package "github.com/aalpar/wile-goast/goast")))
 			(cdr (assoc 'name (cdr (car pkgs)))))`)
-	qt.New(t).Assert(fromSession.Internal(), valuestest.SchemeEquals, fromString.Internal())
+	qt.New(t).Assert(fromSession, valuestest.SchemeEquals, fromString)
 }
 
 func TestGoInterfaceImplementors_WithSession(t *testing.T) {
@@ -244,14 +244,14 @@ func TestGoInterfaceImplementors_WithSession(t *testing.T) {
 	testutil.RunScheme(t, engine, `(define s (go-load "github.com/aalpar/wile-goast/goast/testdata/iface"))`)
 	result := testutil.RunScheme(t, engine,
 		`(go-node-type (go-interface-implementors "Store" s))`)
-	qt.New(t).Assert(result.Internal(), valuestest.SchemeEquals, values.NewSymbol("interface-info"))
+	qt.New(t).Assert(result, valuestest.SchemeEquals, values.NewSymbol("interface-info"))
 }
 
 func TestGoListDeps_ReturnsImportPaths(t *testing.T) {
 	engine := newEngine(t)
 	result := testutil.RunScheme(t, engine,
 		`(pair? (go-list-deps "github.com/aalpar/wile-goast/goast"))`)
-	qt.New(t).Assert(result.Internal(), qt.Equals, values.TrueValue)
+	qt.New(t).Assert(result, qt.Equals, values.TrueValue)
 }
 
 func TestGoListDeps_IncludesStdlib(t *testing.T) {
@@ -262,7 +262,7 @@ func TestGoListDeps_IncludesStdlib(t *testing.T) {
 			(cond ((null? deps) #f)
 				  ((equal? (car deps) "go/ast") #t)
 				  (else (loop (cdr deps)))))`)
-	qt.New(t).Assert(result.Internal(), qt.Equals, values.TrueValue)
+	qt.New(t).Assert(result, qt.Equals, values.TrueValue)
 }
 
 func TestGoListDeps_MultiplePatterns(t *testing.T) {
@@ -270,5 +270,5 @@ func TestGoListDeps_MultiplePatterns(t *testing.T) {
 	result := testutil.RunScheme(t, engine,
 		`(pair? (go-list-deps "github.com/aalpar/wile-goast/goast"
 		                      "github.com/aalpar/wile-goast/goastssa"))`)
-	qt.New(t).Assert(result.Internal(), qt.Equals, values.TrueValue)
+	qt.New(t).Assert(result, qt.Equals, values.TrueValue)
 }

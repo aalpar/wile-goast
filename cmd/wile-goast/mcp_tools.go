@@ -258,7 +258,7 @@ func viewOpts(req mcp.CallToolRequest) ([]string, string) {
 
 // invokePipeline evaluates a pipeline call on the session's engine,
 // marshals the resulting Wile value to JSON-compatible Go via
-// marshalToJSON, and returns a tool result with both text (JSON string)
+// marshalValue, and returns a tool result with both text (JSON string)
 // and structured content populated. Tool-level errors become
 // mcp.NewToolResultError.
 //
@@ -278,7 +278,7 @@ func (ms *mcpServer) invokePipeline(ctx context.Context, code string) (*mcp.Call
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
-	data, err := marshalToJSON(val)
+	data, err := marshalValue(val)
 	if err != nil {
 		return mcp.NewToolResultError(fmt.Sprintf("marshal: %v", err)), nil
 	}

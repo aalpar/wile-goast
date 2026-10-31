@@ -42,12 +42,12 @@ func TestGoCFGToStructured_GuardClauses(t *testing.T) {
 
 	t.Run("returns a block", func(t *testing.T) {
 		result := eval(t, engine, `(eq? (car result) 'block)`)
-		qt.New(t).Assert(result.Internal(), qt.Equals, values.TrueValue)
+		qt.New(t).Assert(result, qt.Equals, values.TrueValue)
 	})
 
 	t.Run("formats to nested if-else", func(t *testing.T) {
 		result := eval(t, engine, `(go-format result)`)
-		s := result.Internal().(*values.String).Value
+		s := result.(*values.String).Value
 		qt.New(t).Assert(strings.Contains(s, "} else if"), qt.IsTrue,
 			qt.Commentf("expected else-if chain, got:\n%s", s))
 		qt.New(t).Assert(strings.Contains(s, "} else {"), qt.IsTrue,
@@ -75,7 +75,7 @@ func TestGoCFGToStructured_MultiStmtGuard(t *testing.T) {
 
 	t.Run("preserves multi-stmt body", func(t *testing.T) {
 		result := eval(t, engine, `(go-format result)`)
-		s := result.Internal().(*values.String).Value
+		s := result.(*values.String).Value
 		qt.New(t).Assert(strings.Contains(s, "println"), qt.IsTrue)
 		qt.New(t).Assert(strings.Contains(s, "} else {"), qt.IsTrue)
 	})
@@ -100,7 +100,7 @@ func TestGoCFGToStructured_InterleavedStatements(t *testing.T) {
 
 	t.Run("absorbs non-if into else", func(t *testing.T) {
 		result := eval(t, engine, `(go-format result)`)
-		s := result.Internal().(*values.String).Value
+		s := result.(*values.String).Value
 		qt.New(t).Assert(strings.Contains(s, "} else {"), qt.IsTrue)
 		qt.New(t).Assert(strings.Contains(s, "y := x * 2"), qt.IsTrue)
 	})
@@ -123,7 +123,7 @@ func TestGoCFGToStructured_NoEarlyReturns(t *testing.T) {
 
 	t.Run("returns block unchanged", func(t *testing.T) {
 		result := eval(t, engine, `(go-format result)`)
-		s := result.Internal().(*values.String).Value
+		s := result.(*values.String).Value
 		qt.New(t).Assert(strings.Contains(s, "y := x + 1"), qt.IsTrue)
 		qt.New(t).Assert(strings.Contains(s, "return y"), qt.IsTrue)
 	})
@@ -148,26 +148,26 @@ func TestGoCFGToStructured_LoopReturn(t *testing.T) {
 
 	t.Run("returns a block", func(t *testing.T) {
 		result := eval(t, engine, `(eq? (car result) 'block)`)
-		qt.New(t).Assert(result.Internal(), qt.Equals, values.TrueValue)
+		qt.New(t).Assert(result, qt.Equals, values.TrueValue)
 	})
 
 	t.Run("has break instead of return in loop", func(t *testing.T) {
 		result := eval(t, engine, `(go-format result)`)
-		s := result.Internal().(*values.String).Value
+		s := result.(*values.String).Value
 		qt.New(t).Assert(strings.Contains(s, "break"), qt.IsTrue,
 			qt.Commentf("expected break in loop, got:\n%s", s))
 	})
 
 	t.Run("has guard after loop", func(t *testing.T) {
 		result := eval(t, engine, `(go-format result)`)
-		s := result.Internal().(*values.String).Value
+		s := result.(*values.String).Value
 		qt.New(t).Assert(strings.Contains(s, "errNeg"), qt.IsTrue,
 			qt.Commentf("expected errNeg in guard, got:\n%s", s))
 	})
 
 	t.Run("has single-exit structure", func(t *testing.T) {
 		result := eval(t, engine, `(go-format result)`)
-		s := result.Internal().(*values.String).Value
+		s := result.(*values.String).Value
 		qt.New(t).Assert(strings.Contains(s, "} else {"), qt.IsTrue,
 			qt.Commentf("expected else from Case 1 folding, got:\n%s", s))
 	})
@@ -193,7 +193,7 @@ func TestGoCFGToStructured_LoopMultipleReturns(t *testing.T) {
 
 	t.Run("both returns become guards", func(t *testing.T) {
 		result := eval(t, engine, `(go-format result)`)
-		s := result.Internal().(*values.String).Value
+		s := result.(*values.String).Value
 		qt.New(t).Assert(strings.Contains(s, "return -1"), qt.IsTrue,
 			qt.Commentf("expected return -1 in guard, got:\n%s", s))
 		qt.New(t).Assert(strings.Contains(s, "return 100"), qt.IsTrue,
@@ -224,7 +224,7 @@ func TestGoCFGToStructured_NestedLoopReturn(t *testing.T) {
 
 	t.Run("nested loops produce two ctl vars", func(t *testing.T) {
 		result := eval(t, engine, `(go-format result)`)
-		s := result.Internal().(*values.String).Value
+		s := result.(*values.String).Value
 		qt.New(t).Assert(strings.Contains(s, "_ctl0"), qt.IsTrue,
 			qt.Commentf("expected _ctl0, got:\n%s", s))
 		qt.New(t).Assert(strings.Contains(s, "_ctl1"), qt.IsTrue,
@@ -254,7 +254,7 @@ func TestGoCFGToStructured_LoopNoReturn(t *testing.T) {
 
 	t.Run("returns block unchanged", func(t *testing.T) {
 		result := eval(t, engine, `(go-format result)`)
-		s := result.Internal().(*values.String).Value
+		s := result.(*values.String).Value
 		qt.New(t).Assert(strings.Contains(s, "sum += v"), qt.IsTrue)
 		qt.New(t).Assert(strings.Contains(s, "return sum"), qt.IsTrue)
 		qt.New(t).Assert(strings.Contains(s, "_ctl"), qt.IsFalse,
@@ -284,12 +284,12 @@ func TestGoCFGToStructured_LoopReturnInSwitch(t *testing.T) {
 
 	t.Run("returns a block", func(t *testing.T) {
 		result := eval(t, engine, `(eq? (car result) 'block)`)
-		qt.New(t).Assert(result.Internal(), qt.Equals, values.TrueValue)
+		qt.New(t).Assert(result, qt.Equals, values.TrueValue)
 	})
 
 	t.Run("has labeled break", func(t *testing.T) {
 		result := eval(t, engine, `(go-format result)`)
-		s := result.Internal().(*values.String).Value
+		s := result.(*values.String).Value
 		qt.New(t).Assert(strings.Contains(s, "_loop0"), qt.IsTrue,
 			qt.Commentf("expected loop label, got:\n%s", s))
 		qt.New(t).Assert(strings.Contains(s, "break _loop0"), qt.IsTrue,
@@ -298,7 +298,7 @@ func TestGoCFGToStructured_LoopReturnInSwitch(t *testing.T) {
 
 	t.Run("has guard after loop", func(t *testing.T) {
 		result := eval(t, engine, `(go-format result)`)
-		s := result.Internal().(*values.String).Value
+		s := result.(*values.String).Value
 		qt.New(t).Assert(strings.Contains(s, "return -1"), qt.IsTrue,
 			qt.Commentf("expected return in guard, got:\n%s", s))
 	})
@@ -328,7 +328,7 @@ func TestGoCFGToStructured_LoopReturnInTypeSwitch(t *testing.T) {
 
 	t.Run("has labeled break and multiple guards", func(t *testing.T) {
 		result := eval(t, engine, `(go-format result)`)
-		s := result.Internal().(*values.String).Value
+		s := result.(*values.String).Value
 		qt.New(t).Assert(strings.Contains(s, "break _loop0"), qt.IsTrue,
 			qt.Commentf("expected labeled break, got:\n%s", s))
 		qt.New(t).Assert(strings.Contains(s, "return 1"), qt.IsTrue)
@@ -360,7 +360,7 @@ func TestGoCFGToStructured_LoopReturnInSelect(t *testing.T) {
 
 	t.Run("has labeled break", func(t *testing.T) {
 		result := eval(t, engine, `(go-format result)`)
-		s := result.Internal().(*values.String).Value
+		s := result.(*values.String).Value
 		qt.New(t).Assert(strings.Contains(s, "break _loop0"), qt.IsTrue,
 			qt.Commentf("expected labeled break, got:\n%s", s))
 	})
@@ -386,7 +386,7 @@ func TestGoCFGToStructured_GuardPlusLoop(t *testing.T) {
 
 	t.Run("both guard and loop are restructured", func(t *testing.T) {
 		result := eval(t, engine, `(go-format result)`)
-		s := result.Internal().(*values.String).Value
+		s := result.(*values.String).Value
 		// Guard clause becomes if/else
 		qt.New(t).Assert(strings.Contains(s, "} else"), qt.IsTrue,
 			qt.Commentf("expected else from guard folding, got:\n%s", s))
@@ -419,7 +419,7 @@ func TestGoCFGToStructured_LoopReturnLocalVar(t *testing.T) {
 
 	t.Run("has result variable", func(t *testing.T) {
 		result := eval(t, engine, `(go-format result)`)
-		s := result.Internal().(*values.String).Value
+		s := result.(*values.String).Value
 		qt.New(t).Assert(strings.Contains(s, "var _r0 int"), qt.IsTrue,
 			qt.Commentf("expected _r0 declaration, got:\n%s", s))
 		qt.New(t).Assert(strings.Contains(s, "_r0 = v"), qt.IsTrue,
@@ -449,7 +449,7 @@ func TestGoCFGToStructured_LoopMultiReturn(t *testing.T) {
 
 	t.Run("has two result variables", func(t *testing.T) {
 		result := eval(t, engine, `(go-format result)`)
-		s := result.Internal().(*values.String).Value
+		s := result.(*values.String).Value
 		qt.New(t).Assert(strings.Contains(s, "var _r0 int"), qt.IsTrue,
 			qt.Commentf("expected _r0 int, got:\n%s", s))
 		qt.New(t).Assert(strings.Contains(s, "var _r1 error"), qt.IsTrue,
@@ -484,7 +484,7 @@ func TestGoCFGToStructured_SiblingLoopsResultVars(t *testing.T) {
 
 	t.Run("sibling loops get unique result var names", func(t *testing.T) {
 		result := eval(t, engine, `(go-format result)`)
-		s := result.Internal().(*values.String).Value
+		s := result.(*values.String).Value
 		// First loop uses _r0, second loop uses _r1.
 		qt.New(t).Assert(strings.Contains(s, "var _r0 int"), qt.IsTrue,
 			qt.Commentf("expected _r0, got:\n%s", s))
@@ -521,7 +521,7 @@ func TestGoCFGToStructured_LoopReturnGroupedResults(t *testing.T) {
 
 	t.Run("grouped result types get independent var decls", func(t *testing.T) {
 		result := eval(t, engine, `(go-format result)`)
-		s := result.Internal().(*values.String).Value
+		s := result.(*values.String).Value
 		// Three result vars: _r0 int, _r1 int (cloned), _r2 error.
 		qt.New(t).Assert(strings.Contains(s, "var _r0 int"), qt.IsTrue,
 			qt.Commentf("expected _r0 int, got:\n%s", s))
@@ -553,7 +553,7 @@ func TestGoCFGToStructured_LoopReturnNoFuncType(t *testing.T) {
 
 	t.Run("still works without func-type", func(t *testing.T) {
 		result := eval(t, engine, `(go-format result)`)
-		s := result.Internal().(*values.String).Value
+		s := result.(*values.String).Value
 		qt.New(t).Assert(strings.Contains(s, "errNeg"), qt.IsTrue)
 		qt.New(t).Assert(strings.Contains(s, "_r0"), qt.IsFalse,
 			qt.Commentf("should not synthesize _r vars without func-type, got:\n%s", s))
@@ -579,7 +579,7 @@ func TestGoCFGToStructured_ForwardGoto(t *testing.T) {
 
 	t.Run("eliminates goto", func(t *testing.T) {
 		result := eval(t, engine, `(go-format result)`)
-		s := result.Internal().(*values.String).Value
+		s := result.(*values.String).Value
 		qt.New(t).Assert(strings.Contains(s, "goto"), qt.IsFalse,
 			qt.Commentf("should eliminate goto, got:\n%s", s))
 		qt.New(t).Assert(strings.Contains(s, "println(x)"), qt.IsTrue)
@@ -607,7 +607,7 @@ func TestGoCFGToStructured_MultipleForwardGotos(t *testing.T) {
 
 	t.Run("nests conditions", func(t *testing.T) {
 		result := eval(t, engine, `(go-format result)`)
-		s := result.Internal().(*values.String).Value
+		s := result.(*values.String).Value
 		qt.New(t).Assert(strings.Contains(s, "goto"), qt.IsFalse,
 			qt.Commentf("should eliminate goto, got:\n%s", s))
 		qt.New(t).Assert(strings.Contains(s, "work()"), qt.IsTrue)
@@ -636,7 +636,7 @@ func TestGoCFGToStructured_CrossBranchGoto(t *testing.T) {
 					(decls (cdr (assoc 'decls (cdr file))))
 					(body (cdr (assoc 'body (cdr (car decls))))))
 					(go-cfg-to-structured body)))`)
-		s := result.Internal().(*values.String).Value
+		s := result.(*values.String).Value
 		qt.New(t).Assert(strings.Contains(s, "cross-branch"), qt.IsTrue,
 			qt.Commentf("expected cross-branch error, got: %s", s))
 	})
@@ -661,7 +661,7 @@ func TestGoCFGToStructured_BackwardGoto(t *testing.T) {
 
 	t.Run("becomes for loop", func(t *testing.T) {
 		result := eval(t, engine, `(go-format result)`)
-		s := result.Internal().(*values.String).Value
+		s := result.(*values.String).Value
 		qt.New(t).Assert(strings.Contains(s, "goto"), qt.IsFalse,
 			qt.Commentf("should eliminate goto, got:\n%s", s))
 		qt.New(t).Assert(strings.Contains(s, "for {"), qt.IsTrue,
@@ -690,7 +690,7 @@ func TestGoCFGToStructured_BareBackwardGoto(t *testing.T) {
 
 	t.Run("becomes infinite for loop", func(t *testing.T) {
 		result := eval(t, engine, `(go-format result)`)
-		s := result.Internal().(*values.String).Value
+		s := result.(*values.String).Value
 		qt.New(t).Assert(strings.Contains(s, "goto"), qt.IsFalse,
 			qt.Commentf("should eliminate goto, got:\n%s", s))
 		qt.New(t).Assert(strings.Contains(s, "for {"), qt.IsTrue,
@@ -724,7 +724,7 @@ func TestGoCFGToStructured_MixedGoto(t *testing.T) {
 
 	t.Run("eliminates both gotos", func(t *testing.T) {
 		result := eval(t, engine, `(go-format result)`)
-		s := result.Internal().(*values.String).Value
+		s := result.(*values.String).Value
 		qt.New(t).Assert(strings.Contains(s, "goto"), qt.IsFalse,
 			qt.Commentf("should eliminate both gotos, got:\n%s", s))
 		qt.New(t).Assert(strings.Contains(s, "for {"), qt.IsTrue)

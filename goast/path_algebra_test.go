@@ -39,10 +39,10 @@ func TestPathAlgebra_TypePredicate(t *testing.T) {
 		(define pa (make-path-analysis (boolean-semiring) cg #f))`)
 
 	result := eval(t, engine, `(path-analysis? pa)`)
-	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
+	c.Assert(result, qt.Equals, values.TrueValue)
 
 	result = eval(t, engine, `(path-analysis? 42)`)
-	c.Assert(result.Internal(), qt.Equals, values.FalseValue)
+	c.Assert(result, qt.Equals, values.FalseValue)
 }
 
 func TestPathAlgebra_BooleanLinearChain(t *testing.T) {
@@ -67,19 +67,19 @@ func TestPathAlgebra_BooleanLinearChain(t *testing.T) {
 
 	// A reaches C
 	result := eval(t, engine, `(path-query pa "A" "C")`)
-	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
+	c.Assert(result, qt.Equals, values.TrueValue)
 
 	// A reaches B
 	result = eval(t, engine, `(path-query pa "A" "B")`)
-	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
+	c.Assert(result, qt.Equals, values.TrueValue)
 
 	// A reaches A (self)
 	result = eval(t, engine, `(path-query pa "A" "A")`)
-	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
+	c.Assert(result, qt.Equals, values.TrueValue)
 
 	// C does not reach A
 	result = eval(t, engine, `(path-query pa "C" "A")`)
-	c.Assert(result.Internal(), qt.Equals, values.FalseValue)
+	c.Assert(result, qt.Equals, values.FalseValue)
 }
 
 func TestPathAlgebra_TropicalLinearChain(t *testing.T) {
@@ -104,19 +104,19 @@ func TestPathAlgebra_TropicalLinearChain(t *testing.T) {
 
 	// A to A = 0 (source identity, semiring-one of tropical is 0)
 	result := eval(t, engine, `(path-query pa "A" "A")`)
-	c.Assert(result.Internal().(*values.Integer).Value, qt.Equals, int64(0))
+	c.Assert(result.(*values.Integer).Value, qt.Equals, int64(0))
 
 	// A to B = 1
 	result = eval(t, engine, `(path-query pa "A" "B")`)
-	c.Assert(result.Internal().(*values.Integer).Value, qt.Equals, int64(1))
+	c.Assert(result.(*values.Integer).Value, qt.Equals, int64(1))
 
 	// A to C = 2
 	result = eval(t, engine, `(path-query pa "A" "C")`)
-	c.Assert(result.Internal().(*values.Integer).Value, qt.Equals, int64(2))
+	c.Assert(result.(*values.Integer).Value, qt.Equals, int64(2))
 
 	// C to A = tropical-inf (unreachable)
 	result = eval(t, engine, `(eq? (path-query pa "C" "A") tropical-inf)`)
-	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
+	c.Assert(result, qt.Equals, values.TrueValue)
 }
 
 func TestPathAlgebra_TropicalDiamond(t *testing.T) {
@@ -145,7 +145,7 @@ func TestPathAlgebra_TropicalDiamond(t *testing.T) {
 
 	// A to C = 1 (direct path shorter than via B which is 2)
 	result := eval(t, engine, `(path-query pa "A" "C")`)
-	c.Assert(result.Internal().(*values.Integer).Value, qt.Equals, int64(1))
+	c.Assert(result.(*values.Integer).Value, qt.Equals, int64(1))
 }
 
 func TestPathAlgebra_CountingDiamond(t *testing.T) {
@@ -174,11 +174,11 @@ func TestPathAlgebra_CountingDiamond(t *testing.T) {
 
 	// A to C = 2 (two distinct paths: direct + via B)
 	result := eval(t, engine, `(path-query pa "A" "C")`)
-	c.Assert(result.Internal().(*values.Integer).Value, qt.Equals, int64(2))
+	c.Assert(result.(*values.Integer).Value, qt.Equals, int64(2))
 
 	// A to B = 1
 	result = eval(t, engine, `(path-query pa "A" "B")`)
-	c.Assert(result.Internal().(*values.Integer).Value, qt.Equals, int64(1))
+	c.Assert(result.(*values.Integer).Value, qt.Equals, int64(1))
 }
 
 func TestPathAlgebra_QueryAll(t *testing.T) {
@@ -203,11 +203,11 @@ func TestPathAlgebra_QueryAll(t *testing.T) {
 
 	// From A: all 3 nodes reachable (A, B, C)
 	result := eval(t, engine, `(length (path-query-all pa "A"))`)
-	c.Assert(result.Internal().(*values.Integer).Value, qt.Equals, int64(3))
+	c.Assert(result.(*values.Integer).Value, qt.Equals, int64(3))
 
 	// From C: only C itself reachable
 	result = eval(t, engine, `(length (path-query-all pa "C"))`)
-	c.Assert(result.Internal().(*values.Integer).Value, qt.Equals, int64(1))
+	c.Assert(result.(*values.Integer).Value, qt.Equals, int64(1))
 }
 
 func TestPathAlgebra_BooleanVsReachable(t *testing.T) {
@@ -235,11 +235,11 @@ func TestPathAlgebra_BooleanVsReachable(t *testing.T) {
 				((not (path-query pa root (car names)))
 				 (car names))
 				(else (loop (cdr names)))))`)
-	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
+	c.Assert(result, qt.Equals, values.TrueValue)
 
 	// Both should have the same count.
 	result = eval(t, engine, `(= (length go-reach) (length pa-reach))`)
-	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
+	c.Assert(result, qt.Equals, values.TrueValue)
 }
 
 func TestPathAlgebra_CustomWeight(t *testing.T) {
@@ -273,10 +273,10 @@ func TestPathAlgebra_CustomWeight(t *testing.T) {
 
 	// A to B = 3, A to C = 3+5 = 8
 	result := eval(t, engine, `(path-query pa "A" "B")`)
-	c.Assert(result.Internal().(*values.Integer).Value, qt.Equals, int64(3))
+	c.Assert(result.(*values.Integer).Value, qt.Equals, int64(3))
 
 	result = eval(t, engine, `(path-query pa "A" "C")`)
-	c.Assert(result.Internal().(*values.Integer).Value, qt.Equals, int64(8))
+	c.Assert(result.(*values.Integer).Value, qt.Equals, int64(8))
 }
 
 func TestPathAlgebra_Unreachable(t *testing.T) {
@@ -301,11 +301,11 @@ func TestPathAlgebra_Unreachable(t *testing.T) {
 
 	// A cannot reach isolated C
 	result := eval(t, engine, `(path-query pa "A" "C")`)
-	c.Assert(result.Internal(), qt.Equals, values.FalseValue)
+	c.Assert(result, qt.Equals, values.FalseValue)
 
 	// Nonexistent node Z
 	result = eval(t, engine, `(path-query pa "A" "Z")`)
-	c.Assert(result.Internal(), qt.Equals, values.FalseValue)
+	c.Assert(result, qt.Equals, values.FalseValue)
 }
 
 func TestPathAlgebra_FastPathOnBigintCounting(t *testing.T) {
@@ -327,17 +327,17 @@ func TestPathAlgebra_FastPathOnBigintCounting(t *testing.T) {
 		(define pa-slow (make-path-analysis (boolean-semiring) cg #f))`)
 
 	result := eval(t, engine, `(path-analysis-fast-path? pa-fast)`)
-	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
+	c.Assert(result, qt.Equals, values.TrueValue)
 
 	result = eval(t, engine, `(path-analysis-fast-path-kind pa-fast)`)
-	c.Assert(result.Internal().(*values.Symbol).Key, qt.Equals, "bigint-counting")
+	c.Assert(result.(*values.Symbol).Key, qt.Equals, "bigint-counting")
 
 	// Boolean semiring does not get the fast path.
 	result = eval(t, engine, `(path-analysis-fast-path? pa-slow)`)
-	c.Assert(result.Internal(), qt.Equals, values.FalseValue)
+	c.Assert(result, qt.Equals, values.FalseValue)
 
 	result = eval(t, engine, `(path-analysis-fast-path-kind pa-slow)`)
-	c.Assert(result.Internal(), qt.Equals, values.FalseValue)
+	c.Assert(result, qt.Equals, values.FalseValue)
 }
 
 func TestPathAlgebra_CyclicNodesOnAcyclic(t *testing.T) {
@@ -361,10 +361,10 @@ func TestPathAlgebra_CyclicNodesOnAcyclic(t *testing.T) {
 		(define pa (make-path-analysis (bigint-counting-semiring) cg #f))`)
 
 	result := eval(t, engine, `(null? (path-cyclic-nodes pa))`)
-	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
+	c.Assert(result, qt.Equals, values.TrueValue)
 
 	result = eval(t, engine, `(path-node-in-cycle? pa "A")`)
-	c.Assert(result.Internal(), qt.Equals, values.FalseValue)
+	c.Assert(result, qt.Equals, values.FalseValue)
 }
 
 func TestPathAlgebra_CyclicNodesOnMutualRecursion(t *testing.T) {
@@ -391,14 +391,14 @@ func TestPathAlgebra_CyclicNodesOnMutualRecursion(t *testing.T) {
 
 	// A and B are mutually recursive.
 	result := eval(t, engine, `(path-node-in-cycle? pa "A")`)
-	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
+	c.Assert(result, qt.Equals, values.TrueValue)
 
 	result = eval(t, engine, `(path-node-in-cycle? pa "B")`)
-	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
+	c.Assert(result, qt.Equals, values.TrueValue)
 
 	// C is not in a cycle.
 	result = eval(t, engine, `(path-node-in-cycle? pa "C")`)
-	c.Assert(result.Internal(), qt.Equals, values.FalseValue)
+	c.Assert(result, qt.Equals, values.FalseValue)
 
 	// path-cyclic-nodes should report both A and B (and only them).
 	result = eval(t, engine, `
@@ -406,7 +406,7 @@ func TestPathAlgebra_CyclicNodesOnMutualRecursion(t *testing.T) {
 			(and (= (length cyc) 2)
 			     (and (member "A" cyc) #t)
 			     (and (member "B" cyc) #t)))`)
-	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
+	c.Assert(result, qt.Equals, values.TrueValue)
 }
 
 func TestPathAlgebra_SccsOnRealCallgraph(t *testing.T) {
@@ -425,13 +425,13 @@ func TestPathAlgebra_SccsOnRealCallgraph(t *testing.T) {
 		(define pa (make-path-analysis (bigint-counting-semiring) cg #f))`)
 
 	result := eval(t, engine, `(graph-scc? (path-analysis-sccs pa))`)
-	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
+	c.Assert(result, qt.Equals, values.TrueValue)
 
 	result = eval(t, engine, `(list? (path-cyclic-nodes pa))`)
-	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
+	c.Assert(result, qt.Equals, values.TrueValue)
 
 	result = eval(t, engine, `(> (length (path-cyclic-nodes pa)) 0)`)
-	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
+	c.Assert(result, qt.Equals, values.TrueValue)
 }
 
 func TestGoCallgraphReachable_Scheme(t *testing.T) {
@@ -450,15 +450,15 @@ func TestGoCallgraphReachable_Scheme(t *testing.T) {
 
 	// Reachable from A is the sorted set {A,B,C}, root included.
 	result := eval(t, engine, `(equal? (go-callgraph-reachable cg "A") (list "A" "B" "C"))`)
-	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
+	c.Assert(result, qt.Equals, values.TrueValue)
 
 	// A leaf reaches only itself.
 	result = eval(t, engine, `(equal? (go-callgraph-reachable cg "C") (list "C"))`)
-	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
+	c.Assert(result, qt.Equals, values.TrueValue)
 
 	// A root absent from the graph returns the empty set (not the seeded root).
 	result = eval(t, engine, `(null? (go-callgraph-reachable cg "Z"))`)
-	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
+	c.Assert(result, qt.Equals, values.TrueValue)
 }
 
 func TestGoCallgraphReaching_Scheme(t *testing.T) {
@@ -482,19 +482,19 @@ func TestGoCallgraphReaching_Scheme(t *testing.T) {
 
 	// Everything reaches C: sorted set {A,B,C}, target included.
 	result := eval(t, engine, `(equal? (go-callgraph-reaching cg "C") (list "A" "B" "C"))`)
-	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
+	c.Assert(result, qt.Equals, values.TrueValue)
 
 	// The chain root is reached only by itself: {A}.
 	result = eval(t, engine, `(equal? (go-callgraph-reaching cg "A") (list "A"))`)
-	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
+	c.Assert(result, qt.Equals, values.TrueValue)
 
 	// B is reached by A and itself: {A,B}.
 	result = eval(t, engine, `(equal? (go-callgraph-reaching cg "B") (list "A" "B"))`)
-	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
+	c.Assert(result, qt.Equals, values.TrueValue)
 
 	// A target absent from the graph returns the empty set (not the seeded target).
 	result = eval(t, engine, `(null? (go-callgraph-reaching cg "Z"))`)
-	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
+	c.Assert(result, qt.Equals, values.TrueValue)
 }
 
 func TestGoCallgraphReachable_RealGraph(t *testing.T) {
@@ -511,9 +511,9 @@ func TestGoCallgraphReachable_RealGraph(t *testing.T) {
 	result := eval(t, engine, `
 		(let ((r (go-callgraph-reachable cg "github.com/aalpar/wile-goast/goast.PrimGoParseExpr")))
 			(and (pair? r) (string? (car r)) (member "github.com/aalpar/wile-goast/goast.PrimGoParseExpr" r) #t))`)
-	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
+	c.Assert(result, qt.Equals, values.TrueValue)
 
 	// A root absent from the graph returns the empty set.
 	result = eval(t, engine, `(null? (go-callgraph-reachable cg "does.not.Exist"))`)
-	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
+	c.Assert(result, qt.Equals, values.TrueValue)
 }

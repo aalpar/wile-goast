@@ -33,7 +33,7 @@ func TestSSANormalize_CommutativeSort(t *testing.T) {
 			(let ((node '(ssa-binop (name . "t0") (op . +) (x . "r5") (y . "r2")
 			              (type . "int") (operands "r5" "r2"))))
 				(nf (ssa-normalize node) 'x))`)
-		c.Assert(result.Internal().(*values.String).Value, qt.Equals, "r2")
+		c.Assert(result.(*values.String).Value, qt.Equals, "r2")
 	})
 
 	t.Run("commutative op preserves when x < y", func(t *testing.T) {
@@ -41,7 +41,7 @@ func TestSSANormalize_CommutativeSort(t *testing.T) {
 			(let ((node '(ssa-binop (name . "t0") (op . +) (x . "r2") (y . "r5")
 			              (type . "int") (operands "r2" "r5"))))
 				(nf (ssa-normalize node) 'x))`)
-		c.Assert(result.Internal().(*values.String).Value, qt.Equals, "r2")
+		c.Assert(result.(*values.String).Value, qt.Equals, "r2")
 	})
 
 	t.Run("non-commutative op preserves order", func(t *testing.T) {
@@ -49,7 +49,7 @@ func TestSSANormalize_CommutativeSort(t *testing.T) {
 			(let ((node '(ssa-binop (name . "t0") (op . -) (x . "r5") (y . "r2")
 			              (type . "int") (operands "r5" "r2"))))
 				(nf (ssa-normalize node) 'x))`)
-		c.Assert(result.Internal().(*values.String).Value, qt.Equals, "r5")
+		c.Assert(result.(*values.String).Value, qt.Equals, "r5")
 	})
 }
 
@@ -64,7 +64,7 @@ func TestSSANormalize_Identity(t *testing.T) {
 			(ssa-normalize
 				'(ssa-binop (name . "t0") (op . +) (x . "r1") (y . "0:int")
 				  (type . "int") (operands "r1" "0:int")))`)
-		c.Assert(result.Internal().(*values.String).Value, qt.Equals, "r1")
+		c.Assert(result.(*values.String).Value, qt.Equals, "r1")
 	})
 
 	t.Run("0 + x becomes x", func(t *testing.T) {
@@ -72,7 +72,7 @@ func TestSSANormalize_Identity(t *testing.T) {
 			(ssa-normalize
 				'(ssa-binop (name . "t0") (op . +) (x . "0:int") (y . "r1")
 				  (type . "int") (operands "0:int" "r1")))`)
-		c.Assert(result.Internal().(*values.String).Value, qt.Equals, "r1")
+		c.Assert(result.(*values.String).Value, qt.Equals, "r1")
 	})
 
 	t.Run("x * 1 becomes x", func(t *testing.T) {
@@ -80,7 +80,7 @@ func TestSSANormalize_Identity(t *testing.T) {
 			(ssa-normalize
 				'(ssa-binop (name . "t0") (op . *) (x . "r3") (y . "1:int")
 				  (type . "int") (operands "r3" "1:int")))`)
-		c.Assert(result.Internal().(*values.String).Value, qt.Equals, "r3")
+		c.Assert(result.(*values.String).Value, qt.Equals, "r3")
 	})
 
 	t.Run("x ^ 0 becomes x", func(t *testing.T) {
@@ -88,7 +88,7 @@ func TestSSANormalize_Identity(t *testing.T) {
 			(ssa-normalize
 				'(ssa-binop (name . "t0") (op . ^) (x . "r2") (y . "0:int")
 				  (type . "int") (operands "r2" "0:int")))`)
-		c.Assert(result.Internal().(*values.String).Value, qt.Equals, "r2")
+		c.Assert(result.(*values.String).Value, qt.Equals, "r2")
 	})
 
 	t.Run("float identity skipped (IEEE 754)", func(t *testing.T) {
@@ -96,7 +96,7 @@ func TestSSANormalize_Identity(t *testing.T) {
 			(let ((node '(ssa-binop (name . "t0") (op . +) (x . "r1") (y . "0:float64")
 			              (type . "float64") (operands "r1" "0:float64"))))
 				(tag? (ssa-normalize node) 'ssa-binop))`)
-		c.Assert(result.Internal(), qt.Equals, values.TrueValue)
+		c.Assert(result, qt.Equals, values.TrueValue)
 	})
 }
 
@@ -111,7 +111,7 @@ func TestSSANormalize_IdentityBitwiseOr(t *testing.T) {
 			(ssa-normalize
 				'(ssa-binop (name . "t0") (op . |\||) (x . "r4") (y . "0:int")
 				  (type . "int") (operands "r4" "0:int")))`)
-		c.Assert(result.Internal().(*values.String).Value, qt.Equals, "r4")
+		c.Assert(result.(*values.String).Value, qt.Equals, "r4")
 	})
 }
 
@@ -126,7 +126,7 @@ func TestSSANormalize_Annihilation(t *testing.T) {
 			(ssa-normalize
 				'(ssa-binop (name . "t0") (op . *) (x . "r1") (y . "0:int")
 				  (type . "int") (operands "r1" "0:int")))`)
-		c.Assert(result.Internal().(*values.String).Value, qt.Equals, "0:int")
+		c.Assert(result.(*values.String).Value, qt.Equals, "0:int")
 	})
 
 	t.Run("x & 0 becomes 0", func(t *testing.T) {
@@ -134,7 +134,7 @@ func TestSSANormalize_Annihilation(t *testing.T) {
 			(ssa-normalize
 				'(ssa-binop (name . "t0") (op . &) (x . "r1") (y . "0:int")
 				  (type . "int") (operands "r1" "0:int")))`)
-		c.Assert(result.Internal().(*values.String).Value, qt.Equals, "0:int")
+		c.Assert(result.(*values.String).Value, qt.Equals, "0:int")
 	})
 
 	t.Run("0 * x becomes 0", func(t *testing.T) {
@@ -142,7 +142,7 @@ func TestSSANormalize_Annihilation(t *testing.T) {
 			(ssa-normalize
 				'(ssa-binop (name . "t0") (op . *) (x . "0:int") (y . "r1")
 				  (type . "int") (operands "0:int" "r1")))`)
-		c.Assert(result.Internal().(*values.String).Value, qt.Equals, "0:int")
+		c.Assert(result.(*values.String).Value, qt.Equals, "0:int")
 	})
 }
 
@@ -154,7 +154,7 @@ func TestSSANormalize_NonBinopPassthrough(t *testing.T) {
 	result := eval(t, engine, `
 		(tag? (ssa-normalize '(ssa-alloc (name . "t0") (type . "*int") (heap . #t)))
 		      'ssa-alloc)`)
-	qt.New(t).Assert(result.Internal(), qt.Equals, values.TrueValue)
+	qt.New(t).Assert(result, qt.Equals, values.TrueValue)
 }
 
 func TestSSANormalize_CustomRuleSet(t *testing.T) {
@@ -170,7 +170,7 @@ func TestSSANormalize_CustomRuleSet(t *testing.T) {
 			      (node '(ssa-binop (name . "t0") (op . +) (x . "r1") (y . "0:int")
 			               (type . "int") (operands "r1" "0:int"))))
 				(tag? (ssa-normalize node rules) 'ssa-binop))`)
-		c.Assert(result.Internal(), qt.Equals, values.TrueValue)
+		c.Assert(result, qt.Equals, values.TrueValue)
 	})
 }
 
@@ -185,7 +185,7 @@ func TestSSANormalize_ConstantFormats(t *testing.T) {
 			(ssa-normalize
 				'(ssa-binop (name . "t0") (op . +) (x . "r1") (y . "0")
 				  (type . "int") (operands "r1" "0")))`)
-		c.Assert(result.Internal().(*values.String).Value, qt.Equals, "r1")
+		c.Assert(result.(*values.String).Value, qt.Equals, "r1")
 	})
 
 	t.Run("typed zero constant uint64", func(t *testing.T) {
@@ -193,7 +193,7 @@ func TestSSANormalize_ConstantFormats(t *testing.T) {
 			(ssa-normalize
 				'(ssa-binop (name . "t0") (op . +) (x . "r1") (y . "0:uint64")
 				  (type . "uint64") (operands "r1" "0:uint64")))`)
-		c.Assert(result.Internal().(*values.String).Value, qt.Equals, "r1")
+		c.Assert(result.(*values.String).Value, qt.Equals, "r1")
 	})
 
 	t.Run("bare one constant", func(t *testing.T) {
@@ -201,7 +201,7 @@ func TestSSANormalize_ConstantFormats(t *testing.T) {
 			(ssa-normalize
 				'(ssa-binop (name . "t0") (op . *) (x . "r1") (y . "1")
 				  (type . "int") (operands "r1" "1")))`)
-		c.Assert(result.Internal().(*values.String).Value, qt.Equals, "r1")
+		c.Assert(result.(*values.String).Value, qt.Equals, "r1")
 	})
 }
 
@@ -216,13 +216,13 @@ func TestSSANormalize_TheoryExport(t *testing.T) {
 
 	// ssa-theory is a theory? object
 	result := eval(t, engine, `(theory? ssa-theory)`)
-	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
+	c.Assert(result, qt.Equals, values.TrueValue)
 
 	// ssa-binop-protocol is a term-protocol? object
 	result = eval(t, engine, `(term-protocol? ssa-binop-protocol)`)
-	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
+	c.Assert(result, qt.Equals, values.TrueValue)
 
 	// Theory has axioms
 	result = eval(t, engine, `(> (length (theory-axioms ssa-theory)) 0)`)
-	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
+	c.Assert(result, qt.Equals, values.TrueValue)
 }

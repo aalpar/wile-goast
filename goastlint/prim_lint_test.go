@@ -37,7 +37,7 @@ func newEngine(t *testing.T) *wile.Engine {
 	return engine
 }
 
-func eval(t *testing.T, engine *wile.Engine, code string) wile.Value {
+func eval(t *testing.T, engine *wile.Engine, code string) values.Value {
 	t.Helper()
 	result, err := engine.EvalMultiple(context.Background(), code)
 	qt.New(t).Assert(err, qt.IsNil)
@@ -69,7 +69,7 @@ func TestGoAnalyzeList_ReturnsStrings(t *testing.T) {
 	engine := newEngine(t)
 
 	result := eval(t, engine, `(pair? (go-analyze-list))`)
-	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
+	c.Assert(result, qt.Equals, values.TrueValue)
 }
 
 func TestGoAnalyzeList_ContainsKnownAnalyzers(t *testing.T) {
@@ -83,7 +83,7 @@ func TestGoAnalyzeList_ContainsKnownAnalyzers(t *testing.T) {
 					((null? names) #f)
 					((equal? (car names) "`+name+`") #t)
 					(else (loop (cdr names)))))`)
-		c.Assert(result.Internal(), qt.Equals, values.TrueValue,
+		c.Assert(result, qt.Equals, values.TrueValue,
 			qt.Commentf("expected %q in go-analyze-list", name))
 	}
 }
@@ -96,7 +96,7 @@ func TestGoAnalyze_ReturnsListForKnownPackage(t *testing.T) {
 	// Result may be empty (no issues) or non-empty — both are valid.
 	result := eval(t, engine,
 		`(list? (go-analyze "github.com/aalpar/wile-goast/goast" "assign"))`)
-	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
+	c.Assert(result, qt.Equals, values.TrueValue)
 }
 
 func TestGoAnalyze_DiagnosticStructure(t *testing.T) {
@@ -112,7 +112,7 @@ func TestGoAnalyze_DiagnosticStructure(t *testing.T) {
 					     (string? (cdr (assoc 'analyzer (cdr d))))
 					     (string? (cdr (assoc 'pos      (cdr d))))
 					     (string? (cdr (assoc 'message  (cdr d))))))))`)
-	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
+	c.Assert(result, qt.Equals, values.TrueValue)
 }
 
 func TestGoAnalyze_MultipleAnalyzers(t *testing.T) {
@@ -121,7 +121,7 @@ func TestGoAnalyze_MultipleAnalyzers(t *testing.T) {
 
 	result := eval(t, engine,
 		`(list? (go-analyze "github.com/aalpar/wile-goast/goast" "assign" "unreachable"))`)
-	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
+	c.Assert(result, qt.Equals, values.TrueValue)
 }
 
 func newSessionEngine(t *testing.T) *wile.Engine {
@@ -140,7 +140,7 @@ func TestGoAnalyze_WithLintSession(t *testing.T) {
 		`(define s (go-load "github.com/aalpar/wile-goast/goast" 'lint))`)
 	result := testutil.RunScheme(t, engine,
 		`(list? (go-analyze s "assign"))`)
-	qt.New(t).Assert(result.Internal(), qt.Equals, values.TrueValue)
+	qt.New(t).Assert(result, qt.Equals, values.TrueValue)
 }
 
 func TestGoAnalyze_WithNonLintSession_Errors(t *testing.T) {
@@ -193,7 +193,7 @@ func TestIntegration_AnalyzeRealPackage(t *testing.T) {
 		             (string? (nf d 'pos))
 		             (string? (nf d 'message))
 		             (loop (cdr ds)))))))`)
-	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
+	c.Assert(result, qt.Equals, values.TrueValue)
 }
 
 func TestIntegration_AllAnalyzersRunnable(t *testing.T) {
@@ -208,5 +208,5 @@ func TestIntegration_AllAnalyzersRunnable(t *testing.T) {
 		    (let ((diags (go-analyze "github.com/aalpar/wile-goast/goast"
 		                             (car ns))))
 		      (loop (cdr ns) (and ok (list? diags))))))`)
-	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
+	c.Assert(result, qt.Equals, values.TrueValue)
 }

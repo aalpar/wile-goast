@@ -83,9 +83,9 @@ func TestGoSSANarrowParameterWidens(t *testing.T) {
 		                     (go-ssa-narrow f (nf (car params) 'name)))
 		                    (else (loop (cdr funcs))))))))) `)
 
-	pair, ok := result.Internal().(*values.Pair)
+	pair, ok := result.(*values.Pair)
 	qt.Assert(t, ok, qt.IsTrue,
-		qt.Commentf("result is %T, want *values.Pair (no interface-typed parameter found?)", result.Internal()))
+		qt.Commentf("result is %T, want *values.Pair (no interface-typed parameter found?)", result))
 
 	tag, ok := pair.Car().(*values.Symbol)
 	qt.Assert(t, ok, qt.IsTrue)
@@ -148,9 +148,9 @@ func TestGoSSANarrowConcreteAlloc(t *testing.T) {
 	// Result must be a narrow-result alist with confidence='narrow and at
 	// least one type. The type string is Go-internal (*pkg.Type) — we don't
 	// pin it exactly, only that the algorithm recovered a concrete type.
-	pair, ok := result.Internal().(*values.Pair)
+	pair, ok := result.(*values.Pair)
 	qt.Assert(t, ok, qt.IsTrue,
-		qt.Commentf("result is %T, want *values.Pair", result.Internal()))
+		qt.Commentf("result is %T, want *values.Pair", result))
 
 	conf, ok := goast.GetField(pair.Cdr(), "confidence")
 	qt.Assert(t, ok, qt.IsTrue)

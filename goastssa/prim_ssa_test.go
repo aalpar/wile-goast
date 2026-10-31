@@ -38,7 +38,7 @@ func newEngine(t *testing.T) *wile.Engine {
 	return engine
 }
 
-func eval(t *testing.T, engine *wile.Engine, code string) wile.Value {
+func eval(t *testing.T, engine *wile.Engine, code string) values.Value {
 	t.Helper()
 	result, err := engine.EvalMultiple(context.Background(), code)
 	qt.New(t).Assert(err, qt.IsNil)
@@ -70,7 +70,7 @@ func TestGoSSABuild_WithPositionsOption(t *testing.T) {
 	// The positions option is accepted without error.
 	result := eval(t, engine,
 		`(pair? (go-ssa-build "github.com/aalpar/wile-goast/goast" 'positions))`)
-	qt.New(t).Assert(result.Internal(), qt.Equals, values.TrueValue)
+	qt.New(t).Assert(result, qt.Equals, values.TrueValue)
 }
 
 func TestGoSSABuild_ReturnsListOfFunctions(t *testing.T) {
@@ -79,7 +79,7 @@ func TestGoSSABuild_ReturnsListOfFunctions(t *testing.T) {
 	// Load a known package, verify we get a list back.
 	result := eval(t, engine,
 		`(pair? (go-ssa-build "github.com/aalpar/wile-goast/goast"))`)
-	qt.New(t).Assert(result.Internal(), qt.Equals, values.TrueValue)
+	qt.New(t).Assert(result, qt.Equals, values.TrueValue)
 }
 
 func TestGoSSABuild_FunctionStructure(t *testing.T) {
@@ -101,21 +101,21 @@ func TestGoSSABuild_FunctionStructure(t *testing.T) {
 					 (car fs))
 					(else (loop (cdr fs)))))`)
 		// Should find the function (not #f).
-		c.Assert(result.Internal(), qt.Not(qt.Equals), values.FalseValue)
+		c.Assert(result, qt.Not(qt.Equals), values.FalseValue)
 	})
 
 	t.Run("function has params", func(t *testing.T) {
 		result2 := eval(t, engine, `
 			(let ((fn (car funcs)))
 				(assoc 'params (cdr fn)))`)
-		c.Assert(result2.Internal(), qt.Not(qt.Equals), values.FalseValue)
+		c.Assert(result2, qt.Not(qt.Equals), values.FalseValue)
 	})
 
 	t.Run("function has blocks", func(t *testing.T) {
 		result := eval(t, engine, `
 			(let ((fn (car funcs)))
 				(assoc 'blocks (cdr fn)))`)
-		c.Assert(result.Internal(), qt.Not(qt.Equals), values.FalseValue)
+		c.Assert(result, qt.Not(qt.Equals), values.FalseValue)
 	})
 
 	t.Run("block has index", func(t *testing.T) {
@@ -124,7 +124,7 @@ func TestGoSSABuild_FunctionStructure(t *testing.T) {
 				   (blocks (cdr (assoc 'blocks (cdr fn))))
 				   (block (car blocks)))
 				(cdr (assoc 'index (cdr block))))`)
-		c.Assert(result.Internal(), qt.Equals, values.NewInteger(0))
+		c.Assert(result, qt.Equals, values.NewInteger(0))
 	})
 }
 
@@ -159,7 +159,7 @@ func TestIntegration_FieldStoreQuery(t *testing.T) {
 				(let ((addrs (walk-instrs (car fs) (lambda (i) (tag? i 'ssa-field-addr)))))
 					(if (pair? addrs) #t (loop (cdr fs))))))`)
 
-	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
+	c.Assert(result, qt.Equals, values.TrueValue)
 }
 
 func TestGoSSABuild_BlockDominance(t *testing.T) {
@@ -181,7 +181,7 @@ func TestGoSSABuild_BlockDominance(t *testing.T) {
 			(let* ((blocks (cdr (assoc 'blocks (cdr multi-block-fn))))
 				   (entry (car blocks)))
 				(assoc 'idom (cdr entry)))`)
-		c.Assert(result.Internal(), qt.Equals, values.FalseValue)
+		c.Assert(result, qt.Equals, values.FalseValue)
 	})
 
 	t.Run("non-entry block has idom", func(t *testing.T) {
@@ -189,7 +189,7 @@ func TestGoSSABuild_BlockDominance(t *testing.T) {
 			(let* ((blocks (cdr (assoc 'blocks (cdr multi-block-fn))))
 				   (second (cadr blocks)))
 				(pair? (assoc 'idom (cdr second))))`)
-		c.Assert(result.Internal(), qt.Equals, values.TrueValue)
+		c.Assert(result, qt.Equals, values.TrueValue)
 	})
 
 	t.Run("idom chain reaches entry", func(t *testing.T) {
@@ -206,7 +206,7 @@ func TestGoSSABuild_BlockDominance(t *testing.T) {
 								(if idom-pair
 									(loop (cdr idom-pair))
 									#f))))))`)
-		c.Assert(result.Internal(), qt.Equals, values.TrueValue)
+		c.Assert(result, qt.Equals, values.TrueValue)
 	})
 }
 
@@ -222,7 +222,7 @@ func TestGoSSAFieldIndex_ReturnsFieldSummaries(t *testing.T) {
 		         (and (pair? first)
 		              (eq? (car first) 'ssa-field-summary)))))
 	`)
-	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
+	c.Assert(result, qt.Equals, values.TrueValue)
 }
 
 func TestGoSSAFieldIndex_Content(t *testing.T) {
@@ -239,7 +239,7 @@ func TestGoSSAFieldIndex_Content(t *testing.T) {
 		       (assoc 'fields fields)
 		       #t))
 	`)
-	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
+	c.Assert(result, qt.Equals, values.TrueValue)
 }
 
 func TestGoSSAFieldIndex_AccessMode(t *testing.T) {
@@ -262,7 +262,7 @@ func TestGoSSAFieldIndex_AccessMode(t *testing.T) {
 		       (let ((m (cdr (assoc 'mode (cdr access)))))
 		         (or (eq? m 'read) (eq? m 'write)))))
 	`)
-	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
+	c.Assert(result, qt.Equals, values.TrueValue)
 }
 
 func TestGoSSAFieldIndex_Errors(t *testing.T) {
@@ -296,14 +296,14 @@ func TestGoSSABuild_WithSession(t *testing.T) {
 	engine := newSessionEngine(t)
 	testutil.RunScheme(t, engine, `(define s (go-load "github.com/aalpar/wile-goast/goast"))`)
 	result := testutil.RunScheme(t, engine, `(pair? (go-ssa-build s))`)
-	qt.New(t).Assert(result.Internal(), qt.Equals, values.TrueValue)
+	qt.New(t).Assert(result, qt.Equals, values.TrueValue)
 }
 
 func TestGoSSAFieldIndex_WithSession(t *testing.T) {
 	engine := newSessionEngine(t)
 	testutil.RunScheme(t, engine, `(define s (go-load "github.com/aalpar/wile-goast/goastssa"))`)
 	result := testutil.RunScheme(t, engine, `(list? (go-ssa-field-index s))`)
-	qt.New(t).Assert(result.Internal(), qt.Equals, values.TrueValue)
+	qt.New(t).Assert(result, qt.Equals, values.TrueValue)
 }
 
 func TestGoSSABuild_Errors(t *testing.T) {
@@ -371,7 +371,7 @@ func TestSSAMakeInterface_Concrete(t *testing.T) {
 		                                (assq 'concrete (cdr (car is))))
 		                           (cdr (assq 'concrete (cdr (car is)))))
 		                          (else (iloop (cdr is))))))))))`)
-	c.Assert(result.Internal(), qt.Not(qt.Equals), values.FalseValue)
+	c.Assert(result, qt.Not(qt.Equals), values.FalseValue)
 }
 
 // TestGoSSABuild_Positions checks the two position fields through the public

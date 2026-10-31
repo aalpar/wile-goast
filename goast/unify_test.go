@@ -32,7 +32,7 @@ func TestUnify_ASTDiffIdentical(t *testing.T) {
 		       (r (ast-diff node node)))
 			(diff-result-similarity r))`)
 	// Identical nodes should have similarity 1.0
-	f, ok := result.Internal().(*values.Float)
+	f, ok := result.(*values.Float)
 	c.Assert(ok, qt.IsTrue)
 	c.Assert(f.Value, qt.Equals, 1.0)
 }
@@ -49,7 +49,7 @@ func TestUnify_ASTDiffTypeDiff(t *testing.T) {
 		       (diffs (diff-result-diffs r)))
 			(caar diffs))`)
 	// Type field diff should be classified as 'type-name
-	sym, ok := result.Internal().(*values.Symbol)
+	sym, ok := result.(*values.Symbol)
 	c.Assert(ok, qt.IsTrue)
 	c.Assert(sym.Key, qt.Equals, "type-name")
 }
@@ -64,7 +64,7 @@ func TestUnify_SSADiffIdentical(t *testing.T) {
 		               (type . "int")))
 		       (r (ssa-diff node node)))
 			(diff-result-similarity r))`)
-	f, ok := result.Internal().(*values.Float)
+	f, ok := result.(*values.Float)
 	c.Assert(ok, qt.IsTrue)
 	c.Assert(f.Value, qt.Equals, 1.0)
 }
@@ -82,7 +82,7 @@ func TestUnify_SSADiffTypeName(t *testing.T) {
 		       (r (ssa-diff a b))
 		       (diffs (diff-result-diffs r)))
 			(caar diffs))`)
-	sym, ok := result.Internal().(*values.Symbol)
+	sym, ok := result.(*values.Symbol)
 	c.Assert(ok, qt.IsTrue)
 	c.Assert(sym.Key, qt.Equals, "type-name")
 }
@@ -101,7 +101,7 @@ func TestUnify_SSADiffRegister(t *testing.T) {
 		       (diffs (diff-result-diffs r)))
 			(caar diffs))`)
 	// 'name' field in ssa-binop (instruction) should be classified as 'register
-	sym, ok := result.Internal().(*values.Symbol)
+	sym, ok := result.(*values.Symbol)
 	c.Assert(ok, qt.IsTrue)
 	c.Assert(sym.Key, qt.Equals, "register")
 }
@@ -117,7 +117,7 @@ func TestUnify_Unifiable(t *testing.T) {
 			(let* ((node '(ssa-func (name . "Foo") (type . "int")))
 			       (r (ssa-diff node node)))
 				(unifiable? r 0.8))`)
-		c.Assert(result.Internal(), qt.Equals, values.TrueValue)
+		c.Assert(result, qt.Equals, values.TrueValue)
 	})
 
 	t.Run("structural diff not unifiable", func(t *testing.T) {
@@ -126,7 +126,7 @@ func TestUnify_Unifiable(t *testing.T) {
 			       (b '(ssa-call (name . "t0") (type . "int")))
 			       (r (ssa-diff a b)))
 				(unifiable? r 0.8))`)
-		c.Assert(result.Internal(), qt.Equals, values.FalseValue)
+		c.Assert(result, qt.Equals, values.FalseValue)
 	})
 }
 
@@ -144,7 +144,7 @@ func TestSSAEquivalent_Commutativity(t *testing.T) {
 			  (type . "int") (operands "a" "b"))
 			'(ssa-binop (name . "t1") (op . +) (x . "b") (y . "a")
 			  (type . "int") (operands "b" "a")))`)
-	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
+	c.Assert(result, qt.Equals, values.TrueValue)
 }
 
 func TestSSAEquivalent_Different(t *testing.T) {
@@ -161,7 +161,7 @@ func TestSSAEquivalent_Different(t *testing.T) {
 			  (type . "int") (operands "a" "b"))
 			'(ssa-binop (name . "t1") (op . -) (x . "a") (y . "b")
 			  (type . "int") (operands "a" "b")))`)
-	c.Assert(result.Internal(), qt.Equals, values.FalseValue)
+	c.Assert(result, qt.Equals, values.FalseValue)
 }
 
 func TestSSAEquivalent_CustomTheory(t *testing.T) {
@@ -195,5 +195,5 @@ func TestSSAEquivalent_CustomTheory(t *testing.T) {
 				                    (type . "int") (operands "x" "y"))))))))
 			(member "x" forms)))`)
 	// member returns the tail of the list starting with "x", which is truthy
-	c.Assert(result.Internal(), qt.Not(qt.Equals), values.FalseValue)
+	c.Assert(result, qt.Not(qt.Equals), values.FalseValue)
 }

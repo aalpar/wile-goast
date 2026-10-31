@@ -37,7 +37,7 @@ func newEngine(t *testing.T) *wile.Engine {
 	return engine
 }
 
-func eval(t *testing.T, engine *wile.Engine, code string) wile.Value {
+func eval(t *testing.T, engine *wile.Engine, code string) values.Value {
 	t.Helper()
 	result, err := engine.EvalMultiple(context.Background(), code)
 	qt.New(t).Assert(err, qt.IsNil)
@@ -71,7 +71,7 @@ func TestGoCallgraph_Static(t *testing.T) {
 	// Load a known package with static analysis.
 	result := eval(t, engine,
 		`(pair? (go-callgraph "github.com/aalpar/wile-goast/goast" 'static))`)
-	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
+	c.Assert(result, qt.Equals, values.TrueValue)
 }
 
 func TestGoCallgraph_CHA(t *testing.T) {
@@ -80,7 +80,7 @@ func TestGoCallgraph_CHA(t *testing.T) {
 
 	result := eval(t, engine,
 		`(pair? (go-callgraph "github.com/aalpar/wile-goast/goast" 'cha))`)
-	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
+	c.Assert(result, qt.Equals, values.TrueValue)
 }
 
 func TestGoCallgraph_Precise(t *testing.T) {
@@ -89,7 +89,7 @@ func TestGoCallgraph_Precise(t *testing.T) {
 
 	result := eval(t, engine,
 		`(pair? (go-callgraph "github.com/aalpar/wile-goast/goast" 'precise))`)
-	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
+	c.Assert(result, qt.Equals, values.TrueValue)
 }
 
 // TestGoCallgraph_StringAlgorithm is the regression guard for the symbol-vs-string
@@ -101,7 +101,7 @@ func TestGoCallgraph_StringAlgorithm(t *testing.T) {
 
 	result := eval(t, engine,
 		`(pair? (go-callgraph "github.com/aalpar/wile-goast/goast" "cha"))`)
-	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
+	c.Assert(result, qt.Equals, values.TrueValue)
 }
 
 func newSessionEngine(t *testing.T) *wile.Engine {
@@ -119,7 +119,7 @@ func TestGoCallgraph_WithSession(t *testing.T) {
 	testutil.RunScheme(t, engine, `(define s (go-load "github.com/aalpar/wile-goast/goast"))`)
 	result := testutil.RunScheme(t, engine,
 		`(pair? (go-callgraph s 'static))`)
-	qt.New(t).Assert(result.Internal(), qt.Equals, values.TrueValue)
+	qt.New(t).Assert(result, qt.Equals, values.TrueValue)
 }
 
 func TestGoCallgraph_Errors(t *testing.T) {
@@ -157,7 +157,7 @@ func TestGoCallgraphCallers(t *testing.T) {
 	// Returns a list (may be empty for a function not called by other goast functions).
 	result := eval(t, engine,
 		`(list? (go-callgraph-callers cg "`+goastTestFunc+`"))`)
-	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
+	c.Assert(result, qt.Equals, values.TrueValue)
 }
 
 func TestGoCallgraphCallees(t *testing.T) {
@@ -170,7 +170,7 @@ func TestGoCallgraphCallees(t *testing.T) {
 	// PrimGoCallgraph calls helpers and security — it should have outgoing edges.
 	result := eval(t, engine,
 		`(pair? (go-callgraph-callees cg "`+goastTestFunc+`"))`)
-	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
+	c.Assert(result, qt.Equals, values.TrueValue)
 }
 
 func TestGoCallgraphCallers_ShortName(t *testing.T) {
@@ -183,7 +183,7 @@ func TestGoCallgraphCallers_ShortName(t *testing.T) {
 	// Form 1 short name should resolve via suffix matching.
 	result := eval(t, engine,
 		`(list? (go-callgraph-callers cg "PrimGoParseExpr"))`)
-	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
+	c.Assert(result, qt.Equals, values.TrueValue)
 }
 
 func TestGoCallgraphCallees_ShortName(t *testing.T) {
@@ -195,7 +195,7 @@ func TestGoCallgraphCallees_ShortName(t *testing.T) {
 
 	result := eval(t, engine,
 		`(pair? (go-callgraph-callees cg "PrimGoParseExpr"))`)
-	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
+	c.Assert(result, qt.Equals, values.TrueValue)
 }
 
 func TestGoCallgraphCallers_NotFound(t *testing.T) {
@@ -208,7 +208,7 @@ func TestGoCallgraphCallers_NotFound(t *testing.T) {
 	// Nonexistent function returns #f (not empty list).
 	result := eval(t, engine,
 		`(go-callgraph-callers cg "does.not.Exist")`)
-	c.Assert(result.Internal(), qt.Equals, values.FalseValue)
+	c.Assert(result, qt.Equals, values.FalseValue)
 }
 
 func TestIntegration_CallgraphQuery(t *testing.T) {
@@ -233,7 +233,7 @@ func TestIntegration_CallgraphQuery(t *testing.T) {
 			     (integer? (nf first-node 'id))
 			     (list? (nf first-node 'edges-in))
 			     (list? (nf first-node 'edges-out))))`)
-	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
+	c.Assert(result, qt.Equals, values.TrueValue)
 
 	// Verify edges have expected structure.
 	result = eval(t, engine, `
@@ -245,7 +245,7 @@ func TestIntegration_CallgraphQuery(t *testing.T) {
 				(let ((edge (car edges)))
 					(and (eq? (car edge) 'cg-edge)
 					     (string? (nf edge 'description))))))`)
-	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
+	c.Assert(result, qt.Equals, values.TrueValue)
 }
 
 func TestGoCallgraph_RTA_NoMain(t *testing.T) {
@@ -276,7 +276,7 @@ func TestCgEdge_InvokeFields(t *testing.T) {
 		                    (eloop (cdr es)
 		                           (and (assq 'method e) (assq 'recv e) #t))
 		                    (eloop (cdr es) s))))))))`)
-	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
+	c.Assert(result, qt.Equals, values.TrueValue)
 }
 
 // TestCgEdge_StaticCallHasNoIface: the fields appear ONLY on invoke sites. A static
@@ -300,5 +300,5 @@ func TestCgEdge_StaticCallHasNoIface(t *testing.T) {
 		                       (or b (and (equal? d "static function call")
 		                                  (assq 'iface e)
 		                                  #t)))))))))`)
-	c.Assert(result.Internal(), qt.Not(qt.Equals), values.TrueValue)
+	c.Assert(result, qt.Not(qt.Equals), values.TrueValue)
 }

@@ -57,9 +57,9 @@ func TestDispatch_MustSite(t *testing.T) {
 		          ((string-contains? (or (dispatch-iface (car l)) "") "Single") (car l))
 		          (else (loop (cdr l))))))`)
 
-	c.Assert(eval(t, engine, `(if must-site #t #f)`).Internal(), qt.Equals, values.TrueValue)
-	c.Assert(eval(t, engine, `(eq? (dispatch-class must-site) 'must)`).Internal(), qt.Equals, values.TrueValue)
-	c.Assert(eval(t, engine, `(= (dispatch-n must-site) 1)`).Internal(), qt.Equals, values.TrueValue)
+	c.Assert(eval(t, engine, `(if must-site #t #f)`), qt.Equals, values.TrueValue)
+	c.Assert(eval(t, engine, `(eq? (dispatch-class must-site) 'must)`), qt.Equals, values.TrueValue)
+	c.Assert(eval(t, engine, `(= (dispatch-n must-site) 1)`), qt.Equals, values.TrueValue)
 }
 
 // TestDispatch_MaySite_PrunesTheDecoy: THE property the library exists for. Decoy
@@ -80,12 +80,12 @@ func TestDispatch_MaySite_PrunesTheDecoy(t *testing.T) {
 		                (= (dispatch-n (car l)) 3)) (car l))
 		          (else (loop (cdr l))))))`)
 
-	c.Assert(eval(t, engine, `(if may-site #t #f)`).Internal(), qt.Equals, values.TrueValue)
-	c.Assert(eval(t, engine, `(= (dispatch-n may-site) 3)`).Internal(), qt.Equals, values.TrueValue)
+	c.Assert(eval(t, engine, `(if may-site #t #f)`), qt.Equals, values.TrueValue)
+	c.Assert(eval(t, engine, `(= (dispatch-n may-site) 3)`), qt.Equals, values.TrueValue)
 
 	// narrowed-from records CHA's count at the same site: it must exceed n,
 	// which is the evidence that VTA actually pruned something.
-	c.Assert(eval(t, engine, `(> (dispatch-narrowed-from may-site) 3)`).Internal(),
+	c.Assert(eval(t, engine, `(> (dispatch-narrowed-from may-site) 3)`),
 		qt.Equals, values.TrueValue)
 
 	// The decoy must be absent from the candidate set.
@@ -93,7 +93,7 @@ func TestDispatch_MaySite_PrunesTheDecoy(t *testing.T) {
 		(let loop ((cs (dispatch-candidates may-site)))
 		  (cond ((null? cs) #f)
 		        ((string-contains? (nf (car cs) 'callee) "Decoy") #t)
-		        (else (loop (cdr cs)))))`).Internal(), qt.Equals, values.FalseValue)
+		        (else (loop (cdr cs)))))`), qt.Equals, values.FalseValue)
 }
 
 // TestDispatch_IsAFinding: a dispatch site IS a (wile goast provenance) finding, so
@@ -106,10 +106,10 @@ func TestDispatch_IsAFinding(t *testing.T) {
 	eval(t, engine, `(import (wile goast dispatch) (wile goast provenance))`)
 	eval(t, engine, `(define d (car (dispatch-sites `+dispatchPkg+`)))`)
 
-	c.Assert(eval(t, engine, `(symbol? (finding-value d))`).Internal(), qt.Equals, values.TrueValue)
-	c.Assert(eval(t, engine, `(eq? (finding-score d) #f)`).Internal(), qt.Equals, values.TrueValue)
-	c.Assert(eval(t, engine, `(eq? (car (finding-why d)) 'dispatch)`).Internal(), qt.Equals, values.TrueValue)
-	c.Assert(eval(t, engine, `(string? (render-finding d))`).Internal(), qt.Equals, values.TrueValue)
+	c.Assert(eval(t, engine, `(symbol? (finding-value d))`), qt.Equals, values.TrueValue)
+	c.Assert(eval(t, engine, `(eq? (finding-score d) #f)`), qt.Equals, values.TrueValue)
+	c.Assert(eval(t, engine, `(eq? (car (finding-why d)) 'dispatch)`), qt.Equals, values.TrueValue)
+	c.Assert(eval(t, engine, `(string? (render-finding d))`), qt.Equals, values.TrueValue)
 }
 
 // TestDispatch_WitnessLocatesTheConversion: a candidate says WHERE its concrete type
@@ -136,7 +136,7 @@ func TestDispatch_WitnessLocatesTheConversion(t *testing.T) {
 		(let loop ((ws (nf cand 'witness)))
 		  (cond ((null? ws) #t)
 		        ((string? (nf (car ws) 'func)) (loop (cdr ws)))
-		        (else #f)))`).Internal(), qt.Equals, values.TrueValue)
+		        (else #f)))`), qt.Equals, values.TrueValue)
 }
 
 // TestDispatch_WitnessPosIsAbsentNotFabricated: an implicit conversion has no
@@ -166,7 +166,7 @@ func TestDispatch_WitnessPosIsAbsentNotFabricated(t *testing.T) {
 		                        (cloop (cdr cs) w)
 		                        (let ((p (nf (car ws) 'pos)))
 		                          (wloop (cdr ws)
-		                                 (or (string? p) (eq? p #f)))))))))))) `).Internal(),
+		                                 (or (string? p) (eq? p #f)))))))))))) `),
 		qt.Equals, values.TrueValue)
 }
 
@@ -197,7 +197,7 @@ func TestDispatch_WitnessNamesTheInterfaceItEntered(t *testing.T) {
 		                  (let wloop ((ws (nf (car cs) 'witness)) (w #t))
 		                    (if (or (not w) (null? ws))
 		                        (cloop (cdr cs) w)
-		                        (wloop (cdr ws) (string? (nf (car ws) 'iface))))))))))) `).Internal(),
+		                        (wloop (cdr ws) (string? (nf (car ws) 'iface))))))))))) `),
 		qt.Equals, values.TrueValue)
 }
 
@@ -223,7 +223,7 @@ func TestDispatch_KInvariant(t *testing.T) {
 
 	// Same number of sites at every k.
 	c.Assert(eval(t, engine, `
-		(and (= (length k1) (length k8)) (= (length k8) (length kbig)))`).Internal(),
+		(and (= (length k1) (length k8)) (= (length k8) (length kbig)))`),
 		qt.Equals, values.TrueValue)
 
 	// n is identical, site by site, at every k.
@@ -233,7 +233,7 @@ func TestDispatch_KInvariant(t *testing.T) {
 		        ((and (= (dispatch-n (car a)) (dispatch-n (car b)))
 		              (= (dispatch-n (car b)) (dispatch-n (car c))))
 		         (loop (cdr a) (cdr b) (cdr c)))
-		        (else #f)))`).Internal(), qt.Equals, values.TrueValue)
+		        (else #f)))`), qt.Equals, values.TrueValue)
 
 	// candidates is #f when elided — never '(). At k=1, every site with n>1 is
 	// elided, and every one of them must report #f.
@@ -244,7 +244,7 @@ func TestDispatch_KInvariant(t *testing.T) {
 		         (if (eq? (dispatch-candidates (car l)) #f)
 		             (loop (cdr l))
 		             #f))
-		        (else (loop (cdr l)))))`).Internal(), qt.Equals, values.TrueValue)
+		        (else (loop (cdr l)))))`), qt.Equals, values.TrueValue)
 
 	// At a large k nothing is elided: every site enumerates, and the enumeration
 	// length equals n.
@@ -255,7 +255,7 @@ func TestDispatch_KInvariant(t *testing.T) {
 		        ((and (> (dispatch-n (car l)) 0)
 		              (not (= (length (dispatch-candidates (car l)))
 		                      (dispatch-n (car l))))) #f)
-		        (else (loop (cdr l)))))`).Internal(), qt.Equals, values.TrueValue)
+		        (else (loop (cdr l)))))`), qt.Equals, values.TrueValue)
 }
 
 // TestDispatch_ReflectionInScope: THE CRITICAL reproduction. dispatch_reflect's
@@ -277,20 +277,20 @@ func TestDispatch_ReflectionInScope(t *testing.T) {
 	eval(t, engine, `(define dr (dispatch-sites `+dispatchReflectPkg+`))`)
 
 	// Exactly one dispatch site: the reflective-registry reproduction.
-	c.Assert(eval(t, engine, `(= (length dr) 1)`).Internal(), qt.Equals, values.TrueValue)
+	c.Assert(eval(t, engine, `(= (length dr) 1)`), qt.Equals, values.TrueValue)
 
 	// The FALSE must, reproduced: class=must, n=1, candidate=Alpha -- while the
 	// ground truth (running the program) is Beta. This is not a bug to fix; the
 	// class is exactly what VTA can support given what it can see. What must be
 	// true is that the finding DISCLOSES the mechanism that makes it fallible.
-	c.Assert(eval(t, engine, `(eq? (dispatch-class (car dr)) 'must)`).Internal(), qt.Equals, values.TrueValue)
-	c.Assert(eval(t, engine, `(= (dispatch-n (car dr)) 1)`).Internal(), qt.Equals, values.TrueValue)
+	c.Assert(eval(t, engine, `(eq? (dispatch-class (car dr)) 'must)`), qt.Equals, values.TrueValue)
+	c.Assert(eval(t, engine, `(= (dispatch-n (car dr)) 1)`), qt.Equals, values.TrueValue)
 	c.Assert(eval(t, engine, `
-		(string-contains? (nf (car (dispatch-candidates (car dr))) 'callee) "Alpha")`).Internal(),
+		(string-contains? (nf (car (dispatch-candidates (car dr))) 'callee) "Alpha")`),
 		qt.Equals, values.TrueValue)
 
 	// THE DEFEATER: reflection-in-scope is #t on this finding.
-	c.Assert(eval(t, engine, `(eq? (dispatch-reflection-in-scope (car dr)) #t)`).Internal(),
+	c.Assert(eval(t, engine, `(eq? (dispatch-reflection-in-scope (car dr)) #t)`),
 		qt.Equals, values.TrueValue)
 
 	// A scope that never touches reflect/unsafe carries #f on every finding --
@@ -300,7 +300,7 @@ func TestDispatch_ReflectionInScope(t *testing.T) {
 		(let loop ((l ds))
 		  (cond ((null? l) #t)
 		        ((eq? (dispatch-reflection-in-scope (car l)) #f) (loop (cdr l)))
-		        (else #f)))`).Internal(), qt.Equals, values.TrueValue)
+		        (else #f)))`), qt.Equals, values.TrueValue)
 }
 
 // TestDispatch_SyntheticCallerMarksPhantomSites: dispatch_synthetic's BoundSite
@@ -318,12 +318,12 @@ func TestDispatch_SyntheticCallerMarksPhantomSites(t *testing.T) {
 	eval(t, engine, `(import (wile goast dispatch) (wile goast provenance) (wile goast utils))`)
 	eval(t, engine, `(define dsy (dispatch-sites `+dispatchSyntheticPkg+`))`)
 
-	c.Assert(eval(t, engine, `(= (length dsy) 1)`).Internal(), qt.Equals, values.TrueValue)
+	c.Assert(eval(t, engine, `(= (length dsy) 1)`), qt.Equals, values.TrueValue)
 
 	// The phantom site: no source position, exactly the shape client-go's
 	// pos-less findings have.
-	c.Assert(eval(t, engine, `(eq? (finding-where (car dsy)) #f)`).Internal(), qt.Equals, values.TrueValue)
-	c.Assert(eval(t, engine, `(eq? (dispatch-synthetic-caller (car dsy)) #t)`).Internal(),
+	c.Assert(eval(t, engine, `(eq? (finding-where (car dsy)) #f)`), qt.Equals, values.TrueValue)
+	c.Assert(eval(t, engine, `(eq? (dispatch-synthetic-caller (car dsy)) #t)`),
 		qt.Equals, values.TrueValue)
 
 	// A real, source-level call site is NOT marked synthetic.
@@ -332,7 +332,7 @@ func TestDispatch_SyntheticCallerMarksPhantomSites(t *testing.T) {
 		(let loop ((l ds))
 		  (cond ((null? l) #t)
 		        ((eq? (dispatch-synthetic-caller (car l)) #f) (loop (cdr l)))
-		        (else #f)))`).Internal(), qt.Equals, values.TrueValue)
+		        (else #f)))`), qt.Equals, values.TrueValue)
 }
 
 // TestDispatch_StructuralInterfaceIsUnnamed: dispatch_structural's UseAnon
@@ -350,11 +350,11 @@ func TestDispatch_StructuralInterfaceIsUnnamed(t *testing.T) {
 	eval(t, engine, `(import (wile goast dispatch) (wile goast utils))`)
 	eval(t, engine, `(define dst (dispatch-sites `+dispatchStructuralPkg+`))`)
 
-	c.Assert(eval(t, engine, `(= (length dst) 1)`).Internal(), qt.Equals, values.TrueValue)
+	c.Assert(eval(t, engine, `(= (length dst) 1)`), qt.Equals, values.TrueValue)
 	c.Assert(eval(t, engine, `
-		(string-contains? (dispatch-iface (car dst)) "interface{")`).Internal(),
+		(string-contains? (dispatch-iface (car dst)) "interface{")`),
 		qt.Equals, values.TrueValue)
-	c.Assert(eval(t, engine, `(eq? (dispatch-iface-exported (car dst)) 'unnamed)`).Internal(),
+	c.Assert(eval(t, engine, `(eq? (dispatch-iface-exported (car dst)) 'unnamed)`),
 		qt.Equals, values.TrueValue)
 
 	// A NAMED exported interface (the plain fixture's Single/Multi) is
@@ -364,5 +364,5 @@ func TestDispatch_StructuralInterfaceIsUnnamed(t *testing.T) {
 		(let loop ((l ds))
 		  (cond ((null? l) #f)
 		        ((eq? (dispatch-iface-exported (car l)) #t) #t)
-		        (else (loop (cdr l)))))`).Internal(), qt.Equals, values.TrueValue)
+		        (else (loop (cdr l)))))`), qt.Equals, values.TrueValue)
 }

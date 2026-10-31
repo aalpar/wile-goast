@@ -20,22 +20,9 @@ import (
 
 	"github.com/aalpar/wile/pkg/values"
 	"github.com/aalpar/wile/pkg/werr"
-	"github.com/aalpar/wile/pkg/wile"
 )
 
 var errMarshalUnsupported = werr.NewStaticError("marshal: unsupported wile value type")
-
-// marshalToJSON converts the value returned by Engine.EvalMultiple into
-// a Go any suitable for json.Marshal. EvalMultiple returns a wile.Value
-// wrapper; this unwraps it to the underlying values.Value (via Internal)
-// and delegates to marshalValue. Callers pass the EvalMultiple result
-// directly without knowing about the wrapper.
-func marshalToJSON(wv wile.Value) (any, error) {
-	if wv == nil {
-		return nil, nil
-	}
-	return marshalValue(wv.Internal())
-}
 
 // marshalValue converts a Wile value into a Go any suitable for
 // json.Marshal, following the Phase 1 mapping table:

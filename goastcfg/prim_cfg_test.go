@@ -37,7 +37,7 @@ func newEngine(t *testing.T) *wile.Engine {
 	return engine
 }
 
-func eval(t *testing.T, engine *wile.Engine, code string) wile.Value {
+func eval(t *testing.T, engine *wile.Engine, code string) values.Value {
 	t.Helper()
 	result, err := engine.EvalMultiple(context.Background(), code)
 	qt.New(t).Assert(err, qt.IsNil)
@@ -70,7 +70,7 @@ func TestGoCFG_ReturnsCFGBlocks(t *testing.T) {
 
 	result := eval(t, engine,
 		`(pair? (go-cfg "github.com/aalpar/wile-goast/goast" "PrimGoParseExpr"))`)
-	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
+	c.Assert(result, qt.Equals, values.TrueValue)
 }
 
 func TestGoCFG_EntryBlockHasNoIdom(t *testing.T) {
@@ -81,7 +81,7 @@ func TestGoCFG_EntryBlockHasNoIdom(t *testing.T) {
 		(let* ((blocks (go-cfg "github.com/aalpar/wile-goast/goast" "PrimGoParseExpr"))
 		       (entry  (car blocks)))
 			(eq? (cdr (assoc 'idom (cdr entry))) #f))`)
-	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
+	c.Assert(result, qt.Equals, values.TrueValue)
 }
 
 func TestGoCFGDominators_Structure(t *testing.T) {
@@ -93,7 +93,7 @@ func TestGoCFGDominators_Structure(t *testing.T) {
 		(define cfg (go-cfg "github.com/aalpar/wile-goast/goast" "PrimGoParseExpr"))`)
 
 	result := eval(t, engine, `(pair? (go-cfg-dominators cfg))`)
-	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
+	c.Assert(result, qt.Equals, values.TrueValue)
 
 	// Every dom-node must have block, idom, and children fields.
 	result = eval(t, engine, `
@@ -105,7 +105,7 @@ func TestGoCFGDominators_Structure(t *testing.T) {
 					     (assoc 'idom     (cdr n))
 					     (assoc 'children (cdr n))
 					     (loop (cdr nodes))))))`)
-	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
+	c.Assert(result, qt.Equals, values.TrueValue)
 }
 
 func TestGoCFGDominators_EntryDominatesAll(t *testing.T) {
@@ -128,7 +128,7 @@ func TestGoCFGDominators_EntryDominatesAll(t *testing.T) {
 					(if (eq? #f idom)
 						(integer? (cdr (assoc 'block (cdr n))))
 						(loop (cdr nodes))))))`)
-	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
+	c.Assert(result, qt.Equals, values.TrueValue)
 }
 
 func TestGoCFGDominates(t *testing.T) {
@@ -142,7 +142,7 @@ func TestGoCFGDominates(t *testing.T) {
 
 	// Entry block (0) dominates itself.
 	result := eval(t, engine, `(go-cfg-dominates? dom 0 0)`)
-	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
+	c.Assert(result, qt.Equals, values.TrueValue)
 
 	// Entry block (0) dominates every other block.
 	result = eval(t, engine, `
@@ -152,7 +152,7 @@ func TestGoCFGDominates(t *testing.T) {
 					(if (go-cfg-dominates? dom 0 idx)
 						(loop (cdr nodes))
 						#f))))`)
-	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
+	c.Assert(result, qt.Equals, values.TrueValue)
 }
 
 func TestGoCFGPaths_LinearFunction(t *testing.T) {
@@ -167,7 +167,7 @@ func TestGoCFGPaths_LinearFunction(t *testing.T) {
 		(let* ((last-idx (- (length cfg) 1))
 		       (paths (go-cfg-paths cfg 0 last-idx)))
 			(pair? paths))`)
-	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
+	c.Assert(result, qt.Equals, values.TrueValue)
 }
 
 func TestGoCFGPaths_BranchingFunction(t *testing.T) {
@@ -185,7 +185,7 @@ func TestGoCFGPaths_BranchingFunction(t *testing.T) {
 			     (if (pair? paths)
 			         (list? (car paths))
 			         #t)))`)
-	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
+	c.Assert(result, qt.Equals, values.TrueValue)
 }
 
 func TestGoCFGPaths_SameBlock(t *testing.T) {
@@ -200,7 +200,7 @@ func TestGoCFGPaths_SameBlock(t *testing.T) {
 		(let ((paths (go-cfg-paths cfg 0 0)))
 			(and (pair? paths)
 			     (equal? (car paths) '(0))))`)
-	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
+	c.Assert(result, qt.Equals, values.TrueValue)
 }
 
 func TestIntegration_DominanceQuery(t *testing.T) {
@@ -220,7 +220,7 @@ func TestIntegration_DominanceQuery(t *testing.T) {
 				(let ((idx (cdr (assoc 'block (cdr (car nodes))))))
 					(and (go-cfg-dominates? dom 0 idx)
 					     (loop (cdr nodes))))))`)
-	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
+	c.Assert(result, qt.Equals, values.TrueValue)
 
 	// Verify: every block dominates itself.
 	result = eval(t, engine, `
@@ -230,7 +230,7 @@ func TestIntegration_DominanceQuery(t *testing.T) {
 				       (b-idx (cdr (assoc 'index (cdr b)))))
 					(and (go-cfg-dominates? dom b-idx b-idx)
 					     (loop (cdr blocks))))))`)
-	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
+	c.Assert(result, qt.Equals, values.TrueValue)
 }
 
 func newSessionEngine(t *testing.T) *wile.Engine {
@@ -248,7 +248,7 @@ func TestGoCFG_WithSession(t *testing.T) {
 	testutil.RunScheme(t, engine, `(define s (go-load "github.com/aalpar/wile-goast/goast"))`)
 	result := testutil.RunScheme(t, engine,
 		`(pair? (go-cfg s "PrimGoParseExpr"))`)
-	qt.New(t).Assert(result.Internal(), qt.Equals, values.TrueValue)
+	qt.New(t).Assert(result, qt.Equals, values.TrueValue)
 }
 
 func TestGoCFG_WithSessionForm3Name(t *testing.T) {
@@ -257,7 +257,7 @@ func TestGoCFG_WithSessionForm3Name(t *testing.T) {
 	// Form 3 qualified name should also work.
 	result := testutil.RunScheme(t, engine,
 		`(pair? (go-cfg s "github.com/aalpar/wile-goast/goast.PrimGoParseExpr"))`)
-	qt.New(t).Assert(result.Internal(), qt.Equals, values.TrueValue)
+	qt.New(t).Assert(result, qt.Equals, values.TrueValue)
 }
 
 func TestGoCFG_Errors(t *testing.T) {
@@ -293,7 +293,7 @@ func TestGoCFG_FuncLiteralRoundTrip(t *testing.T) {
 			(and (pair? outer)
 			     (pair? inner)
 			     (> (length inner) 1)))`)
-	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
+	c.Assert(result, qt.Equals, values.TrueValue)
 }
 
 // TestGoCFG_ClosuresFieldSurfaces pins the field end to end and the fact that
@@ -319,7 +319,7 @@ func TestGoCFG_ClosuresFieldSurfaces(t *testing.T) {
 	result = eval(t, engine, `
 		(null? (block-closures
 			(go-cfg "github.com/aalpar/wile-goast/goastcfg" "PrimGoCFGDominators")))`)
-	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
+	c.Assert(result, qt.Equals, values.TrueValue)
 }
 
 // TestGoCFG_ClosureNameFeedsBackIn is the round trip the closures field exists

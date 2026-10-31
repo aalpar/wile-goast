@@ -143,7 +143,7 @@ func TestInlinePipeline(t *testing.T) {
 	`)
 
 	c := qt.New(t)
-	s := result.Internal().(*values.String).Value
+	s := result.(*values.String).Value
 
 	// Phase 1: double and addOne should be inlined
 	c.Assert(strings.Contains(s, "double"), qt.IsFalse,

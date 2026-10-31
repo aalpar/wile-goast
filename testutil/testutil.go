@@ -19,13 +19,14 @@ import (
 	"context"
 	"testing"
 
+	"github.com/aalpar/wile/pkg/values"
 	"github.com/aalpar/wile/pkg/wile"
 
 	qt "github.com/frankban/quicktest"
 )
 
 // RunScheme runs Scheme code (possibly multiple expressions) and returns the last result.
-func RunScheme(t *testing.T, engine *wile.Engine, code string) wile.Value {
+func RunScheme(t *testing.T, engine *wile.Engine, code string) values.Value {
 	t.Helper()
 	result, err := engine.EvalMultiple(context.Background(), code)
 	qt.New(t).Assert(err, qt.IsNil)

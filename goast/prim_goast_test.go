@@ -40,7 +40,7 @@ func newEngine(t *testing.T) *wile.Engine {
 }
 
 // eval runs Scheme code (possibly multiple expressions) and returns the last result.
-func eval(t *testing.T, engine *wile.Engine, code string) wile.Value {
+func eval(t *testing.T, engine *wile.Engine, code string) values.Value {
 	t.Helper()
 	result, err := engine.EvalMultiple(context.Background(), code)
 	qt.New(t).Assert(err, qt.IsNil)
@@ -125,7 +125,7 @@ func TestGoParseExpr(t *testing.T) {
 	for _, tc := range tcs {
 		t.Run(tc.name, func(t *testing.T) {
 			result := eval(t, engine, tc.code)
-			c.Assert(result.Internal(), valuestest.SchemeEquals, tc.want)
+			c.Assert(result, valuestest.SchemeEquals, tc.want)
 		})
 	}
 }
@@ -153,7 +153,7 @@ func TestGoParseString(t *testing.T) {
 	for _, tc := range tcs {
 		t.Run(tc.name, func(t *testing.T) {
 			result := eval(t, engine, tc.code)
-			c.Assert(result.Internal(), valuestest.SchemeEquals, tc.want)
+			c.Assert(result, valuestest.SchemeEquals, tc.want)
 		})
 	}
 }
@@ -170,7 +170,7 @@ func TestGoParseFile(t *testing.T) {
 
 	code := `(go-node-type (go-parse-file "` + path + `"))`
 	result := eval(t, engine, code)
-	c.Assert(result.Internal(), valuestest.SchemeEquals, values.NewSymbol("file"))
+	c.Assert(result, valuestest.SchemeEquals, values.NewSymbol("file"))
 }
 
 func TestGoFormatRoundTrip(t *testing.T) {
@@ -199,8 +199,8 @@ func TestGoFormatRoundTrip(t *testing.T) {
 			// Parse, format, compare.
 			code := `(go-format (go-parse-expr "` + tc.source + `"))`
 			result := eval(t, engine, code)
-			s, ok := result.Internal().(*values.String)
-			c.Assert(ok, qt.IsTrue, qt.Commentf("expected string, got %T", result.Internal()))
+			s, ok := result.(*values.String)
+			c.Assert(ok, qt.IsTrue, qt.Commentf("expected string, got %T", result))
 			c.Assert(s.Value, qt.Equals, tc.source)
 		})
 	}
@@ -219,8 +219,8 @@ func Add(a, b int) int {
 	// Use Scheme string escaping — the Go source has tabs and newlines.
 	code := `(go-format (go-parse-string ` + schemeStringLiteral(source) + `))`
 	result := eval(t, engine, code)
-	s, ok := result.Internal().(*values.String)
-	c.Assert(ok, qt.IsTrue, qt.Commentf("expected string, got %T", result.Internal()))
+	s, ok := result.(*values.String)
+	c.Assert(ok, qt.IsTrue, qt.Commentf("expected string, got %T", result))
 	c.Assert(s.Value, qt.Equals, source)
 }
 
@@ -247,7 +247,7 @@ func TestGoNodeType(t *testing.T) {
 	for _, tc := range tcs {
 		t.Run(tc.name, func(t *testing.T) {
 			result := eval(t, engine, tc.code)
-			c.Assert(result.Internal(), valuestest.SchemeEquals, tc.want)
+			c.Assert(result, valuestest.SchemeEquals, tc.want)
 		})
 	}
 }
@@ -287,22 +287,22 @@ func TestGoTypecheckPackage(t *testing.T) {
 
 	t.Run("returns package node", func(t *testing.T) {
 		result := eval(t, engine, `(go-node-type (car typechecked))`)
-		c.Assert(result.Internal(), valuestest.SchemeEquals, values.NewSymbol("package"))
+		c.Assert(result, valuestest.SchemeEquals, values.NewSymbol("package"))
 	})
 
 	t.Run("package name", func(t *testing.T) {
 		result := eval(t, engine, `(cdr (assoc 'name (cdr (car typechecked))))`)
-		c.Assert(result.Internal(), valuestest.SchemeEquals, values.NewString("goast"))
+		c.Assert(result, valuestest.SchemeEquals, values.NewString("goast"))
 	})
 
 	t.Run("package path", func(t *testing.T) {
 		result := eval(t, engine, `(cdr (assoc 'path (cdr (car typechecked))))`)
-		c.Assert(result.Internal(), valuestest.SchemeEquals, values.NewString(pkgPath))
+		c.Assert(result, valuestest.SchemeEquals, values.NewString(pkgPath))
 	})
 
 	t.Run("has file nodes", func(t *testing.T) {
 		result := eval(t, engine, `(go-node-type (car (cdr (assoc 'files (cdr (car typechecked))))))`)
-		c.Assert(result.Internal(), valuestest.SchemeEquals, values.NewSymbol("file"))
+		c.Assert(result, valuestest.SchemeEquals, values.NewSymbol("file"))
 	})
 }
 
@@ -334,27 +334,27 @@ func TestGoInterfaceImplementors(t *testing.T) {
 
 	t.Run("returns interface-info node", func(t *testing.T) {
 		result := eval(t, engine, `(go-node-type iface-info)`)
-		c.Assert(result.Internal(), valuestest.SchemeEquals, values.NewSymbol("interface-info"))
+		c.Assert(result, valuestest.SchemeEquals, values.NewSymbol("interface-info"))
 	})
 
 	t.Run("interface name", func(t *testing.T) {
 		result := eval(t, engine, `(cdr (assoc 'name (cdr iface-info)))`)
-		c.Assert(result.Internal(), valuestest.SchemeEquals, values.NewString("Store"))
+		c.Assert(result, valuestest.SchemeEquals, values.NewString("Store"))
 	})
 
 	t.Run("interface package", func(t *testing.T) {
 		result := eval(t, engine, `(cdr (assoc 'pkg (cdr iface-info)))`)
-		c.Assert(result.Internal(), valuestest.SchemeEquals, values.NewString(pkgPath))
+		c.Assert(result, valuestest.SchemeEquals, values.NewString(pkgPath))
 	})
 
 	t.Run("has three methods", func(t *testing.T) {
 		result := eval(t, engine, `(length (cdr (assoc 'methods (cdr iface-info))))`)
-		c.Assert(result.Internal(), valuestest.SchemeEquals, values.NewInteger(3))
+		c.Assert(result, valuestest.SchemeEquals, values.NewInteger(3))
 	})
 
 	t.Run("has two implementors", func(t *testing.T) {
 		result := eval(t, engine, `(length (cdr (assoc 'implementors (cdr iface-info))))`)
-		c.Assert(result.Internal(), valuestest.SchemeEquals, values.NewInteger(2))
+		c.Assert(result, valuestest.SchemeEquals, values.NewInteger(2))
 	})
 
 	t.Run("finds pointer-receiver implementor", func(t *testing.T) {
@@ -364,7 +364,7 @@ func TestGoInterfaceImplementors(t *testing.T) {
 			  (cond ((null? impls) #f)
 			        ((equal? (cdr (assoc 'type (car impls))) "MemoryStore") #t)
 			        (else (loop (cdr impls)))))`)
-		c.Assert(result.Internal(), valuestest.SchemeEquals, values.TrueValue)
+		c.Assert(result, valuestest.SchemeEquals, values.TrueValue)
 	})
 
 	t.Run("finds value-receiver implementor", func(t *testing.T) {
@@ -374,7 +374,7 @@ func TestGoInterfaceImplementors(t *testing.T) {
 			  (cond ((null? impls) #f)
 			        ((equal? (cdr (assoc 'type (car impls))) "SimpleStore") #t)
 			        (else (loop (cdr impls)))))`)
-		c.Assert(result.Internal(), valuestest.SchemeEquals, values.TrueValue)
+		c.Assert(result, valuestest.SchemeEquals, values.TrueValue)
 	})
 
 	t.Run("excludes non-implementor", func(t *testing.T) {
@@ -383,7 +383,7 @@ func TestGoInterfaceImplementors(t *testing.T) {
 			  (cond ((null? impls) #t)
 			        ((equal? (cdr (assoc 'type (car impls))) "NotAStore") #f)
 			        (else (loop (cdr impls)))))`)
-		c.Assert(result.Internal(), valuestest.SchemeEquals, values.TrueValue)
+		c.Assert(result, valuestest.SchemeEquals, values.TrueValue)
 	})
 }
 
@@ -496,7 +496,7 @@ func TestGoTypecheckPackageUsesCurrentGoTarget(t *testing.T) {
 	result := eval(t, engine,
 		`(parameterize ((current-go-target "github.com/aalpar/wile-goast/goast"))
 		   (pair? (go-typecheck-package)))`)
-	qt.New(t).Assert(result.Internal(), qt.Equals, values.TrueValue)
+	qt.New(t).Assert(result, qt.Equals, values.TrueValue)
 }
 
 func TestGoTypecheckPackageExplicitArgStillWorks(t *testing.T) {
@@ -508,7 +508,7 @@ func TestGoTypecheckPackageExplicitArgStillWorks(t *testing.T) {
 
 	result := eval(t, engine,
 		`(pair? (go-typecheck-package "github.com/aalpar/wile-goast/goast"))`)
-	qt.New(t).Assert(result.Internal(), qt.Equals, values.TrueValue)
+	qt.New(t).Assert(result, qt.Equals, values.TrueValue)
 }
 
 // schemeStringLiteral wraps a Go string as a Scheme string literal,
@@ -525,7 +525,7 @@ func TestGoLoadUsesCurrentGoTarget(t *testing.T) {
 	result := eval(t, engine,
 		`(parameterize ((current-go-target "github.com/aalpar/wile-goast/goast"))
 		   (eq? (go-load) #f))`)
-	qt.New(t).Assert(result.Internal(), qt.Equals, values.FalseValue)
+	qt.New(t).Assert(result, qt.Equals, values.FalseValue)
 }
 
 func TestGoLoadExplicitArgStillWorks(t *testing.T) {
@@ -537,7 +537,7 @@ func TestGoLoadExplicitArgStillWorks(t *testing.T) {
 
 	result := eval(t, engine,
 		`(eq? (go-load "github.com/aalpar/wile-goast/goast") #f)`)
-	qt.New(t).Assert(result.Internal(), qt.Equals, values.FalseValue)
+	qt.New(t).Assert(result, qt.Equals, values.FalseValue)
 }
 
 func schemeStringLiteral(s string) string {

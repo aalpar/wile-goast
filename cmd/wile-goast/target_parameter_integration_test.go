@@ -34,8 +34,8 @@ func TestCurrentGoTargetDefault(t *testing.T) {
 	defer func() { _ = engine.Close() }()
 
 	result := testutil.RunScheme(t, engine, `(current-go-target)`)
-	s, ok := result.Internal().(*values.String)
-	qt.Assert(t, ok, qt.IsTrue, qt.Commentf("result is %T, want *values.String", result.Internal()))
+	s, ok := result.(*values.String)
+	qt.Assert(t, ok, qt.IsTrue, qt.Commentf("result is %T, want *values.String", result))
 	qt.Assert(t, s.Value, qt.Equals, "./...")
 }
 
@@ -47,8 +47,8 @@ func TestCurrentGoTargetEnvVar(t *testing.T) {
 	defer func() { _ = engine.Close() }()
 
 	result := testutil.RunScheme(t, engine, `(current-go-target)`)
-	s, ok := result.Internal().(*values.String)
-	qt.Assert(t, ok, qt.IsTrue, qt.Commentf("result is %T, want *values.String", result.Internal()))
+	s, ok := result.(*values.String)
+	qt.Assert(t, ok, qt.IsTrue, qt.Commentf("result is %T, want *values.String", result))
 	qt.Assert(t, s.Value, qt.Equals, "github.com/example/foo/...")
 }
 
@@ -62,8 +62,8 @@ func TestCurrentGoTargetParameterize(t *testing.T) {
 	result := testutil.RunScheme(t, engine,
 		`(parameterize ((current-go-target "./sub/..."))
 		   (current-go-target))`)
-	s, ok := result.Internal().(*values.String)
-	qt.Assert(t, ok, qt.IsTrue, qt.Commentf("result is %T, want *values.String", result.Internal()))
+	s, ok := result.(*values.String)
+	qt.Assert(t, ok, qt.IsTrue, qt.Commentf("result is %T, want *values.String", result))
 	qt.Assert(t, s.Value, qt.Equals, "./sub/...")
 }
 
@@ -84,8 +84,8 @@ func TestGoSSABuildUsesCurrentGoTarget(t *testing.T) {
 	result := testutil.RunScheme(t, engine,
 		`(parameterize ((current-go-target "`+pkg+`"))
 		   (length (go-ssa-build)))`)
-	n, ok := result.Internal().(*values.Integer)
-	qt.Assert(t, ok, qt.IsTrue, qt.Commentf("result is %T, want *values.Integer", result.Internal()))
+	n, ok := result.(*values.Integer)
+	qt.Assert(t, ok, qt.IsTrue, qt.Commentf("result is %T, want *values.Integer", result))
 	qt.Assert(t, n.Value > 0, qt.IsTrue)
 }
 
@@ -101,8 +101,8 @@ func TestGoSSABuildExplicitArgStillWorks(t *testing.T) {
 
 	result := testutil.RunScheme(t, engine,
 		`(length (go-ssa-build "`+pkg+`"))`)
-	n, ok := result.Internal().(*values.Integer)
-	qt.Assert(t, ok, qt.IsTrue, qt.Commentf("result is %T, want *values.Integer", result.Internal()))
+	n, ok := result.(*values.Integer)
+	qt.Assert(t, ok, qt.IsTrue, qt.Commentf("result is %T, want *values.Integer", result))
 	qt.Assert(t, n.Value > 0, qt.IsTrue)
 }
 
@@ -119,7 +119,7 @@ func TestGoSSAFieldIndexUsesCurrentGoTarget(t *testing.T) {
 	result := testutil.RunScheme(t, engine,
 		`(parameterize ((current-go-target "`+pkg+`"))
 		   (list? (go-ssa-field-index)))`)
-	qt.Assert(t, result.Internal(), qt.Equals, values.TrueValue)
+	qt.Assert(t, result, qt.Equals, values.TrueValue)
 }
 
 func TestGoFuncRefsUsesCurrentGoTarget(t *testing.T) {
@@ -134,7 +134,7 @@ func TestGoFuncRefsUsesCurrentGoTarget(t *testing.T) {
 	result := testutil.RunScheme(t, engine,
 		`(parameterize ((current-go-target "`+pkg+`"))
 		   (list? (go-func-refs)))`)
-	qt.Assert(t, result.Internal(), qt.Equals, values.TrueValue)
+	qt.Assert(t, result, qt.Equals, values.TrueValue)
 }
 
 func TestGoInterfaceImplementorsUsesCurrentGoTarget(t *testing.T) {
@@ -152,5 +152,5 @@ func TestGoInterfaceImplementorsUsesCurrentGoTarget(t *testing.T) {
 	result := testutil.RunScheme(t, engine,
 		`(parameterize ((current-go-target "`+pkg+`"))
 		   (pair? (go-interface-implementors "Store")))`)
-	qt.Assert(t, result.Internal(), qt.Equals, values.TrueValue)
+	qt.Assert(t, result, qt.Equals, values.TrueValue)
 }

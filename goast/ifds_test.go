@@ -43,10 +43,10 @@ func TestIFDS_ValidPathCanary(t *testing.T) {
 	// a1 -> a2: open-1 (a1 calls p) then close-1 (a2 is also a caller of p at
 	// call-site 1), so the path open-1 close-1 is balanced — MUST be reachable.
 	result := eval(t, engine, `(ifds-reachable? A "a1" "a2")`)
-	c.Assert(result.Internal(), qt.Equals, values.TrueValue)
+	c.Assert(result, qt.Equals, values.TrueValue)
 
 	// a1 -> b2: open-1 (a1 calls p) then close-2 (b2 uses call-site 2) —
 	// mismatched brackets; the grammar rejects this — MUST NOT be reachable.
 	result = eval(t, engine, `(ifds-reachable? A "a1" "b2")`)
-	c.Assert(result.Internal(), qt.Equals, values.FalseValue)
+	c.Assert(result, qt.Equals, values.FalseValue)
 }

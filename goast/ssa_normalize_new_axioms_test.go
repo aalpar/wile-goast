@@ -33,7 +33,7 @@ func TestSSANormalize_Idempotence(t *testing.T) {
 			(ssa-normalize
 				'(ssa-binop (name . "t0") (op . &) (x . "r1") (y . "r1")
 				  (type . "int") (operands "r1" "r1")))`)
-		c.Assert(result.Internal().(*values.String).Value, qt.Equals, "r1")
+		c.Assert(result.(*values.String).Value, qt.Equals, "r1")
 	})
 
 	t.Run("x | x becomes x", func(t *testing.T) {
@@ -41,7 +41,7 @@ func TestSSANormalize_Idempotence(t *testing.T) {
 			(ssa-normalize
 				'(ssa-binop (name . "t0") (op . |\||) (x . "r2") (y . "r2")
 				  (type . "int") (operands "r2" "r2")))`)
-		c.Assert(result.Internal().(*values.String).Value, qt.Equals, "r2")
+		c.Assert(result.(*values.String).Value, qt.Equals, "r2")
 	})
 
 	t.Run("x & y does not collapse", func(t *testing.T) {
@@ -49,7 +49,7 @@ func TestSSANormalize_Idempotence(t *testing.T) {
 			(let ((node '(ssa-binop (name . "t0") (op . &) (x . "r1") (y . "r2")
 			              (type . "int") (operands "r1" "r2"))))
 				(tag? (ssa-normalize node) 'ssa-binop))`)
-		c.Assert(result.Internal(), qt.Equals, values.TrueValue)
+		c.Assert(result, qt.Equals, values.TrueValue)
 	})
 
 	t.Run("float passthrough (not integer-scoped)", func(t *testing.T) {
@@ -57,7 +57,7 @@ func TestSSANormalize_Idempotence(t *testing.T) {
 			(let ((node '(ssa-binop (name . "t0") (op . &) (x . "r1") (y . "r1")
 			              (type . "float64") (operands "r1" "r1"))))
 				(tag? (ssa-normalize node) 'ssa-binop))`)
-		c.Assert(result.Internal(), qt.Equals, values.TrueValue)
+		c.Assert(result, qt.Equals, values.TrueValue)
 	})
 }
 
@@ -80,7 +80,7 @@ func TestSSANormalize_Absorption(t *testing.T) {
 			                    '(type . "int")
 			                    (cons 'operands (list "r1" inner)))))
 				(ssa-normalize outer))`)
-		c.Assert(result.Internal().(*values.String).Value, qt.Equals, "r1")
+		c.Assert(result.(*values.String).Value, qt.Equals, "r1")
 	})
 
 	t.Run("x & (x | y) becomes x", func(t *testing.T) {
@@ -92,7 +92,7 @@ func TestSSANormalize_Absorption(t *testing.T) {
 			                    '(type . "int")
 			                    (cons 'operands (list "r3" inner)))))
 				(ssa-normalize outer))`)
-		c.Assert(result.Internal().(*values.String).Value, qt.Equals, "r3")
+		c.Assert(result.(*values.String).Value, qt.Equals, "r3")
 	})
 }
 
@@ -113,7 +113,7 @@ func TestSSANormalize_Associativity(t *testing.T) {
 			(let ((node '(ssa-binop (name . "t0") (op . +) (x . "r1") (y . "r2")
 			              (type . "int") (operands "r1" "r2"))))
 				(equal? (ssa-normalize node (ssa-rule-associativity)) node))`)
-		c.Assert(result.Internal(), qt.Equals, values.TrueValue)
+		c.Assert(result, qt.Equals, values.TrueValue)
 	})
 
 	t.Run("non-integer type skipped (IEEE 754)", func(t *testing.T) {
@@ -122,7 +122,7 @@ func TestSSANormalize_Associativity(t *testing.T) {
 			(let ((node '(ssa-binop (name . "t0") (op . +) (x . "r1") (y . "r2")
 			              (type . "float64") (operands "r1" "r2"))))
 				(equal? (ssa-normalize node (ssa-rule-associativity)) node))`)
-		c.Assert(result.Internal(), qt.Equals, values.TrueValue)
+		c.Assert(result, qt.Equals, values.TrueValue)
 	})
 
 	// Positive rewrite: (a+b)+c rotates to right-nested a+(b+c).
@@ -142,7 +142,7 @@ func TestSSANormalize_Associativity(t *testing.T) {
 			       (tag? (nf norm 'y) 'ssa-binop)
 			       (equal? (nf (nf norm 'y) 'x) "b")
 			       (equal? (nf (nf norm 'y) 'y) "c")))`)
-		c.Assert(result.Internal(), qt.Equals, values.TrueValue,
+		c.Assert(result, qt.Equals, values.TrueValue,
 			qt.Commentf("expected (a+b)+c to rewrite to a+(b+c) structure"))
 	})
 
@@ -174,7 +174,7 @@ func TestSSANormalize_Associativity(t *testing.T) {
 			       (lhs-norm (ssa-normalize lhs (ssa-rule-associativity)))
 			       (rhs-norm (ssa-normalize rhs (ssa-rule-associativity))))
 			  (same-shape? lhs-norm rhs-norm))`)
-		c.Assert(result.Internal(), qt.Equals, values.TrueValue,
+		c.Assert(result, qt.Equals, values.TrueValue,
 			qt.Commentf("(a+b)+c and a+(b+c) should share a canonical form"))
 	})
 }

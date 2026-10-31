@@ -96,12 +96,12 @@ func TestGoSSACanonicalize_SingleBlock(t *testing.T) {
 
 	// If no single-block function found, skip.
 	found := eval(t, engine, `(pair? single-fn)`)
-	if found.Internal() != values.TrueValue {
+	if found != values.TrueValue {
 		t.Skip("no single-block function found in package")
 	}
 
 	result := eval(t, engine, `(eq? (car (go-ssa-canonicalize single-fn)) 'ssa-func)`)
-	qt.New(t).Assert(result.Internal(), qt.Equals, values.TrueValue)
+	qt.New(t).Assert(result, qt.Equals, values.TrueValue)
 }
 
 func TestGoSSACanonicalize_ReturnsSSAFunc(t *testing.T) {
@@ -111,7 +111,7 @@ func TestGoSSACanonicalize_ReturnsSSAFunc(t *testing.T) {
 	eval(t, engine, `(define funcs (go-ssa-build "github.com/aalpar/wile-goast/goast"))`)
 	eval(t, engine, `(define fn (car funcs))`)
 	result := eval(t, engine, `(eq? (car (go-ssa-canonicalize fn)) 'ssa-func)`)
-	qt.New(t).Assert(result.Internal(), qt.Equals, values.TrueValue)
+	qt.New(t).Assert(result, qt.Equals, values.TrueValue)
 }
 
 func TestGoSSACanonicalize_RegisterRenaming(t *testing.T) {
@@ -131,7 +131,7 @@ func TestGoSSACanonicalize_RegisterRenaming(t *testing.T) {
 						(if (pair? params) f (loop (cdr fs)))))))`)
 
 	found := eval(t, engine, `(pair? fn-with-params)`)
-	if found.Internal() != values.TrueValue {
+	if found != values.TrueValue {
 		t.Skip("no function with parameters found in package")
 	}
 
@@ -142,7 +142,7 @@ func TestGoSSACanonicalize_RegisterRenaming(t *testing.T) {
 			(let* ((params (cdr (assoc 'params (cdr canon))))
 				   (first (car params)))
 				(equal? (cdr (assoc 'name (cdr first))) "p0"))`)
-		qt.New(t).Assert(result.Internal(), qt.Equals, values.TrueValue)
+		qt.New(t).Assert(result, qt.Equals, values.TrueValue)
 	})
 
 	t.Run("instruction names start with r", func(t *testing.T) {
@@ -158,7 +158,7 @@ func TestGoSSACanonicalize_RegisterRenaming(t *testing.T) {
 								(string-ref (cdr name-pair) 0)
 								(loop (cdr is)))))))`)
 		// First character should be 'r'
-		c, ok := result.Internal().(*values.Character)
+		c, ok := result.(*values.Character)
 		if ok {
 			qt.New(t).Assert(c.Value, qt.Equals, 'r')
 		} else {
@@ -186,7 +186,7 @@ func TestGoSSACanonicalize_BlockOrder(t *testing.T) {
 			(let* ((blocks (cdr (assoc 'blocks (cdr canon))))
 				   (entry (car blocks)))
 				(not (assoc 'idom (cdr entry))))`)
-		qt.New(t).Assert(result.Internal(), qt.Equals, values.TrueValue)
+		qt.New(t).Assert(result, qt.Equals, values.TrueValue)
 	})
 
 	t.Run("block indices are sequential", func(t *testing.T) {
@@ -198,7 +198,7 @@ func TestGoSSACanonicalize_BlockOrder(t *testing.T) {
 							(if (= idx i)
 								(loop (cdr bs) (+ i 1))
 								#f)))))`)
-		qt.New(t).Assert(result.Internal(), qt.Equals, values.TrueValue)
+		qt.New(t).Assert(result, qt.Equals, values.TrueValue)
 	})
 
 	t.Run("idom references use new indices (parent < child)", func(t *testing.T) {
@@ -214,7 +214,7 @@ func TestGoSSACanonicalize_BlockOrder(t *testing.T) {
 									(loop (cdr bs))
 									#f)
 								(loop (cdr bs)))))))`)
-		qt.New(t).Assert(result.Internal(), qt.Equals, values.TrueValue)
+		qt.New(t).Assert(result, qt.Equals, values.TrueValue)
 	})
 }
 
